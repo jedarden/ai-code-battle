@@ -16,71 +16,72 @@ implementations for the HTTP protocol.
 
 ## 2. System Architecture
 
-The platform is designed around a **static-first** principle: the website is a
-static site that loads JSON data files directly. There is no application server
-rendering pages. All dynamic state (leaderboards, match history, bot profiles)
-is pre-computed as JSON files by backend processes and served as static assets
-alongside the HTML/JS/CSS.
+The platform is split across two tiers:
+
+1. **Cloudflare (free tier)** — all web-facing infrastructure: static site,
+   API endpoints, database, file storage, and scheduling logic
+2. **Rackspace Spot** — all compute: match execution, bot hosting, evolution
+   pipeline
+
+This split maps cleanly to each provider's strength. Cloudflare excels at
+serving content globally with zero egress cost. Rackspace Spot provides cheap
+interruptible compute for the CPU-intensive match simulation.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Static Website (Nginx)                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐ │
-│  │  Leaderboard  │  │ Match History │  │    Replay Viewer (Canvas) │ │
-│  │  (loads JSON) │  │  (loads JSON)│  │    (loads replay JSON)    │ │
-│  └──────────────┘  └──────────────┘  └───────────────────────────┘ │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ fetches static JSON files
-                    ┌──────────▼──────────┐
-                    │  Data Directory      │
-                    │  (filesystem, served │
-                    │   by Nginx)          │
-                    │  ┌────────────────┐  │
-                    │  │ /replays/*.json│  │
-                    │  │ /data/         │  │
-                    │  │   leaderboard  │  │
-                    │  │   matches      │  │
-                    │  │   bots         │  │
-                    │  │ /maps/*.json   │  │
-                    │  └────────────────┘  │
-                    └──────────┬───────────┘
-                               │ writes JSON to disk
-              ┌────────────────┼────────────────┐
-              │                │                │
-     ┌────────▼───────┐ ┌─────▼──────┐ ┌───────▼────────┐
-     │  Match Workers  │ │ Scheduler  │ │  Registration   │
-     │  (run matches,  │ │ (create    │ │  API (minimal,  │
-     │   POST results  │ │  jobs,     │ │  bot signup +   │
-     │   to scheduler) │ │  rebuild   │ │  health check)  │
-     │                 │ │  indexes)  │ │                 │
-     └────────┬───────┘ └────────────┘ └────────────────┘
-              │ HTTP (per-turn requests)
-              │
-     ┌────────▼──────────────────────────────┐
-     │  Bot Endpoints                         │
-     │  ┌────────────┐ ┌──────────┐ ┌──────┐ │
-     │  │ Participant │ │ Built-in │ │ EVO  │ │
-     │  │ Bots       │ │ Strategy │ │ Bots │ │
-     │  │ (external) │ │ Bots     │ │      │ │
-     │  └────────────┘ └──────────┘ └──────┘ │
-     └───────────────────────────────────────┘
+┌─────────────────────── Cloudflare (free tier) ───────────────────────┐
+│                                                                       │
+│  ┌─────────────┐   ┌──────────────────┐   ┌───────────────────────┐  │
+│  │  Pages       │   │  Worker (acb-api) │   │  R2 Bucket            │  │
+│  │  static site │   │  registration,    │   │  replays/*.json.gz    │  │
+│  │  HTML/JS/CSS │   │  job coordination,│   │  data/leaderboard.json│  │
+│  │              │   │  cron triggers    │   │  data/bots/*.json     │  │
+│  └──────┬──────┘   └────────┬─────────┘   │  data/matches/*.json  │  │
+│         │                   │              │  maps/*.json          │  │
+│         │ fetches JSON      │ reads/writes └───────────┬───────────┘  │
+│         └───────────────────┼─────────────────────────►│              │
+│                             │                                         │
+│                    ┌────────▼────────┐                                │
+│                    │  D1 Database     │                                │
+│                    │  bots, matches,  │                                │
+│                    │  jobs, ratings   │                                │
+│                    └─────────────────┘                                │
+└──────────────────────────────┬───────────────────────────────────────┘
+                               │ HTTPS (job coordination + result submission)
+                               │
+┌──────────────────────── Rackspace Spot ──────────────────────────────┐
+│                                                                       │
+│  ┌──────────────────┐    ┌──────────────────────────────────────────┐ │
+│  │  Match Workers    │    │  Bot Containers                          │ │
+│  │  (claim jobs,     │───►│  ┌──────────┐ ┌──────────┐ ┌──────────┐│ │
+│  │   run simulation, │HTTP│  │ Strategy  │ │ Evolved  │ │ External ││ │
+│  │   upload replay   │    │  │ Bots (×6) │ │ Bots     │ │ Bots     ││ │
+│  │   to R2, POST     │    │  └──────────┘ └──────────┘ └──────────┘│ │
+│  │   result to API)  │    └──────────────────────────────────────────┘ │
+│  └──────────────────┘                                                 │
+│                                                                       │
+│  ┌──────────────────┐                                                 │
+│  │  Evolver          │                                                │
+│  │  (LLM pipeline,  │                                                 │
+│  │   sandbox, eval)  │                                                │
+│  └──────────────────┘                                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Summary
 
-| Component | Role | Scaling Model |
-|-----------|------|---------------|
-| Static Website | HTML/JS/CSS SPA served by Nginx — fetches JSON data files for all dynamic content | Single Nginx on stable instance |
-| Data Directory | All platform data as static JSON files on disk — replays, leaderboard, match index, bot profiles, maps — served by Nginx as a second virtual host | Persistent volume on stable instance |
-| Match Worker | Runs game simulation, POSTs replay + result JSON back to scheduler | Stateless containers on Rackspace Spot |
-| Scheduler | Creates match jobs, receives results from workers, writes JSON to data directory, rebuilds indexes | Single process, always-on |
-| Registration API | Minimal HTTP endpoint for bot signup, health check, secret generation | Single lightweight process, always-on |
-| Strategy Bots | Built-in HTTP bots (one container each) | Always-on, lightweight |
+| Component | Where | Role |
+|-----------|-------|------|
+| **Pages** | Cloudflare | Static site — HTML/JS/CSS SPA, fetches JSON from R2 |
+| **Worker** | Cloudflare | API endpoints (registration, job coordination) + cron triggers (matchmaking, index rebuilds, health checks) |
+| **D1** | Cloudflare | SQLite database — bot registry, match queue, ratings, results |
+| **R2** | Cloudflare | Object storage — replay files, pre-built JSON indexes (leaderboard, bot profiles, match lists), maps |
+| **Match Workers** | Rackspace Spot | Stateless match execution — claim job from Worker API, run simulation, upload replay to R2, POST result |
+| **Bot Containers** | Rackspace Spot | Strategy bots (×6) + evolved bots (0–50) — HTTP servers called by workers during matches |
+| **Evolver** | Rackspace Spot | Evolution pipeline — LLM generation, sandbox validation, evaluation matches |
 
-**What's intentionally absent:** no PostgreSQL, no Redis, no Minio, no object
-store, no read replicas, no PgBouncer, no WebSocket server. The data layer is
-flat JSON files on the filesystem, served directly by Nginx. The scheduler
-writes files to disk and workers submit results over HTTP.
+**What's intentionally absent:** no PostgreSQL, no Redis, no always-on VPS for
+web infrastructure, no Nginx, no reverse proxy. Cloudflare handles TLS, CDN,
+DNS, storage, and compute-at-edge for the entire web-facing tier at zero cost.
 
 ---
 
@@ -864,10 +865,10 @@ encoding — only recording events that changed from the previous turn.
 
 ### 7.2 Storage
 
-Replays are plain JSON files on disk, served directly to the browser by
-Nginx as static assets. No API intermediary.
+Replays are stored in **Cloudflare R2** and served to the browser via R2's
+custom domain with zero egress cost. No API intermediary for reads.
 
-**Data directory layout** (`/var/acb/data/`, served by Nginx):
+**R2 bucket layout** (public-read via custom domain):
 ```
 replays/{match_id}.json.gz           # individual replay files
 maps/{map_id}.json                   # map definitions
@@ -881,33 +882,25 @@ data/evolution/meta.json             # current meta/Nash snapshot
 ```
 
 **How data flows:**
-1. Match worker completes a match → POSTs replay JSON + result JSON to the
-   scheduler's ingest endpoint over Tailscale
-2. Scheduler writes the files to disk (data directory)
-3. Scheduler rebuilds `leaderboard.json`, updates `bots/{bot_id}.json`,
-   appends to `matches/index.json`
-4. Nginx serves the data directory — the static site fetches files directly
+1. Match worker completes a match → uploads `replay.json.gz` directly to R2
+   via S3-compatible API (worker has a scoped R2 API token)
+2. Worker POSTs small result metadata to the Cloudflare Worker API endpoint
+3. Worker API writes match result to D1
+4. Index rebuilder cron (every 2 min) reads new results from D1, rebuilds
+   `leaderboard.json`, `bots/*.json`, `matches/index.json`, writes to R2
+5. Static site (Pages) fetches these JSON files from R2's custom domain
 
 **Retention:**
 - Indefinite for top-100 matches per month
-- Older replays pruned after 90 days (metadata kept)
+- Older replays pruned after 90 days (metadata in D1 kept)
 - Index files are append-with-rotation: `index.json` holds the last 1000;
   older pages at `index-{page}.json`
 
-**Nginx config** (simplified):
-```nginx
-server {
-    server_name data.aicodebattle.com;
-    root /var/acb/data;
-    autoindex off;
-
-    location / {
-        add_header Access-Control-Allow-Origin *;
-        add_header Cache-Control "public, max-age=60";
-        gzip_static on;  # serve .json.gz files directly
-    }
-}
-```
+**R2 free tier usage at this scale:**
+- Writes (Class A): ~43K/month (replays + index rebuilds) vs 1M limit
+- Reads (Class B): ~30K/month (page views loading JSON) vs 10M limit
+- Storage: ~3–5 GB after 90 days (well under 10 GB limit)
+- Egress: always free, unlimited
 
 ### 7.3 Browser Replay Viewer
 
@@ -915,14 +908,14 @@ The replay viewer is a client-side TypeScript application rendered on
 HTML5 Canvas.
 
 **Rendering pipeline:**
-1. Fetch `replay.json.gz` directly from the data directory (Nginx serves it;
-   browser handles gzip decompression via `Accept-Encoding`)
+1. Fetch `replay.json.gz` from R2 custom domain (zero egress cost; browser
+   handles gzip decompression via `Accept-Encoding`)
 2. Parse and index: build per-turn game state by replaying events from turn 0
 3. Render the current turn to canvas
 4. User controls advance/rewind the turn index
 
-No API calls involved — the viewer is a pure static page loading a static
-JSON file.
+No Worker invocations — the viewer is a static Pages page loading a file
+directly from R2.
 
 **Visual design:**
 
@@ -957,102 +950,194 @@ replay viewer is the landing page for any match. No login required to watch.
 
 ## 8. Web Platform
 
-The website is a **static site** — HTML, JS, CSS, and nothing else. Every
-dynamic-looking page (leaderboard, match history, bot profiles) works by
-fetching pre-built JSON files from the data directory and rendering them
-client-side. There is no server-side rendering, no session management, no
-database queries at page-load time.
+The web-facing platform runs entirely on Cloudflare's free tier: **Pages**
+for the static site, a **Worker** for the API and scheduling logic, **D1**
+for the database, and **R2** for file storage.
 
-### 8.1 Static Site Structure
+### 8.1 Cloudflare Pages (Static Site)
+
+The website is a static SPA deployed to Cloudflare Pages. Every page that
+shows dynamic content fetches pre-built JSON files from R2 and renders
+client-side.
 
 ```
 /                          → Landing page, featured replays, leaderboard summary
-/leaderboard               → Full leaderboard (fetches /data/leaderboard.json)
-/matches                   → Match history (fetches /data/matches/index.json)
-/replay/{match_id}         → Replay viewer (fetches /replays/{match_id}.json.gz)
-/bot/{bot_id}              → Bot profile (fetches /data/bots/{bot_id}.json)
-/evolution                 → Evolution dashboard (fetches /data/evolution/*.json)
-/register                  → Bot registration form (submits to Registration API)
+/leaderboard               → Full leaderboard (fetches leaderboard.json from R2)
+/matches                   → Match history (fetches matches/index.json from R2)
+/replay/{match_id}         → Replay viewer (fetches replay .json.gz from R2)
+/bot/{bot_id}              → Bot profile (fetches bots/{bot_id}.json from R2)
+/evolution                 → Evolution dashboard (fetches evolution/*.json from R2)
+/register                  → Bot registration form (submits to Worker API)
 /docs                      → Protocol spec, starter kit links, getting started
 ```
 
-**Build:** the static site is built once (e.g., Vite + vanilla TS, or a
-lightweight framework) and deployed as files to CDN or an Nginx container.
-No build-time data fetching — all data is loaded at runtime from the
-data directory served by Nginx.
+**Build:** Vite + TypeScript, deployed via `wrangler pages deploy` or git
+integration. 500 builds/month on the free tier (ample for daily deploys).
+No build-time data fetching — all data loaded at runtime.
 
-**Data loading pattern:** every page that shows dynamic data does:
+**Data loading pattern:**
 ```js
-const data = await fetch('https://aicodebattle.com/data/leaderboard.json')
+const R2_BASE = 'https://data.aicodebattle.com'
+const data = await fetch(`${R2_BASE}/data/leaderboard.json`)
 const leaderboard = await data.json()
 // render client-side
 ```
 
-Stale data is acceptable — the leaderboard JSON is rebuilt every few minutes
-by the scheduler. There is no real-time push. Visitors see data that is at
-most a few minutes old.
+R2 serves these files via custom domain with zero egress cost. Stale data
+is acceptable — JSON indexes are rebuilt every 2 minutes by the Worker cron.
+No real-time push. Visitors see data that is at most ~2 minutes old.
 
-### 8.2 Registration API
+### 8.2 Cloudflare Worker (API + Scheduling)
 
-The one exception to the "everything is static" rule. Bot registration
-requires a server-side process because it must:
+A single Worker (`acb-api`) handles all server-side logic. It has D1 and R2
+bindings.
 
-1. Generate a shared secret
-2. Perform a health check against the bot's endpoint
-3. Write the bot's record to the data store
-
-This is a **minimal HTTP service** — a single Go binary with three endpoints:
+**API endpoints (HTTP routes):**
 
 ```
-POST /api/register    → register a new bot
-POST /api/rotate-key  → rotate a bot's shared secret
-GET  /api/status/{id} → check bot health status
+POST /api/register         → register a new bot
+POST /api/rotate-key       → rotate a bot's shared secret
+GET  /api/status/{bot_id}  → check bot health status
+GET  /api/jobs/next         → worker claims next pending match job (authenticated)
+POST /api/jobs/{id}/result  → worker submits match result metadata (authenticated)
 ```
+
+**Cron triggers (5 available on free tier):**
+
+| Cron | Interval | What It Does |
+|------|----------|--------------|
+| Matchmaker | Every 1 min | Queries active bots from D1, computes pairings, inserts job rows |
+| Index rebuilder | Every 2 min | Reads new results from D1, rebuilds leaderboard.json + bot profiles + match index, writes to R2 |
+| Health checker | Every 15 min | Pings each active bot's `/health` endpoint, updates status in D1 |
+| Stale job reaper | Every 5 min | Marks jobs running >15 min as abandoned, resets to pending |
+| (reserved) | — | Available for evolution pipeline trigger |
+
+**CPU time budget (10ms free tier):**
+
+All D1 queries, R2 writes, and `fetch()` calls are I/O — they don't count
+against the 10ms CPU limit. Only JavaScript computation counts. At modest
+scale (~50 bots):
+- Matchmaking sort + pairing: <1ms CPU
+- JSON serialization for index rebuilds: <2ms CPU
+- HMAC computation for registration: <1ms CPU
+- All cron triggers fit comfortably within 10ms
+
+**Worker authentication for Rackspace endpoints:**
+
+The `/api/jobs/*` endpoints are called by Rackspace match workers. They
+authenticate with a static API key passed in the `Authorization` header.
+The key is stored in the Worker's environment variables (Cloudflare encrypted
+secrets). This prevents unauthorized job claims or result injection.
+
+### 8.3 Cloudflare D1 (Database)
+
+D1 is a serverless SQLite database accessible from the Worker.
+
+**Schema:**
+
+```sql
+CREATE TABLE bots (
+    bot_id        TEXT PRIMARY KEY,
+    name          TEXT UNIQUE NOT NULL,
+    owner         TEXT NOT NULL,
+    endpoint_url  TEXT NOT NULL,
+    shared_secret TEXT NOT NULL,  -- encrypted, see §4.4
+    status        TEXT NOT NULL DEFAULT 'pending',
+    rating_mu     REAL NOT NULL DEFAULT 1500.0,
+    rating_phi    REAL NOT NULL DEFAULT 350.0,
+    rating_sigma  REAL NOT NULL DEFAULT 0.06,
+    evolved       INTEGER NOT NULL DEFAULT 0,
+    island        TEXT,
+    generation    INTEGER,
+    description   TEXT,
+    created_at    TEXT NOT NULL,
+    last_active   TEXT
+);
+
+CREATE TABLE matches (
+    match_id      TEXT PRIMARY KEY,
+    map_id        TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    winner        INTEGER,
+    condition     TEXT,
+    turn_count    INTEGER,
+    scores_json   TEXT,
+    created_at    TEXT NOT NULL,
+    completed_at  TEXT
+);
+
+CREATE TABLE match_participants (
+    match_id      TEXT NOT NULL,
+    bot_id        TEXT NOT NULL,
+    player_slot   INTEGER NOT NULL,
+    score         INTEGER,
+    status        TEXT,
+    PRIMARY KEY (match_id, bot_id)
+);
+
+CREATE TABLE jobs (
+    job_id        TEXT PRIMARY KEY,
+    match_id      TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    config_json   TEXT NOT NULL,
+    claimed_at    TEXT,
+    completed_at  TEXT
+);
+
+CREATE TABLE rating_history (
+    bot_id        TEXT NOT NULL,
+    match_id      TEXT NOT NULL,
+    rating        REAL NOT NULL,
+    recorded_at   TEXT NOT NULL
+);
+```
+
+**Free tier usage at scale:**
+- Writes: ~1,500/day (match results + job state changes + ratings) vs 100K limit
+- Reads: ~50K/day (matchmaking queries + index rebuilds + API lookups) vs 5M limit
+- Storage: <100 MB after months of operation vs 5 GB limit
+
+### 8.4 Bot Registration
 
 **Registration flow:**
 
-1. Participant fills out a form on the static site (`/register`)
-2. Form submits to the Registration API:
+1. Participant fills out the form on the static site (`/register`)
+2. Form POSTs to the Worker: `POST /api/register`
    - **Bot name** (unique, alphanumeric + hyphens, 3–32 chars)
    - **Endpoint URL** (HTTPS required for competitive; HTTP allowed for dev)
    - **Owner name** (free text, shown on leaderboard)
    - **Description** (optional)
-3. API generates:
-   - `bot_id`: unique identifier (`b_` prefix + 8 hex chars)
-   - `shared_secret`: 256-bit random, hex-encoded (64 chars)
-4. API performs a **health check**: `GET {endpoint_url}/health`
+3. Worker generates:
+   - `bot_id`: `b_` + 8 hex chars (from `crypto.randomUUID()`)
+   - `shared_secret`: 256-bit random, hex-encoded (`crypto.getRandomValues()`)
+4. Worker performs a **health check**: `fetch(endpoint_url + '/health')`
    - Must return 200 within 5 seconds
-5. API performs a **protocol test**: sends a mock game state to
+5. Worker performs a **protocol test**: sends mock game state to
    `POST {endpoint_url}/turn` with valid HMAC
    - Must return valid moves JSON within 3 seconds
-6. API returns the `bot_id` and `shared_secret` to the participant
+6. Worker inserts bot record into D1
+7. Worker returns `bot_id` and `shared_secret` to the participant
    (displayed once — they must save it)
-7. API writes `bots/{bot_id}.json` to the data directory
-8. Scheduler picks up the new bot on its next cycle and adds it to matchmaking
 
-**No user accounts.** Registration is bot-level, not user-level. The owner
-name is self-reported and shown on the leaderboard. The shared secret is the
-only authentication — whoever has it controls the bot (can rotate the key or
-retire the bot). This avoids needing user auth, sessions, email verification,
-OAuth, and password storage.
+**No user accounts.** Registration is bot-level. The owner name is
+self-reported. The shared secret is the only authentication — whoever has
+it can rotate the key or retire the bot. No OAuth, no sessions, no
+password storage.
 
 **Bot status lifecycle:**
 ```
 PENDING → ACTIVE → INACTIVE (health check failed)
-                  → RETIRED (by owner via rotate-key endpoint with retire flag)
+                  → RETIRED (by owner via /api/rotate-key with retire flag)
 ```
 
-Only `ACTIVE` bots participate in matchmaking.
+Only `ACTIVE` bots participate in matchmaking. The health checker cron pings
+each active bot every 15 min. Three consecutive failures → `INACTIVE`. Bots
+automatically return to `ACTIVE` when health checks pass again.
 
-**Ongoing health checks:** the scheduler pings each active bot's `/health`
-endpoint every 15 minutes. Three consecutive failures → marked `INACTIVE`
-in the bot's JSON file. Bots automatically return to `ACTIVE` when health
-checks resume passing.
+### 8.5 Leaderboard
 
-### 8.3 Leaderboard
-
-The leaderboard is a **JSON file** (`/data/leaderboard.json`) rebuilt by the
-scheduler every few minutes after new match results arrive.
+The leaderboard is a **JSON file** in R2 (`data/leaderboard.json`) rebuilt
+by the index rebuilder cron every 2 minutes.
 
 ```json
 {
@@ -1075,14 +1160,13 @@ scheduler every few minutes after new match results arrive.
 }
 ```
 
-- Client-side sorting and filtering (by player count tier, time range,
-  human-only vs all)
-- No real-time updates — page refresh or auto-refresh every 60 seconds
-- Public — no login required
+The static site fetches this file directly from R2 (no Worker invocation).
+Client-side sorting and filtering (by player count tier, time range,
+human-only vs all). Auto-refresh every 60 seconds. Public — no login.
 
-### 8.4 Match History & Profiles
+### 8.6 Match History & Profiles
 
-**Bot profile** (`/bot/{bot_id}`) — fetches `/data/bots/{bot_id}.json`:
+**Bot profile** (`/bot/{bot_id}`) — fetches `data/bots/{bot_id}.json` from R2:
 - Current rating + rating history (array of `[timestamp, rating]` pairs
   rendered as a chart client-side)
 - Recent matches (last 50) with links to replay viewer
@@ -1090,13 +1174,13 @@ scheduler every few minutes after new match results arrive.
 - Bot description, owner, registration date
 - If evolved: lineage, generation, island
 
-**Match list** (`/matches`) — fetches `/data/matches/index.json`:
+**Match list** (`/matches`) — fetches `data/matches/index.json` from R2:
 - Paginated list of recent matches
 - Each entry: match_id, participants, scores, date, link to replay
 
 **Match detail** (`/replay/{match_id}`):
-- Fetches `/data/matches/{match_id}.json` for metadata
-- Fetches `/replays/{match_id}.json.gz` for the replay
+- Fetches `data/matches/{match_id}.json` from R2 for metadata
+- Fetches `replays/{match_id}.json.gz` from R2 for the replay
 - Embedded replay viewer (auto-plays)
 - Score breakdown, participants, match duration
 
@@ -1106,196 +1190,205 @@ scheduler every few minutes after new match results arrive.
 
 ### 9.1 Design Principles
 
-The deployment is designed for **Rackspace Spot** instances, which means:
+The platform is split across two providers based on their strengths:
 
-- **Instances can be reclaimed at any time** with a short SIGTERM warning
-- **Pricing is significantly cheaper** than on-demand but availability fluctuates
-- **No persistent local storage** — anything on the instance disappears on reclaim
-- **No guaranteed uptime** — the platform must tolerate all workers disappearing
+- **Cloudflare (free tier)** handles everything web-facing: the site, the
+  API, the database, file storage, and scheduling. This tier has zero cost,
+  zero ops burden (no servers to maintain), and global edge distribution.
+- **Rackspace Spot** handles everything compute-heavy: match execution, bot
+  hosting, and the evolution pipeline. These workloads are stateless and
+  interruptible — perfect for spot pricing.
 
-These constraints shape every decision below. The answer is: keep it simple,
-keep it stateless, and put all durable state in object storage.
+All durable state lives in Cloudflare (D1 + R2). Rackspace instances are
+fully ephemeral — they can be reclaimed at any time with zero data loss.
 
-### 9.2 Container Architecture
+### 9.2 Cloudflare Tier (Free Plan)
 
-| Image | Base | Purpose | Where It Runs |
-|-------|------|---------|---------------|
-| `acb-web` | Nginx + static files | Static site (HTML/JS/CSS) | CDN or single stable instance |
-| `acb-register` | Go binary on Alpine | Bot registration API (3 endpoints) | Single stable instance |
-| `acb-scheduler` | Go binary on Alpine | Matchmaking + JSON index rebuilds | Single stable instance |
-| `acb-worker` | Go binary on Alpine | Match execution | Rackspace Spot (1–10) |
-| `acb-evolver` | Go binary on Alpine | Evolution pipeline orchestrator | Rackspace Spot (1) |
-| `acb-strategy-random` | Python 3.13 slim | RandomBot | Stable instance (shared) |
-| `acb-strategy-gatherer` | Go on Alpine | GathererBot | Stable instance (shared) |
-| `acb-strategy-rusher` | Rust on Alpine | RusherBot | Stable instance (shared) |
-| `acb-strategy-guardian` | PHP 8.4 CLI Alpine | GuardianBot | Stable instance (shared) |
-| `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | Stable instance (shared) |
-| `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | Stable instance (shared) |
-| `acb-evolved-*` | Varies by language | LLM-generated evolved bots | Stable instance (shared) |
+| Service | Usage | Free Limit | Headroom |
+|---------|-------|------------|----------|
+| **Pages** | ~1K views/day | Unlimited bandwidth + requests | Unlimited |
+| **Workers** | ~5K requests/day (API + crons) | 100K requests/day | 95% |
+| **Workers CPU** | <5ms per invocation | 10ms per invocation | 50% |
+| **R2 storage** | ~3–5 GB | 10 GB | 50–70% |
+| **R2 Class A** (writes) | ~43K/month | 1M/month | 96% |
+| **R2 Class B** (reads) | ~30K/month | 10M/month | 99.7% |
+| **R2 egress** | Unlimited | Unlimited (always free) | — |
+| **D1 writes** | ~1.5K/day | 100K/day | 98.5% |
+| **D1 reads** | ~50K/day | 5M/day | 99% |
+| **D1 storage** | <100 MB | 5 GB | 98% |
+| **Cron triggers** | 4 used | 5 per account | 1 spare |
 
-### 9.3 Rackspace Spot: What Runs Where
-
-**Stable instance (1× small, always-on):**
-
-This is the only always-on server. It runs everything that must survive
-spot reclamation:
-
+**Cloudflare deployment:**
 ```
-Single stable instance (2 vCPU, 4 GB RAM):
-├── acb-web (Nginx, serves static site + data directory)
-├── acb-register (registration API, lightweight)
-├── acb-scheduler (matchmaking, job coordination, index rebuilds)
+Cloudflare Account:
+├── Pages project: aicodebattle.com (static site)
+├── Worker: acb-api
+│   ├── Routes: api.aicodebattle.com/*
+│   ├── Crons: matchmaker (1m), indexer (2m), health (15m), reaper (5m)
+│   ├── D1 binding: ACB_DB
+│   └── R2 binding: ACB_DATA
+├── R2 bucket: acb-data
+│   └── Custom domain: data.aicodebattle.com (public read)
+└── D1 database: acb-db
+```
+
+**What Cloudflare handles:**
+- TLS termination (automatic, free)
+- DNS (Cloudflare nameservers)
+- CDN for static assets (Pages, global edge)
+- DDoS protection (free tier includes basic)
+- File serving with zero egress (R2)
+- Database with automatic backups (D1, 7-day Time Travel)
+
+### 9.3 Rackspace Spot Tier
+
+Everything on Rackspace is stateless and interruptible. All durable state
+is in Cloudflare (D1 + R2).
+
+**Container architecture:**
+
+| Image | Base | Purpose | Instances |
+|-------|------|---------|-----------|
+| `acb-worker` | Go binary on Alpine | Match execution | 1–10 (spot) |
+| `acb-evolver` | Go binary on Alpine | Evolution pipeline | 1 (spot) |
+| `acb-strategy-random` | Python 3.13 slim | RandomBot | 1 |
+| `acb-strategy-gatherer` | Go on Alpine | GathererBot | 1 |
+| `acb-strategy-rusher` | Rust on Alpine | RusherBot | 1 |
+| `acb-strategy-guardian` | PHP 8.4 CLI Alpine | GuardianBot | 1 |
+| `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | 1 |
+| `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | 1 |
+| `acb-evolved-*` | Varies by language | LLM-generated bots | 0–50 |
+
+**Deployment layout:**
+```
+Spot instance A (4 vCPU, 8 GB RAM, "bot host"):
 ├── acb-strategy-* (all 6 built-in bots, ~1 GB total)
-├── acb-evolved-* (0–50 evolved bots, dynamic)
-└── /var/acb/data/ (persistent volume, JSON files served by Nginx)
-```
+└── acb-evolved-* (0–50 evolved bots, dynamic)
 
-The static site, registration API, scheduler, and all bot HTTP servers share
-one machine. This is feasible because:
-- The static site is Nginx serving files (negligible CPU)
-- The registration API handles ~10 requests/day (negligible)
-- The scheduler runs once every 10 seconds (negligible)
-- Strategy bots are idle between matches (only active during their turns)
-
-**Spot instances (1–10×, preemptible):**
-
-Match workers and the evolution pipeline run on spot instances. These are
-the only compute-intensive workloads.
-
-```
-Spot instance A (2 vCPU, 4 GB RAM):
+Spot instance B (2 vCPU, 4 GB RAM, "worker"):
 └── acb-worker (runs 1 match at a time)
 
-Spot instance B (2 vCPU, 4 GB RAM):
+Spot instance C (2 vCPU, 4 GB RAM, "worker"):
 └── acb-worker (runs 1 match at a time)
 
-Spot instance C (4 vCPU, 8 GB RAM):
-└── acb-evolver (evolution pipeline, needs more RAM for LLM context)
+Spot instance D (4 vCPU, 8 GB RAM, "evolver"):
+└── acb-evolver (LLM pipeline, sandbox, evaluation)
 ```
 
-**If all spot instances are reclaimed:**
-- The website continues to work (static site on stable instance)
-- Leaderboard and replays remain visible (JSON files on disk, served by Nginx)
-- Bot registration still works (registration API on stable instance)
-- Built-in bots remain reachable (on stable instance)
-- **Only match execution pauses** — the queue accumulates jobs
-- When spot instances return, workers drain the queue and catch up
-- The platform gracefully degrades: visitors see stale-but-valid data
+### 9.4 Match Job Coordination
 
-This is the key benefit of the static-site architecture — the entire
-user-facing experience survives spot reclamation.
+Workers coordinate with the Cloudflare Worker API. The Worker + D1 are the
+single point of coordination.
 
-### 9.4 Data Layer: Filesystem + SQLite
-
-There is **no database server**. All platform state lives on the stable
-instance's persistent volume as files.
-
-**Why no PostgreSQL/Redis:**
-- The platform has low write volume (~60 matches/hour, ~10 registrations/day)
-- All "queries" are pre-computed: the scheduler builds the leaderboard JSON,
-  match index JSON, and bot profile JSONs on a schedule
-- The static site just fetches these files — no query engine needed
-- Eliminates connection pooling, migrations, schema management, and ORM
-
-**Internal state (scheduler's working data):**
-
-The scheduler maintains a small SQLite database for its own bookkeeping:
-- Bot registry (which bots are active, their endpoints, ratings)
-- Match queue (pending, in-progress, completed)
-- Rating history
-
-This SQLite file lives on the stable instance's persistent volume. It is the
-**source of truth** for platform state. The JSON files in the data directory
-are **materialized views** rebuilt from SQLite.
-
-If the SQLite file is lost, it can be reconstructed from the JSON data files
-on disk (match results contain all the data needed to replay ratings).
-
-**Backup:** daily rsync of the data directory + SQLite file to offsite
-storage.
-
-### 9.5 Match Job Coordination
-
-Workers coordinate with the scheduler via HTTP. The scheduler is the single
-point of coordination — workers are pure HTTP clients.
-
-**Job assignment flow:**
-1. Scheduler creates match jobs in SQLite, marks them `pending`
-2. Worker requests a job: `GET scheduler:9090/jobs/next` (over Tailscale)
-3. Scheduler atomically assigns the job (marks `running`, records worker ID),
-   returns the job JSON (map, bot endpoints, match config)
-4. Worker executes the match (all turns, full simulation)
-5. Worker submits results: `POST scheduler:9090/jobs/{job_id}/result`
-   - Body: replay JSON + match result (scores, winner, turn count)
-6. Scheduler writes replay to data directory, updates SQLite, rebuilds
-   affected JSON index files (leaderboard, bot profiles, match list)
+**Job flow:**
+1. Matchmaker cron creates jobs in D1 (`status: 'pending'`)
+2. Rackspace worker polls: `GET api.aicodebattle.com/api/jobs/next`
+   (authenticated with API key)
+3. Worker API atomically claims the job (D1 transaction: set `status: 'running'`,
+   record `claimed_at`), returns job config JSON including:
+   - Map data (or map_id to fetch from R2)
+   - Bot endpoints + shared secrets for HMAC signing
+   - Match config (turns, radii, etc.)
+4. Rackspace worker executes the full match (500 turns, HTTP calls to bots)
+5. Worker uploads replay: `PUT` directly to R2 via S3-compatible API
+   (scoped R2 API token, `PutObject` only on `replays/` prefix)
+6. Worker submits result metadata:
+   `POST api.aicodebattle.com/api/jobs/{id}/result`
+   - Small JSON body: scores, winner, turn count, condition
+7. Worker API writes result to D1, marks job `completed`
+8. Index rebuilder cron (next 2-min cycle) reads new results, rebuilds
+   leaderboard.json + bot profiles + match index, writes to R2
 
 **Stale job recovery:**
-- Scheduler scans for jobs in `running` state older than 15 minutes
-- Assumed abandoned (worker was reclaimed by spot)
-- Moved back to `pending` for re-execution
+- Reaper cron checks D1 every 5 minutes for jobs `running` >15 minutes
+- Assumed abandoned (spot instance reclaimed)
+- Reset to `pending` for re-execution
 
-**Why the scheduler is the coordinator:**
-- Single process = no distributed coordination, no race conditions
-- SQLite handles the job queue (single-writer is fine at this scale)
-- Workers only need to reach one HTTP endpoint — no filesystem access,
-  no filesystem access to the data directory, no shared state
-- If the scheduler is down, workers simply can't get jobs (they retry
-  with backoff) — no data corruption risk
+### 9.5 Spot Reclamation Behavior
+
+**If bot-host spot instance is reclaimed:**
+- All built-in + evolved bots go offline
+- Health checker cron detects failures, marks bots `INACTIVE` in D1
+- Matchmaker skips inactive bots — only external bots can play
+- When a new bot-host instance starts, bots come back online, health checks
+  pass, matchmaker resumes including them
+- Matches in progress where a bot disappeared: that bot times out on each
+  turn, its units hold position, it effectively loses
+
+**If all worker instances are reclaimed:**
+- Jobs accumulate as `pending` in D1
+- The website, leaderboard, and replays remain fully functional (Cloudflare)
+- When workers return, they drain the queue
+
+**If everything on Rackspace is gone simultaneously:**
+- Visitors see a working website with stale-but-valid data
+- No matches run, no bots respond to health checks
+- All bots eventually marked inactive
+- Full recovery when any Rackspace instances return
+
+The user-facing experience degrades gracefully because all web infrastructure
+is on Cloudflare, not Rackspace.
 
 ### 9.6 Networking & Security
 
-**External traffic:**
-- `aicodebattle.com` → Nginx on stable instance (static site + data directory)
-- `api.aicodebattle.com` → Registration API on stable instance (3 endpoints)
-- All behind Caddy for automatic TLS termination
+**External traffic (Cloudflare):**
+- `aicodebattle.com` → Cloudflare Pages (static site)
+- `data.aicodebattle.com` → R2 public bucket (JSON data + replays)
+- `api.aicodebattle.com` → Cloudflare Worker (API endpoints)
+- TLS, CDN, DDoS protection all handled by Cloudflare automatically
 
-**Internal traffic (over Tailscale):**
-- Workers → scheduler: `GET/POST scheduler:9090/jobs/*` (job coordination)
-- Workers → strategy bots on stable instance: HTTP to localhost-bound ports
-  exposed via Tailscale
+**Rackspace → Cloudflare:**
+- Workers → Worker API: HTTPS to `api.aicodebattle.com` (authenticated with
+  API key in `Authorization` header)
+- Workers → R2: HTTPS via S3-compatible API (scoped R2 API token)
+
+**Rackspace → Bots (during matches):**
+- Workers → built-in/evolved bots: HTTP within Rackspace private network
+  (or Tailscale if across instances)
 - Workers → external participant bots: outbound HTTPS to registered URLs
-- No inbound ports on workers from the public internet
 
 **Security boundaries:**
 - The game engine (workers) never executes bot code — HTTP only
 - All bot responses are schema-validated before processing
 - HMAC authentication prevents request/response forgery
-- Registration API validates bot endpoint URLs (no internal IPs, no localhost,
-  no private ranges)
-- Data directory is served read-only by Nginx (no write from outside)
-- Scheduler's job coordination endpoint is only reachable over Tailscale
-- Registration API is rate-limited (10 registrations/hour max)
+- Worker API endpoints authenticated with API key (job coordination)
+- R2 API token scoped to `PutObject` on `replays/` prefix only
+- Registration endpoint validates bot URLs (no internal IPs, no private ranges)
+- D1 is only accessible from the bound Worker (not publicly queryable)
+- R2 data bucket is public-read — contains no secrets
 
-### 9.7 Cost Model (Rackspace Spot)
+### 9.7 Cost Model
 
-| Component | Instance Type | Spot? | Est. Monthly |
-|-----------|--------------|-------|-------------|
-| Stable instance | 2 vCPU / 4 GB | No (on-demand) | ~$30–50 |
-| Match workers (×3 avg) | 2 vCPU / 4 GB each | Yes | ~$15–30 |
-| Evolver (×1) | 4 vCPU / 8 GB | Yes | ~$10–20 |
-| Persistent volume | 100 GB block storage | No | ~$10 |
-| **Total** | | | **~$65–110/mo** |
+| Component | Provider | Cost |
+|-----------|----------|------|
+| Pages + Worker + D1 + R2 | Cloudflare | **$0/mo** (free tier) |
+| Bot host (×1 avg) | Rackspace Spot | ~$10–20/mo |
+| Match workers (×2–3 avg) | Rackspace Spot | ~$15–30/mo |
+| Evolver (×1) | Rackspace Spot | ~$10–20/mo |
+| **Infrastructure total** | | **~$35–70/mo** |
+| LLM API (evolution pipeline) | Various | ~$150–600/mo |
 
-LLM API costs for the evolution pipeline are separate and depend on model
-choice and generation volume. At ~96 candidates/day with a mix of fast/strong
-models, estimate ~$5–20/day ($150–600/mo).
+Compared to the previous architecture ($65–110/mo), moving the web tier to
+Cloudflare saves ~$30–40/mo (the stable instance) and eliminates all web
+infrastructure ops (no Nginx config, no TLS certs, no volume management,
+no backup scripts for the data directory).
 
 ### 9.8 Monitoring
 
-Monitoring is lightweight, matching the simple architecture:
-
 | Signal | Method | Alert |
 |--------|--------|-------|
-| Stable instance up | External ping (UptimeRobot or similar) | Down >2 minutes |
-| Active spot workers | Scheduler tracks last worker heartbeat | 0 workers for >30 minutes |
-| Match throughput | Scheduler counts completions per hour | <10 matches/hour for >1 hour |
-| Data volume disk usage | `df` on persistent volume | >80% |
-| Bot health failures | Scheduler's health check log | >50% of bots failing |
-| Stale jobs | Scheduler's reaper count | >10 stale jobs in a cycle |
+| Site up | Cloudflare analytics (built-in) | Auto |
+| Worker errors | Cloudflare Worker analytics | Error rate >5% |
+| D1 usage | Cloudflare dashboard | Approaching free tier limits |
+| R2 storage | Cloudflare dashboard | >8 GB (approaching 10 GB) |
+| Active Rackspace workers | Worker API tracks last job claim time | No claim in >30 min |
+| Match throughput | D1 query: completions per hour | <10/hour for >1 hour |
+| Bot health failures | D1 query in health checker cron | >50% failing |
+| Stale jobs | Reaper cron count | >10 stale in a cycle |
 
-Alerts via webhook to a notification channel (Slack, Discord, or email).
-No Prometheus/Grafana stack needed at this scale.
+Alerts via Worker → webhook to Discord/Slack. No external monitoring
+service needed — Cloudflare provides built-in analytics for Pages, Workers,
+R2, and D1.
 
 ---
 
@@ -1758,50 +1851,53 @@ match with all visual elements rendering correctly.
 ### Phase 4: Match Orchestration
 
 **Deliverables:**
-- Match worker service (`acb-worker`): pulls jobs from scheduler over HTTP,
-  runs matches, POSTs replay + result JSON back to scheduler
-- Scheduler (`acb-scheduler`): matchmaking algorithm, serves jobs to workers,
-  receives results, updates SQLite, rebuilds leaderboard/index JSON files
-  in the data directory
-- Scheduler's SQLite schema for bot registry, match queue, and ratings
-- Stale job reaper (recovers abandoned jobs from reclaimed spot instances)
-- Match result → Glicko-2 rating update pipeline
-- JSON index rebuilder: leaderboard.json, matches/index.json, bots/*.json
+- Cloudflare Worker (`acb-api`): job coordination endpoints
+  (`/api/jobs/next`, `/api/jobs/{id}/result`), authenticated with API key
+- D1 schema: `bots`, `matches`, `match_participants`, `jobs`,
+  `rating_history` tables
+- Worker cron: matchmaker (1 min), stale job reaper (5 min)
+- Worker cron: index rebuilder (2 min) — reads D1, writes leaderboard.json +
+  bot profiles + match index to R2
+- Match worker container (`acb-worker`): claims jobs from Worker API, runs
+  matches, uploads replays to R2 via S3 API, POSTs results to Worker API
+- Glicko-2 rating update logic in the Worker (runs on result submission)
 
-**Exit criteria:** scheduler creates match jobs as files, workers pick them
-up and execute autonomously, results flow back as JSON, ratings update, and
-all index files rebuild correctly. System recovers from worker disappearance.
+**Exit criteria:** matchmaker cron creates jobs in D1, Rackspace workers claim
+and execute them, replays land in R2, results flow into D1, ratings update,
+and leaderboard.json rebuilds automatically. System recovers from worker
+disappearance via the stale job reaper.
 
 ### Phase 5: Web Platform
 
 **Deliverables:**
-- Static site (`acb-web`): leaderboard, match history, bot profiles, replay
-  viewer, registration form, docs/getting-started page
-- Registration API (`acb-register`): bot signup, health check, key rotation
-  (3 endpoints, single Go binary)
-- Bot health check loop in the scheduler (periodic pings)
-- All pages load data by fetching JSON from the data directory — no backend
-  rendering
+- Cloudflare Pages static site: leaderboard, match history, bot profiles,
+  replay viewer, registration form, docs/getting-started page
+- Worker API: registration endpoints (`/api/register`, `/api/rotate-key`,
+  `/api/status/{id}`)
+- Worker cron: health checker (15 min) — pings bot endpoints, updates D1
+- R2 bucket with custom domain for public-read data access
+- All pages load data by fetching JSON from R2 — no Worker invocations
+  for page views
 
 **Exit criteria:** a participant can register a bot via the web form, the
 bot appears on the leaderboard after matches complete, and anyone can browse
-matches and watch replays — all from a static site with no application server.
+matches and watch replays — all served from Cloudflare free tier.
 
 ### Phase 6: Deployment & Production
 
 **Deliverables:**
-- Container images pushed to registry
-- Stable instance: Nginx, Registration API, Scheduler, all strategy
-  bots — single machine with persistent volume for data directory
-- Spot instances: match workers configured to pull jobs from scheduler
-- Caddy for TLS termination on the stable instance
-- DNS setup (aicodebattle.com, data.aicodebattle.com, api.aicodebattle.com)
-- Monitoring webhooks (uptime ping, worker count, match throughput)
-- Daily rsync of data directory + SQLite to offsite storage
+- Cloudflare: Pages project, Worker deployed via Wrangler, D1 database
+  created, R2 bucket with custom domain, DNS configured
+- Rackspace Spot: match worker containers pulling jobs from Cloudflare
+  Worker API, bot-host container running all strategy bots
+- R2 API token (scoped) distributed to Rackspace workers
+- Worker API key distributed to Rackspace workers
+- Monitoring: Cloudflare analytics + Worker-based alerting webhooks
 
-**Exit criteria:** platform is publicly accessible, matches run on spot
-instances, the site remains fully functional when all spot instances are
-reclaimed, and external participants can register and play.
+**Exit criteria:** platform is publicly accessible on Cloudflare (zero
+infrastructure cost), matches run on Rackspace Spot, the site remains fully
+functional when all Rackspace instances are reclaimed, and external
+participants can register and play.
 
 ### Phase 7: LLM-Driven Evolution
 
