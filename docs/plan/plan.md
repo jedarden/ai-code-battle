@@ -16,58 +16,70 @@ implementations for the HTTP protocol.
 
 ## 2. System Architecture
 
+The platform is designed around a **static-first** principle: the website is a
+static site that loads JSON data files directly. There is no application server
+rendering pages. All dynamic state (leaderboards, match history, bot profiles)
+is pre-computed as JSON files by backend processes and served as static assets
+alongside the HTML/JS/CSS.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Web Platform                                │
+│                    Static Website (CDN / Nginx)                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐ │
 │  │  Leaderboard  │  │ Match History │  │    Replay Viewer (Canvas) │ │
+│  │  (loads JSON) │  │  (loads JSON)│  │    (loads replay JSON)    │ │
 │  └──────────────┘  └──────────────┘  └───────────────────────────┘ │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │ HTTPS
+                               │ fetches static JSON files
                     ┌──────────▼──────────┐
-                    │     API Server       │
-                    │  (user reg, bot reg, │
-                    │  leaderboard, replay │
-                    │   metadata, health)  │
+                    │  Object Store       │
+                    │  (S3-compat/Minio)  │
+                    │  ┌────────────────┐ │
+                    │  │ /replays/*.json│ │
+                    │  │ /data/         │ │
+                    │  │   leaderboard  │ │
+                    │  │   matches      │ │
+                    │  │   bots         │ │
+                    │  │ /maps/*.json   │ │
+                    │  └────────────────┘ │
                     └──────────┬──────────┘
-                               │
+                               │ writes JSON
               ┌────────────────┼────────────────┐
               │                │                │
      ┌────────▼───────┐ ┌─────▼──────┐ ┌───────▼────────┐
-     │   PostgreSQL    │ │  Match      │ │  Object Store  │
-     │   (users, bots, │ │  Queue      │ │  (S3-compat)   │
-     │   matches,      │ │  (Redis)    │ │  replay JSON   │
-     │   ratings)      │ │             │ │  + map data     │
-     └────────────────┘ └─────┬──────┘ └────────────────┘
-                              │
-                    ┌─────────▼─────────┐
-                    │   Match Workers    │  ← Rackspace Spot instances
-                    │   (stateless,      │
-                    │    interruptible)   │
-                    └─────────┬─────────┘
-                              │ HTTP (per-turn requests)
-              ┌───────────────┼───────────────┐
-              │               │               │
-     ┌────────▼──────┐ ┌─────▼─────┐ ┌───────▼──────┐
-     │ Participant    │ │ Built-in   │ │ Participant   │
-     │ Bot A          │ │ Strategy   │ │ Bot B         │
-     │ (external)     │ │ Bots       │ │ (external)    │
-     └───────────────┘ │ (containers)│ └──────────────┘
-                       └────────────┘
+     │  Match Workers  │ │ Scheduler  │ │  Registration   │
+     │  (run matches,  │ │ (create    │ │  API (minimal,  │
+     │   write replay  │ │  jobs,     │ │  bot signup +   │
+     │   + result JSON)│ │  rebuild   │ │  health check)  │
+     │                 │ │  indexes)  │ │                 │
+     └────────┬───────┘ └────────────┘ └────────────────┘
+              │ HTTP (per-turn requests)
+              │
+     ┌────────▼──────────────────────────────┐
+     │  Bot Endpoints                         │
+     │  ┌────────────┐ ┌──────────┐ ┌──────┐ │
+     │  │ Participant │ │ Built-in │ │ EVO  │ │
+     │  │ Bots       │ │ Strategy │ │ Bots │ │
+     │  │ (external) │ │ Bots     │ │      │ │
+     │  └────────────┘ └──────────┘ └──────┘ │
+     └───────────────────────────────────────┘
 ```
 
 ### Component Summary
 
 | Component | Role | Scaling Model |
 |-----------|------|---------------|
-| API Server | REST API for web platform, bot registration, match metadata | Horizontally scaled, always-on |
-| Match Worker | Pulls match jobs from queue, executes full game simulation, uploads replay | Stateless pods on Rackspace Spot |
-| Tournament Scheduler | Creates match jobs based on matchmaking algorithm | Single process, cron-like |
-| Web Frontend | Static SPA — replay viewer, leaderboard, registration | CDN / static hosting |
+| Static Website | HTML/JS/CSS SPA that fetches JSON data files — leaderboard, match lists, replays | CDN or single Nginx container |
+| Object Store | All platform data as static JSON files — replays, leaderboard, match index, bot profiles, maps | S3-compatible (Minio or provider) |
+| Match Worker | Pulls match jobs, runs game simulation, writes replay JSON + updates result index | Stateless containers on Rackspace Spot |
+| Scheduler | Creates match jobs, rebuilds leaderboard/index JSON after matches complete | Single process, always-on |
+| Registration API | Minimal HTTP endpoint for bot signup, health check, secret generation | Single lightweight process, always-on |
 | Strategy Bots | Built-in HTTP bots (one container each) | Always-on, lightweight |
-| PostgreSQL | Users, bots, matches, ratings | Single primary + read replica |
-| Redis | Match job queue, rate limiting, caching | Single instance |
-| Object Store | Replay JSON files, map definitions | S3-compatible (Minio or provider) |
+
+**What's intentionally absent:** no PostgreSQL, no Redis, no read replicas, no
+PgBouncer, no WebSocket server. The data layer is flat JSON files in object
+storage. The scheduler and workers coordinate through the filesystem (object
+store) and a simple SQLite database or flat-file job queue on the scheduler.
 
 ---
 
@@ -851,13 +863,39 @@ encoding — only recording events that changed from the previous turn.
 
 ### 7.2 Storage
 
-- Replays are stored in S3-compatible object storage (Minio self-hosted or
-  provider-managed)
-- Path: `replays/{year}/{month}/{match_id}.json.gz`
-- Retention: indefinite for top-100 matches per month; older matches pruned
-  after 90 days
-- Map definitions stored separately: `maps/{map_id}.json`
-- The API server returns signed URLs for replay access (no public bucket)
+Replays are plain JSON files in object storage, served directly to the browser
+as static assets. No API intermediary.
+
+**Object store layout:**
+```
+/replays/{match_id}.json.gz          # individual replay files
+/maps/{map_id}.json                  # map definitions
+/data/matches/index.json             # paginated match list (last 1000)
+/data/matches/{match_id}.json        # match metadata (participants, scores)
+/data/leaderboard.json               # current leaderboard snapshot
+/data/bots/{bot_id}.json             # per-bot profile (rating history, recent matches)
+/data/bots/index.json                # bot directory
+/data/evolution/lineage.json         # evolution lineage graph
+/data/evolution/meta.json            # current meta/Nash snapshot
+```
+
+**How data flows:**
+1. Match worker completes a match → writes `replay.json.gz` to object store
+2. Worker writes `match metadata.json` to object store
+3. Scheduler detects new results → rebuilds `leaderboard.json`, updates
+   `bots/{bot_id}.json`, appends to `matches/index.json`
+4. Static site fetches these JSON files directly from the object store via
+   public read URLs
+
+**Retention:**
+- Indefinite for top-100 matches per month
+- Older replays pruned after 90 days (metadata kept)
+- Index files are append-with-rotation: `index.json` holds the last 1000;
+  older pages at `index-{page}.json`
+
+**No signed URLs needed** — the data bucket is public-read. Replays contain
+no secrets (HMAC secrets are never in replay data; game state is already
+fog-of-war filtered per the match, and replays show the omniscient view).
 
 ### 7.3 Browser Replay Viewer
 
@@ -865,10 +903,14 @@ The replay viewer is a client-side TypeScript application rendered on
 HTML5 Canvas.
 
 **Rendering pipeline:**
-1. Fetch replay JSON from object storage (via signed URL from API)
+1. Fetch `replay.json.gz` directly from object store (public URL, browser
+   handles gzip decompression via `Accept-Encoding`)
 2. Parse and index: build per-turn game state by replaying events from turn 0
 3. Render the current turn to canvas
 4. User controls advance/rewind the turn index
+
+No API calls involved — the viewer is a pure static page loading a static
+JSON file.
 
 **Visual design:**
 
@@ -903,199 +945,347 @@ replay viewer is the landing page for any match. No login required to watch.
 
 ## 8. Web Platform
 
-### 8.1 User Registration
+The website is a **static site** — HTML, JS, CSS, and nothing else. Every
+dynamic-looking page (leaderboard, match history, bot profiles) works by
+fetching pre-built JSON files from the object store and rendering them
+client-side. There is no server-side rendering, no session management, no
+database queries at page-load time.
 
-- Email + password or OAuth (GitHub recommended — target audience is developers)
-- Email verification required before bot registration
-- Profile: username (unique), display name, avatar (from OAuth provider)
+### 8.1 Static Site Structure
 
-### 8.2 Bot Registration
+```
+/                          → Landing page, featured replays, leaderboard summary
+/leaderboard               → Full leaderboard (fetches /data/leaderboard.json)
+/matches                   → Match history (fetches /data/matches/index.json)
+/replay/{match_id}         → Replay viewer (fetches /replays/{match_id}.json.gz)
+/bot/{bot_id}              → Bot profile (fetches /data/bots/{bot_id}.json)
+/evolution                 → Evolution dashboard (fetches /data/evolution/*.json)
+/register                  → Bot registration form (submits to Registration API)
+/docs                      → Protocol spec, starter kit links, getting started
+```
+
+**Build:** the static site is built once (e.g., Vite + vanilla TS, or a
+lightweight framework) and deployed as files to CDN or an Nginx container.
+No build-time data fetching — all data is loaded at runtime from the
+object store.
+
+**Data loading pattern:** every page that shows dynamic data does:
+```js
+const data = await fetch('https://data.aicodebattle.com/data/leaderboard.json')
+const leaderboard = await data.json()
+// render client-side
+```
+
+Stale data is acceptable — the leaderboard JSON is rebuilt every few minutes
+by the scheduler. There is no real-time push. Visitors see data that is at
+most a few minutes old.
+
+### 8.2 Registration API
+
+The one exception to the "everything is static" rule. Bot registration
+requires a server-side process because it must:
+
+1. Generate a shared secret
+2. Perform a health check against the bot's endpoint
+3. Write the bot's record to the data store
+
+This is a **minimal HTTP service** — a single Go binary with three endpoints:
+
+```
+POST /api/register    → register a new bot
+POST /api/rotate-key  → rotate a bot's shared secret
+GET  /api/status/{id} → check bot health status
+```
 
 **Registration flow:**
 
-1. User navigates to "Register Bot" in their dashboard
-2. Provides:
+1. Participant fills out a form on the static site (`/register`)
+2. Form submits to the Registration API:
    - **Bot name** (unique, alphanumeric + hyphens, 3–32 chars)
-   - **Endpoint URL** (HTTPS required for competitive play; HTTP allowed for
-     development with a flag)
-   - **Description** (optional, shown on leaderboard)
-3. Platform generates:
+   - **Endpoint URL** (HTTPS required for competitive; HTTP allowed for dev)
+   - **Owner name** (free text, shown on leaderboard)
+   - **Description** (optional)
+3. API generates:
    - `bot_id`: unique identifier (`b_` prefix + 8 hex chars)
    - `shared_secret`: 256-bit random, hex-encoded (64 chars)
-4. Platform displays the shared secret **once** — user must copy it
-5. Platform performs a **health check**: `GET {endpoint_url}/health`
+4. API performs a **health check**: `GET {endpoint_url}/health`
    - Must return 200 within 5 seconds
-   - If health check fails, registration is saved but bot is marked **inactive**
-6. Platform performs a **protocol test**: sends a mock turn-0 game state to
+5. API performs a **protocol test**: sends a mock game state to
    `POST {endpoint_url}/turn` with valid HMAC
-   - Bot must return a valid (possibly empty) moves response within 3 seconds
-   - If protocol test fails, bot is marked **inactive** with an error message
+   - Must return valid moves JSON within 3 seconds
+6. API returns the `bot_id` and `shared_secret` to the participant
+   (displayed once — they must save it)
+7. API writes `bots/{bot_id}.json` to the object store
+8. Scheduler picks up the new bot on its next cycle and adds it to matchmaking
+
+**No user accounts.** Registration is bot-level, not user-level. The owner
+name is self-reported and shown on the leaderboard. The shared secret is the
+only authentication — whoever has it controls the bot (can rotate the key or
+retire the bot). This avoids needing user auth, sessions, email verification,
+OAuth, and password storage.
 
 **Bot status lifecycle:**
 ```
 PENDING → ACTIVE → INACTIVE (health check failed)
-                  → SUSPENDED (manual by admin)
-                  → RETIRED (by owner)
+                  → RETIRED (by owner via rotate-key endpoint with retire flag)
 ```
 
 Only `ACTIVE` bots participate in matchmaking.
 
-**Ongoing health checks:** the platform pings each active bot's `/health`
-endpoint every 15 minutes. Three consecutive failures → marked `INACTIVE`.
-Bots automatically return to `ACTIVE` when health checks resume passing.
+**Ongoing health checks:** the scheduler pings each active bot's `/health`
+endpoint every 15 minutes. Three consecutive failures → marked `INACTIVE`
+in the bot's JSON file. Bots automatically return to `ACTIVE` when health
+checks resume passing.
 
 ### 8.3 Leaderboard
 
-- Default sort: Glicko-2 display rating (mu - 2*phi) descending
-- Columns: rank, bot name, owner, rating, games played, win rate, last active
-- Filterable by: player count tier (2p, 3p, 4p, 6p), time range
-- Updates in near-real-time (WebSocket push or 30-second polling)
-- Public — no login required to view
+The leaderboard is a **JSON file** (`/data/leaderboard.json`) rebuilt by the
+scheduler every few minutes after new match results arrive.
+
+```json
+{
+  "updated_at": "2026-03-23T14:35:00Z",
+  "entries": [
+    {
+      "rank": 1,
+      "bot_id": "b_4e8c1d2f",
+      "name": "SwarmBot",
+      "owner": "alice",
+      "rating": 1820,
+      "games": 142,
+      "wins": 98,
+      "losses": 40,
+      "draws": 4,
+      "evolved": false,
+      "last_match": "2026-03-23T14:30:00Z"
+    }
+  ]
+}
+```
+
+- Client-side sorting and filtering (by player count tier, time range,
+  human-only vs all)
+- No real-time updates — page refresh or auto-refresh every 60 seconds
+- Public — no login required
 
 ### 8.4 Match History & Profiles
 
-**Bot profile page** (`/bot/{bot_name}`):
-- Current rating + rating history chart
+**Bot profile** (`/bot/{bot_id}`) — fetches `/data/bots/{bot_id}.json`:
+- Current rating + rating history (array of `[timestamp, rating]` pairs
+  rendered as a chart client-side)
 - Recent matches (last 50) with links to replay viewer
 - Win/loss/draw breakdown
-- Performance vs. each opponent
 - Bot description, owner, registration date
+- If evolved: lineage, generation, island
 
-**User profile page** (`/user/{username}`):
-- List of owned bots
-- Aggregate statistics across all bots
+**Match list** (`/matches`) — fetches `/data/matches/index.json`:
+- Paginated list of recent matches
+- Each entry: match_id, participants, scores, date, link to replay
 
-**Match page** (`/match/{match_id}`):
-- Participants, map, final scores
+**Match detail** (`/replay/{match_id}`):
+- Fetches `/data/matches/{match_id}.json` for metadata
+- Fetches `/replays/{match_id}.json.gz` for the replay
 - Embedded replay viewer (auto-plays)
-- Turn-by-turn event log (collapsible)
+- Score breakdown, participants, match duration
 
 ---
 
 ## 9. Deployment & Infrastructure
 
-### 9.1 Container Architecture
+### 9.1 Design Principles
 
-| Image | Base | Purpose | Replicas |
-|-------|------|---------|----------|
-| `acb-api` | Go binary on Alpine | REST API server | 2 (always-on) |
-| `acb-worker` | Go binary on Alpine | Match execution worker | 3–10 (spot) |
-| `acb-scheduler` | Go binary on Alpine | Tournament matchmaking | 1 (always-on) |
-| `acb-web` | Nginx + static files | Frontend SPA | 1 (or CDN) |
-| `acb-strategy-random` | Python 3.13 slim | RandomBot | 1 |
-| `acb-strategy-gatherer` | Go on Alpine | GathererBot | 1 |
-| `acb-strategy-rusher` | Rust on Alpine | RusherBot | 1 |
-| `acb-strategy-guardian` | PHP 8.4 CLI Alpine | GuardianBot | 1 |
-| `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | 1 |
-| `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | 1 |
-| `acb-evolver` | Go binary on Alpine | Evolution pipeline orchestrator | 1 (always-on) |
-| `acb-evolved-*` | Varies by language | LLM-generated evolved bots | 0–50 (dynamic) |
+The deployment is designed for **Rackspace Spot** instances, which means:
 
-### 9.2 Rackspace Spot Deployment
+- **Instances can be reclaimed at any time** with a short SIGTERM warning
+- **Pricing is significantly cheaper** than on-demand but availability fluctuates
+- **No persistent local storage** — anything on the instance disappears on reclaim
+- **No guaranteed uptime** — the platform must tolerate all workers disappearing
 
-Match workers are the primary consumers of compute and are **perfectly suited
-for spot instances**:
+These constraints shape every decision below. The answer is: keep it simple,
+keep it stateless, and put all durable state in object storage.
 
-- **Stateless**: workers pull jobs from a queue, execute, and push results.
-  No persistent local state.
-- **Interruptible**: if a spot instance is reclaimed mid-match, the match job
-  is re-queued after a staleness timeout (10 minutes with no progress update).
-  The match is replayed from scratch on another worker.
-- **Bursty**: match throughput can flex with spot availability. More instances
-  = faster ladder convergence, but no hard deadline.
+### 9.2 Container Architecture
 
-**Instance sizing:**
-- Match workers: 2 vCPU, 4 GB RAM per instance (each runs one match at a time)
-- Strategy bots: can share a single small instance (all 6 use <1GB total;
-  Java's JVM is the biggest consumer at ~256MB)
-- API server + scheduler: 2 vCPU, 4 GB RAM, always-on (not spot)
+| Image | Base | Purpose | Where It Runs |
+|-------|------|---------|---------------|
+| `acb-web` | Nginx + static files | Static site (HTML/JS/CSS) | CDN or single stable instance |
+| `acb-register` | Go binary on Alpine | Bot registration API (3 endpoints) | Single stable instance |
+| `acb-scheduler` | Go binary on Alpine | Matchmaking + JSON index rebuilds | Single stable instance |
+| `acb-worker` | Go binary on Alpine | Match execution | Rackspace Spot (1–10) |
+| `acb-evolver` | Go binary on Alpine | Evolution pipeline orchestrator | Rackspace Spot (1) |
+| `acb-strategy-random` | Python 3.13 slim | RandomBot | Stable instance (shared) |
+| `acb-strategy-gatherer` | Go on Alpine | GathererBot | Stable instance (shared) |
+| `acb-strategy-rusher` | Rust on Alpine | RusherBot | Stable instance (shared) |
+| `acb-strategy-guardian` | PHP 8.4 CLI Alpine | GuardianBot | Stable instance (shared) |
+| `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | Stable instance (shared) |
+| `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | Stable instance (shared) |
+| `acb-evolved-*` | Varies by language | LLM-generated evolved bots | Stable instance (shared) |
 
-**Deployment layout:**
+### 9.3 Rackspace Spot: What Runs Where
+
+**Stable instance (1× small, always-on):**
+
+This is the only always-on server. It runs everything that must survive
+spot reclamation:
 
 ```
-Always-on tier (standard instances):
-├── acb-api (×2, behind load balancer)
-├── acb-scheduler (×1)
-├── acb-evolver (×1, evolution pipeline orchestrator)
-├── acb-web (×1 or CDN)
-├── acb-strategy-* (×1 each, shared instance)
-├── acb-evolved-* (×0–50, dynamic, promoted bots)
-├── PostgreSQL (managed or self-hosted)
-├── Redis (managed or self-hosted)
-└── Minio / S3-compatible store
-
-Spot tier (preemptible instances):
-├── acb-worker (×3 minimum, scale up as available)
-└── (each worker is a standalone container, no coordination needed)
-
-Evolution tier (can share spot or always-on):
-├── nsjail sandbox runners (for validation + evaluation)
-└── (reuses acb-worker for evaluation matches)
+Single stable instance (2 vCPU, 4 GB RAM):
+├── acb-web (Nginx, serves static site)
+├── acb-register (registration API, lightweight)
+├── acb-scheduler (matchmaking + index rebuilds)
+├── acb-strategy-* (all 6 built-in bots, ~1 GB total)
+├── acb-evolved-* (0–50 evolved bots, dynamic)
+└── Minio (object store, data volume mounted)
 ```
 
-**Spot reclaim handling:**
-1. Worker registers a shutdown hook that catches SIGTERM
-2. On SIGTERM, worker sets the current match status to `interrupted` in Redis
-3. Worker exits gracefully (within the 30-second SIGTERM grace period)
-4. Scheduler's stale-match reaper detects `interrupted` or stale `in_progress`
-   matches and re-queues them
-5. Another worker picks up the job
+The static site, registration API, scheduler, and all bot HTTP servers share
+one machine. This is feasible because:
+- The static site is Nginx serving files (negligible CPU)
+- The registration API handles ~10 requests/day (negligible)
+- The scheduler runs once every 10 seconds (negligible)
+- Strategy bots are idle between matches (only active during their turns)
+- Minio serves static files (mostly read, low CPU)
 
-### 9.3 Data Stores
+**Spot instances (1–10×, preemptible):**
 
-**PostgreSQL:**
-- Tables: `users`, `bots`, `matches`, `match_participants`, `maps`, `ratings`
-- Single primary instance; read replica for leaderboard queries
-- Connection pooling via PgBouncer
-- Backup: daily automated dumps to object storage
+Match workers and the evolution pipeline run on spot instances. These are
+the only compute-intensive workloads.
 
-**Redis:**
-- Match job queue (Redis Streams or List-based queue)
-- Rate limiting (per-bot, per-endpoint)
-- Session cache
-- Leaderboard cache (sorted sets)
-- No persistence required — queue jobs are recoverable from PostgreSQL match
-  records with `queued` status
+```
+Spot instance A (2 vCPU, 4 GB RAM):
+└── acb-worker (runs 1 match at a time)
 
-**Object Storage (S3-compatible):**
-- Replay files (gzipped JSON)
-- Map definition files
-- Bot submission metadata / logs
-- Signed URL generation for replay access (1-hour expiry)
+Spot instance B (2 vCPU, 4 GB RAM):
+└── acb-worker (runs 1 match at a time)
 
-### 9.4 Networking & Security
+Spot instance C (4 vCPU, 8 GB RAM):
+└── acb-evolver (evolution pipeline, needs more RAM for LLM context)
+```
+
+**If all spot instances are reclaimed:**
+- The website continues to work (static site on stable instance)
+- Leaderboard and replays remain visible (JSON files in Minio)
+- Bot registration still works (registration API on stable instance)
+- Built-in bots remain reachable (on stable instance)
+- **Only match execution pauses** — the queue accumulates jobs
+- When spot instances return, workers drain the queue and catch up
+- The platform gracefully degrades: visitors see stale-but-valid data
+
+This is the key benefit of the static-site architecture — the entire
+user-facing experience survives spot reclamation.
+
+### 9.4 Data Layer: Object Store + Flat Files
+
+There is **no database**. All platform state is stored as JSON files in
+Minio (S3-compatible object storage) on the stable instance.
+
+**Why no PostgreSQL/Redis:**
+- The platform has low write volume (~60 matches/hour, ~10 registrations/day)
+- All "queries" are pre-computed: the scheduler builds the leaderboard JSON,
+  match index JSON, and bot profile JSONs on a schedule
+- The static site just fetches these files — no query engine needed
+- Minio on a single machine with a mounted volume is simpler to operate,
+  back up, and recover than a PostgreSQL instance
+- Eliminates connection pooling, migrations, schema management, and ORM
+
+**Internal state (scheduler's working data):**
+
+The scheduler maintains a small SQLite database locally for its own bookkeeping:
+- Bot registry (which bots are active, their endpoints, ratings)
+- Match queue (pending, in-progress, completed)
+- Rating history
+
+This SQLite file lives on the stable instance's persistent volume. It is the
+**source of truth** for platform state. The JSON files in Minio are
+**materialized views** rebuilt from SQLite.
+
+If the SQLite file is lost, it can be reconstructed from the JSON files in
+Minio (match results contain all the data needed to replay ratings).
+
+**Backup:** daily copy of the SQLite file + full Minio bucket to a second
+storage location (e.g., rsync to another Rackspace volume or offsite).
+
+### 9.5 Match Job Coordination
+
+Without Redis, workers coordinate through the object store and HTTP:
+
+**Job assignment flow:**
+1. Scheduler writes match jobs as JSON files to Minio:
+   `jobs/pending/{job_id}.json`
+2. Worker polls for pending jobs: `GET /jobs/pending/` (list objects)
+3. Worker claims a job by moving it:
+   `jobs/pending/{job_id}.json` → `jobs/running/{job_id}.json`
+   (atomic rename in Minio; if two workers race, one gets a 404 — retry)
+4. Worker executes the match
+5. Worker writes results:
+   - `replays/{match_id}.json.gz` (replay data)
+   - `jobs/done/{job_id}.json` (result + scores)
+   - Deletes `jobs/running/{job_id}.json`
+6. Scheduler detects completed jobs, updates SQLite, rebuilds JSON indexes
+
+**Stale job recovery:**
+- Scheduler scans `jobs/running/` every 5 minutes
+- Any job that has been running for >15 minutes is assumed abandoned
+  (worker was reclaimed)
+- Scheduler moves it back to `jobs/pending/` for re-execution
+
+This is crude but sufficient for the throughput level (~60 matches/hour).
+No message broker, no pub/sub, no distributed coordination. Just files.
+
+### 9.6 Networking & Security
 
 **External traffic:**
-- Web platform: HTTPS only, behind reverse proxy (Caddy or nginx)
-- Bot endpoints: engine connects outbound to registered URLs
+- `aicodebattle.com` → Nginx on stable instance (static site)
+- `data.aicodebattle.com` → Minio on stable instance (JSON data, public-read)
+- `api.aicodebattle.com` → Registration API on stable instance (3 endpoints)
+- All behind Caddy for automatic TLS termination
 
-**Internal traffic:**
-- API ↔ PostgreSQL: private network
-- API ↔ Redis: private network
-- Workers ↔ Redis: private network (workers may be in different regions — use
-  Redis over TLS if cross-region)
-- Workers → bot endpoints: public internet (HTTPS required for competitive bots)
-- Workers → strategy bots: private network (same infrastructure)
+**Internal traffic (stable instance → bots):**
+- Strategy bots listen on localhost ports (no external exposure)
+- Workers on spot instances reach strategy bots via Tailscale or public IP
+
+**Workers → external participant bots:**
+- Outbound HTTPS to registered bot URLs
+- No inbound ports on workers
 
 **Security boundaries:**
 - The game engine (workers) never executes bot code — HTTP only
 - All bot responses are schema-validated before processing
 - HMAC authentication prevents request/response forgery
-- Rate limiting on API endpoints (registration, health checks)
-- Bot endpoint URLs validated at registration (no internal IPs, no localhost)
-- Workers run with no inbound ports — they only make outbound HTTP calls
+- Registration API validates bot endpoint URLs (no internal IPs, no localhost,
+  no private ranges)
+- Minio data bucket is public-read, no-write from outside
+- Registration API is rate-limited (10 registrations/hour max)
 
-### 9.5 Monitoring
+### 9.7 Cost Model (Rackspace Spot)
 
-| Signal | Tool | Alert Threshold |
-|--------|------|-----------------|
-| Match throughput | Prometheus counter | <10 matches/hour for >30 minutes |
-| Worker count | Prometheus gauge | <2 live workers for >15 minutes |
-| Bot health check failures | Prometheus counter | >50% of active bots failing |
-| API latency (p99) | Prometheus histogram | >500ms |
-| Match queue depth | Redis metric | >100 pending matches |
-| Replay storage usage | S3 metric | >80% of quota |
-| Error rate (5xx) | Access logs | >1% of requests |
+| Component | Instance Type | Spot? | Est. Monthly |
+|-----------|--------------|-------|-------------|
+| Stable instance | 2 vCPU / 4 GB | No (on-demand) | ~$30–50 |
+| Match workers (×3 avg) | 2 vCPU / 4 GB each | Yes | ~$15–30 |
+| Evolver (×1) | 4 vCPU / 8 GB | Yes | ~$10–20 |
+| Storage (Minio volume) | 100 GB block storage | No | ~$10 |
+| **Total** | | | **~$65–110/mo** |
+
+LLM API costs for the evolution pipeline are separate and depend on model
+choice and generation volume. At ~96 candidates/day with a mix of fast/strong
+models, estimate ~$5–20/day ($150–600/mo).
+
+### 9.8 Monitoring
+
+Monitoring is lightweight, matching the simple architecture:
+
+| Signal | Method | Alert |
+|--------|--------|-------|
+| Stable instance up | External ping (UptimeRobot or similar) | Down >2 minutes |
+| Active spot workers | Scheduler counts `jobs/running/` age | 0 workers for >30 minutes |
+| Match throughput | Scheduler counts `jobs/done/` per hour | <10 matches/hour for >1 hour |
+| Minio disk usage | `df` on volume | >80% |
+| Bot health failures | Scheduler's health check log | >50% of bots failing |
+| Stale jobs | Scheduler's reaper count | >10 stale jobs in a cycle |
+
+Alerts via webhook to a notification channel (Slack, Discord, or email).
+No Prometheus/Grafana stack needed at this scale.
 
 ---
 
@@ -1558,43 +1748,50 @@ match with all visual elements rendering correctly.
 ### Phase 4: Match Orchestration
 
 **Deliverables:**
-- Match worker service (`acb-worker`): pulls from Redis queue, runs matches,
-  uploads replays, records results
-- Tournament scheduler (`acb-scheduler`): matchmaking algorithm, creates jobs
-- PostgreSQL schema and migrations
-- Stale match reaper (handles interrupted spot instances)
+- Match worker service (`acb-worker`): polls Minio for pending jobs, runs
+  matches, writes replay JSON + result JSON back to Minio
+- Scheduler (`acb-scheduler`): matchmaking algorithm, writes job files to
+  Minio, detects completed jobs, updates SQLite, rebuilds leaderboard/index
+  JSON files
+- Scheduler's SQLite schema for bot registry, match queue, and ratings
+- Stale job reaper (recovers abandoned jobs from reclaimed spot instances)
 - Match result → Glicko-2 rating update pipeline
+- JSON index rebuilder: leaderboard.json, matches/index.json, bots/*.json
 
-**Exit criteria:** scheduler creates matches, workers execute them
-autonomously, ratings update, replays are stored. System recovers from
-worker interruption.
+**Exit criteria:** scheduler creates match jobs as files, workers pick them
+up and execute autonomously, results flow back as JSON, ratings update, and
+all index files rebuild correctly. System recovers from worker disappearance.
 
 ### Phase 5: Web Platform
 
 **Deliverables:**
-- API server (`acb-api`): user registration, bot registration, leaderboard,
-  match history, replay URLs
-- Web frontend (`acb-web`): registration, bot management dashboard,
-  leaderboard, match history, embedded replay viewer
-- Bot health check system (periodic + on-registration)
-- Shared secret generation, display, rotation
+- Static site (`acb-web`): leaderboard, match history, bot profiles, replay
+  viewer, registration form, docs/getting-started page
+- Registration API (`acb-register`): bot signup, health check, key rotation
+  (3 endpoints, single Go binary)
+- Bot health check loop in the scheduler (periodic pings)
+- All pages load data by fetching JSON from the object store — no backend
+  rendering
 
-**Exit criteria:** a user can register, add a bot, see it appear on the
-leaderboard after matches are played, and watch replays of its games.
+**Exit criteria:** a participant can register a bot via the web form, the
+bot appears on the leaderboard after matches complete, and anyone can browse
+matches and watch replays — all from a static site with no application server.
 
 ### Phase 6: Deployment & Production
 
 **Deliverables:**
 - Container images pushed to registry
-- Rackspace Spot deployment for workers
-- Always-on deployment for API, scheduler, strategy bots, datastores
-- TLS termination, DNS, CDN for static assets
-- Monitoring dashboards and alerts
-- Backup automation for PostgreSQL and replay storage
+- Stable instance: Nginx, Registration API, Scheduler, Minio, all strategy
+  bots — single machine with persistent volume
+- Spot instances: match workers configured to poll Minio for jobs
+- Caddy for TLS termination on the stable instance
+- DNS setup (aicodebattle.com, data.aicodebattle.com, api.aicodebattle.com)
+- Monitoring webhooks (uptime ping, worker count, match throughput)
+- Daily SQLite + Minio backup to offsite storage
 
-**Exit criteria:** platform is publicly accessible, matches run continuously,
-strategy bots compete on the ladder, external participants can register and
-play.
+**Exit criteria:** platform is publicly accessible, matches run on spot
+instances, the site remains fully functional when all spot instances are
+reclaimed, and external participants can register and play.
 
 ### Phase 7: LLM-Driven Evolution
 
