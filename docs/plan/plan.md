@@ -499,7 +499,7 @@ Engine                          Bot
 **Future additive fields:** the game state schema is designed for forward
 compatibility. Future seasons may add optional fields to `config` (e.g.,
 `season_id`, `rules_version`, `special_tiles`, `terrain`) without breaking
-existing bots. See the seasonal backward compatibility rules in SS13.9. Bots
+existing bots. See the seasonal backward compatibility rules in §13.9. Bots
 that do not read new fields continue to function normally.
 
 ### 4.3 Move Schema (Bot -> Engine)
@@ -521,7 +521,7 @@ that do not read new fields continue to function normally.
 
 The `debug` field is entirely optional. When present, it is stored in the
 replay for visualization in the replay viewer but is never parsed or acted
-upon by the engine. See SS13.1 for the full debug telemetry specification.
+upon by the engine. See §13.1 for the full debug telemetry specification.
 
 **Validation rules:**
 - `moves` must be an array (may be empty -- all bots hold position)
@@ -1097,9 +1097,10 @@ data/blog/posts/{slug}.json          # individual blog posts
   last 1000; older pages at `index-{page}.json`
 
 **R2 free tier usage at this scale:**
-- Writes (Class A): ~44K/month (replays + per-match metadata from workers)
+- Writes (Class A): ~101K/month (replays + per-match metadata from workers
+  + evolution live.json updates)
   vs 1M limit. Index rebuilds no longer write to R2 — they deploy to Pages.
-- Reads (Class B): ~30K/month (replay loads from browsers + Rackspace reads)
+- Reads (Class B): ~50K/month (replay loads from browsers + Rackspace reads)
   vs 10M limit. Index file reads are served from Pages, not R2.
 - Storage: ~3–5 GB after 90 days (well under 10 GB limit)
 - Egress: always free, unlimited
@@ -1548,8 +1549,8 @@ fully ephemeral — they can be reclaimed at any time with zero data loss.
 | **Workers** | ~5K requests/day (API + crons) | 100K requests/day | 95% |
 | **Workers CPU** | <5ms per invocation | 10ms per invocation | 50% |
 | **R2 storage** | ~3-5 GB | 10 GB | 50-70% |
-| **R2 Class A** (writes) | ~44K/month (replays + per-match metadata only) | 1M/month | 96% |
-| **R2 Class B** (reads) | ~20K/month (replay loads + Rackspace reads) | 10M/month | 99.8% |
+| **R2 Class A** (writes) | ~101K/month (replays + match metadata + evo live.json) | 1M/month | 90% |
+| **R2 Class B** (reads) | ~50K/month (replay loads + Rackspace reads) | 10M/month | 99.5% |
 | **R2 egress** | Unlimited | Unlimited (always free) | -- |
 | **D1 writes** | ~1.5K/day | 100K/day | 98.5% |
 | **D1 reads** | ~50K/day | 5M/day | 99% |
@@ -1557,7 +1558,7 @@ fully ephemeral — they can be reclaimed at any time with zero data loss.
 | **Cron triggers** | 3 used | 5 per account | 2 spare |
 
 Note: R2 Class A writes dropped from ~1.6M/month (when the Worker cron
-wrote ~75 index files to R2 every 2 minutes) to ~44K/month by moving index
+wrote ~75 index files to R2 every 2 minutes) to ~101K/month by moving index
 files to Pages deploys. This change is what keeps the platform within the
 R2 free tier.
 
@@ -3065,7 +3066,7 @@ site's landing page.
 | "Best Comebacks" | `min(win_prob) < 0.2 AND winner = underdog` | Every ~90 min |
 | "Evolution Breakthroughs" | Evolved bot's first win against a top-10 bot | Every ~90 min |
 | "Rivalry Classics" | Matches between detected rivals, sorted by closeness | Every ~90 min |
-| "This Week's Highlights" | Top 10 by community upvote count (from SS12.6) | Every ~90 min |
+| "This Week's Highlights" | Top 10 by community upvote count (from §12.6) | Every ~90 min |
 | "New Bot Debuts" | First match of each newly registered bot | Every ~90 min |
 | "Season Highlights" | Top 20 matches of the current season by engagement | Every ~90 min |
 
@@ -3125,7 +3126,7 @@ At ~60 matches/hour, roughly 5–10% are flagged — about 3–6 per hour.
 8. Rackspace index builder updates the prediction leaderboard JSON on Pages
    (next ~90-min deploy cycle)
 
-**D1 schema:** (see SS8.3 for the consolidated schema)
+**D1 schema:** (see §8.3 for the consolidated schema)
 
 ```sql
 CREATE TABLE predictions (
@@ -3650,7 +3651,7 @@ demand, or pre-rendered by the Rackspace index builder for top-50 bots).
 | Field | Source |
 |-------|--------|
 | Rating, rank | Leaderboard |
-| Archetype | Strategy classifier from behavioral features (§12 evolution meta) |
+| Archetype | Strategy classifier from behavioral features (§10.2 MAP-Elites behavior grid) |
 | Win rate breakdown | D1 query: wins vs each archetype cluster |
 | Signature | Most statistically distinctive behavior vs population average |
 | Rival | From rival detection (§12.5) |
@@ -3798,6 +3799,7 @@ Meta:
 Evolution (indexes):
   GET {PAGES}/data/evolution/lineage.json
   GET {PAGES}/data/evolution/meta.json
+  GET {PAGES}/data/evolution/community_hints.json
 
 Blog:
   GET {PAGES}/data/blog/index.json
@@ -4121,7 +4123,7 @@ meta report as blog posts on `/blog`.
 
 **Story arc detection:**
 
-The weekly index builder pass (same as the meta report, SS14.1) scans D1 for active
+The weekly index builder pass (same as the meta report, §14.1) scans D1 for active
 story arcs:
 
 | Arc Type | D1 Query Trigger |
