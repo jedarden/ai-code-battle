@@ -1,6 +1,6 @@
 # AI Code Battle - Implementation Progress
 
-## Current Phase: Phase 2 - HTTP Protocol & Strategy Bots
+## Current Phase: Phase 3 - Replay Viewer
 
 **Status: ✅ COMPLETE**
 
@@ -42,17 +42,47 @@
   - **SwarmBot** (TypeScript) - Formation-based combat
   - **HunterBot** (Java) - Target isolation and hunting
 
+### Phase 3 Completed
+
+- [x] Web project setup (`web/`)
+  - TypeScript + Vite build tooling
+  - Type definitions matching Go replay format
+- [x] ReplayViewer class (`web/src/replay-viewer.ts`)
+  - Canvas-based grid rendering
+  - Bot, core, energy, wall visualization
+  - Player color coding (6 distinct colors)
+- [x] Playback controls
+  - Play/pause toggle
+  - Turn-by-step navigation (prev/next)
+  - Turn scrubber slider
+  - Speed control (20ms - 1000ms per turn)
+  - Keyboard shortcuts (Space, arrows, Home/End)
+- [x] Fog of War perspective toggle
+  - Per-player visibility calculation
+  - Vision radius from game config
+- [x] Score overlay
+  - Real-time scores per player
+  - Energy held display
+  - Player name with color indicator
+- [x] Match info panel
+  - Match ID, winner, turns, reason
+- [x] Event log
+  - Turn-by-turn event display
+- [x] File/URL loading
+  - Local file upload
+  - Remote URL fetch
+
 ### Exit Criteria Progress
 
 | Criterion | Status |
 |-----------|--------|
-| HMAC auth implementation | ✅ Complete |
-| HTTP bot client with timeout | ✅ Complete |
-| 6 strategy bots in 6 languages | ✅ Complete |
-| All bots have Dockerfile | ✅ Complete |
-| Integration tests passing | ✅ Complete |
+| TypeScript Canvas-based replay viewer | ✅ Complete |
+| Play/pause, scrub, speed control | ✅ Complete |
+| Fog of war perspective toggle | ✅ Complete |
+| Score overlay | ✅ Complete |
+| Loads replay JSON from file or URL | ✅ Complete |
 
-## Next Phase: Phase 3 - Replay Viewer
+## Next Phase: Phase 4 - Match Orchestration
 
 **Status: Ready to start**
 
@@ -75,6 +105,15 @@ ai-code-battle/
 ├── cmd/
 │   ├── acb-local/      # CLI match runner
 │   └── acb-mapgen/     # Map generator
+├── web/
+│   ├── package.json    # npm dependencies
+│   ├── tsconfig.json   # TypeScript config
+│   ├── vite.config.ts  # Vite bundler config
+│   ├── index.html      # Replay viewer page
+│   └── src/
+│       ├── types.ts        # Replay type definitions
+│       ├── replay-viewer.ts # Canvas viewer class
+│       └── main.ts         # UI controller
 ├── bots/
 │   ├── random/         # Python - RandomBot
 │   ├── gatherer/       # Go - GathererBot
@@ -101,7 +140,11 @@ ai-code-battle/
 ## Running Tests
 
 ```bash
+# Go engine tests
 go test ./engine/... -v
+
+# Web build verification
+cd web && npm run build
 ```
 
 ## Building CLI Tools
@@ -115,4 +158,12 @@ go build ./cmd/acb-mapgen
 
 ```bash
 ./acb-local -seed 42 -max-turns 100 -output replay.json -verbose
+```
+
+## Viewing a Replay
+
+```bash
+cd web
+npm run dev
+# Open http://localhost:3000 and load replay.json
 ```
