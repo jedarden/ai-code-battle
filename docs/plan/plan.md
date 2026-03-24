@@ -3863,3 +3863,308 @@ someone posts on Hacker News. "GathererBot's Decline" is a cautionary
 tale that sparks strategy discussion. The narrative engine gives the
 platform a *voice* — it feels alive, with characters and plot arcs, not
 just numbers on a leaderboard.
+
+---
+
+## 15. User Experience Design
+
+The platform serves three distinct audiences with different needs. The UX
+must be simple enough that a first-time visitor understands the platform
+in 10 seconds, and deep enough that a regular user can access all features
+without friction. Mobile and desktop are both first-class.
+
+### 15.1 Audiences
+
+| Audience | What They Want | Frequency |
+|----------|---------------|-----------|
+| **Spectator** | Watch cool bot battles, browse leaderboard, follow stories | Daily, 5–15 min sessions |
+| **Participant** | Build and improve bots, track performance, iterate | Several times/week, 30–60 min sessions |
+| **Visitor** | Understand what this is, see something impressive, maybe come back | Once, 1–3 minutes |
+
+The default experience is optimized for **spectators** — the largest
+audience. Participants have dedicated sections. First-time visitors get a
+clear value proposition immediately.
+
+### 15.2 Information Architecture
+
+```
+/                       Home (hero + featured replay + highlights)
+├── /watch              Spectator hub
+│   ├── /watch/replays  Browse all replays (playlists, search, filters)
+│   ├── /watch/replay/{id}  Full replay viewer
+│   ├── /watch/series/{id}  Series replay page
+│   └── /watch/predictions  Predict upcoming matches
+├── /compete            Participant hub
+│   ├── /compete/sandbox    In-browser WASM sandbox
+│   ├── /compete/register   Register a bot
+│   ├── /compete/bot/{id}   Your bot's dashboard (owner view)
+│   └── /compete/docs       Protocol spec, starter kits, guides
+├── /leaderboard        Rankings (current season)
+├── /evolution          Evolution observatory (live feed + lineage)
+├── /blog               Meta reports + chronicles
+├── /season/{id}        Season archive (past) or current season status
+└── /bot/{id}           Bot public profile (anyone can view)
+```
+
+**Three entry points, three audiences:**
+
+- Spectators enter through `/watch` or the homepage highlights
+- Participants enter through `/compete` or `/compete/sandbox`
+- Visitors land on `/` and are guided to one of the above
+
+### 15.3 Homepage
+
+The homepage answers three questions in 10 seconds:
+
+1. **What is this?** (headline)
+2. **What does it look like?** (auto-playing featured replay)
+3. **What can I do?** (two clear CTAs)
+
+**Layout:**
+
+```
+┌──────────────────────────────────────────────────┐
+│  AI Code Battle                                   │
+│  Bots compete. Strategies evolve. You watch.     │
+│                                                   │
+│  [Watch Battles]          [Build a Bot]           │
+├──────────────────────────────────────────────────┤
+│                                                   │
+│  ┌──────────────────────────────────────────┐    │
+│  │  Featured Replay (auto-playing, muted)    │    │
+│  │  Territory view, win probability graph    │    │
+│  │  Commentary subtitles if enriched         │    │
+│  └──────────────────────────────────────────┘    │
+│  "SwarmBot vs HunterBot — Season 4 Semifinals"  │
+│                                                   │
+├──────────────────────────────────────────────────┤
+│  Top 5 Leaderboard     │  Latest Stories          │
+│  #1 SwarmBot    1820   │  "The Rise of evo-go-g31"│
+│  #2 GuardianBot 1720   │  "Week 12 Meta Report"   │
+│  #3 evo-mx-g802 1710   │  "Rivalry: Swarm v Hunt" │
+│  #4 HunterBot   1650   │                          │
+│  #5 evo-go-g831 1650   │                          │
+│  [Full leaderboard →]  │  [All stories →]         │
+├─────────────────────────┴─────────────────────────┤
+│  Playlists                                        │
+│  [Closest Finishes] [Biggest Upsets] [Comebacks]  │
+│  ← scrollable cards with thumbnails →             │
+├──────────────────────────────────────────────────┤
+│  Season 4: The Colosseum — Week 3 of 4           │
+│  Championship bracket starts in 8 days            │
+│  [Predictions open →]                             │
+├──────────────────────────────────────────────────┤
+│  Evolution Observatory (mini)                     │
+│  Gen #847 · 12 bots promoted today · 3 in top 10 │
+│  [Watch evolution live →]                         │
+└──────────────────────────────────────────────────┘
+```
+
+**Key decisions:**
+- The featured replay auto-plays in territory view (most visually
+  impressive mode) — the visitor sees something immediately interesting
+  without clicking anything
+- Two CTAs, not five — "Watch" for spectators, "Build" for participants
+- The leaderboard is a compact summary, not the whole page — the platform
+  is about *watching*, not *reading tables*
+- Playlists are below the fold but above the season/evolution sections
+- Everything above the fold fits on a 1080p screen
+
+### 15.4 Navigation
+
+**Desktop: persistent top bar**
+
+```
+┌──────────────────────────────────────────────────┐
+│ ⚔️ AI Code Battle   Watch  Compete  Leaderboard  │
+│                      Evolution  Blog   Season 4   │
+└──────────────────────────────────────────────────┘
+```
+
+- Logo + name (links to home)
+- Primary nav: Watch, Compete, Leaderboard
+- Secondary nav: Evolution, Blog, current Season
+
+**Mobile: bottom tab bar + hamburger**
+
+```
+┌──────────────────────────────────────────┐
+│  [content area]                           │
+│                                           │
+│                                           │
+├──────────────────────────────────────────┤
+│  🏠 Home  👀 Watch  ⚔️ Compete  🏆 Board │
+└──────────────────────────────────────────┘
+```
+
+Four bottom tabs for the primary actions. Evolution, Blog, Season, and
+secondary pages are accessed via the hamburger menu (☰) in the top bar.
+
+The bottom tab bar is the standard mobile pattern (iOS tab bar, Android
+bottom nav). Thumb-reachable, always visible, no scrolling needed to
+navigate.
+
+### 15.5 Responsive Design
+
+The platform is designed **mobile-first** for spectating and
+**desktop-first** for participating (writing bots).
+
+**Breakpoints:**
+
+| Breakpoint | Target | Layout |
+|-----------|--------|--------|
+| <640px | Phone | Single column, bottom tab bar, touch-optimized |
+| 640–1024px | Tablet | Two column where useful, top nav |
+| >1024px | Desktop | Full layout, sidebar where appropriate |
+
+**Replay viewer on mobile:**
+
+The replay viewer is the most complex component. On mobile:
+
+```
+┌────────────────────┐
+│                    │
+│   [Canvas]         │  ← full width, 1:1 aspect ratio
+│                    │
+├────────────────────┤
+│ ▶ 4x  Score: 3-1  │  ← compact controls bar
+├────────────────────┤
+│ ··⚔️··💎··🏰··⚔️·· │  ← event timeline (scrollable)
+├────────────────────┤
+│ Win Prob ~~~~~~~~~ │  ← sparkline (tap to scrub)
+├────────────────────┤
+│ Commentary text... │  ← if enriched, scrollable
+└────────────────────┘
+```
+
+- Canvas renders at full phone width with 1:1 aspect ratio (square grid
+  maps fit naturally)
+- Pinch-to-zoom on the canvas (native gesture handling)
+- Tap to play/pause (large touch target — the entire canvas)
+- Swipe left/right on the timeline to scrub turns
+- View mode toggle (dots/territory/influence) via a floating button
+- Debug telemetry panel is a slide-up sheet (collapsed by default)
+
+**Leaderboard on mobile:**
+
+Simplified table with just rank, name, rating, and trend arrow (↑/↓).
+Tap a row to expand inline with games played, win rate, archetype.
+"Full stats" link goes to the bot profile page.
+
+**Sandbox on mobile:**
+
+The WASM sandbox is **desktop-only**. On mobile, the `/compete/sandbox`
+page shows a clear message: "The sandbox requires a desktop browser.
+On mobile, you can watch replays, browse the leaderboard, make
+predictions, and read the docs." With a QR code or "Send to desktop"
+link.
+
+Bot registration (`/compete/register`) works on mobile — it's just a
+form.
+
+### 15.6 First-Time Visitor Flow
+
+A visitor who has never seen the platform:
+
+```
+1. Lands on homepage
+   → Sees headline + auto-playing featured replay (territory view)
+   → Understands "this is a platform where bots fight on a grid"
+
+2. Watches for 10–30 seconds
+   → Sees win probability shift, commentary subtitles, territory change
+   → Understands "this is dynamic and strategic, not random"
+
+3. Clicks "Watch Battles" or a playlist card
+   → Enters /watch with curated playlists
+   → Picks a replay that sounds interesting ("Biggest Upsets")
+
+4. Watches a full replay (1–3 minutes at 4x speed)
+   → Uses event timeline to skip to the action
+   → Maybe makes a prediction on an upcoming match
+
+5. Returns later
+   → Checks predictions results
+   → Browses new blog posts / chronicles
+   → Eventually clicks "Build a Bot" → sandbox → starter kit → ladder
+```
+
+The funnel is: **see** (homepage) → **watch** (replays) → **engage**
+(predictions, feedback) → **build** (sandbox, compete). Each step has a
+lower barrier than the next.
+
+### 15.7 Page Load Performance
+
+The SPA should feel instant. Performance budget:
+
+| Metric | Target | How |
+|--------|--------|-----|
+| First Contentful Paint | <1s | Pages CDN, minimal critical CSS |
+| Largest Contentful Paint | <2s | Defer replay loading, hero image as CSS gradient |
+| Time to Interactive | <2s | Small JS bundle (<200KB gzipped), code-split per route |
+| Replay load | <3s | Replay JSON gzipped (~50KB), streamed parse |
+| WASM engine load | <5s | Lazy-loaded only on sandbox/embed pages |
+
+**Code splitting strategy:**
+
+```
+app.js        (~30KB gz)   Core SPA router, leaderboard, blog, nav
+replay.js     (~80KB gz)   Replay viewer + territory renderer + charts
+sandbox.js    (~20KB gz)   Sandbox orchestrator (loads WASM on demand)
+engine.wasm   (~3MB)       Game engine (loaded only in sandbox/embed)
+bot-*.wasm    (~3–12MB ea) Built-in bots (loaded only in sandbox)
+```
+
+The homepage loads only `app.js`. Replay viewer code is loaded when a
+user navigates to a replay. WASM is loaded only when the sandbox is
+opened. A visitor who just browses the homepage and leaderboard never
+downloads replay viewer or WASM code.
+
+**R2 data fetching:**
+
+All data files are served with `Cache-Control` headers from R2's CDN.
+Subsequent visits hit the edge cache. The SPA uses `stale-while-revalidate`
+pattern: show cached data immediately, fetch fresh data in the background,
+update the UI when it arrives. The leaderboard never shows a loading
+spinner on repeat visits — it shows the cached version instantly and
+refreshes within seconds.
+
+### 15.8 Design Language
+
+**Visual principles:**
+
+- **Dark theme by default** — grid-based games look better on dark
+  backgrounds. White text, subtle grid lines, colored elements pop.
+- **Minimal chrome** — let the replay canvas, leaderboard data, and
+  content speak. No decorative borders, shadows, or gradients.
+- **Color is information** — player colors, archetype colors, win
+  probability (green/red), and status indicators use color purposefully.
+  Everything else is grey/white on dark.
+- **Typography** — monospace for data (ratings, scores, turn counts),
+  sans-serif for prose (blog, commentary, descriptions). Two typefaces
+  maximum.
+- **Animation is functional** — replay playback, win probability graph
+  updates, evolution observatory feed. No decorative hover effects or
+  page transitions.
+
+**Component library:**
+
+A small set of reusable components covers the entire site:
+
+| Component | Used In |
+|-----------|---------|
+| `ReplayCanvas` | Replay viewer, embed, sandbox, homepage hero |
+| `WinProbGraph` | Replay viewer, series page, bot profile |
+| `EventTimeline` | Replay viewer |
+| `LeaderboardTable` | Leaderboard page, homepage summary |
+| `BotCard` | Bot profile, leaderboard, series, playlists |
+| `PlaylistRow` | Homepage, /watch |
+| `MatchCard` | Playlists, match history, series |
+| `PredictionWidget` | Predictions page, homepage |
+| `ObservatoryFeed` | Evolution page, homepage mini |
+| `BlogPostCard` | Blog page, homepage |
+| `AnnotationOverlay` | Replay viewer (spatial + text feedback) |
+
+Each component works at all breakpoints. The replay canvas adapts its
+render resolution to the container size. Tables collapse to cards on
+mobile. Graphs switch from detailed to sparkline on narrow screens.
