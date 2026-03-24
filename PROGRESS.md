@@ -29,7 +29,12 @@
 ### Remaining Phase 6 Work
 
 - [ ] Cloudflare Pages project creation and deployment
-- [ ] D1 database schema and migrations
+- [x] D1 database schema and migrations
+  - Complete schema.sql with all tables from plan
+  - Added: predictions, predictor_stats, map_votes, replay_feedback, series, series_games, seasons
+  - Added evolution fields to bots table (evolved, island, generation, parent_ids)
+  - Created migrations/0001_initial.sql for D1 migrations
+  - Updated wrangler.toml with migrations_dir config
 - [ ] R2 bucket creation and custom domain
 - [ ] Worker API deployment via Wrangler
 - [ ] DNS configuration
@@ -132,6 +137,9 @@ ai-code-battle/
 ├── worker-api/
 │   ├── package.json    # npm dependencies
 │   ├── wrangler.toml   # Cloudflare Worker config
+│   ├── schema.sql      # Complete D1 schema (all tables)
+│   ├── migrations/     # D1 migration files
+│   │   └── 0001_initial.sql
 │   └── src/
 │       ├── index.ts        # Router + cron dispatcher
 │       ├── types.ts        # TypeScript types

@@ -1,8 +1,9 @@
--- AI Code Battle D1 Schema
--- Complete schema with all tables from the implementation plan
+-- Migration: 0001_initial
+-- Description: Initial database schema for AI Code Battle
+-- Created: 2025-03-24
 
 -- ============================================
--- Core Tables (Phase 4)
+-- Core Tables
 -- ============================================
 
 -- Bots table: stores registered bots
@@ -134,7 +135,7 @@ CREATE TABLE IF NOT EXISTS bot_secrets (
 );
 
 -- ============================================
--- Prediction System (Section 13.5)
+-- Prediction System
 -- ============================================
 
 -- Predictions: visitor predictions on match outcomes
@@ -167,7 +168,7 @@ CREATE TABLE IF NOT EXISTS predictor_stats (
 CREATE INDEX IF NOT EXISTS idx_predictor_stats_rating ON predictor_stats(rating DESC);
 
 -- ============================================
--- Map Voting (Section 13.6)
+-- Map Voting
 -- ============================================
 
 -- Map votes: community voting on map quality
@@ -184,7 +185,7 @@ CREATE TABLE IF NOT EXISTS map_votes (
 CREATE INDEX IF NOT EXISTS idx_map_votes_map ON map_votes(map_id);
 
 -- ============================================
--- Replay Feedback (Section 13.6)
+-- Replay Feedback
 -- ============================================
 
 -- Replay feedback: community annotations on replays
@@ -205,7 +206,7 @@ CREATE INDEX IF NOT EXISTS idx_feedback_type ON replay_feedback(type);
 CREATE INDEX IF NOT EXISTS idx_feedback_upvotes ON replay_feedback(upvotes DESC);
 
 -- ============================================
--- Multi-Game Series (Section 14.7)
+-- Multi-Game Series
 -- ============================================
 
 -- Series: best-of-N match series between two bots
@@ -243,7 +244,7 @@ CREATE TABLE IF NOT EXISTS series_games (
 CREATE INDEX IF NOT EXISTS idx_series_games_match ON series_games(match_id);
 
 -- ============================================
--- Seasonal Rotations (Section 14.9)
+-- Seasonal Rotations
 -- ============================================
 
 -- Seasons: seasonal leaderboards with rule variations
