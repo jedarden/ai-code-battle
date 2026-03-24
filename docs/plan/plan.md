@@ -1975,6 +1975,27 @@ replays, curated playlists, three replay view modes, bot debug telemetry,
 event timelines, and shareable bot profile cards. All within Cloudflare
 free tier.
 
+### Phase 10: Ecosystem & Polish
+
+**Deliverables:**
+- Weekly meta report: auto-generated blog post published to R2, rendered
+  on `/blog` with LLM-enhanced narrative sections
+- Public match data: documented static JSON file paths in R2, OpenAPI-style
+  documentation at `/docs/api`, versioned replay format spec
+- Accessibility suite: Tol color-blind palette + shape-per-player, keyboard
+  shortcuts for replay viewer, high contrast mode, reduced motion, screen
+  reader transcript, focus indicators
+- Live evolution observatory: evolver writes `live.json` to R2 every cycle,
+  observatory page polls and renders live feed + lineage tree + meta shift
+  chart
+- Narrative engine: weekly story arc detection, LLM-generated 200-word
+  chronicles, published alongside meta reports on `/blog`
+
+**Exit criteria:** the platform publishes weekly editorial content (meta
+report + story arcs) as blog posts, exposes all match data as documented
+static JSON, meets WCAG accessibility standards for color and keyboard
+navigation, and streams the evolution process as a live observatory.
+
 ---
 
 ## 12. Enhanced Features
@@ -3239,3 +3260,492 @@ Template-generated from ~20 signature patterns.
   <meta property="og:title" content="SwarmBot — #3 Rated — AI Code Battle" />
   ```
 - The card image includes the platform URL as a watermark, driving traffic
+
+---
+
+## 14. Ecosystem & Polish
+
+### 14.1 Weekly Meta Report (Blog Posts)
+
+Every Monday, the platform publishes a "State of the Game" blog post — an
+auto-generated analysis of the competitive landscape for the current season.
+
+**Published to:** `/blog/meta-week-{N}-season-{S}` on the static site.
+
+**Blog infrastructure:**
+
+Blog posts are Markdown files stored in R2 (`blog/posts/{slug}.json`),
+each containing:
+
+```json
+{
+  "slug": "meta-week-12-season-4",
+  "title": "Week 12 Meta Report — Season 4: The Colosseum",
+  "date": "2026-03-23",
+  "type": "meta-report",
+  "content_md": "# Week 12 Meta Report\n\n## Dominant Strategies\n...",
+  "summary": "Swarm tactics dominate as attack_radius2 increase favors formations...",
+  "tags": ["meta-report", "season-4"]
+}
+```
+
+The static site's `/blog` page fetches `blog/index.json` (list of all
+posts) and renders them client-side with a Markdown renderer.
+
+**Report contents:**
+
+| Section | Data Source | Generation |
+|---------|------------|------------|
+| Dominant Strategies | Archetype distribution of top-20 bots | D1 query → template |
+| Rising / Falling Bots | Biggest rating movers (±) this week | D1 query → template |
+| Counter-Strategy Spotlight | Under-represented archetypes in top 20 | D1 query → LLM narrative |
+| Map of the Week | Highest engagement map | D1 query → template |
+| Evolution Highlights | Promotion count, best evolved bot, most novel attempt | D1 query → LLM narrative |
+| Prediction Standings | Top 5 predictors, accuracy rates | D1 query → template |
+| Season Progress | Weeks remaining, championship seedings | D1 query → template |
+
+**Generation pipeline:**
+
+1. Worker cron fires weekly (using one of the 5 cron slots — shares with
+   the index rebuilder, running on a `if (dayOfWeek === 1)` check)
+2. Queries D1 for all data points above
+3. Template-fills the structured sections (strategy distribution, ratings,
+   maps, predictions)
+4. Sends the free-text sections (counter-strategy spotlight, evolution
+   highlights) to a cheap LLM with the data context + a journalism-style
+   prompt
+5. Assembles the full Markdown post
+6. Writes to R2 as a blog JSON file
+7. Updates `blog/index.json`
+
+**Cost:** one LLM call per week (~$0.05). Negligible.
+
+**Why blog posts:** Blog posts are indexable by search engines (driving
+organic traffic), shareable as URLs, and accumulate into a historical
+record of the platform's competitive evolution. They also give the
+platform a human-feeling editorial voice even though the content is
+auto-generated.
+
+### 14.2 Public Match Data (Static JSON)
+
+All platform data is already pre-computed and stored as static JSON files
+in R2. The "API" is simply **documented file paths** — no Worker
+endpoints, no query parameters, no rate limiting needed.
+
+**Documented data paths:**
+
+```
+DATA_BASE = https://data.aicodebattle.com
+
+Leaderboard:
+  GET {DATA_BASE}/data/leaderboard.json
+
+Bot directory:
+  GET {DATA_BASE}/data/bots/index.json
+  GET {DATA_BASE}/data/bots/{bot_id}.json
+
+Match history:
+  GET {DATA_BASE}/data/matches/index.json
+  GET {DATA_BASE}/data/matches/index-{page}.json   (older pages)
+  GET {DATA_BASE}/data/matches/{match_id}.json
+
+Replays:
+  GET {DATA_BASE}/replays/{match_id}.json.gz
+
+Maps:
+  GET {DATA_BASE}/maps/index.json
+  GET {DATA_BASE}/maps/{map_id}.json
+
+Series:
+  GET {DATA_BASE}/data/series/index.json
+  GET {DATA_BASE}/data/series/{series_id}.json
+
+Seasons:
+  GET {DATA_BASE}/data/seasons/index.json
+  GET {DATA_BASE}/data/seasons/{season_id}.json
+
+Playlists:
+  GET {DATA_BASE}/data/playlists/{slug}.json
+
+Meta:
+  GET {DATA_BASE}/data/meta/archetypes.json
+  GET {DATA_BASE}/data/meta/rivalries.json
+
+Evolution:
+  GET {DATA_BASE}/data/evolution/live.json
+  GET {DATA_BASE}/data/evolution/lineage.json
+  GET {DATA_BASE}/data/evolution/meta.json
+
+Blog:
+  GET {DATA_BASE}/blog/index.json
+  GET {DATA_BASE}/blog/posts/{slug}.json
+
+Predictions:
+  GET {DATA_BASE}/data/predictions/leaderboard.json
+  GET {DATA_BASE}/data/predictions/open.json
+```
+
+**Replay format specification:**
+
+Published at `/docs/replay-format` on the static site. Contains:
+
+- JSON Schema file (`replay-schema-v{N}.json`) in R2 — third-party tools
+  can validate replays programmatically
+- Field-by-field documentation with types, semantics, and examples
+- Versioning policy: additive changes only, matching the seasonal backward
+  compatibility rules (§13.9). New fields may appear in future versions;
+  old fields are never removed or renamed.
+- Example replays for each version (downloadable from R2)
+- Changelog of schema changes per season
+
+**Documentation page** (`/docs/data`):
+
+A static page listing every data path above with descriptions, update
+frequency, and example `curl` commands. No authentication, no API keys,
+no rate limiting — it's just static files.
+
+**Why static JSON, not a Worker API:**
+
+All this data already exists in R2 as part of the normal platform
+operation. The index rebuilder cron already produces leaderboard.json,
+bot profiles, match indexes, playlists, etc. Adding an API layer on top
+would consume Worker invocations (limited to 100K/day on free tier) for
+data that's already pre-computed and publicly readable. Static files
+scale infinitely on R2 with zero egress cost.
+
+Third-party tools just `fetch()` the URLs. If they need to poll for
+updates, they check the `updated_at` field in each JSON file. Cache
+headers on R2 objects guide freshness (leaderboard: 60s, match data:
+immutable, bot profiles: 300s).
+
+### 14.3 Accessibility Suite
+
+**Color-blind safe palettes:**
+
+The platform ships with two palette options. Users toggle between them
+via a dropdown in the replay viewer toolbar. Preference persists in
+localStorage.
+
+| Players | Default | Color-Blind Safe (Tol) |
+|---------|---------|----------------------|
+| Player 1 | Blue (#2196F3) | Blue (#0077BB) |
+| Player 2 | Red (#F44336) | Orange (#EE7733) |
+| Player 3 | Green (#4CAF50) | Cyan (#009988) |
+| Player 4 | Yellow (#FFEB3B) | Magenta (#EE3377) |
+| Player 5 | Purple (#9C27B0) | Grey (#BBBBBB) |
+| Player 6 | Teal (#009688) | Black (#000000) |
+
+The Tol palette is designed by Paul Tol for maximum distinguishability
+under protanopia, deuteranopia, and tritanopia.
+
+**Shape-per-player (redundant encoding):**
+
+Each player's bots are rendered with a distinct shape in addition to
+color, ensuring identification without color vision:
+
+| Player | Shape |
+|--------|-------|
+| 1 | Circle ● |
+| 2 | Square ■ |
+| 3 | Triangle ▲ |
+| 4 | Diamond ◆ |
+| 5 | Pentagon ⬠ |
+| 6 | Hexagon ⬡ |
+
+Shapes are visible in all three view modes (dots, territory, influence).
+In territory/influence mode, bot sprites retain their shapes on top of
+the colored overlay.
+
+**Keyboard shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play / Pause |
+| `←` / `→` | Step back / forward one turn |
+| `Shift+←` / `Shift+→` | Jump 10 turns |
+| `[` / `]` | Previous / Next critical moment |
+| `1`–`5` | Speed preset (1×, 2×, 4×, 8×, 16×) |
+| `V` | Cycle view mode (dots → territory → influence) |
+| `F` | Cycle fog of war perspective |
+| `T` | Toggle debug telemetry panel |
+| `E` | Toggle event timeline |
+| `C` | Toggle commentary subtitles |
+| `?` | Show keyboard shortcuts overlay |
+
+A "⌨️" icon in the toolbar opens the shortcuts reference as an overlay.
+
+**High contrast mode:**
+
+Toggled via toolbar or `H` key. Changes:
+- Grid lines: thin grey → bold white
+- Background: dark grey → pure black
+- Bot sprites: add 2px white outline
+- Territory/influence overlays: increase opacity from 30% to 50%
+- Energy nodes: yellow → bright white with yellow border
+- Walls: dark grey → medium grey with white border
+- Dead bots: fading red → solid white X
+
+**Reduced motion:**
+
+Respects the `prefers-reduced-motion` CSS media query automatically.
+When active:
+- Energy node pulse animation → static icon
+- Dead bot fade effect → instant removal
+- Bot movement trails → disabled
+- Combat flash → static highlight for one turn
+- Replay speed presets remain (this is user-controlled motion, not
+  decorative)
+
+**Screen reader transcript:**
+
+A "Transcript" button in the toolbar opens a text panel showing a
+turn-by-turn summary generated from replay events:
+
+```
+Turn 87: Player 1 (SwarmBot) moved 8 bots east. Player 2 (HunterBot)
+moved 3 bots south. Combat at (30,42): 2 SwarmBot units and 1 HunterBot
+unit killed. SwarmBot collected energy at (25,38). Win probability:
+SwarmBot 62%, HunterBot 38%.
+```
+
+Generated client-side from the replay data. ARIA live region announces
+each turn's summary during auto-playback.
+
+**Focus management:**
+
+- All interactive elements have visible focus indicators (2px blue
+  outline, offset by 2px for contrast)
+- Tab order follows a logical flow: toolbar → canvas (focusable for
+  keyboard shortcuts) → scrubber → controls
+- Canvas receives focus on click; keyboard shortcuts only activate when
+  canvas is focused (prevents conflicts with page-level shortcuts)
+- Skip-to-content link at page top for screen reader users
+
+### 14.4 Live Evolution Observatory
+
+The evolution dashboard becomes a real-time observatory where visitors
+watch the AI evolution system work — candidates being generated, tested,
+rejected, and promoted.
+
+**Data flow:**
+
+The evolver on Rackspace writes a status file to R2 at each stage of
+every evolution cycle:
+
+```
+PUT data.aicodebattle.com/data/evolution/live.json
+```
+
+Updated at every state transition: generation start, validation
+complete, each evaluation match result, promotion decision. At ~15
+minutes per cycle with ~5 state transitions, that's ~20 R2 writes
+per hour (~14,400/month — 1.4% of the 1M Class A free limit).
+
+**`live.json` schema:**
+
+```json
+{
+  "updated_at": "2026-03-23T14:32:15Z",
+  "cycle": {
+    "generation": 847,
+    "started_at": "2026-03-23T14:20:00Z",
+    "phase": "evaluating",
+    "candidate": {
+      "id": "go-847-3",
+      "island": "go",
+      "language": "Go",
+      "parents": [
+        { "id": "go-831-1", "rating": 1580 },
+        { "id": "go-839-2", "rating": 1540 }
+      ],
+      "community_hint": "try retreating when outnumbered 3:1",
+      "validation": {
+        "syntax": { "passed": true, "time_ms": 120 },
+        "schema": { "passed": true, "time_ms": 450 },
+        "smoke": { "passed": true, "time_ms": 3200 }
+      },
+      "evaluation": {
+        "matches_total": 10,
+        "matches_played": 4,
+        "results": [
+          { "opponent": "strategy-random", "won": true, "score": "5-1" },
+          { "opponent": "strategy-swarm", "won": false, "score": "2-3" },
+          { "opponent": "evo-go-g840", "won": true, "score": "4-2" },
+          { "opponent": "strategy-hunter", "won": true, "score": "3-1" }
+        ]
+      }
+    }
+  },
+  "recent_activity": [
+    {
+      "time": "2026-03-23T14:32:00Z",
+      "generation": 847,
+      "candidate": "go-847-2",
+      "island": "go",
+      "result": "rejected",
+      "reason": "Nash gate: expected payoff -0.12 vs Nash mixture",
+      "stage": "promotion"
+    },
+    {
+      "time": "2026-03-23T14:28:00Z",
+      "generation": 846,
+      "candidate": "py-846-5",
+      "island": "python",
+      "result": "rejected",
+      "reason": "Smoke test: crashed on turn 12",
+      "stage": "validation"
+    },
+    {
+      "time": "2026-03-23T14:25:00Z",
+      "generation": 846,
+      "candidate": "rs-846-1",
+      "island": "rust",
+      "result": "promoted",
+      "bot_id": "evo-rs-g846",
+      "initial_rating": 1500,
+      "stage": "deployment"
+    }
+  ],
+  "islands": {
+    "python": { "population": 18, "best_rating": 1580, "best_bot": "evo-py-g820" },
+    "go": { "population": 20, "best_rating": 1650, "best_bot": "evo-go-g831" },
+    "rust": { "population": 17, "best_rating": 1520, "best_bot": "evo-rs-g846" },
+    "mixed": { "population": 20, "best_rating": 1710, "best_bot": "evo-mx-g802" }
+  },
+  "totals": {
+    "generations_total": 847,
+    "candidates_today": 96,
+    "promoted_today": 12,
+    "promotion_rate_7d": 0.12,
+    "highest_evolved_rating": 1710,
+    "evolved_in_top_10": 3
+  }
+}
+```
+
+**Observatory page (`/evolution`):**
+
+The static site polls `live.json` every 10 seconds and renders:
+
+**Top bar: island overview**
+```
+┌────────────┬────────────┬────────────┬────────────┐
+│  🐍 Python  │  🔵 Go      │  🦀 Rust    │  🔀 Mixed   │
+│  pop: 18   │  pop: 20   │  pop: 17   │  pop: 20   │
+│  best: 1580│  best: 1650│  best: 1520│  best: 1710│
+└────────────┴────────────┴────────────┴────────────┘
+```
+
+**Center: current cycle status**
+
+Shows the current candidate's progress through the pipeline as a
+step indicator: `[Generate] → [✓ Syntax] → [✓ Schema] → [✓ Smoke] →
+[Evaluating 4/10] → [Promotion?]`
+
+Below that, a mini-results table showing the candidate's evaluation
+matches as they complete: opponent, result, score.
+
+If a community hint influenced this candidate's prompt, it's shown:
+`💡 Community hint: "try retreating when outnumbered 3:1" (by tactician42)`
+
+**Bottom: activity feed**
+
+A scrolling log of recent evolution events, color-coded:
+- 🟢 Promoted (green)
+- 🔴 Rejected at validation (red)
+- 🟡 Rejected at Nash gate (yellow)
+
+Each entry shows the candidate ID, island, result, and reason.
+
+**Tabs: lineage tree + meta chart**
+
+- **Lineage tree**: interactive d3.js force-directed graph. Each node is
+  a bot (evolved or built-in). Edges connect parents to children. Nodes
+  are colored by island. Size proportional to rating. Click a node to
+  see the bot's profile. The tree grows as new bots are promoted.
+
+- **Meta shift chart**: stacked area chart (d3.js or Chart.js) showing
+  the archetype distribution of the evolved population over generations.
+  X-axis: generation number. Y-axis: percentage. Each archetype is a
+  colored band. Watch strategies emerge, dominate, and get countered
+  over time.
+
+Both visualizations are built from `data/evolution/lineage.json` and
+`data/evolution/meta.json` (already produced by the index rebuilder).
+The live feed overlay is the only component that polls `live.json`.
+
+### 14.5 Narrative Engine (Chronicles)
+
+Auto-generated storylines from match data, published alongside the weekly
+meta report as blog posts on `/blog`.
+
+**Story arc detection:**
+
+The weekly cron (same as the meta report, §14.1) scans D1 for active
+story arcs:
+
+| Arc Type | D1 Query Trigger |
+|----------|-----------------|
+| **Rise** | Bot gained ≥200 rating in the last 7 days |
+| **Fall** | Bot lost ≥200 rating in the last 7 days |
+| **Rivalry Intensifies** | Rivalry pair played 5+ matches this week with alternating wins |
+| **Upset of the Week** | Biggest single-match rating gap where the underdog won |
+| **Evolution Milestone** | Evolved bot reached a new all-time-high rating or entered top 5 |
+| **Comeback** | Bot recovered ≥150 rating after a decline |
+| **Season Narrative** | End of season (championship results, final standings) |
+
+**Generation pipeline:**
+
+1. Detect 3–5 active arcs from D1 queries
+2. For each arc, compile context: bot profiles, rating history, key
+   match IDs with scores, archetype data, rival relationships
+3. Prompt a cheap LLM (Haiku-class):
+
+```
+Write a 200-word sports-journalism narrative about this event in the
+AI Code Battle platform. Be dramatic but factual. Reference specific
+matches. Write in present tense. Do not use emojis.
+
+Arc type: Rise
+Bot: evo-go-g31
+Season: 4 (The Colosseum)
+Rating: 1320 → 1580 over 7 days
+Key matches:
+  - Beat SwarmBot (#1, 1820) on "The Labyrinth" — score 4-2, turn 287
+  - Won bo3 series vs HunterBot (#4, 1650) 2-1
+  - Lost to GuardianBot (#2, 1720) by 1 point on "Open Expanse"
+Archetype: hybrid swarm-gatherer
+Origin: evolved, generation 31, Go island
+Parents: evo-go-g28 (gatherer archetype) × evo-go-g25 (swarm archetype)
+Community hint that influenced it: "combine tight formations with
+energy-first opening"
+```
+
+4. Assemble output as a blog post JSON file with:
+   - Headline (generated by LLM)
+   - 200-word narrative
+   - Embedded replay links for key matches
+   - Bot profile card image (§13.10)
+   - Rating chart (data for client-side rendering)
+5. Write to R2: `blog/posts/{slug}.json`
+6. Update `blog/index.json`
+
+**Blog page (`/blog`):**
+
+- Lists all posts reverse-chronologically
+- Post types: `meta-report` and `chronicle` (story arcs)
+- Each post renders as a full page with embedded replay widgets (§13.3)
+  at key moments
+- Tags for filtering: `meta-report`, `rise`, `fall`, `rivalry`, `upset`,
+  `evolution`, `comeback`, `season-recap`
+
+**Weekly output:** 1 meta report + 3–5 chronicles = 4–6 blog posts/week.
+
+**Cost:** ~$0.05 per LLM call × 6 posts/week = ~$0.30/week, ~$1.30/month.
+
+**Why it matters:** Chronicles transform raw match data into stories that
+people share, discuss, and follow. "The Rise of evo-go-g31" is a headline
+someone posts on Hacker News. "GathererBot's Decline" is a cautionary
+tale that sparks strategy discussion. The narrative engine gives the
+platform a *voice* — it feels alive, with characters and plot arcs, not
+just numbers on a leaderboard.
