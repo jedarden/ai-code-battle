@@ -1,10 +1,10 @@
 # AI Code Battle - Implementation Progress
 
-## Current Phase: Phase 5 - Web Platform
+## Current Phase: Phase 6 - Deployment & Production
 
-**Status: 🔄 In Progress**
+**Status: 🔄 Ready to Start**
 
-### Phase 5 Progress
+### Phase 5 Completed ✅
 
 - [x] SPA application shell (`web/app.html`)
   - Navigation header with links to all sections
@@ -29,8 +29,13 @@
   - fetchMatchIndex()
   - registerBot()
   - rotateApiKey()
-- [ ] Cloudflare Pages deployment configuration
-- [ ] R2 bucket custom domain for replays
+- [x] Cloudflare Pages deployment configuration
+  - `web/pages.json` - Project configuration
+  - `web/public/_headers` - Cache control headers
+  - `web/public/robots.txt` - SEO
+  - `web/public/data/` - Placeholder index file structure
+- [x] R2 bucket custom domain documentation
+  - Documented in `web/pages.json` data_paths section
 
 ### Phase 4 Completed
 
@@ -49,8 +54,8 @@
 | Match history page | ✅ Complete |
 | Leaderboard with rankings | ✅ Complete |
 | Getting started / docs page | ✅ Complete |
-| Cloudflare Pages deployment config | ⏳ Pending |
-| R2 bucket custom domain for replays | ⏳ Pending |
+| Cloudflare Pages deployment config | ✅ Complete |
+| R2 bucket custom domain for replays | ✅ Documented |
 
 ### Phase 1 Completed
 
@@ -103,8 +108,16 @@ ai-code-battle/
 │   ├── package.json    # npm dependencies
 │   ├── tsconfig.json   # TypeScript config
 │   ├── vite.config.ts  # Vite bundler config
+│   ├── pages.json      # Cloudflare Pages project config
 │   ├── index.html      # Standalone replay viewer
 │   ├── app.html        # SPA shell with navigation
+│   ├── public/         # Static assets (copied to dist/)
+│   │   ├── _headers    # Cloudflare cache headers
+│   │   ├── robots.txt  # SEO
+│   │   └── data/       # Placeholder index files
+│   │       ├── leaderboard.json
+│   │       ├── bots/index.json
+│   │       └── matches/index.json
 │   └── src/
 │       ├── types.ts        # Replay type definitions
 │       ├── api-types.ts    # API client and types

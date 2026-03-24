@@ -1,0 +1,18 @@
+# Cache control for static assets
+# HTML files - no cache (always fresh)
+/*.html
+  Cache-Control: no-cache
+
+# JS assets - immutable (hashed filenames)
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Data files - short cache (updated by index builder)
+/data/*
+  Cache-Control: public, max-age=300
+
+# Default
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block

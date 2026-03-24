@@ -1,0 +1,30 @@
+{
+  "name": "acb-web",
+  "description": "AI Code Battle - Competitive bot programming platform",
+  "domains": [
+    "aicodebattle.com"
+  ],
+  "build": {
+    "command": "npm run build",
+    "output_dir": "dist",
+    "root_dir": "web"
+  },
+  "routes": {
+    "app": "app.html",
+    "replay_viewer": "index.html"
+  },
+  "data_paths": {
+    "pages_data": "https://aicodebattle.com/data",
+    "r2_data": "https://data.aicodebattle.com"
+  },
+  "deployment": {
+    "method": "wrangler pages deploy",
+    "git_integration": true,
+    "index_builder_deploys": "data/ directory only"
+  },
+  "notes": [
+    "SPA uses hash-based routing (no _redirects needed)",
+    "Index files in data/ are deployed by Rackspace index builder every ~90 min",
+    "Replays and per-match data are served from R2 custom domain"
+  ]
+}
