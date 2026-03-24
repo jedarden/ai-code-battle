@@ -2,7 +2,38 @@
 
 ## Current Phase: Phase 6 - Deployment & Production
 
-**Status: 🔄 Ready to Start**
+**Status: 🔄 In Progress**
+
+### Phase 6 Progress
+
+- [x] Match worker container (`cmd/acb-worker/Dockerfile`)
+  - Multi-stage Go build
+  - Non-root user for security
+  - Environment variable configuration
+- [x] Bot-host deployment (`docker-compose.bots.yml`)
+  - Orchestrates all 6 strategy bots
+  - Health checks for each bot
+  - Environment-based secret configuration
+- [x] Worker deployment (`docker-compose.workers.yml`)
+  - Match worker with scaling support
+  - Index builder for periodic runs
+  - R2 and API configuration
+- [x] Environment configuration (`.env.example`)
+  - Documented all required environment variables
+- [x] Deployment documentation (`DEPLOYMENT.md`)
+  - Architecture overview
+  - Cloudflare setup instructions
+  - Container deployment commands
+  - Troubleshooting guide
+
+### Remaining Phase 6 Work
+
+- [ ] Cloudflare Pages project creation and deployment
+- [ ] D1 database schema and migrations
+- [ ] R2 bucket creation and custom domain
+- [ ] Worker API deployment via Wrangler
+- [ ] DNS configuration
+- [ ] Monitoring setup
 
 ### Phase 5 Completed ✅
 
@@ -64,6 +95,11 @@
 ```
 ai-code-battle/
 ├── go.mod
+├── go.sum
+├── .env.example              # Environment configuration template
+├── DEPLOYMENT.md             # Deployment guide
+├── docker-compose.bots.yml   # Bot-host orchestration
+├── docker-compose.workers.yml # Worker orchestration
 ├── engine/
 │   ├── types.go        # Core data types
 │   ├── grid.go         # Toroidal grid implementation
@@ -82,7 +118,8 @@ ai-code-battle/
 │   │   ├── main.go      # Worker entry point
 │   │   ├── api.go       # Worker API client
 │   │   ├── api_test.go  # API client tests
-│   │   └── r2.go        # R2 upload client
+│   │   ├── r2.go        # R2 upload client
+│   │   └── Dockerfile   # Worker container
 │   └── acb-indexer/    # Index builder
 │       ├── package.json
 │       ├── Dockerfile

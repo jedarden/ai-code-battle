@@ -1,0 +1,110 @@
+# AI Code Battle - Bot Host Deployment
+# Runs all 6 strategy bots as a single deployable unit
+#
+# Usage:
+#   docker-compose -f docker-compose.bots.yml up -d
+#
+# Environment variables (set in .env or pass directly):
+#   BOT_SECRET_RANDOM   - Secret for RandomBot
+#   BOT_SECRET_GATHERER - Secret for GathererBot
+#   BOT_SECRET_RUSHER   - Secret for RusherBot
+#   BOT_SECRET_GUARDIAN - Secret for GuardianBot
+#   BOT_SECRET_SWARM    - Secret for SwarmBot
+#   BOT_SECRET_HUNTER   - Secret for HunterBot
+
+services:
+  random:
+    build:
+      context: ./bots/random
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_RANDOM:-dev-secret-random}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  gatherer:
+    build:
+      context: ./bots/gatherer
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_GATHERER:-dev-secret-gatherer}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  rusher:
+    build:
+      context: ./bots/rusher
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8082"
+    environment:
+      - BOT_PORT=8082
+      - BOT_SECRET=${BOT_SECRET_RUSHER:-dev-secret-rusher}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  guardian:
+    build:
+      context: ./bots/guardian
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8083"
+    environment:
+      - BOT_PORT=8083
+      - BOT_SECRET=${BOT_SECRET_GUARDIAN:-dev-secret-guardian}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  swarm:
+    build:
+      context: ./bots/swarm
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8084"
+    environment:
+      - BOT_PORT=8084
+      - BOT_SECRET=${BOT_SECRET_SWARM:-dev-secret-swarm}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  hunter:
+    build:
+      context: ./bots/hunter
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8085"
+    environment:
+      - BOT_PORT=8085
+      - BOT_SECRET=${BOT_SECRET_HUNTER:-dev-secret-hunter}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8085/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped

@@ -1,0 +1,61 @@
+# AI Code Battle - Rackspace Worker Deployment
+# Runs match workers and index builder on Rackspace Spot
+#
+# Usage:
+#   docker-compose -f docker-compose.workers.yml up -d
+#
+# Environment variables (set in .env or pass directly):
+#   ACB_API_ENDPOINT - Worker API URL (e.g., https://api.aicodebattle.com)
+#   ACB_API_KEY      - Worker API key for authentication
+#   ACB_R2_ENDPOINT  - R2 endpoint URL
+#   ACB_R2_BUCKET    - R2 bucket name
+#   ACB_R2_ACCESS_KEY - R2 access key ID
+#   ACB_R2_SECRET_KEY - R2 secret access key
+
+services:
+  # Match execution worker
+  worker:
+    build:
+      context: .
+      dockerfile: cmd/acb-worker/Dockerfile
+    environment:
+      - ACB_API_ENDPOINT=${ACB_API_ENDPOINT:-http://host.docker.internal:8787}
+      - ACB_API_KEY=${ACB_API_KEY:?ACB_API_KEY is required}
+      - ACB_R2_ENDPOINT=${ACB_R2_ENDPOINT}
+      - ACB_R2_BUCKET=${ACB_R2_BUCKET:-acb-data}
+      - ACB_R2_ACCESS_KEY=${ACB_R2_ACCESS_KEY}
+      - ACB_R2_SECRET_KEY=${ACB_R2_SECRET_KEY}
+      - ACB_WORKER_ID=${ACB_WORKER_ID:-}
+      - ACB_VERBOSE=${ACB_VERBOSE:-false}
+    command: ["-poll=5s", "-heartbeat=30s", "-timeout=3s"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Index builder - runs periodically to rebuild static JSON files
+  # Run manually: docker-compose -f docker-compose.workers.yml run indexer
+  indexer:
+    build:
+      context: ./cmd/acb-indexer
+      dockerfile: Dockerfile
+    environment:
+      - API_URL=${ACB_API_ENDPOINT:-http://host.docker.internal:8787}
+      - API_KEY=${ACB_API_KEY:?ACB_API_KEY is required}
+      - OUTPUT_DIR=/app/data
+      - DEPLOY_COMMAND=${DEPLOY_COMMAND:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - indexer-data:/app/data
+    profiles:
+      - manual
+
+volumes:
+  indexer-data:
