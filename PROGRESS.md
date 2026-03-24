@@ -7,6 +7,11 @@
 **Last Updated: 2026-03-24**
 
 ### Recent Changes (2026-03-24)
+- Added GitHub Actions CI workflow (`.github/workflows/ci.yml`)
+  - Runs Go engine tests with race detector
+  - Runs TypeScript tests for worker-api and indexer
+  - Builds web app and uploads artifacts
+  - Builds all Go CLI tools
 - Added `README.md` with project overview and quick start guide
 - Added `.gitignore` for proper repository hygiene
 - Added `package-lock.json` files for reproducible builds
@@ -45,6 +50,12 @@
   - `/health` - Liveness probe (always returns 200)
   - `/ready` - Readiness probe (checks database connectivity, returns 503 if unavailable)
   - Documented in DEPLOYMENT.md
+- [x] GitHub Actions CI workflow
+  - `.github/workflows/ci.yml` for automated testing
+  - Go tests with race detector
+  - TypeScript tests for worker-api and indexer
+  - Web build verification
+  - Go binary builds
 
 ### Remaining Phase 6 Work (requires Cloudflare account access)
 
@@ -118,6 +129,9 @@ ai-code-battle/
 ├── DEPLOYMENT.md             # Deployment guide
 ├── docker-compose.bots.yml   # Bot-host orchestration
 ├── docker-compose.workers.yml # Worker orchestration
+├── .github/
+│   └── workflows/
+│       └── ci.yml            # GitHub Actions CI workflow
 ├── engine/
 │   ├── types.go        # Core data types
 │   ├── grid.go         # Toroidal grid implementation
