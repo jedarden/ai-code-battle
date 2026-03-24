@@ -499,7 +499,7 @@ Engine                          Bot
 **Future additive fields:** the game state schema is designed for forward
 compatibility. Future seasons may add optional fields to `config` (e.g.,
 `season_id`, `rules_version`, `special_tiles`, `terrain`) without breaking
-existing bots. See the seasonal backward compatibility rules in §13.9. Bots
+existing bots. See the seasonal backward compatibility rules in §14.9. Bots
 that do not read new fields continue to function normally.
 
 ### 4.3 Move Schema (Bot -> Engine)
@@ -1342,7 +1342,7 @@ CREATE TABLE map_votes (
     UNIQUE(map_id, voter_id)
 );
 
--- §12.6: Community replay feedback
+-- §13.6: Community replay feedback
 
 CREATE TABLE replay_feedback (
     feedback_id   TEXT PRIMARY KEY,
@@ -1357,7 +1357,7 @@ CREATE TABLE replay_feedback (
 
 CREATE INDEX idx_feedback_match ON replay_feedback(match_id, turn);
 
--- §13.7: Multi-game series
+-- §14.7: Multi-game series
 
 CREATE TABLE series (
     series_id     TEXT PRIMARY KEY,
@@ -1381,7 +1381,7 @@ CREATE TABLE series_games (
     PRIMARY KEY (series_id, game_number)
 );
 
--- §13.9: Seasonal rotations
+-- §14.9: Seasonal rotations
 
 CREATE TABLE seasons (
     season_id     TEXT PRIMARY KEY,
@@ -2206,7 +2206,282 @@ no separate tier. This is a deliberate design choice:
 
 ---
 
-## 11. Implementation Phases
+## 11. Artifact Inventory
+
+Every deliverable that gets built, deployed, or published. Grouped by
+where it runs.
+
+### 11.1 Monorepo Structure
+
+All platform code lives in a single repository (`ai-code-battle`):
+
+```
+ai-code-battle/
+├── engine/                      # Go library — game simulation core
+│   ├── grid.go                  # Toroidal grid, tile types, wrapping
+│   ├── bot.go                   # Bot state, movement, collision
+│   ├── combat.go                # Focus-fire algorithm
+│   ├── energy.go                # Energy nodes, collection, spawning
+│   ├── fog.go                   # Fog of war computation
+│   ├── capture.go               # Core capture/razing
+│   ├── scoring.go               # Score tracking, win conditions
+│   ├── match.go                 # Turn loop, phase orchestration
+│   ├── replay.go                # Replay JSON serialization
+│   ├── winprob.go               # Monte Carlo win probability rollout
+│   └── engine_test.go           # Property-based + unit tests
+│
+├── cmd/
+│   ├── acb-local/               # CLI: run a match locally (stdin/stdout bots)
+│   ├── acb-mapgen/              # CLI: generate symmetric maps
+│   ├── acb-worker/              # Container: match execution worker
+│   ├── acb-evolver/             # Container: LLM evolution pipeline
+│   ├── acb-index-builder/       # Container: D1 → JSON → Pages deploy
+│   └── acb-replay-pruner/       # Container: R2 replay cleanup
+│
+├── worker-api/                  # Cloudflare Worker (TypeScript)
+│   ├── src/
+│   │   ├── index.ts             # Router + cron trigger dispatcher
+│   │   ├── routes/
+│   │   │   ├── register.ts      # POST /api/register, /api/rotate-key
+│   │   │   ├── jobs.ts          # GET /api/jobs/next, POST /api/jobs/{id}/result
+│   │   │   ├── predict.ts       # POST /api/predict
+│   │   │   ├── feedback.ts      # POST /api/feedback
+│   │   │   ├── status.ts        # GET /api/status/{bot_id}
+│   │   │   └── export.ts        # GET /api/data/export (for index builder)
+│   │   ├── crons/
+│   │   │   ├── matchmaker.ts    # Every 1 min: create match jobs
+│   │   │   ├── health.ts        # Every 15 min: ping bot endpoints
+│   │   │   └── reaper.ts        # Every 5 min: reclaim stale jobs
+│   │   ├── lib/
+│   │   │   ├── hmac.ts          # HMAC-SHA256 signing/verification
+│   │   │   ├── glicko2.ts       # Glicko-2 rating computation
+│   │   │   └── schema.ts        # Request/response JSON schema validators
+│   │   └── types.ts             # D1 table types, API types
+│   ├── wrangler.toml            # Worker + D1 + R2 bindings, cron config
+│   └── migrations/              # D1 schema migrations
+│       └── 0001_initial.sql
+│
+├── web/                         # Cloudflare Pages (TypeScript + Vite)
+│   ├── src/
+│   │   ├── app.ts               # SPA router, data fetching, layout
+│   │   ├── pages/
+│   │   │   ├── home.ts          # Homepage: hero replay, leaderboard, playlists
+│   │   │   ├── watch.ts         # /watch: replay browser, playlists
+│   │   │   ├── replay.ts        # /watch/replay/{id}: full viewer
+│   │   │   ├── series.ts        # /watch/series/{id}: series page
+│   │   │   ├── compete.ts       # /compete: sandbox, registration, docs
+│   │   │   ├── sandbox.ts       # /compete/sandbox: WASM sandbox
+│   │   │   ├── leaderboard.ts   # /leaderboard
+│   │   │   ├── bot-profile.ts   # /bot/{id}: public bot profile
+│   │   │   ├── evolution.ts     # /evolution: live observatory
+│   │   │   ├── blog.ts          # /blog: meta reports + chronicles
+│   │   │   ├── season.ts        # /season/{id}: season archive
+│   │   │   ├── predictions.ts   # /watch/predictions
+│   │   │   └── embed.ts         # /embed/{id}: lightweight embed player
+│   │   ├── components/
+│   │   │   ├── replay-canvas.ts # Canvas renderer: bots, grid, animations
+│   │   │   ├── territory.ts     # Voronoi + influence overlay renderers
+│   │   │   ├── particles.ts     # Particle pool + death/energy animations
+│   │   │   ├── follow-camera.ts # Bounding box tracking + lerp viewport
+│   │   │   ├── pip.ts           # Picture-in-picture manager
+│   │   │   ├── director.ts      # Adaptive auto-speed controller
+│   │   │   ├── win-prob.ts      # Win probability sparkline graph
+│   │   │   ├── event-timeline.ts# Event icon ribbon
+│   │   │   ├── clip-export.ts   # GIF/MP4 export via MediaRecorder
+│   │   │   ├── annotation.ts    # Spatial + text replay annotations
+│   │   │   ├── leaderboard-table.ts
+│   │   │   ├── bot-card.ts      # Bot profile card renderer (Canvas PNG)
+│   │   │   ├── match-card.ts    # Match summary card
+│   │   │   ├── playlist-row.ts  # Horizontal scrollable playlist
+│   │   │   ├── prediction-widget.ts
+│   │   │   ├── observatory-feed.ts # Live evolution status
+│   │   │   ├── blog-post.ts     # Markdown renderer for blog content
+│   │   │   └── skeleton.ts      # Per-page skeleton screens
+│   │   ├── lib/
+│   │   │   ├── data.ts          # R2 + Pages data fetching, caching
+│   │   │   ├── preload.ts       # Hover preload + route cache
+│   │   │   ├── disclosure.ts    # Progressive feature revelation (XP)
+│   │   │   ├── accessibility.ts # Color palettes, keyboard shortcuts
+│   │   │   ├── ambient.ts       # Favicon badges, tab titles, haptic
+│   │   │   └── season-theme.ts  # Background hue shift per season
+│   │   └── styles/
+│   │       ├── base.css         # Dark theme, typography, reset
+│   │       ├── components.css   # Component styles
+│   │       └── mobile.css       # Responsive breakpoints, bottom tab bar
+│   ├── public/
+│   │   ├── docs/                # Static documentation pages
+│   │   └── img/                 # Logos, icons, UI assets
+│   ├── vite.config.ts
+│   └── tsconfig.json
+│
+├── wasm/                        # WASM builds for the browser sandbox
+│   ├── engine/                  # Go game engine → WASM
+│   │   ├── main_wasm.go         # WASM exports: runMatch, loadState, step
+│   │   └── build.sh             # GOOS=js GOARCH=wasm go build
+│   └── bots/                    # Built-in bot WASM builds
+│       ├── gatherer/            # Go → WASM
+│       ├── rusher/              # Rust → WASM (wasm32-unknown-unknown)
+│       ├── swarm/               # TypeScript → WASM (AssemblyScript)
+│       ├── random/              # Go → WASM (lightweight reimpl)
+│       ├── guardian/            # Go → WASM (reimpl from PHP)
+│       └── hunter/              # Go → WASM (reimpl from Java)
+│
+├── bots/                        # Production bot HTTP servers (6 languages)
+│   ├── random/                  # Python — Flask, ~50 lines strategy
+│   │   ├── Dockerfile
+│   │   ├── main.py
+│   │   ├── game.py
+│   │   └── requirements.txt
+│   ├── gatherer/                # Go — net/http, BFS pathfinding
+│   │   ├── Dockerfile
+│   │   ├── main.go
+│   │   ├── strategy.go
+│   │   └── game/
+│   ├── rusher/                  # Rust — axum, BFS to enemy core
+│   │   ├── Dockerfile
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   ├── guardian/                # PHP — built-in server, perimeter defense
+│   │   ├── Dockerfile
+│   │   ├── index.php
+│   │   ├── strategy.php
+│   │   └── game.php
+│   ├── swarm/                   # TypeScript — Fastify, formation advance
+│   │   ├── Dockerfile
+│   │   ├── package.json
+│   │   └── src/
+│   └── hunter/                  # Java — Javalin, target isolation
+│       ├── Dockerfile
+│       ├── pom.xml
+│       └── src/
+│
+├── starters/                    # Forkable starter kit template repos
+│   ├── python/
+│   ├── go/
+│   ├── rust/
+│   ├── php/
+│   ├── typescript/
+│   └── java/
+│
+├── docs/                        # Project documentation
+│   ├── plan/
+│   │   └── plan.md              # This document
+│   ├── research/
+│   │   ├── ants-ai-challenge.md
+│   │   └── llm-bot-evolution.md
+│   └── notes/
+│       └── requirements.md
+│
+├── CLAUDE.md
+└── README.md
+```
+
+### 11.2 Deployable Artifacts
+
+**Cloudflare (free tier):**
+
+| Artifact | Type | Source | Deploy Method |
+|----------|------|--------|---------------|
+| `acb-web` | Pages project | `web/` | `wrangler pages deploy` (code changes: git push; data changes: index builder) |
+| `acb-api` | Worker | `worker-api/` | `wrangler deploy` |
+| `acb-db` | D1 database | `worker-api/migrations/` | `wrangler d1 migrations apply` |
+| `acb-data` | R2 bucket | — | Created via `wrangler r2 bucket create` |
+
+**Rackspace Spot (container images):**
+
+| Image | Source | Base | Purpose | Schedule |
+|-------|--------|------|---------|----------|
+| `acb-worker` | `cmd/acb-worker/` | Go on Alpine | Match execution | Always running (1–10 instances) |
+| `acb-evolver` | `cmd/acb-evolver/` | Go on Alpine | LLM evolution pipeline | Always running, self-restarts every 4h |
+| `acb-index-builder` | `cmd/acb-index-builder/` | Node 22 Alpine (wrangler CLI) | D1 → JSON → Pages deploy | Every ~90 min |
+| `acb-replay-pruner` | `cmd/acb-replay-pruner/` | Go on Alpine | R2 replay cleanup | Weekly |
+| `acb-strategy-random` | `bots/random/` | Python 3.13 slim | RandomBot | Always running |
+| `acb-strategy-gatherer` | `bots/gatherer/` | Go on Alpine | GathererBot | Always running |
+| `acb-strategy-rusher` | `bots/rusher/` | Rust on Alpine | RusherBot | Always running |
+| `acb-strategy-guardian` | `bots/guardian/` | PHP 8.4 CLI Alpine | GuardianBot | Always running |
+| `acb-strategy-swarm` | `bots/swarm/` | Node 22 Alpine | SwarmBot | Always running |
+| `acb-strategy-hunter` | `bots/hunter/` | Temurin 21 JRE Alpine | HunterBot | Always running |
+| `acb-evolved-*` | Generated by evolver | Varies | LLM-evolved bots | Dynamic (0–50) |
+
+**WASM artifacts (built at compile time, deployed with Pages):**
+
+| Artifact | Source | Target | Size |
+|----------|--------|--------|------|
+| `engine.wasm` | `wasm/engine/` | `GOOS=js GOARCH=wasm` | ~15 MB |
+| `gatherer.wasm` | `wasm/bots/gatherer/` | Go → WASM | ~12 MB |
+| `rusher.wasm` | `wasm/bots/rusher/` | Rust → `wasm32-unknown-unknown` | ~3 MB |
+| `swarm.wasm` | `wasm/bots/swarm/` | AssemblyScript → WASM | ~5 MB |
+| `random.wasm` | `wasm/bots/random/` | Go → WASM | ~10 MB |
+| `guardian.wasm` | `wasm/bots/guardian/` | Go → WASM (reimpl) | ~12 MB |
+| `hunter.wasm` | `wasm/bots/hunter/` | Go → WASM (reimpl) | ~12 MB |
+
+**Published template repos (one per language):**
+
+| Repo | Language | Contents |
+|------|----------|----------|
+| `acb-starter-python` | Python | Flask server, HMAC, game types, stub strategy, Dockerfile |
+| `acb-starter-go` | Go | net/http, shared game/ package, Dockerfile |
+| `acb-starter-rust` | Rust | axum + serde, HMAC crate, Dockerfile |
+| `acb-starter-php` | PHP | Built-in server, hash_hmac, Dockerfile |
+| `acb-starter-typescript` | TypeScript | Fastify, typed interfaces, Dockerfile |
+| `acb-starter-java` | Java | Javalin, javax.crypto.Mac, Maven, Dockerfile |
+
+**CLI tools (built from monorepo, used locally):**
+
+| Tool | Source | Purpose |
+|------|--------|---------|
+| `acb-local` | `cmd/acb-local/` | Run a match between two local bots (stdin/stdout), output replay JSON |
+| `acb-mapgen` | `cmd/acb-mapgen/` | Generate symmetric maps with configurable parameters |
+
+### 11.3 Build & Deploy Pipeline
+
+```
+Source (git push)
+    │
+    ├──► GitHub Actions CI
+    │    ├── go test ./engine/...          (game engine tests)
+    │    ├── go test ./cmd/...             (worker/evolver tests)
+    │    ├── npm test (worker-api)          (Worker tests)
+    │    ├── npm test (web)                 (SPA tests)
+    │    ├── WASM builds                   (engine + 6 bots)
+    │    ├── Container image builds         (all Rackspace images)
+    │    └── wrangler deploy               (Worker + D1 migrations)
+    │
+    ├──► Cloudflare Pages (auto-deploy on push)
+    │    └── web/ → Pages project
+    │
+    └──► Container Registry
+         └── Push images → Rackspace pulls on deploy
+
+Rackspace index builder (every ~90 min):
+    │
+    ├── GET api.aicodebattle.com/api/data/export
+    ├── Generate JSON index files
+    └── wrangler pages deploy (data update, no code change)
+```
+
+### 11.4 Shared Libraries & Code Reuse
+
+Several components share code. The monorepo structure avoids duplication:
+
+| Shared Code | Used By | Language |
+|-------------|---------|---------|
+| `engine/` | `acb-worker`, `acb-evolver`, `acb-local`, `acb-mapgen`, WASM engine | Go |
+| `engine/replay.go` | `acb-worker` (write), `acb-index-builder` (read for stats) | Go |
+| `engine/winprob.go` | `acb-worker` (post-match computation) | Go |
+| `worker-api/src/lib/hmac.ts` | Worker API | TypeScript |
+| `worker-api/src/lib/glicko2.ts` | Worker API (rating updates) | TypeScript |
+| `web/src/components/replay-canvas.ts` | Full viewer, embed, sandbox, homepage | TypeScript |
+| `web/src/lib/data.ts` | All pages (data fetching + caching) | TypeScript |
+
+The game engine is the foundational shared artifact — it compiles to:
+1. A Go library (imported by worker, evolver, CLI tools)
+2. A WASM module (loaded by the browser sandbox and embed viewer)
+3. A test binary (run in CI)
+
+---
+
+## 12. Implementation Phases
 
 ### Phase 1: Core Engine (Foundation)
 
@@ -2406,9 +2681,9 @@ navigation, and streams the evolution process as a live observatory.
 
 ---
 
-## 12. Enhanced Features
+## 13. Enhanced Features
 
-### 12.1 In-Browser WASM Game Sandbox
+### 13.1 In-Browser WASM Game Sandbox
 
 The game engine and bots compile to WebAssembly, enabling users to develop
 and test bots entirely in the browser against real opponents — zero
@@ -2522,7 +2797,7 @@ strength while eliminating the deployment barrier. Users can develop
 substantial, stateful bots in real languages — not toy JS functions —
 and iterate locally before committing to the HTTP ladder.
 
-### 12.2 Win Probability Graph + Critical Moments
+### 13.2 Win Probability Graph + Critical Moments
 
 Every match replay includes a **win probability curve** — a per-turn estimate
 of each player's chance of winning — and a set of **critical moments** where
@@ -2586,7 +2861,7 @@ large position changes). No LLM needed — template-based.
 This transforms replay viewing from "press play and wait 5 minutes" to
 "click the 3 interesting moments and watch 30 seconds of decisive action."
 
-### 12.3 Replay Enrichment (Selective AI Commentary)
+### 13.3 Replay Enrichment (Selective AI Commentary)
 
 Select replays receive AI-generated natural language commentary — a
 play-by-play narration that makes matches accessible to casual viewers.
@@ -2596,7 +2871,7 @@ play-by-play narration that makes matches accessible to casual viewers.
 - **Featured matches**: matches flagged by the system as particularly
   interesting (high win probability variance, close finishes, upsets where
   a lower-rated bot wins)
-- **Rivalry matches**: matches between detected rivals (§12.5)
+- **Rivalry matches**: matches between detected rivals (§13.5)
 - **Evolution milestones**: first match of a newly promoted evolved bot,
   or matches where an evolved bot breaks into the top 10
 - **User-requested**: participants can request enrichment for their own
@@ -2662,7 +2937,7 @@ enriched matches/hour: ~$2-6/day, ~$60-180/month. Reasonable.
 - Toggle on/off via a "Commentary" button
 - Enriched replays are badged on the match list ("Featured" / "Narrated")
 
-### 12.4 Shareable Replay Clips
+### 13.4 Shareable Replay Clips
 
 One-click export of a replay segment as a GIF or video, formatted for
 major social media platforms. This is the viral growth engine.
@@ -2714,7 +2989,7 @@ The clip maker uses:
 the browser. The share buttons use Web Share API where available, fallback
 to window.open() with pre-composed URLs.
 
-### 12.5 Automatic Rival Detection
+### 13.5 Automatic Rival Detection
 
 The platform automatically identifies **rivalries** — pairs of bots that
 frequently play each other with close results — and surfaces them as
@@ -2769,11 +3044,11 @@ The narrative is template-generated from the stats (no LLM needed):
 - Rivalry widget on the landing page: "Top Rivalries" with head-to-head
   records and links to key matches
 - Bot profile pages show "Rivals" section listing detected rivalries
-- Rivalry matches are auto-flagged for replay enrichment (§12.3)
+- Rivalry matches are auto-flagged for replay enrichment (§13.3)
 - Leaderboard can show "rivalry mode" — filter to matches between two
   specific bots
 
-### 12.6 Community Replay Feedback
+### 13.6 Community Replay Feedback
 
 Users can leave **tagged feedback** on specific moments in replays.
 Feedback is anchored to a `(replay_id, turn)` pair and is visible to
@@ -2860,9 +3135,9 @@ way to participate meaningfully in the competition.
 
 ---
 
-## 13. Platform Depth Features
+## 14. Platform Depth Features
 
-### 13.1 Bot Debug Telemetry + Reasoning Visualization
+### 14.1 Bot Debug Telemetry + Reasoning Visualization
 
 Bots can optionally include a `debug` field in their move response. The
 engine stores it in the replay without interpreting it. The replay viewer
@@ -2927,7 +3202,7 @@ alongside its actions. For spectators who opt in, seeing "the bot is
 scared of the northern cluster" while watching it move south creates
 narrative that no commentary system can match.
 
-### 13.2 Territory Control Heatmap Overlay
+### 14.2 Territory Control Heatmap Overlay
 
 The replay viewer supports three visualization modes, toggled via a toolbar
 dropdown. All computed client-side from bot positions — no server cost.
@@ -2995,7 +3270,7 @@ View: [Dots ▼]  [Dots | Territory | Influence]
 Switching modes is instant — the underlying replay data doesn't change,
 only the rendering pipeline.
 
-### 13.3 Embeddable Replay Widget
+### 14.3 Embeddable Replay Widget
 
 A lightweight, standalone replay player that works in an iframe anywhere.
 
@@ -3052,7 +3327,7 @@ no side panel, no fog-of-war toggle. Just the match playing.
 The replay JSON fetch is an R2 Class B read — already accounted for in the
 existing budget.
 
-### 13.4 Replay Playlists + Auto-Curation
+### 14.4 Replay Playlists + Auto-Curation
 
 Automatically curated collections of replays, browsable from the static
 site's landing page.
@@ -3066,7 +3341,7 @@ site's landing page.
 | "Best Comebacks" | `min(win_prob) < 0.2 AND winner = underdog` | Every ~90 min |
 | "Evolution Breakthroughs" | Evolved bot's first win against a top-10 bot | Every ~90 min |
 | "Rivalry Classics" | Matches between detected rivals, sorted by closeness | Every ~90 min |
-| "This Week's Highlights" | Top 10 by community upvote count (from §12.6) | Every ~90 min |
+| "This Week's Highlights" | Top 10 by community upvote count (from §13.6) | Every ~90 min |
 | "New Bot Debuts" | First match of each newly registered bot | Every ~90 min |
 | "Season Highlights" | Top 20 matches of the current season by engagement | Every ~90 min |
 
@@ -3098,7 +3373,7 @@ Click opens the replay.
 They're rebuilt by the Rackspace index builder and deployed to Pages --
 just additional D1 queries within the existing index build cycle.
 
-### 13.5 Prediction System
+### 14.5 Prediction System
 
 Visitors predict outcomes of upcoming notable matches. Correct predictions
 earn reputation. A prediction leaderboard tracks the best analysts.
@@ -3108,7 +3383,7 @@ earn reputation. A prediction leaderboard tracks the best analysts.
 The matchmaker flags a match as "predictable" when:
 - Both bots are in the top 20
 - It's a rivalry match
-- It's a series match (§13.7)
+- It's a series match (§14.7)
 - An evolved bot faces a top-10 human-written bot
 
 At ~60 matches/hour, roughly 5–10% are flagged — about 3–6 per hour.
@@ -3178,7 +3453,7 @@ Comfortably within limits. Even at 10× the assumed prediction volume
 - After match: result shown with "You were right/wrong" + points earned
 - Prediction leaderboard: top 50 analysts ranked by prediction rating
 
-### 13.6 Map Evolution
+### 14.6 Map Evolution
 
 Maps evolve alongside bots. High-engagement maps breed to produce new maps.
 Low-engagement maps retire. User feedback and positional fairness monitoring
@@ -3313,7 +3588,7 @@ player-count tier.
 - Retirement: bottom 10% by engagement score pruned monthly
 - Classic promotion: maps that sustain top-5 engagement for 3+ months
 
-### 13.7 Multi-Game Series
+### 14.7 Multi-Game Series
 
 Best-of-N matches between two bots across different maps. Series produce
 more meaningful ratings than single matches and create narrative arcs.
@@ -3324,7 +3599,7 @@ more meaningful ratings than single matches and create narrative arcs.
 |------|-------|---------|
 | Best-of-3 | 3 | Auto-scheduled for top-20 bots, 1 per day per bot |
 | Best-of-5 | 5 | Weekly featured series between top rivalries |
-| Best-of-7 | 7 | Season championship bracket (§13.9) |
+| Best-of-7 | 7 | Season championship bracket (§14.9) |
 
 **Map selection for series:**
 
@@ -3404,7 +3679,7 @@ Series: HunterBot leads 2-1
 click "Reveal" to show the result — or "Watch All" to experience the
 series sequentially with auto-advancing between games.
 
-### 13.8 Match Event Timeline
+### 14.8 Match Event Timeline
 
 A horizontal event ribbon below the replay canvas showing significant
 events as colored, clickable icons.
@@ -3456,7 +3731,7 @@ shows the *trend*, the timeline shows the *moments*. A viewer can scan
 the timeline for icon clusters, then check the win probability graph to
 see if those moments mattered.
 
-### 13.9 Seasonal Rotations
+### 14.9 Seasonal Rotations
 
 The platform runs in **seasons** — 4-week competitive periods with a fresh
 map pool, a new ladder, and a theme. Seasons provide urgency, freshness,
@@ -3587,7 +3862,7 @@ Each completed season gets an archive page (`/season/{season_id}`):
 **Season championship bracket:**
 
 In week 4, the top 8 bots enter a single-elimination bracket of best-of-7
-series (§13.7). The bracket is published on the season page with live
+series (§14.7). The bracket is published on the season page with live
 updates as series complete.
 
 ```
@@ -3605,7 +3880,7 @@ Finals:
   SwarmBot vs HunterBot             → ???
 ```
 
-### 13.10 Bot Profile Cards
+### 14.10 Bot Profile Cards
 
 Auto-generated visual cards summarizing a bot's identity, stats, and
 character in a single shareable image.
@@ -3654,7 +3929,7 @@ demand, or pre-rendered by the Rackspace index builder for top-50 bots).
 | Archetype | Strategy classifier from behavioral features (§10.2 MAP-Elites behavior grid) |
 | Win rate breakdown | D1 query: wins vs each archetype cluster |
 | Signature | Most statistically distinctive behavior vs population average |
-| Rival | From rival detection (§12.5) |
+| Rival | From rival detection (§13.5) |
 | Kill/energy/capture stats | Aggregate from match_participants |
 
 **"Signature" computation:**
@@ -3690,9 +3965,9 @@ Template-generated from ~20 signature patterns.
 
 ---
 
-## 14. Ecosystem & Polish
+## 15. Ecosystem & Polish
 
-### 14.1 Weekly Meta Report (Blog Posts)
+### 15.1 Weekly Meta Report (Blog Posts)
 
 Every Monday, the platform publishes a "State of the Game" blog post — an
 auto-generated analysis of the competitive landscape for the current season.
@@ -3753,7 +4028,7 @@ record of the platform's competitive evolution. They also give the
 platform a human-feeling editorial voice even though the content is
 auto-generated.
 
-### 14.2 Public Match Data (Static JSON)
+### 15.2 Public Match Data (Static JSON)
 
 All platform data is already pre-computed and stored as static JSON files.
 Index files are served from **Pages** (deployed every ~90 min by the
@@ -3833,7 +4108,7 @@ Published at `/docs/replay-format` on the static site. Contains:
   can validate replays programmatically
 - Field-by-field documentation with types, semantics, and examples
 - Versioning policy: additive changes only, matching the seasonal backward
-  compatibility rules (§13.9). New fields may appear in future versions;
+  compatibility rules (§14.9). New fields may appear in future versions;
   old fields are never removed or renamed.
 - Example replays for each version (downloadable from R2)
 - Changelog of schema changes per season
@@ -3859,7 +4134,7 @@ updates, they check the `updated_at` field in each JSON file. Pages index
 files refresh every ~90 minutes. R2 cache headers guide freshness for
 replays (immutable) and the evolution live feed (10s).
 
-### 14.3 Accessibility Suite
+### 15.3 Accessibility Suite
 
 **Color-blind safe palettes:**
 
@@ -3962,7 +4237,7 @@ each turn's summary during auto-playback.
   canvas is focused (prevents conflicts with page-level shortcuts)
 - Skip-to-content link at page top for screen reader users
 
-### 14.4 Live Evolution Observatory
+### 15.4 Live Evolution Observatory
 
 The evolution dashboard becomes a real-time observatory where visitors
 watch the AI evolution system work — candidates being generated, tested,
@@ -4116,14 +4391,14 @@ Both visualizations are built from `data/evolution/lineage.json` and
 index builder). The live feed overlay is the only component that polls
 `live.json` from R2.
 
-### 14.5 Narrative Engine (Chronicles)
+### 15.5 Narrative Engine (Chronicles)
 
 Auto-generated storylines from match data, published alongside the weekly
 meta report as blog posts on `/blog`.
 
 **Story arc detection:**
 
-The weekly index builder pass (same as the meta report, §14.1) scans D1 for active
+The weekly index builder pass (same as the meta report, §15.1) scans D1 for active
 story arcs:
 
 | Arc Type | D1 Query Trigger |
@@ -4167,7 +4442,7 @@ energy-first opening"
    - Headline (generated by LLM)
    - 200-word narrative
    - Embedded replay links for key matches
-   - Bot profile card image (§13.10)
+   - Bot profile card image (§14.10)
    - Rating chart (data for client-side rendering)
 5. Write to R2: `blog/posts/{slug}.json`
 6. Update `blog/index.json`
@@ -4194,14 +4469,14 @@ just numbers on a leaderboard.
 
 ---
 
-## 15. User Experience Design
+## 16. User Experience Design
 
 The platform serves three distinct audiences with different needs. The UX
 must be simple enough that a first-time visitor understands the platform
 in 10 seconds, and deep enough that a regular user can access all features
 without friction. Mobile and desktop are both first-class.
 
-### 15.1 Audiences
+### 16.1 Audiences
 
 | Audience | What They Want | Frequency |
 |----------|---------------|-----------|
@@ -4213,7 +4488,7 @@ The default experience is optimized for **spectators** — the largest
 audience. Participants have dedicated sections. First-time visitors get a
 clear value proposition immediately.
 
-### 15.2 Information Architecture
+### 16.2 Information Architecture
 
 ```
 /                       Home (hero + featured replay + highlights)
@@ -4240,7 +4515,7 @@ clear value proposition immediately.
 - Participants enter through `/compete` or `/compete/sandbox`
 - Visitors land on `/` and are guided to one of the above
 
-### 15.3 Homepage
+### 16.3 Homepage
 
 The homepage answers three questions in 10 seconds:
 
@@ -4298,7 +4573,7 @@ The homepage answers three questions in 10 seconds:
 - Playlists are below the fold but above the season/evolution sections
 - Everything above the fold fits on a 1080p screen
 
-### 15.4 Navigation
+### 16.4 Navigation
 
 **Desktop: persistent top bar**
 
@@ -4332,7 +4607,7 @@ The bottom tab bar is the standard mobile pattern (iOS tab bar, Android
 bottom nav). Thumb-reachable, always visible, no scrolling needed to
 navigate.
 
-### 15.5 Responsive Design
+### 16.5 Responsive Design
 
 The platform is designed **mobile-first** for spectating and
 **desktop-first** for participating (writing bots).
@@ -4390,7 +4665,7 @@ link.
 Bot registration (`/compete/register`) works on mobile — it's just a
 form.
 
-### 15.6 First-Time Visitor Flow
+### 16.6 First-Time Visitor Flow
 
 A visitor who has never seen the platform:
 
@@ -4421,7 +4696,7 @@ The funnel is: **see** (homepage) → **watch** (replays) → **engage**
 (predictions, feedback) → **build** (sandbox, compete). Each step has a
 lower barrier than the next.
 
-### 15.7 Page Load Performance
+### 16.7 Page Load Performance
 
 The SPA should feel instant. Performance budget:
 
@@ -4457,7 +4732,7 @@ update the UI when it arrives. The leaderboard never shows a loading
 spinner on repeat visits — it shows the cached version instantly and
 refreshes within seconds.
 
-### 15.8 Design Language
+### 16.8 Design Language
 
 **Visual principles:**
 
@@ -4497,7 +4772,7 @@ Each component works at all breakpoints. The replay canvas adapts its
 render resolution to the container size. Tables collapse to cards on
 mobile. Graphs switch from detailed to sparkline on narrow screens.
 
-### 15.9 Replay Canvas Micro-Animations
+### 16.9 Replay Canvas Micro-Animations
 
 The replay renderer decouples **game tick rate** from **render frame rate**.
 Game state updates at the turn rate (2–32 ticks/second depending on speed
@@ -4555,7 +4830,7 @@ for (const bot of bots) {
 }
 ```
 
-### 15.10 Adaptive Auto-Speed Playback (Director Mode)
+### 16.10 Adaptive Auto-Speed Playback (Director Mode)
 
 A playback mode where the replay automatically speeds through uneventful
 turns and slows for combat and critical moments.
@@ -4599,7 +4874,7 @@ load (single pass through the `turns` array, <1ms). A speed schedule
 array maps each turn to its target speed. During playback, the tick
 interval adjusts smoothly.
 
-### 15.11 Smooth View Mode Morphing
+### 16.11 Smooth View Mode Morphing
 
 Switching between dots, Voronoi territory, and influence gradient uses a
 300ms animated cross-fade morph instead of a hard cut.
@@ -4638,7 +4913,7 @@ Cost: two overlay renders per frame during the 300ms transition (~18
 frames at 60fps). Each overlay is a single-pass pixel fill — no
 performance concern.
 
-### 15.12 "Follow Bot" Camera Mode
+### 16.12 "Follow Bot" Camera Mode
 
 Lock the viewport to track one player's units. The camera pans and zooms
 dynamically to keep the followed player's bots centered and visible.
@@ -4673,7 +4948,7 @@ followed player creates a first-person experience — you see what they
 see, the camera goes where they go. Enemies emerge from darkness at the
 edge of vision.
 
-### 15.13 Picture-in-Picture Replay
+### 16.13 Picture-in-Picture Replay
 
 Navigate away from a replay and it minimizes to a floating mini-player
 in the bottom corner. The replay keeps playing while you browse.
@@ -4715,7 +4990,7 @@ in the bottom corner. The replay keeps playing while you browse.
 
 Mobile: mini-player is 120×120, positioned above the bottom tab bar.
 
-### 15.14 Performance Trifecta
+### 16.14 Performance Trifecta
 
 Three techniques that together make the site feel like a native app.
 
@@ -4791,7 +5066,7 @@ Cache holds the last 5 pages. Back navigation is 0ms.
 | Back | 0ms — cached |
 | First visit | 200ms skeleton → 500ms data |
 
-### 15.15 Progressive Disclosure
+### 16.15 Progressive Disclosure
 
 The replay viewer reveals features gradually based on user engagement.
 
@@ -4825,7 +5100,7 @@ after 3 seconds.
 **Manual override:** ☰ menu → "Show all controls" reveals everything
 immediately. Power users are never gated.
 
-### 15.16 Swipe-Through Playlists (Mobile)
+### 16.16 Swipe-Through Playlists (Mobile)
 
 On mobile, playlists become full-screen, auto-playing cards. Swipe up
 to advance.
@@ -4865,7 +5140,7 @@ to cancel.
 **Preloading:** while the current replay plays, the next replay in the
 playlist is fetched in the background. Swipe transitions are instant.
 
-### 15.17 Theater Mode
+### 16.17 Theater Mode
 
 Fullscreen, chrome-free replay viewing.
 
@@ -4906,7 +5181,7 @@ layout. Touch controls:
 
 Exit: `Esc` (desktop) or rotate to portrait (mobile).
 
-### 15.18 Ambient Activity Awareness
+### 16.18 Ambient Activity Awareness
 
 Subtle, non-intrusive signals that keep users aware of platform activity.
 
