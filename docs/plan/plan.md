@@ -29,22 +29,34 @@ interruptible compute for the CPU-intensive match simulation.
 
 ### Pages vs R2: What Goes Where
 
-**Cloudflare Pages** serves the application shell — all code, assets, and
-WASM that changes only on developer deploys. **Cloudflare R2** serves all
-dynamic data that changes as matches run. The browser loads the SPA from
-Pages (instant, CDN-cached), then fetches data from R2 (also CDN-cached
-via custom domain, zero egress).
+The platform uses a three-way data split across **Cloudflare Pages**, **R2**,
+and a **Rackspace index builder** container:
+
+- **Cloudflare Pages** serves the application shell (code, assets, WASM) and
+  all pre-computed JSON index files (leaderboard, bot profiles, playlists,
+  blog, evolution meta, seasons, series indexes). These index files are
+  deployed to Pages by a Rackspace container via `wrangler pages deploy`.
+- **Cloudflare R2** serves high-volume dynamic data that exceeds Pages'
+  20,000 file limit: replays, individual match metadata, thumbnails, bot
+  cards, maps, and the evolution `live.json` feed.
+
+The browser loads the SPA from Pages (instant, CDN-cached) and fetches
+index data from Pages. It fetches replays and per-match data from R2
+(CDN-cached via custom domain, zero egress).
 
 **Why the split is necessary:**
 
-Pages has a 20,000 file limit per project. The application code is well
-under 1,000 files. But dynamic data quickly exceeds 20K:
-- Replays alone: 60/hour × 24h × 90 days = ~130,000 files
-- Bot profiles, match metadata, playlists, blog posts: thousands more
+Pages has a 20,000 file limit per project. The application code plus all
+pre-computed index files total ~1,000–2,000 files — well within the limit.
+But replays alone exceed 20K (60/hour x 24h x 90 days = ~130,000 files).
+R2 has no file count limit.
 
-Pages cannot host dynamic data. R2 has no file count limit.
+Pages also has a 500 builds/month limit = ~16 deploys/day = one deploy
+every ~90 minutes. Data staleness of 90 minutes is acceptable for index
+files (leaderboards, bot profiles, playlists). Replays and match metadata
+are written to R2 in real time by match workers with no deploy limit.
 
-**What lives in Pages** (~500–1,000 files, deploys only on code changes):
+**What lives in Pages** (~1,000–2,000 files, code deploys + index deploys):
 ```
 Pages (aicodebattle.com):
 ├── index.html, leaderboard.html, matches.html, ...  (SPA routes)
@@ -61,46 +73,48 @@ Pages (aicodebattle.com):
 │   └── ...
 ├── docs/                  (protocol spec, replay format, data paths, guides)
 ├── img/                   (logos, icons, UI assets)
-└── embed.html             (lightweight embeddable replay player)
+├── embed.html             (lightweight embeddable replay player)
+└── data/                  (pre-computed JSON indexes, deployed by Rackspace)
+    ├── leaderboard.json
+    ├── bots/
+    │   ├── index.json
+    │   └── {bot_id}.json
+    ├── matches/
+    │   └── index.json               (recent matches, paginated)
+    ├── series/
+    │   ├── index.json
+    │   └── {series_id}.json
+    ├── seasons/
+    │   ├── index.json
+    │   └── {season_id}.json
+    ├── playlists/
+    │   └── {slug}.json
+    ├── predictions/
+    │   ├── leaderboard.json
+    │   └── open.json
+    ├── meta/
+    │   ├── archetypes.json
+    │   └── rivalries.json
+    ├── evolution/
+    │   ├── lineage.json
+    │   └── meta.json
+    └── blog/
+        ├── index.json
+        └── posts/{slug}.json
 ```
 
-**What lives in R2** (unlimited files, updated continuously by Workers + Rackspace):
+**What lives in R2** (unlimited files, updated continuously by match workers + evolver):
 ```
 R2 (data.aicodebattle.com):
-├── data/
-│   ├── leaderboard.json              (rebuilt every 2 min by Worker cron)
-│   ├── bots/
-│   │   ├── index.json                (bot directory)
-│   │   └── {bot_id}.json             (per-bot profile, rating history)
-│   ├── matches/
-│   │   ├── index.json                (recent matches, paginated)
-│   │   └── {match_id}.json           (match metadata)
-│   ├── series/
-│   │   ├── index.json
-│   │   └── {series_id}.json
-│   ├── seasons/
-│   │   ├── index.json
-│   │   └── {season_id}.json
-│   ├── playlists/
-│   │   └── {slug}.json               (auto-curated collections)
-│   ├── predictions/
-│   │   ├── leaderboard.json
-│   │   └── open.json                 (upcoming predictable matches)
-│   ├── meta/
-│   │   ├── archetypes.json
-│   │   └── rivalries.json
-│   └── evolution/
-│       ├── live.json                  (real-time observatory feed)
-│       ├── lineage.json
-│       └── meta.json
 ├── replays/
 │   └── {match_id}.json.gz            (full replay files)
+├── matches/
+│   └── {match_id}.json               (individual match metadata)
 ├── maps/
 │   ├── index.json
 │   └── {map_id}.json
-├── blog/
-│   ├── index.json
-│   └── posts/{slug}.json             (meta reports + chronicles)
+├── evolution/
+│   └── live.json                      (real-time observatory feed, updated by evolver)
 ├── thumbnails/
 │   └── {match_id}.png                (auto-generated match thumbnails)
 └── cards/
@@ -110,55 +124,69 @@ R2 (data.aicodebattle.com):
 **Data loading pattern in the SPA:**
 
 ```js
-// Pages serves the SPA shell
-// R2 serves all dynamic data via its custom domain
-const DATA = 'https://data.aicodebattle.com'
+// Pages serves the SPA shell + pre-computed index JSON
+// R2 serves replays, per-match data, and evolution live feed
+const PAGES = 'https://aicodebattle.com'
+const R2 = 'https://data.aicodebattle.com'
 
-// Leaderboard page loads:
-const lb = await fetch(`${DATA}/data/leaderboard.json`).then(r => r.json())
+// Leaderboard page loads (from Pages — deployed every ~90 min):
+const lb = await fetch(`${PAGES}/data/leaderboard.json`).then(r => r.json())
 
-// Replay viewer loads:
-const replay = await fetch(`${DATA}/replays/${matchId}.json.gz`)
+// Replay viewer loads (from R2 — written by match worker in real time):
+const replay = await fetch(`${R2}/replays/${matchId}.json.gz`)
 
-// Evolution observatory loads:
-const live = await fetch(`${DATA}/data/evolution/live.json`).then(r => r.json())
+// Match metadata (from R2):
+const meta = await fetch(`${R2}/matches/${matchId}.json`).then(r => r.json())
+
+// Evolution observatory live feed (from R2 — updated by evolver):
+const live = await fetch(`${R2}/evolution/live.json`).then(r => r.json())
+
+// Evolution lineage (from Pages — deployed every ~90 min):
+const lineage = await fetch(`${PAGES}/data/evolution/lineage.json`).then(r => r.json())
 ```
 
+**Cache headers:**
+
+Pages (index files): CDN-cached by Cloudflare Pages automatically. Staleness
+is bounded by deploy frequency (~90 minutes).
+
 R2 custom domain serves files with appropriate cache headers:
-- `leaderboard.json`: `Cache-Control: public, max-age=60`
 - `replays/*.json.gz`: `Cache-Control: public, max-age=31536000, immutable`
 - `evolution/live.json`: `Cache-Control: public, max-age=10`
-- `bots/*.json`: `Cache-Control: public, max-age=300`
+- `matches/*.json`: `Cache-Control: public, max-age=31536000, immutable`
 
 **R2 also serves Rackspace agents:**
 
 R2 is the data bus between Cloudflare and Rackspace. Match workers and
 the evolver read from R2 (maps, bot data for evolution prompts) and write
-to R2 (replays, evolution status). The same files that Rackspace writes
-are what the browser reads — no duplication.
+to R2 (replays, match metadata, evolution live status). The index builder
+container on Rackspace reads match results from D1 (via the Worker API)
+and deploys pre-computed index JSON to Pages. The evolver writes
+`evolution/live.json` directly to R2 for low-latency observatory updates.
 
 ```
 ┌─────────────────────── Cloudflare (free tier) ───────────────────────┐
 │                                                                       │
 │  ┌─────────────┐   ┌──────────────────┐   ┌───────────────────────┐  │
 │  │  Pages       │   │  Worker (acb-api) │   │  R2 Bucket            │  │
-│  │  SPA shell   │   │  registration,    │   │                       │  │
-│  │  HTML/JS/CSS │   │  job coordination,│   │  Browser reads from   │  │
-│  │  WASM, docs  │   │  cron triggers    │   │  here (data, replays) │  │
-│  └──────┬──────┘   └────────┬─────────┘   │                       │  │
-│         │                   │              │  Rackspace writes to   │  │
-│         │  SPA loads from   │ reads/writes │  here (replays, status)│  │
-│         │  Pages, then      │              │                       │  │
-│         │  fetches data ────┼─────────────►│  Worker writes to     │  │
-│         │  from R2          │              │  here (indexes, blog) │  │
-│         │                   │              └───────────┬───────────┘  │
-│         │                   │                          │              │
-│         │          ┌────────▼────────┐                 │              │
-│         │          │  D1 Database     │                 │              │
-│         │          │  bots, matches,  │  Worker cron    │              │
-│         │          │  jobs, ratings   │  materializes ──┘              │
-│         │          └─────────────────┘  D1 → R2 JSON                 │
-└─────────┼────────────────────────────────┬───────────────────────────┘
+│  │  SPA shell + │   │  registration,    │   │                       │  │
+│  │  index JSON  │   │  job coordination,│   │  Replays, per-match   │  │
+│  │  HTML/JS/CSS │   │  cron triggers    │   │  metadata, maps,      │  │
+│  │  WASM, docs  │   │  (matchmaker,     │   │  thumbnails, cards,   │  │
+│  └──────┬──────┘   │  health, reaper)  │   │  evolution/live.json  │  │
+│         │           └────────┬─────────┘   └───────────┬───────────┘  │
+│         │  SPA loads from    │                          │              │
+│         │  Pages (shell +    │ reads/writes             │              │
+│         │  index data),      │                          │              │
+│         │  then fetches      │              Rackspace writes           │
+│         │  replays from R2   │              replays + metadata         │
+│         │                    │                          │              │
+│         │          ┌─────────▼───────┐                  │              │
+│         │          │  D1 Database     │                  │              │
+│         │          │  bots, matches,  │                  │              │
+│         │          │  jobs, ratings   │                  │              │
+│         │          └─────────────────┘                  │              │
+└─────────┼────────────────────────────────┬──────────────┘─────────────┘
           │                                │
    browser│                         HTTPS  │ (job coordination +
    loads  │                                │  result submission +
@@ -171,13 +199,17 @@ are what the browser reads — no duplication.
 │  │  (not Rackspace — │    │  • Claim jobs from Worker API            ││
 │  │   shown for data  │    │  • Read maps/bot data from R2            ││
 │  │   flow clarity)   │    │  • Run matches, call bot HTTP endpoints  ││
-│  └──────────────────┘    │  • Write replays + status to R2           ││
+│  └──────────────────┘    │  • Write replays + metadata to R2         ││
 │                           │  • POST result metadata to Worker API    ││
 │  ┌──────────────────┐    └──────────────────────────────────────────┘│
 │  │  Bot Containers   │                                                │
-│  │  Strategy (×6)    │                                                │
-│  │  Evolved (0–50)   │                                                │
-│  └──────────────────┘                                                │
+│  │  Strategy (×6)    │    ┌────────────────────────────────────────┐  │
+│  │  Evolved (0–50)   │    │  Index Builder                          │  │
+│  └──────────────────┘    │  • Reads match results from D1 via API  │  │
+│                           │  • Generates index JSON files            │  │
+│                           │  • Deploys to Pages (wrangler pages      │  │
+│                           │    deploy) every ~90 minutes             │  │
+│                           └────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -185,13 +217,14 @@ are what the browser reads — no duplication.
 
 | Component | Where | Role |
 |-----------|-------|------|
-| **Pages** | Cloudflare | SPA shell — HTML/JS/CSS/WASM/docs. Code only, no data. Changes on developer deploys (~500 files) |
-| **Worker** | Cloudflare | API endpoints (registration, job coordination) + cron triggers that materialize D1 → R2 JSON |
+| **Pages** | Cloudflare | SPA shell + pre-computed index JSON — HTML/JS/CSS/WASM/docs + leaderboard, bot profiles, playlists, blog, series/season indexes. Updated by developer deploys (code) and Rackspace index builder (data, every ~90 min). ~1,000–2,000 files. |
+| **Worker** | Cloudflare | API endpoints (registration, job coordination) + cron triggers (matchmaker, health checker, stale job reaper) |
 | **D1** | Cloudflare | SQLite database — bot registry, match queue, ratings, results. Source of truth. |
-| **R2** | Cloudflare | All dynamic data — replays, indexes, blog posts, evolution status, maps, thumbnails, cards. Served to browsers via custom domain. Also the data bus for Rackspace agents (read maps/data, write replays/status). |
+| **R2** | Cloudflare | High-volume dynamic data — replays, per-match metadata, maps, thumbnails, cards, evolution live feed. Served to browsers via custom domain. Also the data bus for Rackspace agents (read maps, write replays/metadata/live status). |
 | **Match Workers** | Rackspace Spot | Stateless match execution — claim job from Worker API, read maps from R2, run simulation, write replay to R2, POST result to Worker API |
 | **Bot Containers** | Rackspace Spot | Strategy bots (×6) + evolved bots (0–50) — HTTP servers called by workers during matches |
-| **Evolver** | Rackspace Spot | Evolution pipeline — reads lineage/meta from R2, generates candidates, writes live status to R2 |
+| **Evolver** | Rackspace Spot | Evolution pipeline — reads lineage/meta from Pages, generates candidates, writes live status to R2 |
+| **Index Builder** | Rackspace Spot | Periodically reads match results from D1 (via Worker API), generates all pre-computed JSON index files, deploys to Pages via `wrangler pages deploy`. Runs every ~90 minutes. |
 
 **What's intentionally absent:** no PostgreSQL, no Redis, no always-on VPS for
 web infrastructure, no Nginx, no reverse proxy. Cloudflare handles TLS, CDN,
@@ -340,6 +373,10 @@ Each turn executes in a strict, deterministic sequence:
 4.  Phase: MOVE        — execute valid movement orders
 5.  Phase: COMBAT      — resolve focus-fire algorithm, remove dead bots
 6.  Phase: CAPTURE     — enemy bots on undefended cores raze them
+                          (A core is undefended if no bot belonging to
+                          the core's owner occupies the core's tile after
+                          the attack phase resolves. An enemy bot on an
+                          undefended core's tile razes it.)
 7.  Phase: COLLECT     — uncontested energy adjacent to bots is collected
 8.  Phase: SPAWN       — players with ≥3 energy spawn bots at eligible cores
 9.  Phase: ENERGY_TICK — energy nodes on their interval produce new energy
@@ -450,28 +487,44 @@ Engine                          Bot
 ```
 
 **Schema rules:**
-- `bots`, `energy`, `cores`, `walls`, `dead` — only includes tiles within the
+- `bots`, `energy`, `cores`, `walls`, `dead` -- only includes tiles within the
   player's collective vision
 - `owner` IDs are consistent within a match but randomized per match (player 0
   is always "you")
 - `config` is identical for all players and does not change between turns
-- `walls` are sent every turn they are visible (stateless — bot does not need to
+- `walls` are sent every turn they are visible (stateless -- bot does not need to
   track previously seen walls, though smart bots will)
 - `dead` contains bots that died on the previous turn (visible for one turn)
 
-### 4.3 Move Schema (Bot → Engine)
+**Future additive fields:** the game state schema is designed for forward
+compatibility. Future seasons may add optional fields to `config` (e.g.,
+`season_id`, `rules_version`, `special_tiles`, `terrain`) without breaking
+existing bots. See the seasonal backward compatibility rules in SS13.9. Bots
+that do not read new fields continue to function normally.
+
+### 4.3 Move Schema (Bot -> Engine)
 
 ```json
 {
   "moves": [
     { "row": 10, "col": 15, "direction": "N" },
     { "row": 12, "col": 15, "direction": "E" }
-  ]
+  ],
+  "debug": {
+    "reasoning": "3 energy within 5 tiles east; enemy cluster north — avoiding",
+    "targets": [
+      { "row": 20, "col": 25, "label": "energy", "priority": 0.9 }
+    ]
+  }
 }
 ```
 
+The `debug` field is entirely optional. When present, it is stored in the
+replay for visualization in the replay viewer but is never parsed or acted
+upon by the engine. See SS13.1 for the full debug telemetry specification.
+
 **Validation rules:**
-- `moves` must be an array (may be empty — all bots hold position)
+- `moves` must be an array (may be empty -- all bots hold position)
 - Each move must reference a `(row, col)` where the player owns a bot
 - `direction` must be one of: `"N"`, `"E"`, `"S"`, `"W"`
 - Duplicate `(row, col)` entries: first valid entry wins, rest ignored
@@ -480,7 +533,8 @@ Engine                          Bot
 - Any response that fails top-level schema validation: entire response
   discarded, all bots hold
 - **The engine never parses, evaluates, or interprets any field beyond
-  `moves[].row`, `moves[].col`, `moves[].direction`**
+  `moves[].row`, `moves[].col`, `moves[].direction`** (and the optional
+  `debug` field, which is pass-through to the replay)
 
 ### 4.4 Authentication (HMAC Shared Secret)
 
@@ -540,10 +594,10 @@ injecting moves.
 - Secrets are generated as 256-bit random values, hex-encoded (64 characters)
 - Displayed once at registration time; bot owner must save it
 - Can be rotated via the web platform (old secret invalidated immediately)
-- Stored hashed (bcrypt) in the database — the engine uses the hash to verify,
-  so the raw secret is never stored. **Correction**: HMAC requires the raw
-  secret, so it is stored encrypted (AES-256-GCM) with a master key, not
-  hashed. The master key is held in an environment variable, never in the database.
+- Stored encrypted (AES-256-GCM) in the database. The master encryption key
+  is held in a Worker environment variable, never in the database. HMAC
+  verification requires the raw secret, so hashing is not viable -- the
+  engine decrypts on each request.
 
 ### 4.5 Timeout & Error Handling
 
@@ -559,8 +613,12 @@ injecting moves.
 | 10 consecutive failures | Bot marked as **crashed** for this match; bots become inert for remaining turns |
 
 The bot is **never killed or disconnected**. Even after being marked crashed, the
-match continues — the crashed bot's units simply hold position every turn until
+match continues -- the crashed bot's units simply hold position every turn until
 they are destroyed or the match ends.
+
+**Rating impact of crashes:** Matches where a bot crashes or times out still
+count toward Glicko-2 ratings. The crashed bot receives a loss. This prevents
+intentional crashing as a loss-avoidance strategy.
 
 ---
 
@@ -979,40 +1037,70 @@ encoding — only recording events that changed from the previous turn.
 
 ### 7.2 Storage
 
-Replays are stored in **Cloudflare R2** and served to the browser via R2's
-custom domain with zero egress cost. No API intermediary for reads.
+Replays and per-match metadata are stored in **Cloudflare R2** and served to
+the browser via R2's custom domain with zero egress cost. Pre-computed index
+files (leaderboard, bot profiles, playlists, series, seasons, blog) are
+deployed to **Cloudflare Pages** by the Rackspace index builder container.
 
 **R2 bucket layout** (public-read via custom domain):
 ```
 replays/{match_id}.json.gz           # individual replay files
+matches/{match_id}.json              # per-match metadata (participants, scores)
 maps/{map_id}.json                   # map definitions
-data/matches/index.json              # paginated match list (last 1000)
-data/matches/{match_id}.json         # match metadata (participants, scores)
+evolution/live.json                  # real-time evolution observatory feed
+thumbnails/{match_id}.png            # auto-generated match thumbnails
+cards/{bot_id}.png                   # bot profile card images
+```
+
+**Pages data layout** (deployed by Rackspace index builder every ~90 min):
+```
 data/leaderboard.json                # current leaderboard snapshot
-data/bots/{bot_id}.json              # per-bot profile (rating history, recent matches)
 data/bots/index.json                 # bot directory
+data/bots/{bot_id}.json              # per-bot profile (rating history, recent matches)
+data/matches/index.json              # paginated match list (last 1000)
+data/series/index.json               # series directory
+data/seasons/index.json              # seasons directory
+data/playlists/{slug}.json           # auto-curated collections
 data/evolution/lineage.json          # evolution lineage graph
 data/evolution/meta.json             # current meta/Nash snapshot
+data/blog/index.json                 # blog post directory
+data/blog/posts/{slug}.json          # individual blog posts
 ```
 
 **How data flows:**
-1. Match worker completes a match → uploads `replay.json.gz` directly to R2
-   via S3-compatible API (worker has a scoped R2 API token)
+1. Match worker completes a match -> uploads `replay.json.gz` and
+   `matches/{match_id}.json` directly to R2 via S3-compatible API (worker
+   has a scoped R2 API token)
 2. Worker POSTs small result metadata to the Cloudflare Worker API endpoint
 3. Worker API writes match result to D1
-4. Index rebuilder cron (every 2 min) reads new results from D1, rebuilds
-   `leaderboard.json`, `bots/*.json`, `matches/index.json`, writes to R2
-5. Static site (Pages) fetches these JSON files from R2's custom domain
+4. Rackspace index builder (every ~90 min) reads new results from D1 via
+   Worker API, rebuilds all index JSON files (`leaderboard.json`,
+   `bots/*.json`, `matches/index.json`, playlists, series, seasons, blog),
+   and deploys to Pages via `wrangler pages deploy`
+5. Static site (Pages) serves index files directly; browser fetches replays
+   and per-match metadata from R2's custom domain
 
-**Retention:**
-- Indefinite for top-100 matches per month
-- Older replays pruned after 90 days (metadata in D1 kept)
-- Index files are append-with-rotation: `index.json` holds the last 1000;
-  older pages at `index-{page}.json`
+**Retention and pruning:**
+- Match metadata in D1 is retained indefinitely (rows are small)
+- Replays in R2 are pruned on an age basis: replays older than 90 days are
+  deleted by a weekly Rackspace pruning job
+- **Exemptions from pruning:** replays referenced by playlists ("Closest
+  Finishes", "Biggest Upsets", etc.), rivalry pages, series, or season
+  archives are exempt. The pruning job checks the exemption list from D1
+  before deleting.
+- At 60 matches/hour x 24h x 90 days = ~130,000 replay files at steady
+  state, well within R2's storage limits
+- The pruning job runs weekly on Rackspace: lists R2 objects in `replays/`
+  older than 90 days, queries D1 for exempt match IDs, deletes non-exempt
+  replays
+- Index files in Pages are append-with-rotation: `index.json` holds the
+  last 1000; older pages at `index-{page}.json`
 
 **R2 free tier usage at this scale:**
-- Writes (Class A): ~43K/month (replays + index rebuilds) vs 1M limit
-- Reads (Class B): ~30K/month (page views loading JSON) vs 10M limit
+- Writes (Class A): ~44K/month (replays + per-match metadata from workers)
+  vs 1M limit. Index rebuilds no longer write to R2 — they deploy to Pages.
+- Reads (Class B): ~30K/month (replay loads from browsers + Rackspace reads)
+  vs 10M limit. Index file reads are served from Pages, not R2.
 - Storage: ~3–5 GB after 90 days (well under 10 GB limit)
 - Egress: always free, unlimited
 
@@ -1070,36 +1158,41 @@ for the database, and **R2** for file storage.
 
 ### 8.1 Cloudflare Pages (Static Site)
 
-The website is a static SPA deployed to Cloudflare Pages. Every page that
-shows dynamic content fetches pre-built JSON files from R2 and renders
-client-side.
+The website is a static SPA deployed to Cloudflare Pages. Pages serves both
+the application code and pre-computed JSON index files. Index files are
+deployed by the Rackspace index builder container every ~90 minutes.
+Replays and per-match data are fetched from R2.
 
 ```
 /                          → Landing page, featured replays, leaderboard summary
-/leaderboard               → Full leaderboard (fetches leaderboard.json from R2)
-/matches                   → Match history (fetches matches/index.json from R2)
+/leaderboard               → Full leaderboard (fetches data/leaderboard.json from Pages)
+/matches                   → Match history (fetches data/matches/index.json from Pages)
 /replay/{match_id}         → Replay viewer (fetches replay .json.gz from R2)
-/bot/{bot_id}              → Bot profile (fetches bots/{bot_id}.json from R2)
-/evolution                 → Evolution dashboard (fetches evolution/*.json from R2)
+/bot/{bot_id}              → Bot profile (fetches data/bots/{bot_id}.json from Pages)
+/evolution                 → Evolution dashboard (fetches data/evolution/*.json from Pages + evolution/live.json from R2)
 /register                  → Bot registration form (submits to Worker API)
 /docs                      → Protocol spec, starter kit links, getting started
 ```
 
-**Build:** Vite + TypeScript, deployed via `wrangler pages deploy` or git
-integration. 500 builds/month on the free tier (ample for daily deploys).
-No build-time data fetching — all data loaded at runtime.
+**Build:** Vite + TypeScript. Code changes are deployed via git integration
+or manual `wrangler pages deploy`. The Rackspace index builder also deploys
+to Pages (index JSON files only) every ~90 minutes. Combined, code deploys +
+index deploys share the 500 builds/month budget (~16/day). No build-time
+data fetching -- all data loaded at runtime.
 
 **Data loading pattern:**
 ```js
-const R2_BASE = 'https://data.aicodebattle.com'
-const data = await fetch(`${R2_BASE}/data/leaderboard.json`)
-const leaderboard = await data.json()
-// render client-side
+// Index files served directly from Pages (same origin)
+const leaderboard = await fetch('/data/leaderboard.json').then(r => r.json())
+// Replays served from R2 (separate domain, zero egress)
+const R2 = 'https://data.aicodebattle.com'
+const replay = await fetch(`${R2}/replays/${matchId}.json.gz`)
 ```
 
-R2 serves these files via custom domain with zero egress cost. Stale data
-is acceptable — JSON indexes are rebuilt every 2 minutes by the Worker cron.
-No real-time push. Visitors see data that is at most ~2 minutes old.
+Stale data is acceptable -- index JSON files are rebuilt and deployed
+every ~90 minutes by the Rackspace index builder. No real-time push.
+Visitors see index data that is at most ~90 minutes old. Replays and
+per-match metadata are written to R2 in real time by match workers.
 
 ### 8.2 Cloudflare Worker (API + Scheduling)
 
@@ -1114,6 +1207,7 @@ POST /api/rotate-key       → rotate a bot's shared secret
 GET  /api/status/{bot_id}  → check bot health status
 GET  /api/jobs/next         → worker claims next pending match job (authenticated)
 POST /api/jobs/{id}/result  → worker submits match result metadata (authenticated)
+GET  /api/data/export       → index builder reads D1 data for index generation (authenticated)
 ```
 
 **Cron triggers (5 available on free tier):**
@@ -1121,10 +1215,16 @@ POST /api/jobs/{id}/result  → worker submits match result metadata (authentica
 | Cron | Interval | What It Does |
 |------|----------|--------------|
 | Matchmaker | Every 1 min | Queries active bots from D1, computes pairings, inserts job rows |
-| Index rebuilder | Every 2 min | Reads new results from D1, rebuilds leaderboard.json + bot profiles + match index, writes to R2 |
 | Health checker | Every 15 min | Pings each active bot's `/health` endpoint, updates status in D1 |
 | Stale job reaper | Every 5 min | Marks jobs running >15 min as abandoned, resets to pending |
-| (reserved) | — | Available for evolution pipeline trigger |
+| (reserved) | -- | Available for future use |
+| (reserved) | -- | Available for future use |
+
+Note: index building (leaderboard, bot profiles, match indexes, playlists,
+etc.) is handled by the Rackspace index builder container, not a Worker cron.
+This avoids the R2 Class A write budget issue that would arise from writing
+~75 JSON files to R2 every 2 minutes (~1.6M writes/month, exceeding the 1M
+free limit). The index builder deploys to Pages instead.
 
 **CPU time budget (10ms free tier):**
 
@@ -1147,9 +1247,11 @@ secrets). This prevents unauthorized job claims or result injection.
 
 D1 is a serverless SQLite database accessible from the Worker.
 
-**Schema:**
+**Consolidated schema** (all tables referenced throughout this plan):
 
 ```sql
+-- §8.3: Core tables
+
 CREATE TABLE bots (
     bot_id        TEXT PRIMARY KEY,
     name          TEXT UNIQUE NOT NULL,
@@ -1163,6 +1265,7 @@ CREATE TABLE bots (
     evolved       INTEGER NOT NULL DEFAULT 0,
     island        TEXT,
     generation    INTEGER,
+    parent_ids    TEXT,           -- JSON array of parent bot_ids for lineage tracking
     description   TEXT,
     created_at    TEXT NOT NULL,
     last_active   TEXT
@@ -1204,14 +1307,134 @@ CREATE TABLE rating_history (
     rating        REAL NOT NULL,
     recorded_at   TEXT NOT NULL
 );
+
+-- §13.5: Prediction system
+
+CREATE TABLE predictions (
+    prediction_id   TEXT PRIMARY KEY,
+    match_id        TEXT NOT NULL,
+    predictor_id    TEXT NOT NULL,  -- localStorage-generated UUID
+    predictor_name  TEXT,           -- optional display name
+    predicted_bot_id TEXT NOT NULL, -- bot_id of the predicted winner
+    correct         INTEGER,       -- null until resolved
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE predictor_stats (
+    predictor_id    TEXT PRIMARY KEY,
+    predictor_name  TEXT,
+    correct         INTEGER NOT NULL DEFAULT 0,
+    incorrect       INTEGER NOT NULL DEFAULT 0,
+    streak          INTEGER NOT NULL DEFAULT 0,
+    best_streak     INTEGER NOT NULL DEFAULT 0,
+    rating          REAL NOT NULL DEFAULT 1000.0
+);
+
+-- §13.6: Map voting
+
+CREATE TABLE map_votes (
+    vote_id     TEXT PRIMARY KEY,
+    map_id      TEXT NOT NULL,
+    voter_id    TEXT NOT NULL,  -- localStorage UUID
+    vote        INTEGER NOT NULL,  -- +1 or -1
+    created_at  TEXT NOT NULL,
+    UNIQUE(map_id, voter_id)
+);
+
+-- §12.6: Community replay feedback
+
+CREATE TABLE replay_feedback (
+    feedback_id   TEXT PRIMARY KEY,
+    match_id      TEXT NOT NULL,
+    turn          INTEGER NOT NULL,
+    type          TEXT NOT NULL,  -- 'insight', 'mistake', 'idea', 'highlight'
+    body          TEXT NOT NULL,
+    author        TEXT NOT NULL,  -- free text (no accounts, like registration)
+    upvotes       INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX idx_feedback_match ON replay_feedback(match_id, turn);
+
+-- §13.7: Multi-game series
+
+CREATE TABLE series (
+    series_id     TEXT PRIMARY KEY,
+    bot_a_id      TEXT NOT NULL,
+    bot_b_id      TEXT NOT NULL,
+    format        INTEGER NOT NULL,  -- 3, 5, or 7
+    status        TEXT NOT NULL DEFAULT 'pending',
+    a_wins        INTEGER NOT NULL DEFAULT 0,
+    b_wins        INTEGER NOT NULL DEFAULT 0,
+    season_id     TEXT,
+    created_at    TEXT NOT NULL,
+    completed_at  TEXT
+);
+
+CREATE TABLE series_games (
+    series_id     TEXT NOT NULL,
+    game_number   INTEGER NOT NULL,
+    match_id      TEXT,  -- null until played
+    map_id        TEXT NOT NULL,
+    winner        INTEGER,
+    PRIMARY KEY (series_id, game_number)
+);
+
+-- §13.9: Seasonal rotations
+
+CREATE TABLE seasons (
+    season_id     TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    theme         TEXT NOT NULL,
+    rules_version INTEGER NOT NULL,
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    champion_id   TEXT,
+    status        TEXT NOT NULL DEFAULT 'active'
+);
 ```
 
 **Free tier usage at scale:**
 - Writes: ~1,500/day (match results + job state changes + ratings) vs 100K limit
-- Reads: ~50K/day (matchmaking queries + index rebuilds + API lookups) vs 5M limit
+- Reads: ~50K/day (matchmaking queries + index builder data exports + API lookups) vs 5M limit
 - Storage: <100 MB after months of operation vs 5 GB limit
 
-### 8.4 Bot Registration
+### 8.4 Rackspace Index Builder
+
+The index builder is a container running on Rackspace Spot that replaces the
+original Worker cron-based index rebuilding. It runs on a periodic cycle
+(every ~90 minutes) and performs the following:
+
+1. **Read:** Fetches current match results, bot stats, ratings, series,
+   seasons, predictions, playlists, community feedback, and evolution
+   lineage data from D1 via the Worker API endpoint (`GET /api/data/export`,
+   authenticated with the same API key as match workers)
+2. **Generate:** Computes all pre-computed JSON index files:
+   - `leaderboard.json` -- sorted bot rankings with stats
+   - `bots/index.json` and `bots/{bot_id}.json` -- bot directory and profiles
+   - `matches/index.json` -- paginated match list (last 1000)
+   - `series/index.json` and `series/{series_id}.json`
+   - `seasons/index.json` and `seasons/{season_id}.json`
+   - `playlists/{slug}.json` -- auto-curated collections
+   - `predictions/leaderboard.json` and `predictions/open.json`
+   - `meta/archetypes.json` and `meta/rivalries.json`
+   - `evolution/lineage.json` and `evolution/meta.json`
+   - `blog/index.json` and `blog/posts/{slug}.json` (weekly blog generation)
+3. **Deploy:** Runs `wrangler pages deploy` to push the index files to the
+   Pages project. Only the `data/` directory is updated; the SPA shell
+   (HTML/JS/CSS/WASM) is untouched.
+
+**Why Rackspace, not a Worker cron:** Writing ~75 JSON files to R2 every 2
+minutes would exceed the R2 free tier Class A write limit (1M/month). Pages
+allows 500 builds/month (~16/day). Deploying every ~90 minutes uses ~16
+builds/day, staying within the budget. Data staleness of 90 minutes is
+acceptable for leaderboards and indexes.
+
+**Environment:** The container needs a Cloudflare API token with Pages deploy
+permissions and the Worker API key for D1 data access. Both are stored as
+Kubernetes secrets.
+
+### 8.5 Bot Registration
 
 **Registration flow:**
 
@@ -1248,10 +1471,10 @@ Only `ACTIVE` bots participate in matchmaking. The health checker cron pings
 each active bot every 15 min. Three consecutive failures → `INACTIVE`. Bots
 automatically return to `ACTIVE` when health checks pass again.
 
-### 8.5 Leaderboard
+### 8.6 Leaderboard
 
-The leaderboard is a **JSON file** in R2 (`data/leaderboard.json`) rebuilt
-by the index rebuilder cron every 2 minutes.
+The leaderboard is a **JSON file** deployed to Pages (`data/leaderboard.json`)
+by the Rackspace index builder every ~90 minutes.
 
 ```json
 {
@@ -1274,13 +1497,14 @@ by the index rebuilder cron every 2 minutes.
 }
 ```
 
-The static site fetches this file directly from R2 (no Worker invocation).
-Client-side sorting and filtering (by player count tier, time range,
-human-only vs all). Auto-refresh every 60 seconds. Public — no login.
+The static site fetches this file directly from Pages (same origin, no
+Worker invocation). Client-side sorting and filtering (by player count
+tier, time range, human-only vs all). Auto-refresh every 60 seconds.
+Public -- no login.
 
-### 8.6 Match History & Profiles
+### 8.7 Match History & Profiles
 
-**Bot profile** (`/bot/{bot_id}`) — fetches `data/bots/{bot_id}.json` from R2:
+**Bot profile** (`/bot/{bot_id}`) -- fetches `data/bots/{bot_id}.json` from Pages:
 - Current rating + rating history (array of `[timestamp, rating]` pairs
   rendered as a chart client-side)
 - Recent matches (last 50) with links to replay viewer
@@ -1288,12 +1512,12 @@ human-only vs all). Auto-refresh every 60 seconds. Public — no login.
 - Bot description, owner, registration date
 - If evolved: lineage, generation, island
 
-**Match list** (`/matches`) — fetches `data/matches/index.json` from R2:
+**Match list** (`/matches`) -- fetches `data/matches/index.json` from Pages:
 - Paginated list of recent matches
 - Each entry: match_id, participants, scores, date, link to replay
 
 **Match detail** (`/replay/{match_id}`):
-- Fetches `data/matches/{match_id}.json` from R2 for metadata
+- Fetches `matches/{match_id}.json` from R2 for metadata
 - Fetches `replays/{match_id}.json.gz` from R2 for the replay
 - Embedded replay viewer (auto-plays)
 - Score breakdown, participants, match duration
@@ -1320,25 +1544,30 @@ fully ephemeral — they can be reclaimed at any time with zero data loss.
 
 | Service | Usage | Free Limit | Headroom |
 |---------|-------|------------|----------|
-| **Pages** | ~1K views/day | Unlimited bandwidth + requests | Unlimited |
+| **Pages** | ~1K views/day + ~16 index deploys/day | Unlimited bandwidth + requests; 500 builds/month | ~50% of builds budget |
 | **Workers** | ~5K requests/day (API + crons) | 100K requests/day | 95% |
 | **Workers CPU** | <5ms per invocation | 10ms per invocation | 50% |
-| **R2 storage** | ~3–5 GB | 10 GB | 50–70% |
-| **R2 Class A** (writes) | ~43K/month | 1M/month | 96% |
-| **R2 Class B** (reads) | ~30K/month | 10M/month | 99.7% |
-| **R2 egress** | Unlimited | Unlimited (always free) | — |
+| **R2 storage** | ~3-5 GB | 10 GB | 50-70% |
+| **R2 Class A** (writes) | ~44K/month (replays + per-match metadata only) | 1M/month | 96% |
+| **R2 Class B** (reads) | ~20K/month (replay loads + Rackspace reads) | 10M/month | 99.8% |
+| **R2 egress** | Unlimited | Unlimited (always free) | -- |
 | **D1 writes** | ~1.5K/day | 100K/day | 98.5% |
 | **D1 reads** | ~50K/day | 5M/day | 99% |
 | **D1 storage** | <100 MB | 5 GB | 98% |
-| **Cron triggers** | 4 used | 5 per account | 1 spare |
+| **Cron triggers** | 3 used | 5 per account | 2 spare |
+
+Note: R2 Class A writes dropped from ~1.6M/month (when the Worker cron
+wrote ~75 index files to R2 every 2 minutes) to ~44K/month by moving index
+files to Pages deploys. This change is what keeps the platform within the
+R2 free tier.
 
 **Cloudflare deployment:**
 ```
 Cloudflare Account:
-├── Pages project: aicodebattle.com (static site)
+├── Pages project: aicodebattle.com (static site + index JSON data)
 ├── Worker: acb-api
 │   ├── Routes: api.aicodebattle.com/*
-│   ├── Crons: matchmaker (1m), indexer (2m), health (15m), reaper (5m)
+│   ├── Crons: matchmaker (1m), health (15m), reaper (5m)
 │   ├── D1 binding: ACB_DB
 │   └── R2 binding: ACB_DATA
 ├── R2 bucket: acb-data
@@ -1363,21 +1592,23 @@ is in Cloudflare (D1 + R2).
 
 | Image | Base | Purpose | Instances |
 |-------|------|---------|-----------|
-| `acb-worker` | Go binary on Alpine | Match execution | 1–10 (spot) |
+| `acb-worker` | Go binary on Alpine | Match execution | 1-10 (spot) |
 | `acb-evolver` | Go binary on Alpine | Evolution pipeline | 1 (spot) |
+| `acb-index-builder` | Node 22 Alpine (includes wrangler CLI) | Reads D1 via Worker API, generates index JSON, deploys to Pages | 1 (spot) |
+| `acb-replay-pruner` | Go binary on Alpine | Weekly replay pruning in R2 | 1 (spot, CronJob) |
 | `acb-strategy-random` | Python 3.13 slim | RandomBot | 1 |
 | `acb-strategy-gatherer` | Go on Alpine | GathererBot | 1 |
 | `acb-strategy-rusher` | Rust on Alpine | RusherBot | 1 |
 | `acb-strategy-guardian` | PHP 8.4 CLI Alpine | GuardianBot | 1 |
 | `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | 1 |
 | `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | 1 |
-| `acb-evolved-*` | Varies by language | LLM-generated bots | 0–50 |
+| `acb-evolved-*` | Varies by language | LLM-generated bots | 0-50 |
 
 **Deployment layout:**
 ```
 Spot instance A (4 vCPU, 8 GB RAM, "bot host"):
 ├── acb-strategy-* (all 6 built-in bots, ~1 GB total)
-└── acb-evolved-* (0–50 evolved bots, dynamic)
+└── acb-evolved-* (0-50 evolved bots, dynamic)
 
 Spot instance B (2 vCPU, 4 GB RAM, "worker"):
 └── acb-worker (runs 1 match at a time)
@@ -1387,6 +1618,10 @@ Spot instance C (2 vCPU, 4 GB RAM, "worker"):
 
 Spot instance D (4 vCPU, 8 GB RAM, "evolver"):
 └── acb-evolver (LLM pipeline, sandbox, evaluation)
+
+Spot instance E (1 vCPU, 2 GB RAM, "index builder"):
+└── acb-index-builder (runs every ~90 min, deploys to Pages)
+└── acb-replay-pruner (weekly CronJob, prunes old replays from R2)
 ```
 
 ### 9.4 Match Job Coordination
@@ -1410,8 +1645,9 @@ single point of coordination.
    `POST api.aicodebattle.com/api/jobs/{id}/result`
    - Small JSON body: scores, winner, turn count, condition
 7. Worker API writes result to D1, marks job `completed`
-8. Index rebuilder cron (next 2-min cycle) reads new results, rebuilds
-   leaderboard.json + bot profiles + match index, writes to R2
+8. Rackspace index builder (next ~90-min cycle) reads new results from D1
+   via Worker API, rebuilds leaderboard.json + bot profiles + match index +
+   all other index files, deploys to Pages via `wrangler pages deploy`
 
 **Stale job recovery:**
 - Reaper cron checks D1 every 5 minutes for jobs `running` >15 minutes
@@ -1861,10 +2097,64 @@ Promoted bots are automatically containerized and registered on the ladder:
 | Container build + deploy | ~2 minutes | Docker build + push |
 | **Total cycle time** | **~15 minutes** | |
 
-**Daily output:** ~96 candidates generated, ~10–15 promoted, ~5–10 survive
+**Daily output:** ~96 candidates generated, ~10-15 promoted, ~5-10 survive
 on the ladder after the 7-day retirement window.
 
-### 10.10 Evolution Dashboard
+**Throughput is configurable** and depends on Rackspace Spot capacity. The
+ratio of ladder matches to evolution evaluation matches is tunable (default:
+70/30 -- 70% of match worker capacity goes to ladder matches, 30% to
+evolution evaluation matches). When Rackspace capacity is reduced (spot
+reclamation), the ratio can be adjusted to prioritize ladder matches over
+evolution. When excess capacity is available, evolution throughput increases
+automatically.
+
+**Container lifecycle:** the evolution system on Rackspace runs as a
+long-lived container that intentionally exits after a configurable time
+period (default: 4 hours), causing Kubernetes to redeploy it. This prevents
+memory leaks and stale state accumulation across hundreds of evolution
+cycles.
+
+### 10.10 Test Harnesses
+
+Three test harness suites validate correctness across the game engine, bot
+protocol, and evolution pipeline. These run as part of CI and as part of
+the evolution validation pipeline.
+
+**Game engine test suite:**
+- Unit tests for combat resolution (focus fire algorithm), fog of war
+  computation, movement and collision, scoring, and endgame condition
+  detection
+- Property-based tests for determinism: given the same input state and
+  moves, the engine must produce the same output state. Random seeds
+  generate thousands of input combinations; any nondeterminism is a
+  failing test.
+- Edge case tests: toroidal wrapping, simultaneous multi-player death,
+  contested energy, core capture during spawn phase
+
+**Bot protocol test suite:**
+- Schema validation: verify that game state JSON conforms to the
+  documented schema (section 4.2) and that move responses are validated
+  correctly (section 4.3)
+- HMAC verification: test correct signature generation and verification,
+  timestamp replay rejection, and constant-time comparison
+- Timeout handling: verify that the engine correctly handles bots that
+  respond after the 3-second deadline, return non-200 status codes,
+  return invalid JSON, or refuse connections
+- Malformed response handling: verify graceful degradation for partial
+  JSON, missing fields, extra fields, and oversized payloads
+
+**Evolution validation test suite:**
+- Syntax checking per language: verify that the validation pipeline
+  correctly accepts valid code and rejects invalid code for each
+  supported language (Python, Go, Rust, PHP, TypeScript, Java)
+- Schema compliance: verify that generated bots correctly implement
+  `POST /turn` and `GET /health` with valid HMAC signatures
+- Sandbox smoke test: verify that nsjail isolation works correctly
+  (no network access, filesystem isolation, resource limits enforced)
+- End-to-end: generate a known-good bot from a template, run it through
+  the full validation pipeline, and verify it passes all stages
+
+### 10.11 Evolution Dashboard
 
 The web platform includes a dedicated evolution section visible to all visitors:
 
@@ -1889,7 +2179,7 @@ The web platform includes a dedicated evolution section visible to all visitors:
 - Average rating of evolved bots vs human-written bots over time
 - Island diversity metrics (how different are the islands from each other)
 
-### 10.11 Separation from Human Ladder
+### 10.12 Separation from Human Ladder
 
 Evolved bots compete on the **same ladder** as human-written bots — there is
 no separate tier. This is a deliberate design choice:
@@ -1969,9 +2259,9 @@ match with all visual elements rendering correctly.
   (`/api/jobs/next`, `/api/jobs/{id}/result`), authenticated with API key
 - D1 schema: `bots`, `matches`, `match_participants`, `jobs`,
   `rating_history` tables
-- Worker cron: matchmaker (1 min), stale job reaper (5 min)
-- Worker cron: index rebuilder (2 min) — reads D1, writes leaderboard.json +
-  bot profiles + match index to R2
+- Worker cron: matchmaker (1 min), health checker (15 min), stale job reaper (5 min)
+- Rackspace index builder container: reads D1 via Worker API, generates index
+  JSON files, deploys to Pages every ~90 minutes
 - Match worker container (`acb-worker`): claims jobs from Worker API, runs
   matches, uploads replays to R2 via S3 API, POSTs results to Worker API
 - Glicko-2 rating update logic in the Worker (runs on result submission)
@@ -1989,9 +2279,10 @@ disappearance via the stale job reaper.
 - Worker API: registration endpoints (`/api/register`, `/api/rotate-key`,
   `/api/status/{id}`)
 - Worker cron: health checker (15 min) — pings bot endpoints, updates D1
-- R2 bucket with custom domain for public-read data access
-- All pages load data by fetching JSON from R2 — no Worker invocations
-  for page views
+- R2 bucket with custom domain for replays and per-match data
+- Rackspace index builder container deploying index JSON to Pages
+- Pages serves index data (leaderboard, bot profiles, playlists); R2 serves
+  replays and per-match metadata -- no Worker invocations for page views
 
 **Exit criteria:** a participant can register a bot via the web form, the
 bot appears on the leaderboard after matches complete, and anyone can browse
@@ -2003,9 +2294,11 @@ matches and watch replays — all served from Cloudflare free tier.
 - Cloudflare: Pages project, Worker deployed via Wrangler, D1 database
   created, R2 bucket with custom domain, DNS configured
 - Rackspace Spot: match worker containers pulling jobs from Cloudflare
-  Worker API, bot-host container running all strategy bots
+  Worker API, bot-host container running all strategy bots, index builder
+  container deploying to Pages, replay pruner CronJob
 - R2 API token (scoped) distributed to Rackspace workers
-- Worker API key distributed to Rackspace workers
+- Cloudflare API token (Pages deploy) distributed to index builder
+- Worker API key distributed to Rackspace workers and index builder
 - Monitoring: Cloudflare analytics + Worker-based alerting webhooks
 
 **Exit criteria:** platform is publicly accessible on Cloudflare (zero
@@ -2069,10 +2362,10 @@ evolution pipeline.
   — all computed client-side, toggled via viewer toolbar
 - Embeddable replay widget: `/embed/{match_id}` route on Pages, minimal
   Chrome, auto-play, ~50KB, Open Graph tags
-- Replay playlists: auto-curated collections rebuilt by index cron, stored
-  in R2, browsable on the static site
+- Replay playlists: auto-curated collections rebuilt by Rackspace index
+  builder, deployed to Pages, browsable on the static site
 - Prediction system: D1 `predictions` table, Worker endpoints for submit
-  + resolve, prediction leaderboard JSON in R2
+  + resolve, prediction leaderboard JSON deployed to Pages
 - Map evolution pipeline: engagement scoring, breeding/mutation, symmetry
   validation, positional fairness monitoring, user map voting
 - Multi-game series: D1 `series` table, series scheduler, unified replay
@@ -2323,37 +2616,48 @@ per hour.
 
 **Commentary generation:**
 
-Run a fast, cheap LLM (Haiku-class) over the replay data at match
-completion. This happens as an optional post-processing step on the match
-worker.
+Enrichment is performed by a **coding agent on Rackspace** that takes the
+replay JSON + match metadata as input and generates a Markdown-formatted
+play-by-play output. The agent uses an LLM to analyze the replay data and
+produce structured commentary. This runs as a post-processing step on a
+dedicated Rackspace container (not on the match worker itself).
 
-**Input prompt:**
+**Agent input:**
+- Full replay JSON (turn-by-turn game state)
+- Match metadata (players, ratings, map size, win condition)
+- Win probability curve (sampled every 10 turns)
+- Critical moments array
+
+**Agent output:** a Markdown file (`{match_id}-commentary.md`) stored
+alongside the replay in R2:
+
+```markdown
+# SwarmBot vs GathererBot — 60x60 Grid
+
+## Turn 1: Opening
+Both bots spawn at opposite corners of a 60x60 grid with heavy wall
+cover in the center. SwarmBot immediately sends all units east in a
+tight cluster.
+
+## Turn 42: First Contact
+GathererBot's scout stumbles into SwarmBot's formation near the central
+energy cluster. The scout is outnumbered 8-to-1 and eliminated instantly.
+
+## Turn 87: The Turning Point
+SwarmBot pushes through the eastern corridor but GathererBot has quietly
+amassed 14 units behind the western wall line — a force SwarmBot doesn't
+know exists.
 ```
-Narrate this bot battle. Provide commentary for key moments only
-(not every turn). Write 1-2 sentences per key moment. Be specific
-about positions, unit counts, and tactical decisions.
 
-Match: {players, ratings, map_size}
-Win probability curve: {win_prob array, sampled every 10 turns}
-Critical moments: {critical_moments array}
-Key events by turn: {deaths, captures, large movements, energy collected}
-```
-
-**Output:** array of `{turn, text}` entries stored in the replay JSON:
-```json
-"commentary": [
-    { "turn": 1, "text": "Both bots spawn at opposite corners of a 60x60 grid with heavy wall cover in the center. SwarmBot immediately sends all units east in a tight cluster." },
-    { "turn": 42, "text": "First contact. GathererBot's scout stumbles into SwarmBot's formation near the central energy cluster. The scout is outnumbered 8-to-1 and eliminated instantly." },
-    { "turn": 87, "text": "The turning point. SwarmBot pushes through the eastern corridor but GathererBot has quietly amassed 14 units behind the western wall line — a force SwarmBot doesn't know exists." }
-]
-```
-
-**Cost:** ~$0.01–0.03 per enriched match at Haiku pricing. At 9
-enriched matches/hour: ~$2–6/day, ~$60–180/month. Reasonable.
+**Cost:** ~$0.01-0.03 per enriched match at Haiku-class pricing. At 9
+enriched matches/hour: ~$2-6/day, ~$60-180/month. Reasonable.
 
 **Replay viewer integration:**
-- Commentary appears as subtitles below the canvas, synchronized to turn
-  playback
+- The replay viewer fetches the companion `.md` file from R2 and renders
+  the Markdown as commentary subtitles below the canvas, synchronized to
+  turn playback
+- Commentary sections are keyed to turn numbers; the viewer displays the
+  relevant section as playback progresses
 - Toggle on/off via a "Commentary" button
 - Enriched replays are badged on the match list ("Featured" / "Narrated")
 
@@ -2418,7 +2722,7 @@ narrative-driven content.
 **Detection algorithm:**
 
 ```sql
--- Run by the index rebuilder cron
+-- Run by the Rackspace index builder
 SELECT
     a.bot_id AS bot_a,
     b.bot_id AS bot_b,
@@ -2514,8 +2818,8 @@ CREATE INDEX idx_feedback_match ON replay_feedback(match_id, turn);
 The evolution pipeline's prompt builder (§10.3) consumes community
 feedback as an additional signal:
 
-1. Index rebuilder aggregates high-upvote feedback of type `idea` and
-   `mistake` into `data/evolution/community_hints.json`
+1. The Rackspace index builder aggregates high-upvote feedback of type `idea`
+   and `mistake` into `data/evolution/community_hints.json` (deployed to Pages)
 2. The evolver reads this file and includes the top-voted recent hints
    in the prompt:
 
@@ -2741,8 +3045,7 @@ no side panel, no fog-of-war toggle. Just the match playing.
   <meta property="og:image" content="https://data.aicodebattle.com/thumbnails/m_7f3a9b2c.png" />
   ```
 - Thumbnail: auto-generated PNG of the final turn state, created by the
-  index rebuilder using OffscreenCanvas in a Worker (or pre-rendered by
-  the match worker)
+  Rackspace index builder or pre-rendered by the match worker
 
 **Cloudflare free tier impact:** embed loads are Pages requests (unlimited).
 The replay JSON fetch is an R2 Class B read — already accounted for in the
@@ -2757,14 +3060,14 @@ site's landing page.
 
 | Playlist | Query Criteria | Rebuild Frequency |
 |----------|---------------|-------------------|
-| "Closest Finishes" | `final_score_diff <= 1` sorted by `win_prob_crossings DESC` | Every 2 min (index cron) |
-| "Biggest Upsets" | `winner_rating - loser_rating <= -150` | Every 2 min |
-| "Best Comebacks" | `min(win_prob) < 0.2 AND winner = underdog` | Every 2 min |
-| "Evolution Breakthroughs" | Evolved bot's first win against a top-10 bot | Every 2 min |
-| "Rivalry Classics" | Matches between detected rivals, sorted by closeness | Every 2 min |
-| "This Week's Highlights" | Top 10 by community upvote count (from §12.6) | Every 2 min |
-| "New Bot Debuts" | First match of each newly registered bot | Every 2 min |
-| "Season Highlights" | Top 20 matches of the current season by engagement | Every 2 min |
+| "Closest Finishes" | `final_score_diff <= 1` sorted by `win_prob_crossings DESC` | Every ~90 min (index builder deploy) |
+| "Biggest Upsets" | `winner_rating - loser_rating <= -150` | Every ~90 min |
+| "Best Comebacks" | `min(win_prob) < 0.2 AND winner = underdog` | Every ~90 min |
+| "Evolution Breakthroughs" | Evolved bot's first win against a top-10 bot | Every ~90 min |
+| "Rivalry Classics" | Matches between detected rivals, sorted by closeness | Every ~90 min |
+| "This Week's Highlights" | Top 10 by community upvote count (from SS12.6) | Every ~90 min |
+| "New Bot Debuts" | First match of each newly registered bot | Every ~90 min |
+| "Season Highlights" | Top 20 matches of the current season by engagement | Every ~90 min |
 
 **R2 storage:** `data/playlists/{slug}.json`
 
@@ -2791,8 +3094,8 @@ rows (Netflix-style). Each card shows a thumbnail, player names, and score.
 Click opens the replay.
 
 **Cloudflare free tier impact:** playlist JSONs are tiny (<50 KB each).
-They're rebuilt by the existing index rebuilder cron — just additional D1
-queries and R2 writes within existing budget.
+They're rebuilt by the Rackspace index builder and deployed to Pages --
+just additional D1 queries within the existing index build cycle.
 
 ### 13.5 Prediction System
 
@@ -2819,9 +3122,10 @@ At ~60 matches/hour, roughly 5–10% are flagged — about 3–6 per hour.
    executing (typically 1–5 minutes)
 6. Match executes normally
 7. On result submission, Worker resolves predictions in D1
-8. Index rebuilder updates the prediction leaderboard JSON in R2
+8. Rackspace index builder updates the prediction leaderboard JSON on Pages
+   (next ~90-min deploy cycle)
 
-**D1 schema:**
+**D1 schema:** (see SS8.3 for the consolidated schema)
 
 ```sql
 CREATE TABLE predictions (
@@ -2829,8 +3133,8 @@ CREATE TABLE predictions (
     match_id        TEXT NOT NULL,
     predictor_id    TEXT NOT NULL,  -- localStorage-generated UUID
     predictor_name  TEXT,           -- optional display name
-    predicted_winner INTEGER NOT NULL,
-    correct         INTEGER,        -- null until resolved
+    predicted_bot_id TEXT NOT NULL, -- bot_id of the predicted winner
+    correct         INTEGER,       -- null until resolved
     created_at      TEXT NOT NULL
 );
 
@@ -2844,6 +3148,11 @@ CREATE TABLE predictor_stats (
     rating          REAL NOT NULL DEFAULT 1000.0
 );
 ```
+
+Predictions are tied to **bot identity** (`predicted_bot_id`), not player
+slot. Resolution matches the winning bot's `bot_id` against the predicted
+`bot_id`. This avoids ambiguity when the same bot appears in different
+player slots across matches.
 
 Predictor rating uses a simplified Elo: correct prediction on a balanced
 match (close ratings) = small gain; correct prediction on a heavy underdog
@@ -2908,15 +3217,18 @@ SELECT
 FROM match_participants mp
 JOIN matches m ON m.match_id = mp.match_id
 GROUP BY map_id, player_slot
-HAVING COUNT(*) >= 20
+HAVING COUNT(*) >= 80
 ```
 
 If any player slot's win rate deviates from the expected rate (1/N for
-N-player maps) by more than **10 percentage points** across 20+ matches,
+N-player maps) by more than **10 percentage points** across 80+ matches,
 the map is flagged as **unfair** and removed from the competitive pool.
+At 80 matches with a 10pp threshold, the false positive rate from random
+variance drops to ~2% (compared to ~15% at 20 matches).
 
-Example: on a 2-player map, if player slot 0 wins 62% of the time after
-20 matches, the map is flagged (62% - 50% = 12% > 10% threshold).
+Example: on a 2-player map, if player slot 0 wins 58% of the time after
+80 matches, the map is flagged (58% - 50% = 8% -- close to threshold,
+monitored). At 60%, it is flagged and removed.
 
 **User map voting:**
 
@@ -3300,7 +3612,7 @@ character in a single shareable image.
 **Card generation:**
 
 The card is rendered as a PNG via OffscreenCanvas (in the browser on
-demand, or pre-rendered by the index rebuilder for top-50 bots).
+demand, or pre-rendered by the Rackspace index builder for top-50 bots).
 
 **Card content:**
 
@@ -3420,17 +3732,17 @@ posts) and renders them client-side with a Markdown renderer.
 
 **Generation pipeline:**
 
-1. Worker cron fires weekly (using one of the 5 cron slots — shares with
-   the index rebuilder, running on a `if (dayOfWeek === 1)` check)
-2. Queries D1 for all data points above
+1. The Rackspace index builder runs a weekly blog generation pass (triggered
+   on `dayOfWeek === 1` during its regular cycle)
+2. Queries D1 via Worker API for all data points above
 3. Template-fills the structured sections (strategy distribution, ratings,
    maps, predictions)
 4. Sends the free-text sections (counter-strategy spotlight, evolution
    highlights) to a cheap LLM with the data context + a journalism-style
    prompt
 5. Assembles the full Markdown post
-6. Writes to R2 as a blog JSON file
-7. Updates `blog/index.json`
+6. Includes the blog JSON file in the next Pages deploy
+7. Updates `data/blog/index.json` in the deploy
 
 **Cost:** one LLM call per week (~$0.05). Negligible.
 
@@ -3442,61 +3754,73 @@ auto-generated.
 
 ### 14.2 Public Match Data (Static JSON)
 
-All platform data is already pre-computed and stored as static JSON files
-in R2. The "API" is simply **documented file paths** — no Worker
-endpoints, no query parameters, no rate limiting needed.
+All platform data is already pre-computed and stored as static JSON files.
+Index files are served from **Pages** (deployed every ~90 min by the
+Rackspace index builder). Replays and per-match data are served from **R2**
+(written in real time by match workers). The "API" is simply **documented
+file paths** -- no Worker endpoints, no query parameters, no rate limiting
+needed.
 
 **Documented data paths:**
 
 ```
-DATA_BASE = https://data.aicodebattle.com
+PAGES = https://aicodebattle.com
+R2    = https://data.aicodebattle.com
+
+--- Served from Pages (index files, updated every ~90 min) ---
 
 Leaderboard:
-  GET {DATA_BASE}/data/leaderboard.json
+  GET {PAGES}/data/leaderboard.json
 
 Bot directory:
-  GET {DATA_BASE}/data/bots/index.json
-  GET {DATA_BASE}/data/bots/{bot_id}.json
+  GET {PAGES}/data/bots/index.json
+  GET {PAGES}/data/bots/{bot_id}.json
 
-Match history:
-  GET {DATA_BASE}/data/matches/index.json
-  GET {DATA_BASE}/data/matches/index-{page}.json   (older pages)
-  GET {DATA_BASE}/data/matches/{match_id}.json
-
-Replays:
-  GET {DATA_BASE}/replays/{match_id}.json.gz
-
-Maps:
-  GET {DATA_BASE}/maps/index.json
-  GET {DATA_BASE}/maps/{map_id}.json
+Match index:
+  GET {PAGES}/data/matches/index.json
+  GET {PAGES}/data/matches/index-{page}.json   (older pages)
 
 Series:
-  GET {DATA_BASE}/data/series/index.json
-  GET {DATA_BASE}/data/series/{series_id}.json
+  GET {PAGES}/data/series/index.json
+  GET {PAGES}/data/series/{series_id}.json
 
 Seasons:
-  GET {DATA_BASE}/data/seasons/index.json
-  GET {DATA_BASE}/data/seasons/{season_id}.json
+  GET {PAGES}/data/seasons/index.json
+  GET {PAGES}/data/seasons/{season_id}.json
 
 Playlists:
-  GET {DATA_BASE}/data/playlists/{slug}.json
+  GET {PAGES}/data/playlists/{slug}.json
 
 Meta:
-  GET {DATA_BASE}/data/meta/archetypes.json
-  GET {DATA_BASE}/data/meta/rivalries.json
+  GET {PAGES}/data/meta/archetypes.json
+  GET {PAGES}/data/meta/rivalries.json
 
-Evolution:
-  GET {DATA_BASE}/data/evolution/live.json
-  GET {DATA_BASE}/data/evolution/lineage.json
-  GET {DATA_BASE}/data/evolution/meta.json
+Evolution (indexes):
+  GET {PAGES}/data/evolution/lineage.json
+  GET {PAGES}/data/evolution/meta.json
 
 Blog:
-  GET {DATA_BASE}/blog/index.json
-  GET {DATA_BASE}/blog/posts/{slug}.json
+  GET {PAGES}/data/blog/index.json
+  GET {PAGES}/data/blog/posts/{slug}.json
 
 Predictions:
-  GET {DATA_BASE}/data/predictions/leaderboard.json
-  GET {DATA_BASE}/data/predictions/open.json
+  GET {PAGES}/data/predictions/leaderboard.json
+  GET {PAGES}/data/predictions/open.json
+
+--- Served from R2 (real-time data, written by workers/evolver) ---
+
+Individual match metadata:
+  GET {R2}/matches/{match_id}.json
+
+Replays:
+  GET {R2}/replays/{match_id}.json.gz
+
+Maps:
+  GET {R2}/maps/index.json
+  GET {R2}/maps/{map_id}.json
+
+Evolution (live feed):
+  GET {R2}/evolution/live.json
 ```
 
 **Replay format specification:**
@@ -3520,17 +3844,18 @@ no rate limiting — it's just static files.
 
 **Why static JSON, not a Worker API:**
 
-All this data already exists in R2 as part of the normal platform
-operation. The index rebuilder cron already produces leaderboard.json,
-bot profiles, match indexes, playlists, etc. Adding an API layer on top
-would consume Worker invocations (limited to 100K/day on free tier) for
-data that's already pre-computed and publicly readable. Static files
-scale infinitely on R2 with zero egress cost.
+All this data already exists as static files -- index files on Pages,
+replays and per-match data on R2. The Rackspace index builder already
+produces leaderboard.json, bot profiles, match indexes, playlists, etc.
+Adding an API layer on top would consume Worker invocations (limited to
+100K/day on free tier) for data that's already pre-computed and publicly
+readable. Pages files scale infinitely with zero cost; R2 files serve with
+zero egress cost.
 
 Third-party tools just `fetch()` the URLs. If they need to poll for
-updates, they check the `updated_at` field in each JSON file. Cache
-headers on R2 objects guide freshness (leaderboard: 60s, match data:
-immutable, bot profiles: 300s).
+updates, they check the `updated_at` field in each JSON file. Pages index
+files refresh every ~90 minutes. R2 cache headers guide freshness for
+replays (immutable) and the evolution live feed (10s).
 
 ### 14.3 Accessibility Suite
 
@@ -3785,8 +4110,9 @@ Each entry shows the candidate ID, island, result, and reason.
   over time.
 
 Both visualizations are built from `data/evolution/lineage.json` and
-`data/evolution/meta.json` (already produced by the index rebuilder).
-The live feed overlay is the only component that polls `live.json`.
+`data/evolution/meta.json` (served from Pages, produced by the Rackspace
+index builder). The live feed overlay is the only component that polls
+`live.json` from R2.
 
 ### 14.5 Narrative Engine (Chronicles)
 
@@ -3795,7 +4121,7 @@ meta report as blog posts on `/blog`.
 
 **Story arc detection:**
 
-The weekly cron (same as the meta report, §14.1) scans D1 for active
+The weekly index builder pass (same as the meta report, SS14.1) scans D1 for active
 story arcs:
 
 | Arc Type | D1 Query Trigger |
