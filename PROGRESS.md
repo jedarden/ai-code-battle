@@ -4,6 +4,15 @@
 
 **Status: 🔄 In Progress**
 
+**Last Updated: 2026-03-24**
+
+### Recent Changes (2026-03-24)
+- Added `.gitignore` for proper repository hygiene
+- Added `package-lock.json` files for reproducible builds
+- Verified all tests pass (glicko2.test.ts, generator.test.ts)
+- Verified web build succeeds
+- Verified compiled binaries work (acb-local, acb-mapgen, acb-worker)
+
 ### Phase 6 Progress
 
 - [x] Match worker container (`cmd/acb-worker/Dockerfile`)
