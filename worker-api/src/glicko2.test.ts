@@ -55,8 +55,8 @@ describe('Glicko-2 Rating System', () => {
     });
 
     it('returns correct values for known inputs', () => {
-      // g(0.2) ≈ 0.9955 (from paper example)
-      expect(g(0.2)).toBeCloseTo(0.9955, 4);
+      // g(0.2) = 1/sqrt(1 + 3*0.04/pi^2) ≈ 0.993976
+      expect(g(0.2)).toBeCloseTo(0.993976, 4);
     });
   });
 

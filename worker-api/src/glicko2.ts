@@ -40,14 +40,14 @@ export function fromGlicko2(g2: Glicko2Rating): { rating: number; rd: number } {
 /**
  * Compute g(phi) function
  */
-function g(phi: number): number {
+export function g(phi: number): number {
   return 1 / Math.sqrt(1 + (3 * phi * phi) / (Math.PI * Math.PI));
 }
 
 /**
  * Compute E(mu, mu_j, phi_j) function
  */
-function E(mu: number, mu_j: number, phi_j: number): number {
+export function E(mu: number, mu_j: number, phi_j: number): number {
   return 1 / (1 + Math.exp(-g(phi_j) * (mu - mu_j)));
 }
 
