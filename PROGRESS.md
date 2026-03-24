@@ -2,7 +2,7 @@
 
 ## Current Phase: Phase 1 - Core Engine
 
-**Status: In Progress (~80% complete)**
+**Status: ✅ COMPLETE**
 
 ### Completed
 
@@ -51,12 +51,16 @@
   - Energy collection
   - Spawning
   - Win conditions
-
-### Remaining for Phase 1
-
-- [ ] Improve map generator with connectivity validation
-- [ ] Add property-based tests for determinism
-- [ ] Run full 500-turn match validation
+- [x] Map generator connectivity validation (`cmd/acb-mapgen/connectivity.go`)
+  - BFS-based connectivity check
+  - Retry mechanism for connected map generation
+- [x] Determinism tests (`engine/determinism_test.go`)
+  - Same seed produces identical replays
+  - Turn execution is deterministic
+  - Grid operations are deterministic
+  - Combat resolution is deterministic
+  - Replay serialization round-trip
+  - Full 500-turn match validation
 
 ### Exit Criteria Progress
 
@@ -64,11 +68,11 @@
 |-----------|--------|
 | Can run a complete 500-turn match locally | ✅ Works |
 | Produce a valid replay file | ✅ Works |
-| Comprehensive unit tests | ✅ 26 tests passing |
+| Comprehensive unit tests | ✅ 32 tests passing |
 
 ## Next Phase: Phase 2 - HTTP Protocol & Strategy Bots
 
-Not started.
+**Status: Ready to start**
 
 ## File Structure
 

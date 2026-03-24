@@ -44,11 +44,14 @@ func main() {
 	energyNodes := flag.Int("energy-nodes", 20, "Energy nodes")
 	seed := flag.Int64("seed", time.Now().UnixNano(), "Random seed")
 	output := flag.String("output", "", "Output file (default: stdout)")
+	maxAttempts := flag.Int("max-attempts", 100, "Max attempts to generate a connected map")
 	help := flag.Bool("help", false, "Show help")
 
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: acb-mapgen [options]\n\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "Generate a symmetric map for AI Code Battle.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "The generator ensures all passable tiles are reachable from\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "any core (full connectivity guarantee).\n\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "Symmetry types:\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  2 players: 180° rotational\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  3 players: 120° rotational\n")
@@ -78,9 +81,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Generate map
+	// Generate map with connectivity validation
 	rng := rand.New(rand.NewSource(*seed))
-	m := generateMap(*players, *rows, *cols, *wallDensity, *energyNodes, rng)
+	m := EnsureConnectivity(*players, *rows, *cols, *wallDensity, *energyNodes, rng, *maxAttempts)
+	if m == nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to generate a connected map after %d attempts\n", *maxAttempts)
+		fmt.Fprintf(os.Stderr, "Try reducing wall density or increasing max-attempts\n")
+		os.Exit(1)
+	}
 
 	// Generate map ID
 	m.ID = generateMapID(rng)
