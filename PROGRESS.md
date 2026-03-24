@@ -1,8 +1,40 @@
 # AI Code Battle - Implementation Progress
 
-## Current Phase: Phase 3 - Replay Viewer
+## Current Phase: Phase 4 - Match Orchestration
 
-**Status: ✅ COMPLETE**
+**Status: 🔄 In Progress**
+
+### Phase 4 Progress
+
+- [x] Cloudflare Worker project structure (`worker-api/`)
+  - TypeScript + Wrangler configuration
+  - D1 database schema (bots, matches, jobs, rating_history tables)
+- [x] Glicko-2 rating system (`worker-api/src/glicko2.ts`)
+  - Rating scale conversion
+  - Rating updates after matches
+  - Rating decay for inactive bots
+  - Unit tests (17 tests)
+- [x] Job coordination endpoints (`worker-api/src/jobs.ts`)
+  - GET /api/jobs/next - Get next pending job
+  - POST /api/jobs/:id/claim - Claim job for execution
+  - POST /api/jobs/:id/heartbeat - Update job heartbeat
+  - POST /api/jobs/:id/result - Submit match result
+  - POST /api/jobs/:id/fail - Mark job as failed
+- [x] Bot management endpoints (`worker-api/src/bots.ts`)
+  - POST /api/register - Register new bot
+  - GET /api/bots - List all bots
+  - GET /api/bots/:id - Get bot details
+  - PUT /api/bots/:id - Update bot
+  - POST /api/rotate-key - Rotate API key
+  - GET /api/leaderboard - Get leaderboard
+- [x] Cron handlers (`worker-api/src/cron.ts`)
+  - Matchmaker (every minute) - Creates match jobs
+  - Health checker (every 15 min) - Pings bot endpoints
+  - Stale job reaper (every 5 min) - Reclaims timed-out jobs
+- [ ] Match worker container (`cmd/acb-worker/`)
+- [ ] Rackspace index builder
+
+### Phase 3 Completed
 
 ### Phase 1 Completed
 
