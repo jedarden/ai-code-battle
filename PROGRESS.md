@@ -31,7 +31,14 @@
   - Matchmaker (every minute) - Creates match jobs
   - Health checker (every 15 min) - Pings bot endpoints
   - Stale job reaper (every 5 min) - Reclaims timed-out jobs
-- [ ] Match worker container (`cmd/acb-worker/`)
+- [x] Match worker container (`cmd/acb-worker/`)
+  - Polls Worker API for pending jobs
+  - Claims jobs and executes matches using game engine
+  - Uploads replays to R2 via S3-compatible API
+  - Sends heartbeats during match execution
+  - Submits results back to Worker API
+  - Retry logic with exponential backoff
+  - API client tests (10 tests)
 - [ ] Rackspace index builder
 
 ### Phase 3 Completed
@@ -136,7 +143,23 @@ ai-code-battle/
 │   └── *_test.go       # Test files
 ├── cmd/
 │   ├── acb-local/      # CLI match runner
-│   └── acb-mapgen/     # Map generator
+│   ├── acb-mapgen/     # Map generator
+│   └── acb-worker/     # Match execution worker
+│       ├── main.go      # Worker entry point
+│       ├── api.go       # Worker API client
+│       ├── api_test.go  # API client tests
+│       └── r2.go        # R2 upload client
+├── worker-api/
+│   ├── package.json    # npm dependencies
+│   ├── wrangler.toml   # Cloudflare Worker config
+│   └── src/
+│       ├── index.ts        # Router + cron dispatcher
+│       ├── types.ts        # TypeScript types
+│       ├── glicko2.ts      # Glicko-2 rating system
+│       ├── glicko2.test.ts # Rating system tests
+│       ├── jobs.ts         # Job coordination endpoints
+│       ├── bots.ts         # Bot management endpoints
+│       └── cron.ts         # Cron handlers
 ├── web/
 │   ├── package.json    # npm dependencies
 │   ├── tsconfig.json   # TypeScript config
