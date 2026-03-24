@@ -1946,6 +1946,35 @@ replays with commentary and win probability, export clips for social
 sharing, view rivalries, and submit tactical feedback that influences the
 evolution pipeline.
 
+### Phase 9: Platform Depth
+
+**Deliverables:**
+- Bot debug telemetry: optional `debug` field in move response schema,
+  stored in replay, rendered in viewer side panel + grid overlays
+- Replay view modes: dots (default), Voronoi territory, influence gradient
+  — all computed client-side, toggled via viewer toolbar
+- Embeddable replay widget: `/embed/{match_id}` route on Pages, minimal
+  Chrome, auto-play, ~50KB, Open Graph tags
+- Replay playlists: auto-curated collections rebuilt by index cron, stored
+  in R2, browsable on the static site
+- Prediction system: D1 `predictions` table, Worker endpoints for submit
+  + resolve, prediction leaderboard JSON in R2
+- Map evolution pipeline: engagement scoring, breeding/mutation, symmetry
+  validation, positional fairness monitoring, user map voting
+- Multi-game series: D1 `series` table, series scheduler, unified replay
+  presentation, spoiler toggle
+- Match event timeline: client-side event extraction, icon ribbon in
+  replay viewer, click-to-jump
+- Seasonal system: D1 `seasons` table, ladder reset logic, season archive
+  pages, versioned game rules with backward compatibility
+- Bot profile cards: Canvas-rendered PNG, shareable URL with OG tags
+
+**Exit criteria:** the platform supports seasonal competition with map
+evolution, multi-game series, predictions for non-coders, embeddable
+replays, curated playlists, three replay view modes, bot debug telemetry,
+event timelines, and shareable bot profile cards. All within Cloudflare
+free tier.
+
 ---
 
 ## 12. Enhanced Features
@@ -2388,3 +2417,825 @@ system guarantees you lose the 3v1."
 contribute strategic insight, the AI translates it into code, the platform
 evaluates it, and successful feedback is credited. This gives non-coders a
 way to participate meaningfully in the competition.
+
+---
+
+## 13. Platform Depth Features
+
+### 13.1 Bot Debug Telemetry + Reasoning Visualization
+
+Bots can optionally include a `debug` field in their move response. The
+engine stores it in the replay without interpreting it. The replay viewer
+renders it.
+
+**Extended move response schema:**
+
+```json
+{
+  "moves": [
+    { "row": 10, "col": 15, "direction": "N" }
+  ],
+  "debug": {
+    "reasoning": "3 energy within 5 tiles east; enemy cluster north — avoiding",
+    "targets": [
+      { "row": 20, "col": 25, "label": "energy", "priority": 0.9 },
+      { "row": 8, "col": 30, "label": "threat", "priority": 0.7 }
+    ],
+    "values": {
+      "energy_reserves": 7,
+      "threat_level": "medium",
+      "mode": "gathering"
+    },
+    "heatmap": {
+      "name": "threat",
+      "data": [[0, 0, 0.2, 0.8], [0, 0.1, 0.5, 0.9]]
+    }
+  }
+}
+```
+
+**Schema rules for `debug`:**
+- Entirely optional — bots that omit it behave identically
+- Max size: 10 KB per turn (prevents replay bloat; excess is truncated)
+- The engine never reads or acts on debug data — it's pass-through to replay
+- No fields inside `debug` are validated beyond size — bots can put anything
+- Only the bot's owner sees debug data by default; owners can toggle public
+  visibility per-bot in their bot profile
+
+**Replay viewer rendering:**
+
+| Debug field | Rendering |
+|-------------|-----------|
+| `reasoning` | Text in a collapsible side panel, one entry per turn |
+| `targets` | Colored markers on the grid (green = high priority, red = low) with labels |
+| `values` | Key-value table in the side panel, updates each turn |
+| `heatmap` | Semi-transparent color overlay on the grid (blue→red gradient) |
+
+All debug rendering is toggled via a "Debug" button in the viewer toolbar.
+When off, no debug data is shown (default for spectators). When on, the
+viewer shows the selected player's debug output.
+
+**Replay size impact:**
+
+A bot sending 5 KB of debug data per turn across 500 turns adds 2.5 MB
+to the replay. With gzip compression (~90% on structured JSON), that's
+~250 KB. Acceptable alongside the ~50 KB base replay.
+
+**Why it matters:** This is a visual debugger for distributed bot code.
+Instead of reading logs, developers watch their bot's thought process
+alongside its actions. For spectators who opt in, seeing "the bot is
+scared of the northern cluster" while watching it move south creates
+narrative that no commentary system can match.
+
+### 13.2 Territory Control Heatmap Overlay
+
+The replay viewer supports three visualization modes, toggled via a toolbar
+dropdown. All computed client-side from bot positions — no server cost.
+
+**Mode 1: Dots (default)**
+
+The current view — bots as colored circles on the grid. Minimal, clean,
+fast.
+
+**Mode 2: Voronoi Territory**
+
+Each tile on the grid is colored by which player's nearest bot is closest.
+Creates clean territorial borders that shift each turn.
+
+```
+Computation per turn:
+  for each visible tile (row, col):
+    min_dist = infinity
+    owner = none
+    for each bot on the grid:
+      d = toroidal_distance_squared(tile, bot)
+      if d < min_dist:
+        min_dist = d
+        owner = bot.owner
+    tile_color = player_colors[owner] at 30% opacity
+```
+
+For a 60×60 grid with 50 bots, that's 3,600 × 50 = 180,000 distance
+calculations per turn — trivial for modern JS (~1ms). The result is a
+per-tile color array rendered as a single full-grid Canvas `fillRect` pass
+underneath the bot sprites.
+
+**Mode 3: Influence Gradient**
+
+Force projection based on bot count and distance. Each player's influence
+at a tile is the sum of `1 / (1 + distance)` across all their bots.
+Rendered as a smooth gradient:
+
+```
+for each visible tile:
+    influence = [0, 0, ..., 0]  // per player
+    for each bot:
+        d = toroidal_distance(tile, bot)
+        influence[bot.owner] += 1.0 / (1.0 + d)
+    dominant = argmax(influence)
+    strength = influence[dominant] / sum(influence)
+    tile_color = player_colors[dominant] at (strength × 50%) opacity
+```
+
+The gradient creates a softer, more organic visualization than Voronoi —
+you can see where influence is strong (dense, saturated) vs weak (faint,
+contested). Frontlines appear as narrow bands where no player dominates.
+
+**Performance:** both modes compute in <5ms per turn on a 60×60 grid.
+The replay viewer caches the overlay bitmap per turn and only recomputes
+on turn change. At 32 turns/second (16× speed), this stays within frame
+budget.
+
+**Toolbar UI:**
+
+```
+View: [Dots ▼]  [Dots | Territory | Influence]
+```
+
+Switching modes is instant — the underlying replay data doesn't change,
+only the rendering pipeline.
+
+### 13.3 Embeddable Replay Widget
+
+A lightweight, standalone replay player that works in an iframe anywhere.
+
+**URL format:**
+```
+https://aicodebattle.com/embed/{match_id}
+https://aicodebattle.com/embed/{match_id}?start=87&speed=4&mode=territory
+```
+
+**Query parameters:**
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `start` | 0 | Starting turn |
+| `speed` | 2 | Playback speed (1, 2, 4, 8, 16) |
+| `mode` | dots | Visualization mode (dots, territory, influence) |
+| `autoplay` | true | Start playing on load |
+| `controls` | true | Show play/pause and speed controls |
+
+**Widget design:**
+
+Stripped-down replay viewer: canvas + minimal controls bar. No scrubber,
+no side panel, no fog-of-war toggle. Just the match playing.
+
+```
+┌──────────────────────────────┐
+│                              │
+│        [Canvas]              │
+│                              │
+├──────────────────────────────┤
+│ ▶ 2x  SwarmBot 3 — 1 Hunter │
+│            Watch full ↗      │
+└──────────────────────────────┘
+```
+
+"Watch full" links to the main replay page on aicodebattle.com.
+
+**Implementation:**
+
+- Separate route on Cloudflare Pages: `/embed/{match_id}`
+- Loads the same replay JSON from R2
+- Renders with the same Canvas engine, minus chrome
+- Total bundle: ~50 KB (JS + CSS)
+- Open Graph tags for rich previews when pasting the URL:
+  ```html
+  <meta property="og:title" content="SwarmBot vs HunterBot — AI Code Battle" />
+  <meta property="og:description" content="SwarmBot wins 3-1 in 342 turns" />
+  <meta property="og:image" content="https://data.aicodebattle.com/thumbnails/m_7f3a9b2c.png" />
+  ```
+- Thumbnail: auto-generated PNG of the final turn state, created by the
+  index rebuilder using OffscreenCanvas in a Worker (or pre-rendered by
+  the match worker)
+
+**Cloudflare free tier impact:** embed loads are Pages requests (unlimited).
+The replay JSON fetch is an R2 Class B read — already accounted for in the
+existing budget.
+
+### 13.4 Replay Playlists + Auto-Curation
+
+Automatically curated collections of replays, browsable from the static
+site's landing page.
+
+**Playlist definitions:**
+
+| Playlist | Query Criteria | Rebuild Frequency |
+|----------|---------------|-------------------|
+| "Closest Finishes" | `final_score_diff <= 1` sorted by `win_prob_crossings DESC` | Every 2 min (index cron) |
+| "Biggest Upsets" | `winner_rating - loser_rating <= -150` | Every 2 min |
+| "Best Comebacks" | `min(win_prob) < 0.2 AND winner = underdog` | Every 2 min |
+| "Evolution Breakthroughs" | Evolved bot's first win against a top-10 bot | Every 2 min |
+| "Rivalry Classics" | Matches between detected rivals, sorted by closeness | Every 2 min |
+| "This Week's Highlights" | Top 10 by community upvote count (from §12.6) | Every 2 min |
+| "New Bot Debuts" | First match of each newly registered bot | Every 2 min |
+| "Season Highlights" | Top 20 matches of the current season by engagement | Every 2 min |
+
+**R2 storage:** `data/playlists/{slug}.json`
+
+```json
+{
+  "name": "Closest Finishes",
+  "description": "Matches decided by a single point or less",
+  "updated_at": "2026-03-23T14:35:00Z",
+  "matches": [
+    {
+      "match_id": "m_7f3a9b2c",
+      "players": ["SwarmBot", "HunterBot"],
+      "scores": [3, 2],
+      "date": "2026-03-23T14:30:00Z",
+      "thumbnail_url": "https://data.aicodebattle.com/thumbnails/m_7f3a9b2c.png",
+      "enriched": true
+    }
+  ]
+}
+```
+
+**Static site UI:** landing page shows playlists as horizontal scrollable
+rows (Netflix-style). Each card shows a thumbnail, player names, and score.
+Click opens the replay.
+
+**Cloudflare free tier impact:** playlist JSONs are tiny (<50 KB each).
+They're rebuilt by the existing index rebuilder cron — just additional D1
+queries and R2 writes within existing budget.
+
+### 13.5 Prediction System
+
+Visitors predict outcomes of upcoming notable matches. Correct predictions
+earn reputation. A prediction leaderboard tracks the best analysts.
+
+**Which matches get predictions:**
+
+The matchmaker flags a match as "predictable" when:
+- Both bots are in the top 20
+- It's a rivalry match
+- It's a series match (§13.7)
+- An evolved bot faces a top-10 human-written bot
+
+At ~60 matches/hour, roughly 5–10% are flagged — about 3–6 per hour.
+
+**Flow:**
+
+1. Scheduler creates a match job with `predictable: true`
+2. Worker API writes the match to a `predictions_open` state in D1
+3. Static site shows "Upcoming Matches" with a predict button
+4. Visitor clicks a player to predict (stored via `POST /api/predict`)
+5. Prediction window: open from job creation until the match starts
+   executing (typically 1–5 minutes)
+6. Match executes normally
+7. On result submission, Worker resolves predictions in D1
+8. Index rebuilder updates the prediction leaderboard JSON in R2
+
+**D1 schema:**
+
+```sql
+CREATE TABLE predictions (
+    prediction_id   TEXT PRIMARY KEY,
+    match_id        TEXT NOT NULL,
+    predictor_id    TEXT NOT NULL,  -- localStorage-generated UUID
+    predictor_name  TEXT,           -- optional display name
+    predicted_winner INTEGER NOT NULL,
+    correct         INTEGER,        -- null until resolved
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE predictor_stats (
+    predictor_id    TEXT PRIMARY KEY,
+    predictor_name  TEXT,
+    correct         INTEGER NOT NULL DEFAULT 0,
+    incorrect       INTEGER NOT NULL DEFAULT 0,
+    streak          INTEGER NOT NULL DEFAULT 0,
+    best_streak     INTEGER NOT NULL DEFAULT 0,
+    rating          REAL NOT NULL DEFAULT 1000.0
+);
+```
+
+Predictor rating uses a simplified Elo: correct prediction on a balanced
+match (close ratings) = small gain; correct prediction on a heavy underdog
+= large gain.
+
+**Cloudflare free tier check:**
+
+| Metric | Usage | Limit |
+|--------|-------|-------|
+| D1 writes | ~6 predictions/match × 6 matches/hour × 24h = ~864/day | 100K/day |
+| D1 reads | ~50 leaderboard reads/day | 5M/day |
+| Worker requests | `POST /api/predict` ~864/day | 100K/day |
+
+Comfortably within limits. Even at 10× the assumed prediction volume
+(8,640/day), still under 9% of the write limit.
+
+**Static site UI:**
+
+- "Predictions" page showing upcoming predictable matches with bot profiles
+  and head-to-head records
+- One-click predict button (no login required — UUID from localStorage)
+- After match: result shown with "You were right/wrong" + points earned
+- Prediction leaderboard: top 50 analysts ranked by prediction rating
+
+### 13.6 Map Evolution
+
+Maps evolve alongside bots. High-engagement maps breed to produce new maps.
+Low-engagement maps retire. User feedback and positional fairness monitoring
+ensure quality.
+
+**Engagement scoring:**
+
+After each match, the map receives an engagement score:
+
+```
+engagement = (
+    win_prob_crossings × 3.0 +
+    critical_moments × 2.0 +
+    map_coverage_pct × 1.0 +
+    closeness × 2.0 +
+    avg_turn_count / max_turns × 1.0
+)
+
+where:
+    closeness = 1.0 - (abs(score_diff) / max(total_score, 1))
+    map_coverage_pct = tiles_visited_by_any_bot / total_open_tiles
+```
+
+The map's engagement score is the rolling average across its last 20 matches.
+
+**Positional fairness monitoring:**
+
+A map is **positionally fair** if no starting position has a systematic
+advantage. Monitored by tracking win rate per player slot:
+
+```sql
+SELECT
+    map_id,
+    player_slot,
+    COUNT(*) AS games,
+    AVG(CASE WHEN winner = player_slot THEN 1.0 ELSE 0.0 END) AS win_rate
+FROM match_participants mp
+JOIN matches m ON m.match_id = mp.match_id
+GROUP BY map_id, player_slot
+HAVING COUNT(*) >= 20
+```
+
+If any player slot's win rate deviates from the expected rate (1/N for
+N-player maps) by more than **10 percentage points** across 20+ matches,
+the map is flagged as **unfair** and removed from the competitive pool.
+
+Example: on a 2-player map, if player slot 0 wins 62% of the time after
+20 matches, the map is flagged (62% - 50% = 12% > 10% threshold).
+
+**User map voting:**
+
+After watching a replay, visitors can upvote or downvote the map (not the
+match — the map). Stored in D1:
+
+```sql
+CREATE TABLE map_votes (
+    vote_id     TEXT PRIMARY KEY,
+    map_id      TEXT NOT NULL,
+    voter_id    TEXT NOT NULL,  -- localStorage UUID
+    vote        INTEGER NOT NULL,  -- +1 or -1
+    created_at  TEXT NOT NULL,
+    UNIQUE(map_id, voter_id)
+);
+```
+
+Map voting influences the evolution system:
+- Maps with net negative votes get a 0.5× engagement multiplier (less likely
+  to breed)
+- Maps with >10 net positive votes get a 1.5× multiplier
+- Maps with >20 net negative votes are force-retired regardless of engagement
+
+The replay viewer shows a simple 👍/👎 widget for the map (not the bots)
+alongside map metadata (name, dimensions, wall density, energy count).
+
+**Breeding algorithm:**
+
+Runs weekly on the evolver (Rackspace Spot). Produces ~5 new maps per
+player-count tier.
+
+```
+1. Select parents:
+   - Top 5 maps by engagement × vote_multiplier for this player count
+   - Weighted random: higher engagement = more likely to be selected
+
+2. Crossover:
+   - Divide parent maps into quadrants (or thirds for 3/6-player)
+   - Randomly select quadrants from each parent
+   - Compose into a new map
+
+3. Apply symmetry:
+   - Generate one sector from the composed quadrants
+   - Mirror/rotate to fill the full map for the target player count
+   - This guarantees positional fairness by construction
+
+4. Mutate:
+   - Randomly flip 5-10% of tiles (wall ↔ open)
+   - Shift 1-3 energy node positions by 1-3 tiles
+   - Apply cellular automata smoothing (2 iterations) to avoid
+     jagged walls
+
+5. Validate:
+   - BFS from every core must reach every other core
+   - BFS from every core must reach ≥3 energy nodes
+   - Open area per player must be between 900 and 5000 tiles
+   - Wall density must be between 5% and 30%
+
+6. Smoke-test:
+   - Run 3 matches with built-in bots on the candidate map
+   - Engagement score must exceed 50th percentile of current pool
+   - If failed: discard and retry (max 3 attempts per candidate)
+
+7. Add to pool:
+   - Store map JSON in R2
+   - Insert into D1 maps table with `status: 'active'`
+   - Available for matchmaking in the next scheduler cycle
+```
+
+**Lifecycle:**
+
+| Status | Meaning |
+|--------|---------|
+| `active` | In the matchmaking pool, eligible for competitive play |
+| `probation` | Fairness flag triggered — under review, still playable |
+| `retired` | Removed from pool (low engagement, unfair, or force-retired) |
+| `classic` | Top 5 all-time maps, immune from retirement |
+
+- Active pool: 50 maps per player count (2, 3, 4, 6)
+- New maps: ~5 per week per player count
+- Retirement: bottom 10% by engagement score pruned monthly
+- Classic promotion: maps that sustain top-5 engagement for 3+ months
+
+### 13.7 Multi-Game Series
+
+Best-of-N matches between two bots across different maps. Series produce
+more meaningful ratings than single matches and create narrative arcs.
+
+**Series types:**
+
+| Type | Games | Trigger |
+|------|-------|---------|
+| Best-of-3 | 3 | Auto-scheduled for top-20 bots, 1 per day per bot |
+| Best-of-5 | 5 | Weekly featured series between top rivalries |
+| Best-of-7 | 7 | Season championship bracket (§13.9) |
+
+**Map selection for series:**
+
+Each game in a series uses a different map, selected to test different
+strategic dimensions:
+
+```
+Game 1: Map with highest engagement score (the "classic")
+Game 2: Map with highest wall density in pool (corridors/chokepoints)
+Game 3: Map with lowest wall density in pool (open field)
+Game 4: Most recently evolved map (untested terrain)
+Game 5+: Random from remaining pool
+```
+
+This ensures series test bot adaptability, not just performance on one
+map type.
+
+**D1 schema:**
+
+```sql
+CREATE TABLE series (
+    series_id     TEXT PRIMARY KEY,
+    bot_a_id      TEXT NOT NULL,
+    bot_b_id      TEXT NOT NULL,
+    format        INTEGER NOT NULL,  -- 3, 5, or 7
+    status        TEXT NOT NULL DEFAULT 'pending',
+    a_wins        INTEGER NOT NULL DEFAULT 0,
+    b_wins        INTEGER NOT NULL DEFAULT 0,
+    season_id     TEXT,
+    created_at    TEXT NOT NULL,
+    completed_at  TEXT
+);
+
+CREATE TABLE series_games (
+    series_id     TEXT NOT NULL,
+    game_number   INTEGER NOT NULL,
+    match_id      TEXT,  -- null until played
+    map_id        TEXT NOT NULL,
+    winner        INTEGER,
+    PRIMARY KEY (series_id, game_number)
+);
+```
+
+**Execution:**
+
+The scheduler creates all games in a series as pending jobs with sequential
+ordering. Workers execute them in order (game 2 doesn't start until game 1
+completes). If either bot reaches the winning threshold (2 for bo3, 3 for
+bo5, 4 for bo7), remaining games are skipped.
+
+**Rating impact:**
+
+Series results contribute to Glicko-2 ratings as follows:
+- Each individual game in the series contributes to the pairwise rating
+  update (same as a single match)
+- The series winner gets a bonus rating adjustment of +10 mu (small but
+  meaningful — rewards series consistency)
+
+**Replay presentation:**
+
+The series page (`/series/{series_id}`) shows all games as a unified
+experience:
+
+```
+SwarmBot vs HunterBot — Best of 5 (Season 4 Semifinals)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Game 1  ✓ SwarmBot    3-1  Map: The Labyrinth      [Watch]
+Game 2  ✓ HunterBot   2-4  Map: Open Expanse       [Watch]
+Game 3  ✓ HunterBot   1-3  Map: Coral Reef         [Watch]
+Game 4    ???                                       [Reveal]
+Game 5    ???                                       [Reveal]
+
+Series: HunterBot leads 2-1
+```
+
+**Spoiler toggle:** by default, future games are hidden ("???"). Viewers
+click "Reveal" to show the result — or "Watch All" to experience the
+series sequentially with auto-advancing between games.
+
+### 13.8 Match Event Timeline
+
+A horizontal event ribbon below the replay canvas showing significant
+events as colored, clickable icons.
+
+**Event types:**
+
+| Icon | Event | Trigger |
+|------|-------|---------|
+| ⚔️ | Combat | 2+ bots died this turn |
+| 🏰 | Core captured | A core was razed |
+| 💎 | Energy milestone | Player collected 3+ energy in one turn |
+| 💀 | Mass death | 5+ bots died this turn |
+| 📈 | Momentum shift | Win probability crossed 50% |
+| 🌟 | Critical moment | Win probability shifted >15% |
+| 🐣 | Spawn wave | 3+ bots spawned this turn |
+
+**Implementation:**
+
+Events are extracted client-side from the replay data on load. For each
+turn, check the events array (deaths, captures, spawns, energy_collected)
+against the trigger thresholds. Win probability events come from the
+`win_prob` and `critical_moments` arrays already in the replay.
+
+**Rendering:**
+
+```
+┌──────────────────────────────────────────────────┐
+│                  [Canvas]                         │
+├──────────────────────────────────────────────────┤
+│ Win Prob: ~~~~~~~~~/\~~~~~/\~~~~/\~~~~~~         │  ← sparkline
+├──────────────────────────────────────────────────┤
+│ Events: ·💎·····⚔️··💎···🏰⚔️···💎···⚔️💀··🏰🌟│  ← timeline
+├──────────────────────────────────────────────────┤
+│ ◄ ▶ ⏸  Turn 203/500   Speed: 4x   View: [Dots]│  ← controls
+└──────────────────────────────────────────────────┘
+```
+
+- Icons are positioned proportionally along the timeline by turn number
+- Hovering an icon shows a tooltip: "Turn 87: 3 bots killed in eastern
+  corridor"
+- Clicking an icon scrubs the replay to that turn
+- Dense clusters of icons indicate "hot zones" of activity — visually
+  obvious even at a glance
+- The timeline is rendered as an HTML element overlaid on the viewer
+  (not Canvas) for accessibility and hover interactions
+
+The event timeline and win probability graph work together: the graph
+shows the *trend*, the timeline shows the *moments*. A viewer can scan
+the timeline for icon clusters, then check the win probability graph to
+see if those moments mattered.
+
+### 13.9 Seasonal Rotations
+
+The platform runs in **seasons** — 4-week competitive periods with a fresh
+map pool, a new ladder, and a theme. Seasons provide urgency, freshness,
+and a reason to come back.
+
+**Season structure:**
+
+| Week | Phase | Description |
+|------|-------|-------------|
+| 1 | Discovery | New map pool + theme released. All bots start at default rating. Exploration matches. |
+| 2–3 | Competition | Main ladder. Matchmaking intensifies. Mid-season stats published. |
+| 4 | Championship | Top 8 bots by rating enter a best-of-7 bracket. Season champion crowned. |
+| Between | Break (3 days) | New maps bred via map evolution. Season archive published. |
+
+**What resets each season:**
+- Glicko-2 ratings (mu/phi/sigma reset to defaults)
+- Map pool (evolved maps from previous season + new generated maps)
+- Prediction standings
+- Playlist contents
+
+**What persists:**
+- Bot registrations and endpoints (bots don't re-register)
+- All-time records and historical season archives (browsable)
+- Evolution population (continues across seasons, adapts to new maps)
+- Community feedback and replay annotations
+
+**D1 schema:**
+
+```sql
+CREATE TABLE seasons (
+    season_id     TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    theme         TEXT NOT NULL,
+    rules_version INTEGER NOT NULL,
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    champion_id   TEXT,
+    status        TEXT NOT NULL DEFAULT 'active'
+);
+```
+
+**Season themes and game rule versioning:**
+
+Each season can introduce **minor rule variations** that keep the meta
+fresh. The critical constraint: **existing bots must continue to work
+without modification.** This is achieved through additive, optional
+changes only.
+
+**Backward compatibility rules:**
+
+```
+ALLOWED per-season changes (additive, non-breaking):
+  ✓ New tile types that bots can ignore (treated as open by old bots)
+  ✓ New optional fields in the game state JSON (old bots ignore them)
+  ✓ Adjusted numeric parameters within the existing schema:
+    - vision_radius2, attack_radius2, spawn_cost, energy_interval
+    - These are sent in the config object each match — bots that read
+      config adapt automatically; bots that hardcode values still work
+      but may be suboptimal
+  ✓ New scoring bonuses (additive to existing scoring)
+  ✓ Map pool changes (different maps, not different map format)
+
+FORBIDDEN (would break existing bots):
+  ✗ Removing or renaming existing fields in game state / move schema
+  ✗ Changing the meaning of existing fields
+  ✗ New required fields in the move response
+  ✗ Changing the coordinate system or grid topology
+  ✗ Removing movement directions (N/E/S/W)
+  ✗ Changing the turn structure (phases must remain in the same order)
+```
+
+**Example seasonal themes:**
+
+| Season | Theme | Rule Variation |
+|--------|-------|---------------|
+| 1 | "The Labyrinth" | High wall density maps, `vision_radius2: 36` (reduced from 49) |
+| 2 | "Energy Rush" | `energy_interval: 5` (doubled production), `spawn_cost: 2` (cheaper bots) |
+| 3 | "Fog of War" | `vision_radius2: 25` (heavily reduced), new optional `sonar` field in game state showing approximate enemy count per quadrant |
+| 4 | "The Colosseum" | `attack_radius2: 8` (extended range), open maps, aggressive meta |
+| 5 | "Shifting Sands" | New tile type `quicksand` in game state (bots that don't handle it treat it as open — they can enter but movement costs 2 turns) |
+
+For season 5's `quicksand` example: the game state sends
+`{ "row": 15, "col": 20, "type": "quicksand" }` in a new `terrain` array.
+Old bots that don't read `terrain` still function — they walk through
+quicksand unknowingly (and get slowed). New bots that parse `terrain` can
+avoid quicksand tiles, gaining a strategic edge. This creates an incentive
+to update bots each season without *forcing* anyone to.
+
+**Season config in the match protocol:**
+
+The game state's `config` object already includes all tunable parameters.
+Seasonal changes are just different values:
+
+```json
+{
+  "config": {
+    "season_id": "s4",
+    "season_name": "The Colosseum",
+    "rules_version": 4,
+    "rows": 60,
+    "cols": 60,
+    "max_turns": 500,
+    "vision_radius2": 49,
+    "attack_radius2": 8,
+    "spawn_cost": 3,
+    "energy_interval": 10,
+    "special_tiles": ["quicksand"]
+  }
+}
+```
+
+Bots that read `config.attack_radius2` adapt automatically. Bots that
+hardcode `attack_radius2 = 5` still work but use stale assumptions.
+`special_tiles` is a new array listing any non-standard tile types in
+play — old bots that don't read it are unaffected.
+
+**Season archive:**
+
+Each completed season gets an archive page (`/season/{season_id}`):
+- Champion + top 10 + bracket results
+- Most improved bot (biggest rating gain)
+- Best newcomer (highest-rated bot registered this season)
+- Most watched match (by replay view count)
+- Evolution highlights (best evolved bot, most creative strategy)
+- Map of the season (highest engagement score)
+- All replays preserved and browsable
+
+**Season championship bracket:**
+
+In week 4, the top 8 bots enter a single-elimination bracket of best-of-7
+series (§13.7). The bracket is published on the season page with live
+updates as series complete.
+
+```
+Quarterfinals:
+  #1 SwarmBot vs #8 NewBot         → SwarmBot (4-1)
+  #4 GathererBot vs #5 RusherBot   → RusherBot (4-3)
+  #3 HunterBot vs #6 evo-go-g12    → HunterBot (4-2)
+  #2 GuardianBot vs #7 evo-py-g8   → GuardianBot (4-0)
+
+Semifinals:
+  SwarmBot vs RusherBot             → SwarmBot (4-2)
+  HunterBot vs GuardianBot          → HunterBot (4-3)
+
+Finals:
+  SwarmBot vs HunterBot             → ???
+```
+
+### 13.10 Bot Profile Cards
+
+Auto-generated visual cards summarizing a bot's identity, stats, and
+character in a single shareable image.
+
+**Card generation:**
+
+The card is rendered as a PNG via OffscreenCanvas (in the browser on
+demand, or pre-rendered by the index rebuilder for top-50 bots).
+
+**Card content:**
+
+```
+┌─────────────────────────────────┐
+│                                 │
+│   SwarmBot              #3      │
+│   by alice         Rating: 1820 │
+│                                 │
+│   ┌─────────────────────────┐   │
+│   │ Archetype:              │   │
+│   │   FORMATION SWARM       │   │
+│   │                         │   │
+│   │ Season 4 · 142 games    │   │
+│   └─────────────────────────┘   │
+│                                 │
+│   Win Rate     69%  ████████░░  │
+│   vs Rushers   82%  █████████░  │
+│   vs Turtles   45%  ████░░░░░░  │
+│                                 │
+│   Signature: Eastern corridor   │
+│   push on 4-player maps         │
+│                                 │
+│   Rival: HunterBot (11-11-1)   │
+│                                 │
+│   ⚔️ 847 kills  💎 2.1k energy  │
+│   🏰 23 captures  📈 +320 Elo   │
+│                                 │
+│   aicodebattle.com              │
+└─────────────────────────────────┘
+```
+
+**Data sources (all from existing bot profile JSON):**
+
+| Field | Source |
+|-------|--------|
+| Rating, rank | Leaderboard |
+| Archetype | Strategy classifier from behavioral features (§12 evolution meta) |
+| Win rate breakdown | D1 query: wins vs each archetype cluster |
+| Signature | Most statistically distinctive behavior vs population average |
+| Rival | From rival detection (§12.5) |
+| Kill/energy/capture stats | Aggregate from match_participants |
+
+**"Signature" computation:**
+
+For each bot, compare its behavioral features (aggression, economy,
+exploration, formation) to the population mean. The dimension where the
+bot deviates most is its signature. Combined with map-type analysis:
+
+```
+if bot.aggression is 2σ above mean AND best_map_type == "4-player":
+    signature = "Aggressive multi-front warfare on 4-player maps"
+if bot.economy is 1.5σ above mean AND bot.exploration > 80%:
+    signature = "Full-map economic dominance"
+```
+
+Template-generated from ~20 signature patterns.
+
+**Sharing:**
+
+- "Share Card" button on the bot profile page generates a PNG download
+- Direct URL: `https://aicodebattle.com/card/{bot_id}.png`
+  - Served as a static PNG from R2 (pre-rendered for top-50 bots)
+  - Or rendered on-demand via a Worker that reads the bot profile JSON,
+    draws to Canvas (using `@cloudflare/workers-types` Canvas API or
+    a pre-built image template), and returns the PNG
+- Open Graph tags on the URL so pasting it into Twitter/Discord/Slack
+  shows the card as a rich preview:
+  ```html
+  <meta property="og:image" content="https://aicodebattle.com/card/b_4e8c1d2f.png" />
+  <meta property="og:title" content="SwarmBot — #3 Rated — AI Code Battle" />
+  ```
+- The card image includes the platform URL as a watermark, driving traffic
