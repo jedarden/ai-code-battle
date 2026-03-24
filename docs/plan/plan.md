@@ -1922,25 +1922,29 @@ within the first week of operation.
 ### Phase 8: Enhanced Features
 
 **Deliverables:**
-- WASM game engine build (`GOOS=js GOARCH=wasm`) with `loadState()` and
-  `simulate()` API for browser use
-- In-browser sandbox: Monaco editor + WASM engine + JS bot execution + replay
-  viewer integration
-- JS reimplementations of the 6 built-in strategy bots for sandbox opponents
-- What-if replay branching: fork UI, state injection, split-pane comparison
+- WASM game engine build (`GOOS=js GOARCH=wasm`) with `loadState()`,
+  `step()`, and `runMatch()` API for browser use
+- WASM bot interface spec: `init()`, `compute_moves()`, `free_result()`
+  exports for bot-to-engine communication
+- Pre-compiled WASM builds of the 6 built-in strategy bots (Go/Rust/TS
+  natively; PHP/Java reimplemented in Go for WASM)
+- In-browser sandbox: Monaco editor (TS quick-start) + WASM upload mode +
+  opponent selector + replay viewer integration
 - Win probability computation in the match worker (Monte Carlo rollout) +
   critical moments detector + replay viewer sparkline graph
 - Replay enrichment pipeline: selective AI commentary for featured matches
-- Clip maker: GIF + MP4 export with social media format presets
-- Rival detection query + rivalry pages
-- Community replay feedback system: tagged annotations guiding evolution
-- D1 schema additions: `replay_feedback`, `rivalries` tables
+- Clip maker: GIF + MP4 export with 5 social media format presets
+  (landscape, square, portrait, compact GIF, square GIF)
+- Rival detection query + rivalry pages with template-generated narratives
+- Community replay feedback system: tagged annotations feeding evolution
+- D1 schema additions: `replay_feedback` table
+- Worker API addition: `POST /api/feedback` for submitting replay annotations
 
-**Exit criteria:** users can write and test bots in the browser without
-deploying anything, fork replays to explore alternate outcomes, watch
-enriched replays with commentary and win probability, export clips for
-social sharing, and submit tactical feedback that influences the evolution
-pipeline.
+**Exit criteria:** users can write and test bots in the browser (TS
+quick-start or uploaded WASM) without deploying anything, watch enriched
+replays with commentary and win probability, export clips for social
+sharing, view rivalries, and submit tactical feedback that influences the
+evolution pipeline.
 
 ---
 
@@ -1948,80 +1952,117 @@ pipeline.
 
 ### 12.1 In-Browser WASM Game Sandbox
 
-The game engine compiles to WebAssembly, enabling users to write bots and
-play matches entirely in the browser — zero deployment, zero server setup.
+The game engine and bots compile to WebAssembly, enabling users to develop
+and test bots entirely in the browser against real opponents — zero
+deployment, zero server setup.
 
-**Architecture:**
+**Architecture — WASM per module, not JS functions:**
+
+A meaningful bot needs pathfinding, state tracking across turns, spatial
+data structures, and threat assessment. That's a real program, not a
+20-line JavaScript function. Limiting bots to JS callbacks would undermine
+the platform's multi-language premise.
+
+Instead, the sandbox loads **separate WASM modules** for the game engine
+and each bot:
 
 ```
 Browser
-├── Game Engine (Go → WASM, single instance, ~15 MB)
+├── Game Engine (Go → WASM, ~15 MB)
 │   ├── loadState(json) → set engine to a specific turn state
-│   ├── simulate(botMoves[]) → advance one turn
-│   └── runMatch(botFunctions[]) → run full match, return replay
+│   ├── step(moves[]) → advance one turn, return events
+│   └── runMatch(config, map) → run full match coordinating bot WASMs
 │
-├── User Bot (JavaScript function)
-│   └── computeMoves(gameState) → returns moves array
+├── Bot WASMs (pre-compiled, loaded on demand)
+│   ├── gatherer.wasm    (Go → WASM, ~12 MB)
+│   ├── rusher.wasm      (Rust → WASM, ~3 MB)
+│   ├── swarm.wasm       (TypeScript → WASM via wasm-pack, ~5 MB)
+│   ├── random.wasm      (Go → WASM, ~10 MB)  -- lightweight reimpl
+│   ├── guardian.wasm     (Go → WASM, ~12 MB)  -- reimpl from PHP
+│   └── hunter.wasm      (Go → WASM, ~12 MB)  -- reimpl from Java
 │
-├── Opponent Bots (JavaScript, built-in)
-│   ├── randomBot(gameState) → random valid moves
-│   ├── gathererBot(gameState) → BFS to nearest energy
-│   ├── rusherBot(gameState) → BFS to nearest enemy core
-│   ├── guardianBot(gameState) → perimeter defense
-│   ├── swarmBot(gameState) → formation advance
-│   └── hunterBot(gameState) → target isolated enemies
+├── User's Bot WASM (compiled locally, uploaded as .wasm file)
+│   └── or: user writes Go/Rust/TS, compiles in-browser via toolchain
 │
-├── Monaco Editor (code editing)
+├── Monaco Editor (code editing for quick-start JS/TS mode)
 └── Replay Viewer (Canvas, renders result)
 ```
 
-**Why 1 WASM, not 8:**
+**WASM communication interface:**
 
-The game engine is the only WASM module. Bots run as plain JavaScript
-functions called synchronously by the engine via JS interop. For a 6-player
-match: 1 WASM instance + 6 JS function calls per turn. Memory: ~30–50 MB
-total. A 500-turn, 6-player match simulates in <2 seconds on modern hardware.
+Each bot WASM exports a standard interface:
 
-The built-in strategy bots (originally Python, Go, Rust, PHP, TypeScript,
-Java) are **reimplemented in JavaScript** for the sandbox. They only need to
-be behaviorally equivalent — same BFS, same combat logic, same decision
-heuristics — not identical code. These JS versions are ~200–500 lines each.
-
-**WASM engine API:**
-
-```typescript
-interface WASMEngine {
-  // Run a full match, calling botFn[i](state) for each player each turn
-  runMatch(config: MatchConfig, map: MapData, bots: BotFunction[]): Replay
-
-  // Load a specific game state (for what-if branching)
-  loadState(state: GameState): void
-
-  // Simulate one turn with given moves
-  step(moves: PlayerMoves[]): TurnResult
-
-  // Simulate forward from current state using bot functions
-  simulateForward(bots: BotFunction[], remainingTurns: number): Replay
-}
-
-type BotFunction = (state: GameState) => Move[]
+```
+// Exported by every bot WASM module
+fn init(config_json: *const u8, config_len: u32)
+fn compute_moves(state_json: *const u8, state_len: u32) -> *const u8
+fn free_result(ptr: *const u8)
 ```
 
-**User flow:**
+The engine WASM orchestrates the match: each turn, it serializes the
+fog-filtered game state as JSON, calls each bot WASM's `compute_moves`,
+deserializes the moves, and advances the simulation. Bots maintain their
+own internal state across turns inside their WASM linear memory.
+
+**Language support in the sandbox:**
+
+| Language | WASM Compilation | Sandbox Support |
+|----------|-----------------|-----------------|
+| Go | `GOOS=js GOARCH=wasm` (native) | Full |
+| Rust | `wasm32-unknown-unknown` (native) | Full |
+| TypeScript | AssemblyScript or wasm-pack | Full |
+| Python | Pyodide (~20 MB runtime) | Heavy but feasible |
+| PHP | Not practical for WASM | HTTP ladder only |
+| Java | Not practical for WASM | HTTP ladder only |
+
+For the built-in opponents, GuardianBot (PHP) and HunterBot (Java) are
+**reimplemented in Go** as sandbox-only WASM builds. They are behaviorally
+equivalent — same BFS, same combat logic, same heuristics — not identical
+code.
+
+**Memory budget:**
+
+| Configuration | Memory |
+|--------------|--------|
+| Engine + 1 user bot + 1 opponent | ~30–40 MB |
+| Engine + 1 user bot + 3 opponents (4-player) | ~55–75 MB |
+| Engine + 1 user bot + 5 opponents (6-player) | ~75–105 MB |
+| With Pyodide (Python user bot) | Add ~20 MB |
+
+Desktop browsers typically have 2–4 GB available. Even the heaviest
+configuration is <5% of available memory. Mobile is tighter but the
+sandbox is a desktop-first dev tool.
+
+A 500-turn 2-player match simulates in ~2–3 seconds (WASM-to-WASM calls
+have overhead vs native, but each turn's computation is trivial).
+
+**User flows (two modes):**
+
+*Quick-start mode (JS/TS in Monaco):*
 
 1. User visits `/sandbox`
-2. Monaco editor pre-loaded with a starter bot (hold-all-units stub)
-3. User selects opponent (dropdown: RandomBot, GathererBot, etc.) and map
-4. Clicks "Run Match"
-5. WASM engine executes the match locally (~1–2 seconds)
-6. Replay viewer renders the result inline
-7. User modifies code, re-runs — instant feedback loop
-8. When ready for the real ladder, user follows a link to the starter kit
-   docs for deploying an HTTP server
+2. Monaco editor pre-loaded with a TypeScript starter bot
+3. User writes strategy code with full type hints and autocomplete
+4. Code compiles to WASM in-browser via AssemblyScript
+5. Selects opponent and map, clicks "Run Match"
+6. Engine orchestrates match between user WASM and opponent WASM (~2–3s)
+7. Replay viewer renders result inline
+8. Modify, re-run — instant feedback loop
 
-**Why this matters:** The current onboarding path is "set up a server, write
-HTTP handlers, deploy, register." The sandbox makes it "open a page, write
-20 lines of JS, click play." The difference between 50 users and 5,000.
+*Full mode (upload compiled WASM):*
+
+1. User develops a bot locally in Go, Rust, or any WASM-targeting language
+2. Compiles to `.wasm` using their own toolchain
+3. Uploads the `.wasm` file to the sandbox page
+4. Sandbox validates the exported interface (`init`, `compute_moves`)
+5. Runs match against selected opponents
+6. When ready for the real ladder, deploys the same bot logic as an HTTP
+   server using a starter kit
+
+**Why this matters:** The sandbox preserves the platform's multi-language
+strength while eliminating the deployment barrier. Users can develop
+substantial, stateful bots in real languages — not toy JS functions —
+and iterate locally before committing to the HTTP ladder.
 
 ### 12.2 Win Probability Graph + Critical Moments
 
@@ -2087,62 +2128,7 @@ large position changes). No LLM needed — template-based.
 This transforms replay viewing from "press play and wait 5 minutes" to
 "click the 3 interesting moments and watch 30 seconds of decisive action."
 
-### 12.3 What-If Replay Branching
-
-Pause a replay at any turn, modify one player's moves, and simulate an
-alternate timeline. Compare the real outcome with the counterfactual.
-
-**How it works (no WASM swapping):**
-
-The WASM engine (same instance used by the sandbox) supports state injection.
-The replay viewer already reconstructs the full game state at every turn.
-
-```
-1. User pauses replay at turn N
-2. UI shows the current player's units with editable move arrows
-3. User drags arrows to change moves for their chosen player
-4. Click "What If?"
-5. Viewer serializes turn-N game state → engine.loadState(stateN)
-6. Engine applies:
-   - Modified moves for the user's chosen player
-   - Original replay moves for all other players
-7. Engine simulates forward from turn N+1:
-   - Other players continue using their original replay moves
-   - The modified player uses a selectable strategy (hold all, random,
-     gatherer, or "repeat my change")
-8. Result renders in split-pane view:
-   Left: original replay from turn N onward
-   Right: alternate timeline from turn N onward
-   Both share the same scrub bar and play/pause controls
-```
-
-**Key design decision:** Other players replay their *original moves* from
-the replay data, not re-computed moves. This means the what-if shows "what
-would have happened if I changed my move but my opponent didn't react
-differently." This is a simplification — a true counterfactual would need
-the opponent's bot to recompute — but it's useful for answering tactical
-questions ("would moving east instead of north have avoided that ambush?")
-and requires no access to opponent bot code.
-
-**UI:**
-
-```
-┌────────────────────┬────────────────────┐
-│   Original (real)   │  What-If (branch)  │
-│                     │                    │
-│   [canvas]          │   [canvas]         │
-│                     │                    │
-├────────────────────┴────────────────────┤
-│   [win prob graph: solid=real, dashed=branch]  │
-│   ◄ ▶ ⏸  Turn 203/500   Speed: 4x        │
-└─────────────────────────────────────────┘
-```
-
-The win probability graph shows both timelines overlaid — the real outcome
-as a solid line and the branched outcome as a dashed line. The divergence
-point is marked with a vertical line at turn N.
-
-### 12.4 Replay Enrichment (Selective AI Commentary)
+### 12.3 Replay Enrichment (Selective AI Commentary)
 
 Select replays receive AI-generated natural language commentary — a
 play-by-play narration that makes matches accessible to casual viewers.
@@ -2152,7 +2138,7 @@ play-by-play narration that makes matches accessible to casual viewers.
 - **Featured matches**: matches flagged by the system as particularly
   interesting (high win probability variance, close finishes, upsets where
   a lower-rated bot wins)
-- **Rivalry matches**: matches between detected rivals (§12.6)
+- **Rivalry matches**: matches between detected rivals (§12.5)
 - **Evolution milestones**: first match of a newly promoted evolved bot,
   or matches where an evolved bot breaks into the top 10
 - **User-requested**: participants can request enrichment for their own
@@ -2207,7 +2193,7 @@ enriched matches/hour: ~$2–6/day, ~$60–180/month. Reasonable.
 - Toggle on/off via a "Commentary" button
 - Enriched replays are badged on the match list ("Featured" / "Narrated")
 
-### 12.5 Shareable Replay Clips
+### 12.4 Shareable Replay Clips
 
 One-click export of a replay segment as a GIF or video, formatted for
 major social media platforms. This is the viral growth engine.
@@ -2259,7 +2245,7 @@ The clip maker uses:
 the browser. The share buttons use Web Share API where available, fallback
 to window.open() with pre-composed URLs.
 
-### 12.6 Automatic Rival Detection
+### 12.5 Automatic Rival Detection
 
 The platform automatically identifies **rivalries** — pairs of bots that
 frequently play each other with close results — and surfaces them as
@@ -2314,11 +2300,11 @@ The narrative is template-generated from the stats (no LLM needed):
 - Rivalry widget on the landing page: "Top Rivalries" with head-to-head
   records and links to key matches
 - Bot profile pages show "Rivals" section listing detected rivalries
-- Rivalry matches are auto-flagged for replay enrichment (§12.4)
+- Rivalry matches are auto-flagged for replay enrichment (§12.3)
 - Leaderboard can show "rivalry mode" — filter to matches between two
   specific bots
 
-### 12.7 Community Replay Feedback
+### 12.6 Community Replay Feedback
 
 Users can leave **tagged feedback** on specific moments in replays.
 Feedback is anchored to a `(replay_id, turn)` pair and is visible to
