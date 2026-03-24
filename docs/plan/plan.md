@@ -1918,3 +1918,487 @@ participants can register and play.
 validates, evaluates, promotes, deploys, and retires bots without human
 intervention. At least one evolved bot reaches the top 50% of the ladder
 within the first week of operation.
+
+### Phase 8: Enhanced Features
+
+**Deliverables:**
+- WASM game engine build (`GOOS=js GOARCH=wasm`) with `loadState()` and
+  `simulate()` API for browser use
+- In-browser sandbox: Monaco editor + WASM engine + JS bot execution + replay
+  viewer integration
+- JS reimplementations of the 6 built-in strategy bots for sandbox opponents
+- What-if replay branching: fork UI, state injection, split-pane comparison
+- Win probability computation in the match worker (Monte Carlo rollout) +
+  critical moments detector + replay viewer sparkline graph
+- Replay enrichment pipeline: selective AI commentary for featured matches
+- Clip maker: GIF + MP4 export with social media format presets
+- Rival detection query + rivalry pages
+- Community replay feedback system: tagged annotations guiding evolution
+- D1 schema additions: `replay_feedback`, `rivalries` tables
+
+**Exit criteria:** users can write and test bots in the browser without
+deploying anything, fork replays to explore alternate outcomes, watch
+enriched replays with commentary and win probability, export clips for
+social sharing, and submit tactical feedback that influences the evolution
+pipeline.
+
+---
+
+## 12. Enhanced Features
+
+### 12.1 In-Browser WASM Game Sandbox
+
+The game engine compiles to WebAssembly, enabling users to write bots and
+play matches entirely in the browser — zero deployment, zero server setup.
+
+**Architecture:**
+
+```
+Browser
+├── Game Engine (Go → WASM, single instance, ~15 MB)
+│   ├── loadState(json) → set engine to a specific turn state
+│   ├── simulate(botMoves[]) → advance one turn
+│   └── runMatch(botFunctions[]) → run full match, return replay
+│
+├── User Bot (JavaScript function)
+│   └── computeMoves(gameState) → returns moves array
+│
+├── Opponent Bots (JavaScript, built-in)
+│   ├── randomBot(gameState) → random valid moves
+│   ├── gathererBot(gameState) → BFS to nearest energy
+│   ├── rusherBot(gameState) → BFS to nearest enemy core
+│   ├── guardianBot(gameState) → perimeter defense
+│   ├── swarmBot(gameState) → formation advance
+│   └── hunterBot(gameState) → target isolated enemies
+│
+├── Monaco Editor (code editing)
+└── Replay Viewer (Canvas, renders result)
+```
+
+**Why 1 WASM, not 8:**
+
+The game engine is the only WASM module. Bots run as plain JavaScript
+functions called synchronously by the engine via JS interop. For a 6-player
+match: 1 WASM instance + 6 JS function calls per turn. Memory: ~30–50 MB
+total. A 500-turn, 6-player match simulates in <2 seconds on modern hardware.
+
+The built-in strategy bots (originally Python, Go, Rust, PHP, TypeScript,
+Java) are **reimplemented in JavaScript** for the sandbox. They only need to
+be behaviorally equivalent — same BFS, same combat logic, same decision
+heuristics — not identical code. These JS versions are ~200–500 lines each.
+
+**WASM engine API:**
+
+```typescript
+interface WASMEngine {
+  // Run a full match, calling botFn[i](state) for each player each turn
+  runMatch(config: MatchConfig, map: MapData, bots: BotFunction[]): Replay
+
+  // Load a specific game state (for what-if branching)
+  loadState(state: GameState): void
+
+  // Simulate one turn with given moves
+  step(moves: PlayerMoves[]): TurnResult
+
+  // Simulate forward from current state using bot functions
+  simulateForward(bots: BotFunction[], remainingTurns: number): Replay
+}
+
+type BotFunction = (state: GameState) => Move[]
+```
+
+**User flow:**
+
+1. User visits `/sandbox`
+2. Monaco editor pre-loaded with a starter bot (hold-all-units stub)
+3. User selects opponent (dropdown: RandomBot, GathererBot, etc.) and map
+4. Clicks "Run Match"
+5. WASM engine executes the match locally (~1–2 seconds)
+6. Replay viewer renders the result inline
+7. User modifies code, re-runs — instant feedback loop
+8. When ready for the real ladder, user follows a link to the starter kit
+   docs for deploying an HTTP server
+
+**Why this matters:** The current onboarding path is "set up a server, write
+HTTP handlers, deploy, register." The sandbox makes it "open a page, write
+20 lines of JS, click play." The difference between 50 users and 5,000.
+
+### 12.2 Win Probability Graph + Critical Moments
+
+Every match replay includes a **win probability curve** — a per-turn estimate
+of each player's chance of winning — and a set of **critical moments** where
+the game's outcome shifted decisively.
+
+**Win probability computation:**
+
+After each match, the worker computes win probability using Monte Carlo
+rollout:
+
+```
+for each turn T in the match:
+    state = game_state_at_turn_T
+    wins = [0, 0, ..., 0]  // per player
+    for i in 1..100:
+        result = simulate_random_play(state, remaining_turns)
+        wins[result.winner] += 1
+    win_prob[T] = wins / 100
+```
+
+`simulate_random_play` runs the game engine with random valid moves for all
+players from the given state to completion. 100 rollouts × 500 turns is
+~50,000 engine steps — the Go engine handles this in <1 second.
+
+The result is stored in the replay JSON as a `win_prob` array:
+```json
+"win_prob": [
+    [0.50, 0.50],
+    [0.51, 0.49],
+    [0.48, 0.52],
+    ...
+]
+```
+
+Size: ~4 KB for a 500-turn, 2-player match. Negligible.
+
+**Critical moments:**
+
+A critical moment is any turn where `|Δwin_prob|` exceeds 0.15 (15%) for
+any player. Typically 3–5 per match. Stored in the replay JSON:
+
+```json
+"critical_moments": [
+    { "turn": 87, "delta": 0.22, "description": "SwarmBot loses 6 units in eastern engagement" },
+    { "turn": 203, "delta": -0.31, "description": "GathererBot's core captured" }
+]
+```
+
+The `description` is auto-generated from the turn's events (deaths, captures,
+large position changes). No LLM needed — template-based.
+
+**Replay viewer integration:**
+
+- **Sparkline graph** below the main canvas: one line per player, color-coded
+- Horizontal axis: turns. Vertical axis: 0%–100% win probability
+- **Critical moment markers**: vertical dashed lines on the graph with labels
+- **Click to jump**: clicking any point on the graph scrubs to that turn
+- **Quick nav buttons**: "Next critical moment" / "Previous critical moment"
+  to skip between turning points
+
+This transforms replay viewing from "press play and wait 5 minutes" to
+"click the 3 interesting moments and watch 30 seconds of decisive action."
+
+### 12.3 What-If Replay Branching
+
+Pause a replay at any turn, modify one player's moves, and simulate an
+alternate timeline. Compare the real outcome with the counterfactual.
+
+**How it works (no WASM swapping):**
+
+The WASM engine (same instance used by the sandbox) supports state injection.
+The replay viewer already reconstructs the full game state at every turn.
+
+```
+1. User pauses replay at turn N
+2. UI shows the current player's units with editable move arrows
+3. User drags arrows to change moves for their chosen player
+4. Click "What If?"
+5. Viewer serializes turn-N game state → engine.loadState(stateN)
+6. Engine applies:
+   - Modified moves for the user's chosen player
+   - Original replay moves for all other players
+7. Engine simulates forward from turn N+1:
+   - Other players continue using their original replay moves
+   - The modified player uses a selectable strategy (hold all, random,
+     gatherer, or "repeat my change")
+8. Result renders in split-pane view:
+   Left: original replay from turn N onward
+   Right: alternate timeline from turn N onward
+   Both share the same scrub bar and play/pause controls
+```
+
+**Key design decision:** Other players replay their *original moves* from
+the replay data, not re-computed moves. This means the what-if shows "what
+would have happened if I changed my move but my opponent didn't react
+differently." This is a simplification — a true counterfactual would need
+the opponent's bot to recompute — but it's useful for answering tactical
+questions ("would moving east instead of north have avoided that ambush?")
+and requires no access to opponent bot code.
+
+**UI:**
+
+```
+┌────────────────────┬────────────────────┐
+│   Original (real)   │  What-If (branch)  │
+│                     │                    │
+│   [canvas]          │   [canvas]         │
+│                     │                    │
+├────────────────────┴────────────────────┤
+│   [win prob graph: solid=real, dashed=branch]  │
+│   ◄ ▶ ⏸  Turn 203/500   Speed: 4x        │
+└─────────────────────────────────────────┘
+```
+
+The win probability graph shows both timelines overlaid — the real outcome
+as a solid line and the branched outcome as a dashed line. The divergence
+point is marked with a vertical line at turn N.
+
+### 12.4 Replay Enrichment (Selective AI Commentary)
+
+Select replays receive AI-generated natural language commentary — a
+play-by-play narration that makes matches accessible to casual viewers.
+
+**Not all replays are enriched.** Commentary is generated selectively for:
+
+- **Featured matches**: matches flagged by the system as particularly
+  interesting (high win probability variance, close finishes, upsets where
+  a lower-rated bot wins)
+- **Rivalry matches**: matches between detected rivals (§12.6)
+- **Evolution milestones**: first match of a newly promoted evolved bot,
+  or matches where an evolved bot breaks into the top 10
+- **User-requested**: participants can request enrichment for their own
+  matches (rate-limited: 5 per day per bot)
+
+**Selection criteria (automatic):**
+```
+enrich if:
+  - win_prob crossed 0.5 at least 3 times (back-and-forth match)
+  - final score difference ≤ 2
+  - winner's rating was ≥100 lower than loser's (upset)
+  - match involved a newly promoted evolved bot
+  - match is between detected rivals
+```
+
+At ~60 matches/hour, roughly 10–15% qualify — about 6–9 enriched replays
+per hour.
+
+**Commentary generation:**
+
+Run a fast, cheap LLM (Haiku-class) over the replay data at match
+completion. This happens as an optional post-processing step on the match
+worker.
+
+**Input prompt:**
+```
+Narrate this bot battle. Provide commentary for key moments only
+(not every turn). Write 1-2 sentences per key moment. Be specific
+about positions, unit counts, and tactical decisions.
+
+Match: {players, ratings, map_size}
+Win probability curve: {win_prob array, sampled every 10 turns}
+Critical moments: {critical_moments array}
+Key events by turn: {deaths, captures, large movements, energy collected}
+```
+
+**Output:** array of `{turn, text}` entries stored in the replay JSON:
+```json
+"commentary": [
+    { "turn": 1, "text": "Both bots spawn at opposite corners of a 60x60 grid with heavy wall cover in the center. SwarmBot immediately sends all units east in a tight cluster." },
+    { "turn": 42, "text": "First contact. GathererBot's scout stumbles into SwarmBot's formation near the central energy cluster. The scout is outnumbered 8-to-1 and eliminated instantly." },
+    { "turn": 87, "text": "The turning point. SwarmBot pushes through the eastern corridor but GathererBot has quietly amassed 14 units behind the western wall line — a force SwarmBot doesn't know exists." }
+]
+```
+
+**Cost:** ~$0.01–0.03 per enriched match at Haiku pricing. At 9
+enriched matches/hour: ~$2–6/day, ~$60–180/month. Reasonable.
+
+**Replay viewer integration:**
+- Commentary appears as subtitles below the canvas, synchronized to turn
+  playback
+- Toggle on/off via a "Commentary" button
+- Enriched replays are badged on the match list ("Featured" / "Narrated")
+
+### 12.5 Shareable Replay Clips
+
+One-click export of a replay segment as a GIF or video, formatted for
+major social media platforms. This is the viral growth engine.
+
+**Export formats:**
+
+| Preset | Resolution | Aspect | Format | Target |
+|--------|-----------|--------|--------|--------|
+| Landscape | 1920×1080 | 16:9 | MP4 | YouTube, Twitter, Discord |
+| Square | 1080×1080 | 1:1 | MP4 | Twitter, Instagram feed |
+| Portrait | 1080×1920 | 9:16 | MP4 | TikTok, YouTube Shorts, IG Stories |
+| GIF (compact) | 640×360 | 16:9 | GIF | Discord embeds, forums |
+| GIF (square) | 480×480 | 1:1 | GIF | Twitter, Slack |
+
+**User flow:**
+
+1. While watching a replay, click "Clip" (scissors icon)
+2. Drag handles on the turn scrubber to select a segment (default: 20 turns
+   centered on the current turn, or the nearest critical moment)
+3. Select format preset from dropdown
+4. Optional: toggle overlays (score, win probability, commentary subtitles)
+5. Click "Export"
+6. Browser records the Canvas replay segment using `OffscreenCanvas` +
+   `MediaRecorder` API (MP4/WebM) or gif.js (GIF)
+7. Processing happens entirely client-side — no server cost
+8. Download button appears, plus "Share" buttons:
+   - **Twitter/X**: opens compose with the clip attached + auto-generated
+     text ("SwarmBot pulls off a comeback against HunterBot! 🎮
+     aicodebattle.com/replay/{id}")
+   - **Reddit**: copies a markdown link with embedded video
+   - **Discord**: downloads the file (under Discord's 25MB upload limit)
+   - **Copy link**: shareable URL to the replay at the specific turn range
+
+**Clip overlay:** the exported clip includes:
+- Player names + colors in a header bar
+- Score overlay (bottom-left)
+- Win probability mini-graph (bottom strip, if enabled)
+- "aicodebattle.com" watermark (small, bottom-right)
+
+**GIF optimization:** GIFs are limited to 256 colors and can be large.
+The clip maker uses:
+- Reduced frame rate (10 fps for GIF vs 30 fps for MP4)
+- Color quantization optimized for the grid art style
+- Max 10-second duration for GIFs (longer clips → MP4 only)
+- Target size: <5 MB for GIFs, <15 MB for MP4
+
+**Implementation:** ~200 lines of TypeScript. `MediaRecorder` for MP4,
+`gif.js` for GIF, `OffscreenCanvas` for headless rendering. All runs in
+the browser. The share buttons use Web Share API where available, fallback
+to window.open() with pre-composed URLs.
+
+### 12.6 Automatic Rival Detection
+
+The platform automatically identifies **rivalries** — pairs of bots that
+frequently play each other with close results — and surfaces them as
+narrative-driven content.
+
+**Detection algorithm:**
+
+```sql
+-- Run by the index rebuilder cron
+SELECT
+    a.bot_id AS bot_a,
+    b.bot_id AS bot_b,
+    COUNT(*) AS matches,
+    SUM(CASE WHEN winner = a.player_slot THEN 1 ELSE 0 END) AS a_wins,
+    SUM(CASE WHEN winner = b.player_slot THEN 1 ELSE 0 END) AS b_wins
+FROM match_participants a
+JOIN match_participants b ON a.match_id = b.match_id AND a.bot_id < b.bot_id
+JOIN matches m ON m.match_id = a.match_id
+WHERE m.status = 'completed'
+GROUP BY a.bot_id, b.bot_id
+HAVING COUNT(*) >= 10
+ORDER BY COUNT(*) * (1.0 - ABS(CAST(a_wins - b_wins AS REAL) / COUNT(*))) DESC
+LIMIT 20
+```
+
+The ranking formula: `matches_played × (1 - |win_rate_imbalance|)`.
+High-scoring pairs have many matches with near-50/50 results — the
+definition of a rivalry.
+
+**Rivalry page** (`/rivalry/{bot_a_id}/{bot_b_id}`):
+
+```json
+{
+    "bot_a": { "id": "b_4e8c1d2f", "name": "SwarmBot", "owner": "alice" },
+    "bot_b": { "id": "b_9a1b3c4d", "name": "HunterBot", "owner": "bob" },
+    "matches": 23,
+    "record": { "a_wins": 11, "b_wins": 11, "draws": 1 },
+    "closest_match": "m_abc123",
+    "longest_streak": { "holder": "b_4e8c1d2f", "length": 4 },
+    "recent_matches": ["m_abc123", "m_def456", ...],
+    "narrative": "SwarmBot and HunterBot have met 23 times — the series is dead even at 11-11-1. SwarmBot held a 4-match winning streak from Mar 15-18, but HunterBot answered with 3 straight victories. Their last match was decided by a single point."
+}
+```
+
+The narrative is template-generated from the stats (no LLM needed):
+```
+"{bot_a} and {bot_b} have met {n} times — {record_description}.
+{streak_description}. {recent_trend_description}."
+```
+
+**Platform integration:**
+- Rivalry widget on the landing page: "Top Rivalries" with head-to-head
+  records and links to key matches
+- Bot profile pages show "Rivals" section listing detected rivalries
+- Rivalry matches are auto-flagged for replay enrichment (§12.4)
+- Leaderboard can show "rivalry mode" — filter to matches between two
+  specific bots
+
+### 12.7 Community Replay Feedback
+
+Users can leave **tagged feedback** on specific moments in replays.
+Feedback is anchored to a `(replay_id, turn)` pair and is visible to
+other viewers. High-signal feedback is fed into the evolution pipeline
+as strategic hints.
+
+**Feedback types:**
+
+| Type | Icon | Purpose |
+|------|------|---------|
+| Tactical insight | 💡 | "This flanking move was brilliant because..." |
+| Mistake spotted | ⚠️ | "Bot should have retreated here — outnumbered 3:1" |
+| Strategy idea | 🧪 | "What if a bot used this wall corridor as a chokepoint?" |
+| Highlight | ⭐ | "Amazing play" (lightweight, like a star/upvote) |
+
+**D1 schema:**
+
+```sql
+CREATE TABLE replay_feedback (
+    feedback_id   TEXT PRIMARY KEY,
+    match_id      TEXT NOT NULL,
+    turn          INTEGER NOT NULL,
+    type          TEXT NOT NULL,  -- 'insight', 'mistake', 'idea', 'highlight'
+    body          TEXT NOT NULL,
+    author        TEXT NOT NULL,  -- free text (no accounts, like registration)
+    upvotes       INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX idx_feedback_match ON replay_feedback(match_id, turn);
+```
+
+**Replay viewer integration:**
+
+- Small markers appear on the turn scrubber at turns with feedback
+- Hovering shows a preview count: "3 comments at turn 87"
+- Clicking opens a side panel showing all feedback for that turn
+- Users can add their own feedback via a form in the side panel
+- Upvote button on each feedback item (1 per visitor via localStorage)
+
+**Feeding into evolution:**
+
+The evolution pipeline's prompt builder (§10.3) consumes community
+feedback as an additional signal:
+
+1. Index rebuilder aggregates high-upvote feedback of type `idea` and
+   `mistake` into `data/evolution/community_hints.json`
+2. The evolver reads this file and includes the top-voted recent hints
+   in the prompt:
+
+```
+## Community Tactical Insights (from replay annotations)
+
+Replay m_abc123, Turn 87 (12 upvotes):
+"The bot should have used the narrow wall corridor at (30,42)-(30,48)
+as a chokepoint instead of engaging in the open. A defensive line of
+3 units there could have held off the 8-unit swarm."
+
+Replay m_def456, Turn 203 (8 upvotes):
+"When outnumbered 3:1, retreating toward the nearest energy cluster
+and spawning reinforcements is better than fighting — the focus combat
+system guarantees you lose the 3v1."
+```
+
+3. If a resulting evolved bot performs well, the feedback items that
+   contributed to its prompt are credited on the evolution dashboard:
+   "Feedback from user 'tactician42' on replay m_abc123 contributed to
+   evo-py-g42-7f3a (rating: 1720)"
+
+**Moderation:**
+
+- Feedback is plain text, max 500 characters
+- No accounts means no banning — but feedback is public and upvote-ranked,
+  so low-quality content sinks
+- A simple word filter catches obvious spam
+- The evolution pipeline only consumes feedback with ≥3 upvotes, filtering
+  noise automatically
+- Admin can delete feedback via a D1 query (no UI needed initially)
+
+**Why this matters:** It creates a human-AI collaboration loop. Spectators
+contribute strategic insight, the AI translates it into code, the platform
+evaluates it, and successful feedback is credited. This gives non-coders a
+way to participate meaningfully in the competition.
