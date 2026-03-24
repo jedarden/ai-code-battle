@@ -988,6 +988,8 @@ Bots automatically return to `ACTIVE` when health checks resume passing.
 | `acb-strategy-guardian` | PHP 8.4 CLI Alpine | GuardianBot | 1 |
 | `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | 1 |
 | `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | 1 |
+| `acb-evolver` | Go binary on Alpine | Evolution pipeline orchestrator | 1 (always-on) |
+| `acb-evolved-*` | Varies by language | LLM-generated evolved bots | 0–50 (dynamic) |
 
 ### 9.2 Rackspace Spot Deployment
 
@@ -1014,8 +1016,10 @@ for spot instances**:
 Always-on tier (standard instances):
 ├── acb-api (×2, behind load balancer)
 ├── acb-scheduler (×1)
+├── acb-evolver (×1, evolution pipeline orchestrator)
 ├── acb-web (×1 or CDN)
 ├── acb-strategy-* (×1 each, shared instance)
+├── acb-evolved-* (×0–50, dynamic, promoted bots)
 ├── PostgreSQL (managed or self-hosted)
 ├── Redis (managed or self-hosted)
 └── Minio / S3-compatible store
@@ -1023,6 +1027,10 @@ Always-on tier (standard instances):
 Spot tier (preemptible instances):
 ├── acb-worker (×3 minimum, scale up as available)
 └── (each worker is a standalone container, no coordination needed)
+
+Evolution tier (can share spot or always-on):
+├── nsjail sandbox runners (for validation + evaluation)
+└── (reuses acb-worker for evaluation matches)
 ```
 
 **Spot reclaim handling:**
@@ -1091,9 +1099,418 @@ Spot tier (preemptible instances):
 
 ---
 
-## 10. Implementation Phases
+## 10. LLM-Driven Bot Evolution
 
-### Phase 1: Core Engine (foundation)
+The platform includes an autonomous evolution pipeline that uses LLMs to
+continuously generate, evaluate, and promote new bot strategies. Evolved bots
+compete on the same ladder as human-written bots — visitors see an ever-changing
+meta where strategies emerge, dominate, and get countered without human
+intervention.
+
+### 10.1 Architecture Overview
+
+The evolution system combines two proven approaches:
+
+- **FunSearch/AlphaEvolve island model** — maintains diverse, independent
+  populations of bot code that cross-pollinate. Prevents premature convergence
+  to a single dominant strategy.
+- **LLM-PSRO (Policy Space Response Oracle)** — uses Nash equilibrium as the
+  promotion gate. A new bot must beat the optimal mixed strategy over the
+  current population, not just one specific opponent. This provides
+  mathematically grounded regression prevention.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                     Programs Database                     │
+│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌──────────┐ │
+│  │  Island 1  │ │  Island 2  │ │  Island 3  │ │ Island 4 │ │
+│  │  (Python)  │ │  (Go)      │ │  (Rust)    │ │ (mixed)  │ │
+│  │  pop: 20   │ │  pop: 20   │ │  pop: 20   │ │ pop: 20  │ │
+│  └───────────┘ └───────────┘ └───────────┘ └──────────┘ │
+└──────────────────────────┬───────────────────────────────┘
+                           │
+             sample 2-3 parents + match replays
+                           │
+                ┌──────────▼───────────┐
+                │    Prompt Builder     │
+                │  • Parent source code │
+                │  • Recent loss replay │
+                │  • Win/loss analysis  │
+                │  • Current meta desc  │
+                │  • "Beat this mix"    │
+                └──────────┬───────────┘
+                           │
+                ┌──────────▼───────────┐
+                │    LLM Ensemble       │
+                │  • Fast model (×8)    │
+                │    exploration/breadth │
+                │  • Strong model (×2)  │
+                │    exploitation/depth  │
+                └──────────┬───────────┘
+                           │ generates candidate bot code
+                ┌──────────▼───────────┐
+                │    Validation Gate    │
+                │  1. Syntax check      │
+                │  2. Compile/lint      │
+                │  3. Schema test       │
+                │  4. Sandbox smoke run │
+                └──────────┬───────────┘
+                           │ passes validation
+                ┌──────────▼───────────┐
+                │    Evaluation Arena   │
+                │  • 10 matches vs      │
+                │    population sample  │
+                │  • Compute win rate   │
+                │  • Build payoff row   │
+                └──────────┬───────────┘
+                           │
+                ┌──────────▼───────────┐
+                │    Promotion Gate     │
+                │  • Compute Nash eq.   │
+                │    over population    │
+                │  • Candidate must     │
+                │    beat Nash mixture  │
+                │  • Or: fill empty     │
+                │    MAP-Elites niche   │
+                └──────────┬───────────┘
+                           │ promoted
+                ┌──────────▼───────────┐
+                │    Deploy & Register  │
+                │  • Build container    │
+                │  • Push to registry   │
+                │  • Register on ladder │
+                │  • Enter island DB    │
+                └──────────────────────┘
+```
+
+### 10.2 Programs Database (Island Model)
+
+The programs database stores all evolved bot code, organized into **islands**
+that evolve independently to maintain strategic diversity.
+
+**Island structure:**
+- **4 islands**, one per primary language (Python, Go, Rust, mixed)
+- Each island holds up to **20 programs** ranked by fitness
+- Programs are clustered by **behavior signature** — a vector of outcomes
+  across a fixed set of benchmark matches (e.g., win/loss/score against each
+  of the 6 built-in strategy bots)
+- Sampling favors high-scoring clusters; within a cluster, favors shorter/simpler
+  code (Occam pressure prevents bloat)
+
+**Cross-pollination:**
+- Every 50 generations, the top program from each island is copied to a random
+  other island (translated to that island's language by the LLM if needed)
+- This spreads successful strategies across languages without homogenizing
+  the populations
+
+**Behavior dimensions for MAP-Elites diversity:**
+
+| Dimension | Low | High |
+|-----------|-----|------|
+| Aggression | Never enters enemy territory | Rushes enemy core immediately |
+| Economy | Ignores energy entirely | Maximizes energy per turn |
+| Exploration | Stays near core | Covers >80% of visible map |
+| Formation | Units always scattered | Units always in tight groups |
+
+Each dimension is binned into 3 levels, creating a 3⁴ = 81-cell behavior grid.
+The database tries to fill every cell with the highest-scoring bot for that
+behavioral profile. This ensures the evolved population contains turtles,
+rushers, economists, swarmers, and everything in between — not just one
+dominant archetype.
+
+### 10.3 Prompt Construction
+
+The LLM prompt is the critical interface between match performance data and
+code generation. Each prompt is constructed from:
+
+**Parent code (2–3 programs):**
+- Sampled from the island's high-scoring clusters
+- Included as full source code with inline comments noting their rating and
+  behavioral profile
+- The LLM sees concrete working examples, not abstract descriptions
+
+**Match analysis (from recent losses):**
+- The replay of the parent's worst recent loss is summarized:
+  - Turn-by-turn narrative of critical moments (when the bot lost a formation,
+    missed energy, walked into a trap)
+  - Final score breakdown
+  - Opponent's apparent strategy (inferred from replay)
+- This gives the LLM specific failure modes to address
+
+**Meta description:**
+- Current Nash equilibrium mixture over the population (e.g., "the optimal
+  counter-strategy is 40% swarm, 30% hunter, 30% gatherer")
+- The candidate should beat this mixture, not just one opponent
+- Weaknesses in the current meta are highlighted (e.g., "no bot currently
+  exploits the east-side energy clusters on 4-player maps")
+
+**Constraints:**
+- Target language for this island
+- Must implement the HTTP bot interface (`POST /turn`, `GET /health`)
+- Must include HMAC verification
+- Maximum source code size (10 KB — prevents bloat)
+- Must respond within 3-second timeout with reasonable compute
+
+**Prompt template (simplified):**
+
+```
+You are evolving a competitive bot for AI Code Battle, a grid-based
+strategy game. Your bot must be an HTTP server that receives game state
+and returns moves.
+
+## Game Rules
+{game_rules_summary}
+
+## HTTP Protocol
+{protocol_spec}
+
+## Parent Bots (these work — improve on them)
+
+### Parent A — Rating: 1650, Style: aggressive-gatherer
+```{language}
+{parent_a_source}
+```
+
+### Parent B — Rating: 1580, Style: defensive-swarm
+```{language}
+{parent_b_source}
+```
+
+## Parent A's Worst Loss (Replay Summary)
+{replay_analysis}
+
+## Current Meta
+The Nash equilibrium mixture is:
+{nash_mixture_description}
+
+Known weaknesses in current population:
+{meta_weaknesses}
+
+## Your Task
+Write a new bot in {language} that:
+1. Addresses Parent A's failure mode shown in the replay
+2. Incorporates Parent B's strongest tactical element
+3. Can beat the Nash mixture described above
+4. Fits in a single file under 10 KB
+
+Return the complete source code.
+```
+
+### 10.4 LLM Ensemble
+
+The evolution system uses two model tiers, inspired by AlphaEvolve:
+
+**Exploration tier (fast model, 80% of generations):**
+- Cheaper, faster model (e.g., Claude Haiku, GPT-4o-mini, Gemini Flash)
+- Generates 8 candidates per cycle
+- High temperature (0.9–1.0) for diversity
+- Purpose: broad search across strategy space; most candidates will fail,
+  but occasional novel approaches emerge
+
+**Exploitation tier (strong model, 20% of generations):**
+- More capable model (e.g., Claude Sonnet/Opus, GPT-4o, Gemini Pro)
+- Generates 2 candidates per cycle
+- Lower temperature (0.3–0.5) for refinement
+- Purpose: take the best current strategies and make them better; refine
+  tactical details, optimize pathfinding, improve edge-case handling
+
+**Total throughput:** 10 candidates per evolution cycle. With a cycle time
+of ~15 minutes (generation + validation + 10 evaluation matches), the system
+produces ~96 candidates/day, of which ~5–15% pass the promotion gate.
+
+### 10.5 Validation Pipeline
+
+Every LLM-generated candidate passes through a multi-stage validation
+before it touches the evaluation arena:
+
+**Stage 1: Syntax & Compilation**
+- Language-specific: `python -m py_compile`, `go build`, `cargo check`,
+  `php -l`, `tsc --noEmit`, `javac`
+- Reject: syntax errors, missing imports, type errors
+- ~40% of candidates fail here (expected — LLMs produce broken code often)
+
+**Stage 2: Schema Compliance**
+- Start the bot container
+- Send a mock turn-0 game state to `POST /turn`
+- Verify response parses as valid moves JSON
+- Verify `GET /health` returns 200
+- Verify HMAC signature is present and valid
+- Reject: bots that can't speak the protocol
+- ~20% of remaining candidates fail here
+
+**Stage 3: Sandbox Smoke Test**
+- Run a 50-turn match against RandomBot inside nsjail
+- Verify the bot doesn't crash, timeout on every turn, or produce
+  identical moves every turn (degenerate)
+- Verify the bot scores ≥ 0 (doesn't actively self-destruct)
+- Reject: bots that crash, hang, or do nothing
+- ~10% of remaining candidates fail here
+
+**Net yield:** ~30–40% of generated candidates survive to the evaluation
+arena. At 10 candidates/cycle, that's 3–4 evaluated candidates per cycle.
+
+**Sandboxing (nsjail):**
+- All LLM-generated code executes inside nsjail containers
+- No network access (game state is piped via the engine, not fetched)
+- No filesystem access beyond the bot's own directory
+- CPU time limit: 5 seconds per turn (generous; 3-second HTTP timeout is
+  enforced by the engine separately)
+- Memory limit: 512 MB
+- Process limit: 10 (prevents fork bombs)
+
+### 10.6 Evaluation Arena
+
+Candidates that pass validation enter a mini-tournament:
+
+**Evaluation protocol:**
+1. Play 10 matches against opponents sampled from the current population:
+   - 2 matches vs each of the 3 closest-rated bots in the candidate's island
+   - 2 matches vs a random bot from a different island
+   - 2 matches vs the current island champion
+2. Record results → compute win rate and per-opponent scores
+3. Build the candidate's **payoff row** in the population's payoff matrix
+
+**Match configuration:**
+- 2-player matches only (faster evaluation; multi-player tested post-promotion)
+- Standard maps, standard timeout
+- Evaluation matches are **not** counted toward ladder ratings (they use a
+  separate evaluation queue)
+
+### 10.7 Promotion Gate (Nash Equilibrium / PSRO)
+
+The promotion gate determines whether a candidate enters the population and
+gets deployed to the ladder.
+
+**Primary gate: Nash equilibrium (LLM-PSRO)**
+
+1. Compute the Nash equilibrium mixture σ* over the current island population
+   using the existing payoff matrix
+2. Compute the candidate's expected payoff against σ* (using the payoff row
+   from the evaluation arena)
+3. **Promote if** the candidate's expected payoff against σ* is positive
+   (i.e., the candidate beats the current optimal mixed strategy)
+4. If promoted, add the candidate to the island population, recompute Nash
+
+This ensures the population's game-theoretic strength monotonically increases.
+A bot that just exploits one opponent's weakness but loses to the overall mix
+is rejected.
+
+**Secondary gate: MAP-Elites niche filling**
+
+Even if a candidate doesn't beat the Nash mixture, it may fill an **empty
+cell** in the behavior grid (section 10.2). If the candidate's behavior
+signature maps to an unoccupied cell, it is promoted anyway. This maintains
+strategic diversity even when the Nash gate is tight.
+
+**Replacement policy:**
+- If the candidate's behavior cell already has an occupant, the candidate
+  replaces it only if the candidate's fitness is higher
+- Island population size is capped at 20; if full and no cell is improved,
+  the candidate is discarded
+- The worst-performing program in an over-populated cluster is evicted first
+
+### 10.8 Deployment Pipeline
+
+Promoted bots are automatically containerized and registered on the ladder:
+
+**Build:**
+1. Write the bot's source code to a temporary directory
+2. Copy the language-appropriate Dockerfile from the starter kit template
+3. Build the container image: `acb-evolved-{island}-{generation}-{hash}`
+4. Push to container registry
+
+**Register:**
+1. Generate a new `bot_id` and `shared_secret`
+2. Deploy the container to the always-on strategy bot instance pool
+3. Register the bot via the platform API with metadata:
+   - `owner`: "evolution-system" (system account)
+   - `name`: auto-generated (e.g., `evo-py-g42-7f3a`)
+   - `description`: auto-generated from the LLM's strategy summary
+   - `lineage`: parent bot IDs + generation number
+   - `island`: which island produced it
+4. Health check → mark ACTIVE → enters matchmaking
+
+**Lifecycle management:**
+- Evolved bots are tagged with `evolved: true` in the database
+- The evolution system tracks the **lineage** of every bot (parent IDs,
+  generation number, island of origin)
+- Evolved bots that drop below rating 800 (bottom 10% of ladder) for 7
+  consecutive days are **retired** automatically to prevent population bloat
+- Maximum active evolved bots: 50 (configurable). When the cap is reached,
+  the lowest-rated evolved bot is retired before a new one is promoted.
+- Retired evolved bots remain in the programs database for future sampling
+  (their code may still contain useful tactics) but are removed from the
+  ladder and their containers are stopped
+
+### 10.9 Evolution Cycle Timing
+
+| Phase | Duration | Notes |
+|-------|----------|-------|
+| Parent sampling + prompt construction | ~10 seconds | CPU-bound, fast |
+| LLM generation (10 candidates) | ~30–60 seconds | Parallel across ensemble |
+| Validation (syntax, schema, smoke) | ~2 minutes | Parallel per candidate |
+| Evaluation arena (10 matches) | ~10 minutes | Sequential matches, 3s/turn × 500 turns worst case; but most against weak bots end faster |
+| Nash computation + promotion | ~5 seconds | Small matrix, fast |
+| Container build + deploy | ~2 minutes | Docker build + push |
+| **Total cycle time** | **~15 minutes** | |
+
+**Daily output:** ~96 candidates generated, ~10–15 promoted, ~5–10 survive
+on the ladder after the 7-day retirement window.
+
+### 10.10 Evolution Dashboard
+
+The web platform includes a dedicated evolution section visible to all visitors:
+
+**Lineage viewer:**
+- Interactive tree/graph showing the ancestry of every evolved bot
+- Click a node to see the bot's source code, rating history, and match record
+- Color-coded by island/language
+- Animated timeline showing which bots were active at which point
+
+**Meta tracker:**
+- Current Nash equilibrium mixture visualization (pie chart of strategy archetypes)
+- How the meta has shifted over time (stacked area chart)
+- Which behavioral niches are filled vs empty in the MAP-Elites grid
+
+**Generation log:**
+- Stream of recent evolution attempts: generated, validated, evaluated, promoted/rejected
+- For each attempt: the prompt summary, the LLM's output, validation results,
+  evaluation match results, and promotion decision with reasoning
+
+**Statistics:**
+- Total generations run, candidates generated, promotion rate
+- Average rating of evolved bots vs human-written bots over time
+- Island diversity metrics (how different are the islands from each other)
+
+### 10.11 Separation from Human Ladder
+
+Evolved bots compete on the **same ladder** as human-written bots — there is
+no separate tier. This is a deliberate design choice:
+
+**Why mix them:**
+- The entire point is to see if LLM-evolved strategies can compete with or
+  surpass human-written ones
+- Humans can study evolved bot replays and learn new tactics, then write
+  better bots that push the meta further — a human-AI co-evolution dynamic
+- Separate ladders would remove the competitive pressure that drives evolution
+
+**Identification:**
+- Evolved bots are clearly tagged on the leaderboard (`[EVO]` prefix or badge)
+- Their lineage and source code are publicly viewable (transparency)
+- Human participants can opt to filter the leaderboard to show human-only rankings
+- Match history shows whether opponents were evolved or human-written
+
+**Fair play:**
+- Evolved bots follow the same rules: same timeout, same schema, same HMAC
+- No special treatment in matchmaking — rated and matched identically
+- The evolution system is rate-limited (max 50 active evolved bots) to prevent
+  flooding the ladder
+
+---
+
+## 11. Implementation Phases
+
+### Phase 1: Core Engine (Foundation)
 
 Build the game simulation as a standalone Go library with a CLI runner.
 
@@ -1178,3 +1595,23 @@ leaderboard after matches are played, and watch replays of its games.
 **Exit criteria:** platform is publicly accessible, matches run continuously,
 strategy bots compete on the ladder, external participants can register and
 play.
+
+### Phase 7: LLM-Driven Evolution
+
+**Deliverables:**
+- Programs database with island model (4 islands, MAP-Elites behavior grid)
+- Prompt builder: parent sampling, replay analysis, meta description
+- LLM ensemble integration (fast + strong model tiers)
+- Validation pipeline: syntax → schema → sandbox smoke test (nsjail)
+- Evaluation arena: 10-match mini-tournament per candidate
+- Promotion gate: Nash equilibrium computation (PSRO) + MAP-Elites niche fill
+- Automated container build + deploy + register pipeline for promoted bots
+- Retirement policy: auto-retire low-rated evolved bots, enforce population cap
+- Evolution dashboard: lineage viewer, meta tracker, generation log
+- Seed the programs database with the 6 built-in strategy bots as initial
+  population
+
+**Exit criteria:** evolution system runs autonomously — generates candidates,
+validates, evaluates, promotes, deploys, and retires bots without human
+intervention. At least one evolved bot reaches the top 50% of the ladder
+within the first week of operation.
