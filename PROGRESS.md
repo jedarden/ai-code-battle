@@ -7,6 +7,7 @@
 **Last Updated: 2026-03-24**
 
 ### Recent Changes (2026-03-24)
+- Added `README.md` with project overview and quick start guide
 - Added `.gitignore` for proper repository hygiene
 - Added `package-lock.json` files for reproducible builds
 - Verified all tests pass (glicko2.test.ts, generator.test.ts)
