@@ -27,43 +27,157 @@ This split maps cleanly to each provider's strength. Cloudflare excels at
 serving content globally with zero egress cost. Rackspace Spot provides cheap
 interruptible compute for the CPU-intensive match simulation.
 
+### Pages vs R2: What Goes Where
+
+**Cloudflare Pages** serves the application shell — all code, assets, and
+WASM that changes only on developer deploys. **Cloudflare R2** serves all
+dynamic data that changes as matches run. The browser loads the SPA from
+Pages (instant, CDN-cached), then fetches data from R2 (also CDN-cached
+via custom domain, zero egress).
+
+**Why the split is necessary:**
+
+Pages has a 20,000 file limit per project. The application code is well
+under 1,000 files. But dynamic data quickly exceeds 20K:
+- Replays alone: 60/hour × 24h × 90 days = ~130,000 files
+- Bot profiles, match metadata, playlists, blog posts: thousands more
+
+Pages cannot host dynamic data. R2 has no file count limit.
+
+**What lives in Pages** (~500–1,000 files, deploys only on code changes):
+```
+Pages (aicodebattle.com):
+├── index.html, leaderboard.html, matches.html, ...  (SPA routes)
+├── js/                    (bundled TypeScript application)
+│   ├── app.js             (SPA router, data fetching)
+│   ├── replay-viewer.js   (Canvas replay renderer)
+│   ├── sandbox.js         (WASM sandbox orchestrator)
+│   └── charts.js          (win probability, meta charts)
+├── css/                   (stylesheets)
+├── wasm/                  (game engine + built-in bot WASMs)
+│   ├── engine.wasm
+│   ├── gatherer.wasm
+│   ├── rusher.wasm
+│   └── ...
+├── docs/                  (protocol spec, replay format, data paths, guides)
+├── img/                   (logos, icons, UI assets)
+└── embed.html             (lightweight embeddable replay player)
+```
+
+**What lives in R2** (unlimited files, updated continuously by Workers + Rackspace):
+```
+R2 (data.aicodebattle.com):
+├── data/
+│   ├── leaderboard.json              (rebuilt every 2 min by Worker cron)
+│   ├── bots/
+│   │   ├── index.json                (bot directory)
+│   │   └── {bot_id}.json             (per-bot profile, rating history)
+│   ├── matches/
+│   │   ├── index.json                (recent matches, paginated)
+│   │   └── {match_id}.json           (match metadata)
+│   ├── series/
+│   │   ├── index.json
+│   │   └── {series_id}.json
+│   ├── seasons/
+│   │   ├── index.json
+│   │   └── {season_id}.json
+│   ├── playlists/
+│   │   └── {slug}.json               (auto-curated collections)
+│   ├── predictions/
+│   │   ├── leaderboard.json
+│   │   └── open.json                 (upcoming predictable matches)
+│   ├── meta/
+│   │   ├── archetypes.json
+│   │   └── rivalries.json
+│   └── evolution/
+│       ├── live.json                  (real-time observatory feed)
+│       ├── lineage.json
+│       └── meta.json
+├── replays/
+│   └── {match_id}.json.gz            (full replay files)
+├── maps/
+│   ├── index.json
+│   └── {map_id}.json
+├── blog/
+│   ├── index.json
+│   └── posts/{slug}.json             (meta reports + chronicles)
+├── thumbnails/
+│   └── {match_id}.png                (auto-generated match thumbnails)
+└── cards/
+    └── {bot_id}.png                   (bot profile card images)
+```
+
+**Data loading pattern in the SPA:**
+
+```js
+// Pages serves the SPA shell
+// R2 serves all dynamic data via its custom domain
+const DATA = 'https://data.aicodebattle.com'
+
+// Leaderboard page loads:
+const lb = await fetch(`${DATA}/data/leaderboard.json`).then(r => r.json())
+
+// Replay viewer loads:
+const replay = await fetch(`${DATA}/replays/${matchId}.json.gz`)
+
+// Evolution observatory loads:
+const live = await fetch(`${DATA}/data/evolution/live.json`).then(r => r.json())
+```
+
+R2 custom domain serves files with appropriate cache headers:
+- `leaderboard.json`: `Cache-Control: public, max-age=60`
+- `replays/*.json.gz`: `Cache-Control: public, max-age=31536000, immutable`
+- `evolution/live.json`: `Cache-Control: public, max-age=10`
+- `bots/*.json`: `Cache-Control: public, max-age=300`
+
+**R2 also serves Rackspace agents:**
+
+R2 is the data bus between Cloudflare and Rackspace. Match workers and
+the evolver read from R2 (maps, bot data for evolution prompts) and write
+to R2 (replays, evolution status). The same files that Rackspace writes
+are what the browser reads — no duplication.
+
 ```
 ┌─────────────────────── Cloudflare (free tier) ───────────────────────┐
 │                                                                       │
 │  ┌─────────────┐   ┌──────────────────┐   ┌───────────────────────┐  │
 │  │  Pages       │   │  Worker (acb-api) │   │  R2 Bucket            │  │
-│  │  static site │   │  registration,    │   │  replays/*.json.gz    │  │
-│  │  HTML/JS/CSS │   │  job coordination,│   │  data/leaderboard.json│  │
-│  │              │   │  cron triggers    │   │  data/bots/*.json     │  │
-│  └──────┬──────┘   └────────┬─────────┘   │  data/matches/*.json  │  │
-│         │                   │              │  maps/*.json          │  │
-│         │ fetches JSON      │ reads/writes └───────────┬───────────┘  │
-│         └───────────────────┼─────────────────────────►│              │
-│                             │                                         │
-│                    ┌────────▼────────┐                                │
-│                    │  D1 Database     │                                │
-│                    │  bots, matches,  │                                │
-│                    │  jobs, ratings   │                                │
-│                    └─────────────────┘                                │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ HTTPS (job coordination + result submission)
-                               │
-┌──────────────────────── Rackspace Spot ──────────────────────────────┐
-│                                                                       │
-│  ┌──────────────────┐    ┌──────────────────────────────────────────┐ │
-│  │  Match Workers    │    │  Bot Containers                          │ │
-│  │  (claim jobs,     │───►│  ┌──────────┐ ┌──────────┐ ┌──────────┐│ │
-│  │   run simulation, │HTTP│  │ Strategy  │ │ Evolved  │ │ External ││ │
-│  │   upload replay   │    │  │ Bots (×6) │ │ Bots     │ │ Bots     ││ │
-│  │   to R2, POST     │    │  └──────────┘ └──────────┘ └──────────┘│ │
-│  │   result to API)  │    └──────────────────────────────────────────┘ │
-│  └──────────────────┘                                                 │
-│                                                                       │
-│  ┌──────────────────┐                                                 │
-│  │  Evolver          │                                                │
-│  │  (LLM pipeline,  │                                                 │
-│  │   sandbox, eval)  │                                                │
-│  └──────────────────┘                                                 │
+│  │  SPA shell   │   │  registration,    │   │                       │  │
+│  │  HTML/JS/CSS │   │  job coordination,│   │  Browser reads from   │  │
+│  │  WASM, docs  │   │  cron triggers    │   │  here (data, replays) │  │
+│  └──────┬──────┘   └────────┬─────────┘   │                       │  │
+│         │                   │              │  Rackspace writes to   │  │
+│         │  SPA loads from   │ reads/writes │  here (replays, status)│  │
+│         │  Pages, then      │              │                       │  │
+│         │  fetches data ────┼─────────────►│  Worker writes to     │  │
+│         │  from R2          │              │  here (indexes, blog) │  │
+│         │                   │              └───────────┬───────────┘  │
+│         │                   │                          │              │
+│         │          ┌────────▼────────┐                 │              │
+│         │          │  D1 Database     │                 │              │
+│         │          │  bots, matches,  │  Worker cron    │              │
+│         │          │  jobs, ratings   │  materializes ──┘              │
+│         │          └─────────────────┘  D1 → R2 JSON                 │
+└─────────┼────────────────────────────────┬───────────────────────────┘
+          │                                │
+   browser│                         HTTPS  │ (job coordination +
+   loads  │                                │  result submission +
+   SPA    │                                │  R2 read/write via S3 API)
+          │                                │
+┌─────────┼──────────────────── Rackspace Spot ────────────────────────┐
+│         │                                │                            │
+│  ┌──────▼───────────┐    ┌──────────────▼───────────────────────────┐│
+│  │  User's Browser   │    │  Match Workers + Evolver                 ││
+│  │  (not Rackspace — │    │  • Claim jobs from Worker API            ││
+│  │   shown for data  │    │  • Read maps/bot data from R2            ││
+│  │   flow clarity)   │    │  • Run matches, call bot HTTP endpoints  ││
+│  └──────────────────┘    │  • Write replays + status to R2           ││
+│                           │  • POST result metadata to Worker API    ││
+│  ┌──────────────────┐    └──────────────────────────────────────────┘│
+│  │  Bot Containers   │                                                │
+│  │  Strategy (×6)    │                                                │
+│  │  Evolved (0–50)   │                                                │
+│  └──────────────────┘                                                │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,13 +185,13 @@ interruptible compute for the CPU-intensive match simulation.
 
 | Component | Where | Role |
 |-----------|-------|------|
-| **Pages** | Cloudflare | Static site — HTML/JS/CSS SPA, fetches JSON from R2 |
-| **Worker** | Cloudflare | API endpoints (registration, job coordination) + cron triggers (matchmaking, index rebuilds, health checks) |
-| **D1** | Cloudflare | SQLite database — bot registry, match queue, ratings, results |
-| **R2** | Cloudflare | Object storage — replay files, pre-built JSON indexes (leaderboard, bot profiles, match lists), maps |
-| **Match Workers** | Rackspace Spot | Stateless match execution — claim job from Worker API, run simulation, upload replay to R2, POST result |
+| **Pages** | Cloudflare | SPA shell — HTML/JS/CSS/WASM/docs. Code only, no data. Changes on developer deploys (~500 files) |
+| **Worker** | Cloudflare | API endpoints (registration, job coordination) + cron triggers that materialize D1 → R2 JSON |
+| **D1** | Cloudflare | SQLite database — bot registry, match queue, ratings, results. Source of truth. |
+| **R2** | Cloudflare | All dynamic data — replays, indexes, blog posts, evolution status, maps, thumbnails, cards. Served to browsers via custom domain. Also the data bus for Rackspace agents (read maps/data, write replays/status). |
+| **Match Workers** | Rackspace Spot | Stateless match execution — claim job from Worker API, read maps from R2, run simulation, write replay to R2, POST result to Worker API |
 | **Bot Containers** | Rackspace Spot | Strategy bots (×6) + evolved bots (0–50) — HTTP servers called by workers during matches |
-| **Evolver** | Rackspace Spot | Evolution pipeline — LLM generation, sandbox validation, evaluation matches |
+| **Evolver** | Rackspace Spot | Evolution pipeline — reads lineage/meta from R2, generates candidates, writes live status to R2 |
 
 **What's intentionally absent:** no PostgreSQL, no Redis, no always-on VPS for
 web infrastructure, no Nginx, no reverse proxy. Cloudflare handles TLS, CDN,
