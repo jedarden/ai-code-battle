@@ -18,6 +18,7 @@ import {
   rotateApiKey,
   getLeaderboard,
 } from './bots';
+import { exportData } from './export';
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -175,6 +176,16 @@ export default {
 
       if (path === '/api/leaderboard' && method === 'GET') {
         const result = await getLeaderboard(env);
+        return json(result);
+      }
+
+      // ============ Data Export Endpoint (for index builder) ============
+
+      if (path === '/api/data/export' && method === 'GET') {
+        if (!(await verifyApiKey())) {
+          return json({ success: false, error: 'Unauthorized' }, 401);
+        }
+        const result = await exportData(env);
         return json(result);
       }
 

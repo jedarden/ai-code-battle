@@ -2,7 +2,7 @@
 
 ## Current Phase: Phase 4 - Match Orchestration
 
-**Status: 🔄 In Progress**
+**Status: ✅ COMPLETE**
 
 ### Phase 4 Progress
 
@@ -27,6 +27,9 @@
   - PUT /api/bots/:id - Update bot
   - POST /api/rotate-key - Rotate API key
   - GET /api/leaderboard - Get leaderboard
+- [x] Data export endpoint (`worker-api/src/export.ts`)
+  - GET /api/data/export - Export all data for index building
+  - Returns bots, matches, rating history
 - [x] Cron handlers (`worker-api/src/cron.ts`)
   - Matchmaker (every minute) - Creates match jobs
   - Health checker (every 15 min) - Pings bot endpoints
@@ -39,7 +42,15 @@
   - Submits results back to Worker API
   - Retry logic with exponential backoff
   - API client tests (10 tests)
-- [ ] Rackspace index builder
+- [x] Index builder container (`cmd/acb-indexer/`)
+  - Fetches data from Worker API via `/api/data/export`
+  - Generates static JSON index files:
+    - `leaderboard.json` - Sorted bot rankings
+    - `bots/index.json` - Bot directory
+    - `bots/{bot_id}.json` - Per-bot profiles with rating history
+    - `matches/index.json` - Recent match list
+  - Optional deploy to Cloudflare Pages
+  - Unit tests (6 tests)
 
 ### Phase 3 Completed
 
@@ -121,7 +132,19 @@
 | Score overlay | ✅ Complete |
 | Loads replay JSON from file or URL | ✅ Complete |
 
-## Next Phase: Phase 4 - Match Orchestration
+### Phase 4 Exit Criteria
+
+| Criterion | Status |
+|-----------|--------|
+| Matchmaker cron creates jobs in D1 | ✅ Complete |
+| Workers claim and execute matches | ✅ Complete |
+| Replays land in R2 | ✅ Complete |
+| Results flow into D1 | ✅ Complete |
+| Ratings update via Glicko-2 | ✅ Complete |
+| Leaderboard.json rebuilds automatically | ✅ Complete |
+| Stale job reaper recovers from worker disappearance | ✅ Complete |
+
+## Next Phase: Phase 5 - Web Platform
 
 **Status: Ready to start**
 
@@ -144,11 +167,20 @@ ai-code-battle/
 ├── cmd/
 │   ├── acb-local/      # CLI match runner
 │   ├── acb-mapgen/     # Map generator
-│   └── acb-worker/     # Match execution worker
-│       ├── main.go      # Worker entry point
-│       ├── api.go       # Worker API client
-│       ├── api_test.go  # API client tests
-│       └── r2.go        # R2 upload client
+│   ├── acb-worker/     # Match execution worker
+│   │   ├── main.go      # Worker entry point
+│   │   ├── api.go       # Worker API client
+│   │   ├── api_test.go  # API client tests
+│   │   └── r2.go        # R2 upload client
+│   └── acb-indexer/    # Index builder
+│       ├── package.json
+│       ├── Dockerfile
+│       └── src/
+│           ├── index.ts       # Entry point
+│           ├── api.ts         # Worker API client
+│           ├── generator.ts   # Index file generator
+│           ├── writer.ts      # File system writer
+│           └── generator.test.ts
 ├── worker-api/
 │   ├── package.json    # npm dependencies
 │   ├── wrangler.toml   # Cloudflare Worker config
@@ -159,6 +191,7 @@ ai-code-battle/
 │       ├── glicko2.test.ts # Rating system tests
 │       ├── jobs.ts         # Job coordination endpoints
 │       ├── bots.ts         # Bot management endpoints
+│       ├── export.ts       # Data export endpoint
 │       └── cron.ts         # Cron handlers
 ├── web/
 │   ├── package.json    # npm dependencies
