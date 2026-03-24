@@ -4168,3 +4168,475 @@ A small set of reusable components covers the entire site:
 Each component works at all breakpoints. The replay canvas adapts its
 render resolution to the container size. Tables collapse to cards on
 mobile. Graphs switch from detailed to sparkline on narrow screens.
+
+### 15.9 Replay Canvas Micro-Animations
+
+The replay renderer decouples **game tick rate** from **render frame rate**.
+Game state updates at the turn rate (2–32 ticks/second depending on speed
+setting). The Canvas renders at 60fps via `requestAnimationFrame`,
+interpolating positions and animation states between ticks. Bots slide
+smoothly between grid positions instead of teleporting.
+
+**Animation inventory:**
+
+| Event | Animation | Duration |
+|-------|-----------|----------|
+| Bot idle | Subtle 2% scale pulse, 2s cycle. Stops on movement. | Continuous |
+| Bot movement | 1-tile motion trail fading behind the bot, indicates direction of travel. At high speed, trails create visible flow patterns. | 150ms fade |
+| Combat threat | Thin dashed line between bots within attack range (red). Shows who threatens whom. | 1 turn |
+| Bot death | Burst of 6–8 particles scattering outward from death position, fading to transparent. | 400ms |
+| Energy collection | 4-line starburst radiating from the energy node + small "+1" text floating upward. | 200ms |
+| Core capture | Radial shockwave ring expanding from the core. Core color transitions from loser to capturer. | 500ms |
+| Bot spawn | New bot scales up from 0% to 100% with a soft glow matching the player color. | 200ms |
+
+**Particle system:**
+
+A pool of 100 reusable particle objects (prevents GC pressure). Each
+particle has: `x, y, vx, vy, alpha, lifetime`. On bot death, 6–8
+particles are activated with random velocities. Each frame updates
+position and fades alpha. When alpha reaches 0, the particle returns
+to the pool.
+
+```typescript
+interface Particle {
+  x: number; y: number
+  vx: number; vy: number
+  alpha: number
+  color: string
+  lifetime: number  // frames remaining
+}
+
+const POOL_SIZE = 100
+const pool: Particle[] = Array.from({ length: POOL_SIZE }, () => ({
+  x: 0, y: 0, vx: 0, vy: 0, alpha: 0, color: '', lifetime: 0
+}))
+```
+
+**Performance:** All animations are simple Canvas draw calls (arcs, lines,
+`globalAlpha` fades). With 50 bots and 20 active particles, frame time
+is <1ms on any modern device. The interpolation between ticks uses a
+simple lerp:
+
+```typescript
+// In render loop:
+const t = (now - lastTick) / tickInterval  // 0..1 between ticks
+for (const bot of bots) {
+  const renderX = bot.prevX + (bot.x - bot.prevX) * t
+  const renderY = bot.prevY + (bot.y - bot.prevY) * t
+  drawBot(renderX, renderY, bot.color, bot.shape)
+}
+```
+
+### 15.10 Adaptive Auto-Speed Playback (Director Mode)
+
+A playback mode where the replay automatically speeds through uneventful
+turns and slows for combat and critical moments.
+
+**Action density per turn:**
+
+```
+action_density(turn) = (
+    deaths × 3.0 +
+    captures × 5.0 +
+    energy_collected × 0.5 +
+    spawns × 1.0 +
+    abs(delta_win_prob) × 10.0
+)
+```
+
+**Speed mapping:**
+
+| Action Density | Speed | Effect |
+|---------------|-------|--------|
+| 0 (nothing) | 16× | Boring turns fly by |
+| 0.1–1.0 (minor) | 8× | Light scouting |
+| 1.0–3.0 (moderate) | 4× | Engagement starting |
+| 3.0–5.0 (significant) | 2× | Active combat |
+| 5.0+ (critical) | 1× | Dramatic slowdown |
+
+Speed transitions are eased over 0.5 seconds (not instant) — the viewer
+feels the tempo shift.
+
+**User controls:**
+
+- Activated via a "Director" option in the speed selector (alongside
+  manual 1×, 2×, 4×, 8×, 16×)
+- Speed indicator shows live: `▶ Director 8× → 2×` with smooth transition
+- Target duration slider: 30s / 1min / 2min / 5min — scales all speeds
+  proportionally to approximate the target total playback time
+- Manual scrubbing pauses Director Mode until the scrubber is released
+
+**Computation:** action density for all turns is pre-computed on replay
+load (single pass through the `turns` array, <1ms). A speed schedule
+array maps each turn to its target speed. During playback, the tick
+interval adjusts smoothly.
+
+### 15.11 Smooth View Mode Morphing
+
+Switching between dots, Voronoi territory, and influence gradient uses a
+300ms animated cross-fade morph instead of a hard cut.
+
+**Transition technique:**
+
+The renderer maintains two off-screen Canvas buffers — one for the current
+view mode's overlay, one for the target. During a transition, a blend
+parameter `t` eases from 0 to 1 over 300ms (`ease-in-out`).
+
+```typescript
+function renderOverlayTransition(ctx: CanvasRenderingContext2D, t: number) {
+  // Draw outgoing mode, fading out
+  ctx.globalAlpha = 1 - t
+  renderOverlay(currentMode)
+
+  // Draw incoming mode, fading in
+  ctx.globalAlpha = t
+  renderOverlay(targetMode)
+
+  // Bots always on top at full opacity
+  ctx.globalAlpha = 1
+  renderBots()
+}
+```
+
+**Mode-specific transitions:**
+
+- **Dots → Territory:** Color expands outward from each bot's position
+  to fill Voronoi cells — like paint spilling from unit positions
+- **Territory → Influence:** Sharp Voronoi borders soften and bleed into
+  gradients at contested zones
+- **Influence → Dots:** Colored overlay fades uniformly to transparent
+
+Cost: two overlay renders per frame during the 300ms transition (~18
+frames at 60fps). Each overlay is a single-pass pixel fill — no
+performance concern.
+
+### 15.12 "Follow Bot" Camera Mode
+
+Lock the viewport to track one player's units. The camera pans and zooms
+dynamically to keep the followed player's bots centered and visible.
+
+**Camera algorithm:**
+
+```
+Each frame:
+  1. Compute bounding box of tracked player's living bots
+  2. Add 8-tile margin on each side (reveals approaching enemies)
+  3. Lerp viewport center toward bounding box center (factor: 0.15)
+  4. Lerp zoom level to fit bounding box + margin (factor: 0.10)
+  5. Clamp: never zoom closer than 15×15 tiles, never wider than full grid
+```
+
+The slower lerp on zoom (0.10 vs 0.15) ensures zoom changes are gentler
+than panning — prevents disorientation from rapid zoom oscillation.
+
+**Split group handling:** if the tracked player's bots split into groups
+>20 tiles apart, the camera briefly zooms out to show both groups, then
+follows the larger group once they're too far apart to fit.
+
+**Activation:**
+
+- Click a player name/color in the score overlay
+- Press `1`–`6` to follow that player number
+- Press `0` or `Esc` to return to full-grid view
+- Mobile: tap a player's color swatch in the score header
+
+**Pairs with fog of war:** Follow mode + fog-of-war perspective on the
+followed player creates a first-person experience — you see what they
+see, the camera goes where they go. Enemies emerge from darkness at the
+edge of vision.
+
+### 15.13 Picture-in-Picture Replay
+
+Navigate away from a replay and it minimizes to a floating mini-player
+in the bottom corner. The replay keeps playing while you browse.
+
+**Behavior:**
+
+1. User is watching a replay on `/watch/replay/m_7f3a`
+2. User clicks a link to any other page
+3. SPA router's `beforeNavigate` hook detects the replay viewer is active
+4. Instead of unmounting, the Canvas element is reparented into a
+   fixed-position container:
+   ```css
+   .pip-container {
+     position: fixed;
+     bottom: 16px;
+     right: 16px;
+     width: 200px;
+     height: 200px;
+     z-index: 1000;
+     border-radius: 8px;
+     box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+     cursor: pointer;
+   }
+   ```
+5. Canvas continues rendering at 200×200 resolution. Same
+   `requestAnimationFrame` loop, same playback speed. Animations and
+   game state are uninterrupted.
+6. Mini-player shows: tiny canvas, current score, play/pause icon
+7. Click mini-player → navigates back to replay page at the current turn
+8. Click ✕ → closes the mini-player
+
+**Transitions:**
+
+- Minimize: canvas scales from full-size to 200×200 with `ease-out`
+  (300ms), sliding to bottom-right. Page content fades in underneath.
+- Expand: reverse. Uses CSS `transform: scale() translate()` with
+  `will-change: transform` for GPU-accelerated animation. Zero layout
+  reflows.
+
+Mobile: mini-player is 120×120, positioned above the bottom tab bar.
+
+### 15.14 Performance Trifecta
+
+Three techniques that together make the site feel like a native app.
+
+**1. Route preloading on hover:**
+
+When the user hovers a link for 100ms (desktop) or fires `touchstart`
+(mobile), fetch the target page's primary data file:
+
+```typescript
+function preloadOnHover(link: HTMLAnchorElement) {
+  let timer: number
+  link.addEventListener('mouseenter', () => {
+    timer = setTimeout(() => {
+      const dataUrl = routeToDataUrl(link.pathname)
+      if (dataUrl && !preloadCache.has(dataUrl)) {
+        preloadCache.add(dataUrl)
+        fetch(dataUrl)  // browser HTTP cache stores the response
+      }
+    }, 100)
+  })
+  link.addEventListener('mouseleave', () => clearTimeout(timer))
+}
+```
+
+By the time the user clicks, the data is already in the browser cache.
+
+**2. Skeleton screens:**
+
+Every page has a skeleton that exactly matches its content layout:
+
+- Leaderboard: rows of grey bars matching rank/name/rating column widths
+- Bot profile: grey circle (avatar area), bars for name/rating/stats
+- Replay page: grey rectangle (canvas area) + thin bar (scrubber)
+
+Skeletons use a shimmer animation: a light gradient (`linear-gradient`)
+sweeps left-to-right at 1.5s intervals. Skeleton → real content:
+`opacity` fade-in over 150ms, zero layout shift (skeleton and content
+occupy identical space).
+
+**3. Instant back navigation:**
+
+```typescript
+const routeCache = new Map<string, {
+  html: string,
+  scrollY: number,
+  data: any
+}>()
+
+// On navigate away:
+routeCache.set(currentPath, {
+  html: contentEl.innerHTML,
+  scrollY: window.scrollY,
+  data: currentPageData
+})
+
+// On back navigation:
+const cached = routeCache.get(targetPath)
+if (cached) {
+  contentEl.innerHTML = cached.html
+  window.scrollTo(0, cached.scrollY)
+  // Optionally: background-refresh stale data
+}
+```
+
+Cache holds the last 5 pages. Back navigation is 0ms.
+
+**Combined result:**
+
+| Navigation | Time |
+|-----------|------|
+| Forward (hovered) | 0ms — data preloaded |
+| Forward (not hovered) | 200ms skeleton → 300ms data |
+| Back | 0ms — cached |
+| First visit | 200ms skeleton → 500ms data |
+
+### 15.15 Progressive Disclosure
+
+The replay viewer reveals features gradually based on user engagement.
+
+**Experience tracking:**
+
+```typescript
+// localStorage
+let viewerXP = parseInt(localStorage.getItem('viewer_xp') || '0')
+
+// Increment when user watches a replay for >30 seconds
+if (watchDuration > 30_000) {
+  viewerXP++
+  localStorage.setItem('viewer_xp', String(viewerXP))
+}
+```
+
+**Feature revelation schedule:**
+
+| XP Level | Controls Visible | New This Level |
+|----------|-----------------|----------------|
+| 0 | Play/pause, speed, scrubber | — (first visit overlay: "Space = play/pause, ←/→ = step, 1-5 = speed") |
+| 2 | + Event timeline | "New: Event Timeline — key moments at a glance" |
+| 5 | + View mode toggle, critical moment nav | "New: Territory View — see who controls the map" |
+| 10 | + Follow mode, fog perspective, clip export | "New: Follow a bot — camera tracks one player" |
+| 20 | + Debug telemetry, annotations, Director Mode | All controls visible |
+
+**Revelation animation:** new controls slide in from below (200ms
+`ease-out`) with a brief golden border pulse and a tooltip that fades
+after 3 seconds.
+
+**Manual override:** ☰ menu → "Show all controls" reveals everything
+immediately. Power users are never gated.
+
+### 15.16 Swipe-Through Playlists (Mobile)
+
+On mobile, playlists become full-screen, auto-playing cards. Swipe up
+to advance.
+
+**Layout per card:**
+
+```
+┌────────────────────┐
+│  Closest Finishes   │  ← playlist name (sticky, translucent)
+│  3 of 12            │
+├────────────────────┤
+│                    │
+│  [Replay Canvas]   │  ← full-width, auto-plays in Director Mode
+│                    │
+├────────────────────┤
+│ SwarmBot 3-2 Hunt  │  ← compact score bar
+│ ⚔️💎🏰  ~45s left  │  ← event icons + estimated remaining time
+├────────────────────┤
+│  ↑ swipe for next  │  ← hint (fades after first swipe)
+└────────────────────┘
+```
+
+**Gestures:**
+
+| Gesture | Action |
+|---------|--------|
+| Swipe up | Cross-fade to next replay (300ms transition) |
+| Swipe down | Go back to previous replay |
+| Tap canvas | Play/pause |
+| Tap score bar | Expand win probability graph + commentary |
+| Swipe right / tap ✕ | Exit playlist mode |
+
+**Auto-advance:** when a replay ends, pause 3 seconds showing final
+score with a countdown ring animation, then advance to next replay. Tap
+to cancel.
+
+**Preloading:** while the current replay plays, the next replay in the
+playlist is fetched in the background. Swipe transitions are instant.
+
+### 15.17 Theater Mode
+
+Fullscreen, chrome-free replay viewing.
+
+**Desktop:** press `F` or click the fullscreen icon.
+
+```
+┌──────────────────────────────────────────────────────┐
+│                                                       │
+│                                                       │
+│           [Full-screen Canvas at native res]           │
+│          Vignette effect at edges (subtle)             │
+│                                                       │
+│                                                       │
+├───────────────────────────────────────────────────────┤
+│ ▶ Director  SwarmBot 3 · HunterBot 1   Turn 203/500 │  ← semi-transparent,
+│ ··⚔️··💎··🏰⚔️··💎···⚔️💀··🏰🌟··                    │    fades after 3s
+└───────────────────────────────────────────────────────┘
+```
+
+- Background: pure black
+- Controls bar: semi-transparent, auto-hides after 3 seconds of
+  inactivity. Mouse move / tap to reveal.
+- Win probability: two thin colored bars at the top edge of the screen
+  (proportional width, no chart — ambient information)
+- Critical moment vignette pulse: edges darken briefly when win
+  probability shifts >15%, creating a cinematic "something happened" cue
+
+**Mobile:** triggered by rotating to landscape on a replay page. Same
+layout. Touch controls:
+
+| Gesture | Action |
+|---------|--------|
+| Tap | Play/pause |
+| Swipe left/right | Step turns |
+| Pinch | Zoom |
+| Two-finger tap | Cycle view mode |
+| Swipe up from bottom | Reveal controls bar |
+
+Exit: `Esc` (desktop) or rotate to portrait (mobile).
+
+### 15.18 Ambient Activity Awareness
+
+Subtle, non-intrusive signals that keep users aware of platform activity.
+
+**Favicon badge:**
+
+Dynamic favicon updated via Canvas + `<link rel="icon">` swap:
+
+| State | Favicon | Trigger |
+|-------|---------|---------|
+| Normal | ⚔️ | Default |
+| Match result | ⚔️🔴 | Your bot finished a match (detected via R2 poll) |
+| Prediction resolved | ⚔️🟡 | A prediction you made was resolved |
+| Season event | ⚔️🟢 | Championship bracket update, season milestone |
+
+Badge clears when the user focuses the tab.
+
+**Tab title updates:**
+
+```
+Default:         "AI Code Battle"
+Unread result:   "(1) AI Code Battle"
+Bot won:         "✓ SwarmBot won! — AI Code Battle"
+Prediction:      "You were right! — AI Code Battle"
+```
+
+Resets on `document.visibilitychange` → visible.
+
+**Mobile haptic:**
+
+Brief 50ms vibration pulse at each critical moment during replay
+playback (opt-in toggle in viewer controls):
+
+```typescript
+if ('vibrate' in navigator && prefs.haptic) {
+  navigator.vibrate(50)
+}
+```
+
+**Seasonal background color shift:**
+
+The page background subtly shifts hue per season. Not a different color —
+a subtle tint on the base dark grey:
+
+| Season | Base `#1a1a2e` Shifts To | Mood |
+|--------|--------------------------|------|
+| The Labyrinth | `#1e1a2e` (hint of purple) | Mysterious |
+| Energy Rush | `#1a2e1e` (hint of green) | Abundant |
+| Fog of War | `#1a1a3e` (cooler blue) | Uncertain |
+| The Colosseum | `#2e1a1a` (hint of red) | Aggressive |
+
+Most users won't consciously notice. The platform just *feels* different
+each season.
+
+**Live match counter (homepage):**
+
+```
+⚔️ 1,847 matches today · 23 bots active · Gen #852 evolving
+```
+
+Updated every 30 seconds from `evolution/live.json`. Shows the platform
+is alive.
