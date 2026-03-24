@@ -439,10 +439,26 @@ they are destroyed or the match ends.
 ## 5. Strategy Bots
 
 Six built-in strategy bots serve as reference implementations and permanent
-ladder opponents. Each is deployed as its own container running a lightweight
-HTTP server.
+ladder opponents. Each is implemented in a **different programming language**
+to demonstrate that the HTTP protocol is truly language-agnostic and to
+provide starter code for participants across the most popular ecosystems.
 
-### 5.1 RandomBot
+Each bot is deployed as its own container running a lightweight HTTP server.
+
+| Bot | Language | Complexity | Expected Rank |
+|-----|----------|------------|---------------|
+| RandomBot | Python | Trivial | 6th (floor) |
+| GathererBot | Go | Low | 4th–5th |
+| RusherBot | Rust | Low | 4th–5th |
+| GuardianBot | PHP | Medium | 3rd–4th |
+| SwarmBot | TypeScript | Medium | 1st–2nd |
+| HunterBot | Java | High | 1st–2nd |
+
+### 5.1 RandomBot — Python
+
+**Language rationale:** Python is the most accessible language for newcomers.
+The random bot doubles as the simplest possible starter template — a
+participant can fork it and have a working bot in minutes.
 
 **Strategy:** Makes uniformly random valid moves each turn.
 
@@ -454,7 +470,14 @@ HTTP server.
 **Value:** Ensures new participants have an easy opponent to test against.
 Rating floor anchor.
 
-### 5.2 GathererBot
+**Implementation:** Flask or bare `http.server`. ~50 lines of strategy code.
+HMAC verification via `hmac` stdlib module.
+
+### 5.2 GathererBot — Go
+
+**Language rationale:** Go is the same language as the game engine and
+platform services, making this the canonical "how to build a bot" reference.
+Demonstrates idiomatic Go HTTP server patterns.
 
 **Strategy:** Maximize energy collection, avoid combat entirely.
 
@@ -468,7 +491,14 @@ Rating floor anchor.
 **Value:** Tests whether aggressive bots can actually close games or whether
 passive resource hoarding is dominant (it shouldn't be).
 
-### 5.3 RusherBot
+**Implementation:** `net/http` stdlib server. Shared `game/` package with
+grid utilities, BFS, and distance calculations that participants can reuse.
+
+### 5.3 RusherBot — Rust
+
+**Language rationale:** Rust participants get maximum compute within the
+3-second timeout. This bot demonstrates that Rust's performance advantage
+matters less than strategy — a dumb fast bot still loses to a smart slow one.
 
 **Strategy:** Identify and rush the nearest enemy core as fast as possible.
 
@@ -484,7 +514,16 @@ passive resource hoarding is dominant (it shouldn't be).
 system allows pure aggression to dominate (it shouldn't — rusher bots will
 walk into defensive formations and die).
 
-### 5.4 GuardianBot
+**Implementation:** `axum` or `actix-web`. Serde for JSON. HMAC via `hmac`
+and `sha2` crates. Demonstrates Rust's zero-copy deserialization.
+
+### 5.4 GuardianBot — PHP
+
+**Language rationale:** PHP is often overlooked in competitive programming
+but is widely known and trivially deployable. This demonstrates that even
+PHP — without async, without frameworks — can compete on equal footing
+when the interface is HTTP. Lowers the barrier for the large PHP developer
+community.
 
 **Strategy:** Defend own core, gather nearby energy, cautious expansion.
 
@@ -500,7 +539,16 @@ walk into defensive formations and die).
 **Value:** Tests whether turtling is viable. Should beat rushers but lose to
 gatherers/swarms in the long game (inferior economy due to limited territory).
 
-### 5.5 SwarmBot
+**Implementation:** PHP built-in server (`php -S`) with a single router
+script. `hash_hmac()` for HMAC. JSON via `json_decode`/`json_encode`.
+BFS implemented with `SplQueue`.
+
+### 5.5 SwarmBot — TypeScript
+
+**Language rationale:** TypeScript (Node.js) is the most popular language
+for web developers entering the platform. This bot demonstrates maintaining
+complex state across turns — the swarm's formation tracking, rally points,
+and center-of-mass calculation benefit from TypeScript's type system.
 
 **Strategy:** Keep units in tight formations, advance as a group toward enemies.
 
@@ -517,7 +565,16 @@ gatherers/swarms in the long game (inferior economy due to limited territory).
 enemies. But slow expansion means inferior economy. Should dominate combat
 but can be outscored by gatherers on large maps.
 
-### 5.6 HunterBot
+**Implementation:** Express.js or Fastify. State persisted in-process across
+turns (the HTTP server stays alive between requests). HMAC via Node.js
+`crypto` module. Typed interfaces for game state and moves.
+
+### 5.6 HunterBot — Java
+
+**Language rationale:** Java is dominant in competitive programming (Battlecode
+is Java-only). This is the most sophisticated strategy bot, demonstrating
+that Java's verbosity is offset by mature data structures (`PriorityQueue`,
+`HashMap`) and predictable GC behavior within the timeout window.
 
 **Strategy:** Target isolated enemy bots for efficient kills.
 
@@ -526,42 +583,140 @@ but can be outscored by gatherers on large maps.
   (isolated targets)
 - Send pairs of bots to intercept isolated enemies (2v1 wins cleanly)
 - If no isolated targets, default to gatherer behavior
-- Maintain a map of known enemy positions, predict movement
+- Maintain a map of known enemy positions across turns, predict movement
+  based on last-seen direction and speed
 - Avoid engaging formations of 3+ enemy bots
+- Opportunistic energy collection when not actively hunting
 
 **Value:** Sophisticated target selection and prediction. Represents an
-intermediate-skill bot. Should beat random/gatherer/rusher but struggle
-against swarm formations.
+intermediate-to-advanced-skill bot. Should beat random/gatherer/rusher but
+struggle against swarm formations.
 
-### 5.7 Container Template
+**Implementation:** Javalin or `com.sun.net.httpserver`. `javax.crypto.Mac`
+for HMAC. Maintains a `HashMap<Position, EnemyTracker>` across turns for
+movement prediction. Hungarian algorithm for optimal bot-to-target assignment.
 
-All strategy bots share a common container structure:
+### 5.7 Container Templates
 
+Each language has its own container structure. All share the same contract:
+listen on port 8080, serve `POST /turn` and `GET /health`.
+
+**Go (GathererBot):**
 ```
-strategy-{name}/
+strategy-gatherer/
 ├── Dockerfile
-├── main.go                  # HTTP server, HMAC verification, JSON parsing
-├── strategy.go              # Strategy-specific logic
+├── main.go                  # HTTP server, HMAC verification
+├── strategy.go              # Gatherer-specific logic
 ├── game/
-│   ├── state.go             # Game state types (deserialized from engine JSON)
+│   ├── state.go             # Game state types
 │   ├── grid.go              # Grid utilities (BFS, distance, wrapping)
-│   └── moves.go             # Move types (serialized to engine JSON)
+│   └── moves.go             # Move response types
 └── go.mod
 ```
 
-**Base HTTP server (shared across all bots):**
-- Listens on port 8080
+**Python (RandomBot):**
+```
+strategy-random/
+├── Dockerfile
+├── main.py                  # HTTP server, HMAC verification, strategy
+├── game.py                  # Game state types and grid utilities
+└── requirements.txt         # (minimal — stdlib only for random bot)
+```
+
+**Rust (RusherBot):**
+```
+strategy-rusher/
+├── Dockerfile
+├── Cargo.toml
+└── src/
+    ├── main.rs              # HTTP server, HMAC verification
+    ├── strategy.rs          # Rusher-specific logic
+    └── game.rs              # Game state types, grid utilities
+```
+
+**PHP (GuardianBot):**
+```
+strategy-guardian/
+├── Dockerfile
+├── index.php                # Router + HMAC verification
+├── strategy.php             # Guardian-specific logic
+├── game.php                 # Game state types, BFS, grid utilities
+└── composer.json             # (optional — no external deps needed)
+```
+
+**TypeScript (SwarmBot):**
+```
+strategy-swarm/
+├── Dockerfile
+├── package.json
+├── tsconfig.json
+└── src/
+    ├── index.ts             # HTTP server, HMAC verification
+    ├── strategy.ts          # Swarm-specific logic
+    └── game.ts              # Game state types, grid utilities
+```
+
+**Java (HunterBot):**
+```
+strategy-hunter/
+├── Dockerfile
+├── pom.xml
+└── src/main/java/com/acb/hunter/
+    ├── App.java             # HTTP server, HMAC verification
+    ├── Strategy.java        # Hunter-specific logic
+    ├── GameState.java       # Game state deserialization
+    └── Grid.java            # Grid utilities, BFS, distance
+```
+
+**Shared contract (all languages):**
+- Listen on port 8080
 - `POST /turn` — receives game state, runs strategy, returns moves
 - `GET /health` — returns 200 (used for registration health check)
 - HMAC signature verification on incoming requests
 - HMAC signature on outgoing responses
 - Request logging (turn number, compute time, move count)
 
-**Container spec:**
-- Base image: `golang:1.24-alpine` (build) → `alpine:3.21` (runtime)
-- Memory limit: 128MB
-- CPU limit: 0.25 cores
-- These are intentionally constrained — strategy bots should be lightweight
+**Container specs:**
+
+| Bot | Build Image | Runtime Image | Memory Limit | CPU Limit |
+|-----|-------------|---------------|-------------|-----------|
+| RandomBot | `python:3.13-slim` | `python:3.13-slim` | 64MB | 0.1 cores |
+| GathererBot | `golang:1.24-alpine` | `alpine:3.21` | 128MB | 0.25 cores |
+| RusherBot | `rust:1.85-alpine` | `alpine:3.21` | 128MB | 0.25 cores |
+| GuardianBot | `php:8.4-cli-alpine` | `php:8.4-cli-alpine` | 128MB | 0.25 cores |
+| SwarmBot | `node:22-alpine` | `node:22-alpine` | 128MB | 0.25 cores |
+| HunterBot | `eclipse-temurin:21-alpine` | `eclipse-temurin:21-jre-alpine` | 256MB | 0.5 cores |
+
+Java gets a higher resource allocation due to JVM overhead. All others are
+intentionally constrained — strategy bots should be lightweight.
+
+### 5.8 Starter Kit & SDK Libraries
+
+To lower the barrier for participants writing their own bots, the platform
+provides **starter kits** for each supported language. Each starter kit is a
+minimal, forkable repository containing:
+
+- A working HTTP server with HMAC verification already implemented
+- Type definitions for the game state and move schemas
+- Grid utility functions (toroidal distance, BFS, neighbor enumeration)
+- A stub strategy function that holds all bots in place (participant fills in)
+- A Dockerfile that builds and runs the bot
+- A README with quickstart instructions
+
+**Starter kit languages (matching strategy bots):**
+
+| Kit | Repository | Notes |
+|-----|-----------|-------|
+| `acb-starter-python` | Template repo | Flask-based, ~100 lines total |
+| `acb-starter-go` | Template repo | Shares `game/` package with GathererBot |
+| `acb-starter-rust` | Template repo | `axum` + `serde`, strongly typed |
+| `acb-starter-php` | Template repo | Zero dependencies, built-in server |
+| `acb-starter-typescript` | Template repo | Fastify, full type definitions |
+| `acb-starter-java` | Template repo | Javalin, Maven-based |
+
+Participants are not limited to these languages. Any language that can serve
+HTTP and compute HMAC-SHA256 can compete. The starter kits simply eliminate
+boilerplate for the most common choices.
 
 ---
 
@@ -827,12 +982,12 @@ Bots automatically return to `ACTIVE` when health checks resume passing.
 | `acb-worker` | Go binary on Alpine | Match execution worker | 3–10 (spot) |
 | `acb-scheduler` | Go binary on Alpine | Tournament matchmaking | 1 (always-on) |
 | `acb-web` | Nginx + static files | Frontend SPA | 1 (or CDN) |
-| `acb-strategy-random` | Go on Alpine | RandomBot | 1 |
+| `acb-strategy-random` | Python 3.13 slim | RandomBot | 1 |
 | `acb-strategy-gatherer` | Go on Alpine | GathererBot | 1 |
-| `acb-strategy-rusher` | Go on Alpine | RusherBot | 1 |
-| `acb-strategy-guardian` | Go on Alpine | GuardianBot | 1 |
-| `acb-strategy-swarm` | Go on Alpine | SwarmBot | 1 |
-| `acb-strategy-hunter` | Go on Alpine | HunterBot | 1 |
+| `acb-strategy-rusher` | Rust on Alpine | RusherBot | 1 |
+| `acb-strategy-guardian` | PHP 8.4 CLI Alpine | GuardianBot | 1 |
+| `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | 1 |
+| `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | 1 |
 
 ### 9.2 Rackspace Spot Deployment
 
@@ -849,7 +1004,8 @@ for spot instances**:
 
 **Instance sizing:**
 - Match workers: 2 vCPU, 4 GB RAM per instance (each runs one match at a time)
-- Strategy bots: can share a single small instance (all 6 use <256MB total)
+- Strategy bots: can share a single small instance (all 6 use <1GB total;
+  Java's JVM is the biggest consumer at ~256MB)
 - API server + scheduler: 2 vCPU, 4 GB RAM, always-on (not spot)
 
 **Deployment layout:**
@@ -957,13 +1113,18 @@ and produce a valid replay file.
 
 **Deliverables:**
 - HTTP bot interface in the engine (replaces stdin/stdout for production)
-- HMAC signing and verification library
-- Strategy bot container template (shared HTTP server + game state types)
-- All 6 strategy bots implemented and containerized
-- Integration test: engine runs a full match between two containerized bots
+- HMAC signing and verification library (Go, reusable by GathererBot)
+- GathererBot (Go) and RandomBot (Python) — validate the protocol works
+  across languages before building the remaining four
+- RusherBot (Rust), GuardianBot (PHP), SwarmBot (TypeScript), HunterBot (Java)
+- All 6 bots containerized with language-appropriate Dockerfiles
+- Starter kit template repos for each language (fork-ready)
+- Integration test: engine runs a full match between bots in different
+  languages over HTTP
 
 **Exit criteria:** can run a complete match between any two strategy bot
-containers over HTTP, with HMAC authentication, producing a valid replay.
+containers (in different languages) over HTTP, with HMAC authentication,
+producing a valid replay.
 
 ### Phase 3: Replay Viewer
 
