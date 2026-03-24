@@ -66,9 +66,54 @@ export default {
     };
 
     try {
-      // Health check
+      // Health check (liveness probe - always returns 200 if process is running)
       if (path === '/health' || path === '/api/health') {
-        return json({ success: true, data: { status: 'healthy' } });
+        return json({
+          success: true,
+          data: {
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      // Readiness check (checks if service can handle requests)
+      if (path === '/ready' || path === '/api/ready') {
+        try {
+          // Test database connectivity
+          const dbResult = await env.DB.prepare('SELECT 1 as ok').first();
+          const dbHealthy = dbResult?.ok === 1;
+
+          if (!dbHealthy) {
+            return json({
+              success: false,
+              data: {
+                status: 'not_ready',
+                database: 'error',
+                timestamp: new Date().toISOString(),
+              },
+            }, 503);
+          }
+
+          return json({
+            success: true,
+            data: {
+              status: 'ready',
+              database: 'connected',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        } catch (error) {
+          return json({
+            success: false,
+            data: {
+              status: 'not_ready',
+              database: 'error',
+              error: String(error),
+              timestamp: new Date().toISOString(),
+            },
+          }, 503);
+        }
       }
 
       // ============ Job Endpoints (require API key) ============

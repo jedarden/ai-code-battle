@@ -133,6 +133,44 @@ wrangler pages deploy dist --project-name=aicodebattle
 
 ## Monitoring
 
+### Health Endpoints
+
+The Worker API provides two health endpoints for monitoring:
+
+- **Liveness**: `GET /health` or `GET /api/health`
+  - Returns 200 if the worker process is running
+  - Use for Kubernetes liveness probes
+
+- **Readiness**: `GET /ready` or `GET /api/ready`
+  - Returns 200 if database is connected and ready
+  - Returns 503 if database is unavailable
+  - Use for Kubernetes readiness probes
+
+Example responses:
+
+```json
+// GET /health
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "timestamp": "2024-01-15T10:30:00.000Z"
+  }
+}
+
+// GET /ready (when healthy)
+{
+  "success": true,
+  "data": {
+    "status": "ready",
+    "database": "connected",
+    "timestamp": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+### Cloudflare Monitoring
+
 - Cloudflare Analytics: Available in Cloudflare dashboard
 - Worker Logs: `wrangler tail`
 - Container Logs: `docker-compose logs -f`

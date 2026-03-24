@@ -25,20 +25,23 @@
   - Cloudflare setup instructions
   - Container deployment commands
   - Troubleshooting guide
-
-### Remaining Phase 6 Work
-
-- [ ] Cloudflare Pages project creation and deployment
 - [x] D1 database schema and migrations
   - Complete schema.sql with all tables from plan
   - Added: predictions, predictor_stats, map_votes, replay_feedback, series, series_games, seasons
   - Added evolution fields to bots table (evolved, island, generation, parent_ids)
   - Created migrations/0001_initial.sql for D1 migrations
   - Updated wrangler.toml with migrations_dir config
+- [x] Monitoring endpoints
+  - `/health` - Liveness probe (always returns 200)
+  - `/ready` - Readiness probe (checks database connectivity, returns 503 if unavailable)
+  - Documented in DEPLOYMENT.md
+
+### Remaining Phase 6 Work (requires Cloudflare account access)
+
+- [ ] Cloudflare Pages project creation and deployment
 - [ ] R2 bucket creation and custom domain
-- [ ] Worker API deployment via Wrangler
+- [ ] Worker API deployment via Wrangler (`wrangler deploy`)
 - [ ] DNS configuration
-- [ ] Monitoring setup
 
 ### Phase 5 Completed ✅
 
