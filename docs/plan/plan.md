@@ -51,7 +51,7 @@ Nginx PV (/usr/share/nginx/html):
 ├── docs/                  (protocol spec, replay format, data paths, guides)
 ├── img/                   (logos, icons, UI assets)
 ├── embed.html             (lightweight embeddable replay player)
-├── data/                  (pre-computed JSON indexes, rebuilt by CronJob)
+├── data/                  (pre-computed JSON indexes, rebuilt by Deployment)
 │   ├── leaderboard.json
 │   ├── bots/
 │   │   ├── index.json
@@ -99,7 +99,7 @@ Nginx PV (/usr/share/nginx/html):
 // Everything served from the same origin via Nginx + Traefik ingress
 const BASE = 'https://aicodebattle.com'
 
-// Leaderboard page loads (pre-computed JSON, rebuilt by CronJob):
+// Leaderboard page loads (pre-computed JSON, rebuilt by Deployment):
 const lb = await fetch(`${BASE}/data/leaderboard.json`).then(r => r.json())
 
 // Replay viewer loads (written by match worker in real time):
@@ -111,13 +111,13 @@ const meta = await fetch(`${BASE}/matches/${matchId}.json`).then(r => r.json())
 // Evolution observatory live feed (updated by evolver):
 const live = await fetch(`${BASE}/evolution/live.json`).then(r => r.json())
 
-// Evolution lineage (rebuilt by CronJob):
+// Evolution lineage (rebuilt by Deployment):
 const lineage = await fetch(`${BASE}/data/evolution/lineage.json`).then(r => r.json())
 ```
 
 **Cache headers (set by Nginx configuration):**
 
-- `data/*.json` (index files): `Cache-Control: public, max-age=300` (5 min, rebuilt every ~15 min by CronJob)
+- `data/*.json` (index files): `Cache-Control: public, max-age=300` (5 min, rebuilt every ~15 min by Deployment)
 - `replays/*.json.gz`: `Cache-Control: public, max-age=31536000, immutable`
 - `evolution/live.json`: `Cache-Control: public, max-age=10`
 - `matches/*.json`: `Cache-Control: public, max-age=31536000, immutable`
@@ -174,7 +174,7 @@ never hit the cluster.
 │           │  └───────────────────────────────────────┘  │
 │           │                                             │
 │           │  ┌───────────────────────────────────────┐  │
-│           └──│  Index Builder (CronJob, every 15 min) │  │
+│           └──│  Index Builder (Deployment, every 15 min) │  │
 │              │  Reads PostgreSQL, writes JSON to PV   │  │
 │              └───────────────────────────────────────┘  │
 │                                                         │
@@ -196,7 +196,7 @@ never hit the cluster.
 | **Match Workers** | Deployment (ai-code-battle ns) | Stateless match execution — dequeue job from Valkey, read map from PV, run simulation, write replay to PV, record result in PostgreSQL. |
 | **Bot Containers** | Deployments + Services (ai-code-battle ns) | Strategy bots (x6) + evolved bots (0-50) — HTTP servers called by workers during matches via cluster-internal Service DNS. |
 | **Evolver** | Deployment (ai-code-battle ns) | Evolution pipeline — reads lineage/meta from PostgreSQL, generates candidates, writes `evolution/live.json` to PV. |
-| **Index Builder** | CronJob (ai-code-battle ns) | Runs every ~15 minutes. Reads match results from PostgreSQL, generates all pre-computed JSON index files, writes them to the Web Pod's PV (runs on the same node via `nodeAffinity`). |
+| **Index Builder** | Deployment (ai-code-battle ns) | Runs every ~15 minutes. Reads match results from PostgreSQL, generates all pre-computed JSON index files, writes them to the Web Pod's PV (runs on the same node via `nodeAffinity`). |
 | **Traefik** | Cluster ingress controller | Routes external HTTPS traffic to Nginx and the Go API via IngressRoute CRDs. TLS via cert-manager. |
 | **Cloudflare** | External (free plan) | DNS + CDN caching + DDoS protection. Reverse proxy only — no Cloudflare-specific services. |
 | **ArgoCD** | Cluster (argocd ns) | GitOps: syncs all K8s manifests from git. All deployments are declarative. |
@@ -1041,7 +1041,7 @@ data/blog/posts/{slug}.json          # individual blog posts
 2. Worker POSTs small result metadata to the Go API
    (`POST acb-api.ai-code-battle.svc:8080/api/jobs/{id}/result`)
 3. Go API writes match result to PostgreSQL, updates ratings
-4. Index builder CronJob (every ~15 min) reads new results from PostgreSQL,
+4. Index builder Deployment (every ~15 min) reads new results from PostgreSQL,
    rebuilds all index JSON files (`data/leaderboard.json`,
    `data/bots/*.json`, `data/matches/index.json`, playlists, series,
    seasons, blog), and writes them to the shared PV
@@ -1050,14 +1050,14 @@ data/blog/posts/{slug}.json          # individual blog posts
 **Retention and pruning:**
 - Match metadata in PostgreSQL is retained indefinitely (rows are small)
 - Replays on the PV are pruned on an age basis: replays older than 90 days
-  are deleted by a weekly replay pruner CronJob
+  are deleted by the index builder's weekly pruning cycle
 - **Exemptions from pruning:** replays referenced by playlists ("Closest
   Finishes", "Biggest Upsets", etc.), rivalry pages, series, or season
   archives are exempt. The pruning job checks the exemption list from
   PostgreSQL before deleting.
 - At 60 matches/hour x 24h x 90 days = ~130,000 replay files at steady
   state. At ~50 KB average per gzipped replay, that's ~6.5 GB.
-- The pruning CronJob runs weekly: scans `replays/` on the PV for files
+- The pruning Deployment runs weekly: scans `replays/` on the PV for files
   older than 90 days, queries PostgreSQL for exempt match IDs, deletes
   non-exempt replays
 - Index files are append-with-rotation: `index.json` holds the last 1000;
@@ -1130,7 +1130,7 @@ index JSON, maps, thumbnails) live on a shared **SATA (Cinder CSI) PersistentVol
 
 The website is a static SPA served by an Nginx Deployment. Nginx serves both
 the application code and pre-computed JSON index files from a shared SATA (Cinder CSI)
-PV. Index files are rebuilt every ~15 minutes by an index builder CronJob
+PV. Index files are rebuilt every ~15 minutes by an index builder Deployment
 that writes directly to the PV. Replays and per-match data are also served
 from the same PV.
 
@@ -1158,7 +1158,7 @@ const replay = await fetch(`/replays/${matchId}.json.gz`)
 ```
 
 Index JSON files are rebuilt and written to the PV every ~15 minutes by
-the index builder CronJob. Visitors see index data that is at most ~15
+the index builder Deployment. Visitors see index data that is at most ~15
 minutes old. Replays and per-match metadata are written to the PV in real
 time by match workers.
 
@@ -1186,7 +1186,7 @@ POST /api/jobs/{id}/result  → worker submits match result metadata (authentica
 | Health checker | Every 15 min | Pings each active bot's `/health` endpoint via cluster-internal Service DNS, updates status in PostgreSQL |
 | Stale job reaper | Every 5 min | Marks jobs running >15 min as abandoned, re-enqueues in Valkey |
 
-Index building runs as a separate CronJob (see below) that reads directly
+Index building runs as a separate Deployment (see below) that reads directly
 from PostgreSQL and writes to the shared Nginx PV.
 
 **Match worker coordination:**
@@ -1368,37 +1368,49 @@ CREATE TABLE seasons (
 - Concurrent writes without locking issues
 - CNPG provides automatic backups, failover, and point-in-time recovery
 
-### 8.4 Index Builder (CronJob)
+### 8.4 Index Builder (Deployment)
 
-The index builder runs as a Kubernetes CronJob in the `ai-code-battle`
-namespace. It runs every 15 minutes and performs the following:
+The index builder runs as a Kubernetes **Deployment** in the `ai-code-battle`
+namespace. It is a long-running process with a **sleep loop**: run the index
+build, sleep 15 minutes, repeat. After a configurable lifetime (default: 4
+hours), the process exits cleanly and Kubernetes restarts it — preventing
+memory leaks and stale state.
+
+**Process lifecycle:**
+```
+start → build indexes → sleep 15m → build indexes → sleep 15m → ...
+                                                     → (after 4 hours) exit 0
+                                                     → K8s restarts pod
+```
+
+**Each cycle:**
 
 1. **Read:** Queries PostgreSQL directly (via the CNPG Service) for current
    match results, bot stats, ratings, series, seasons, predictions,
    playlists, community feedback, and evolution lineage data.
 2. **Generate:** Computes all pre-computed JSON index files:
-   - `leaderboard.json` -- sorted bot rankings with stats
-   - `bots/index.json` and `bots/{bot_id}.json` -- bot directory and profiles
-   - `matches/index.json` -- paginated match list (last 1000)
+   - `leaderboard.json` — sorted bot rankings with stats
+   - `bots/index.json` and `bots/{bot_id}.json` — bot directory and profiles
+   - `matches/index.json` — paginated match list (last 1000)
    - `series/index.json` and `series/{series_id}.json`
    - `seasons/index.json` and `seasons/{season_id}.json`
-   - `playlists/{slug}.json` -- auto-curated collections
+   - `playlists/{slug}.json` — auto-curated collections
    - `predictions/leaderboard.json` and `predictions/open.json`
    - `meta/archetypes.json` and `meta/rivalries.json`
    - `evolution/lineage.json` and `evolution/meta.json`
    - `blog/index.json` and `blog/posts/{slug}.json` (weekly blog generation)
 3. **Write:** Writes the generated JSON files to the shared SATA (Cinder CSI) PV
-   (mounted at the same path as the Nginx Deployment). Only the `data/`
+   (mounted at the same path as the Nginx container). Only the `data/`
    directory is updated; the SPA shell (HTML/JS/CSS/WASM) is untouched.
+4. **Prune:** On one cycle per week (checked via day-of-week), also runs
+   replay pruning — deletes replays older than 90 days from the PV,
+   exempting those referenced by playlists, rivalries, series, or season
+   archives.
 
-**Why a CronJob:** Running as a CronJob keeps the index builder stateless
-and decoupled from the API service. It reads directly from PostgreSQL
-(no API call overhead) and writes directly to the PV (no deploy pipeline).
-The 15-minute cycle keeps data fresh without excessive PV write churn.
-
-**Environment:** The CronJob Pod mounts the shared SATA (Cinder CSI) PV
-(`ReadWriteOnce` — CronJob runs on the same node via `nodeAffinity`) and has PostgreSQL credentials from a
-SealedSecret. No external API tokens needed — everything is cluster-internal.
+**Environment:** The Deployment Pod mounts the shared SATA (Cinder CSI) PV
+(`ReadWriteOnce` — runs on the same node as the Web Pod via `nodeAffinity`)
+and has PostgreSQL credentials from a SealedSecret. No external API tokens
+needed — everything is cluster-internal.
 
 ### 8.5 Bot Registration
 
@@ -1440,7 +1452,7 @@ Bots automatically return to `ACTIVE` when health checks pass again.
 ### 8.6 Leaderboard
 
 The leaderboard is a **JSON file** on the shared PV (`data/leaderboard.json`)
-rebuilt by the index builder CronJob every ~15 minutes.
+rebuilt by the index builder Deployment every ~15 minutes.
 
 ```json
 {
@@ -1561,7 +1573,7 @@ cluster-configuration/apexalgo-iad/ai-code-battle/
 │   └── acb-strategy-hunter.yaml
 ├── cronjobs/
 │   ├── index-builder.yaml
-│   └── replay-pruner.yaml
+│   # replay pruning handled by index-builder
 ├── ingress/
 │   ├── ingressroute-site.yaml       (aicodebattle.com -> nginx Service)
 │   └── ingressroute-api.yaml        (aicodebattle.com/api/* -> acb-api Service)
@@ -1583,8 +1595,7 @@ container registry (`forgejo.ardenone.com/ai-code-battle/<image>`).
 | `acb-api` | Go binary on Alpine | API + scheduling | Deployment (1 replica) |
 | `acb-worker` | Go binary on Alpine | Match execution | Deployment (2-10 replicas) |
 | `acb-evolver` | Go binary on Alpine | Evolution pipeline | Deployment (1 replica) |
-| `acb-index-builder` | Go binary on Alpine | Reads PostgreSQL, writes JSON to PV | CronJob (every 15 min) |
-| `acb-replay-pruner` | Go binary on Alpine | Weekly replay pruning on PV | CronJob (weekly) |
+| `acb-index-builder` | Go binary on Alpine | Reads PostgreSQL, writes JSON to PV, prunes old replays weekly | Deployment (sleep-loop, 15 min cycle, self-restarts every 4h) |
 | `acb-strategy-random` | Python 3.13 slim | RandomBot | Deployment (1 replica) |
 | `acb-strategy-gatherer` | Go on Alpine | GathererBot | Deployment (1 replica) |
 | `acb-strategy-rusher` | Rust on Alpine | RusherBot | Deployment (1 replica) |
@@ -1616,7 +1627,7 @@ Match workers coordinate via **Valkey** (job queue) and **PostgreSQL**
    `POST acb-api.ai-code-battle.svc:8080/api/jobs/{id}/result`
    - Small JSON body: scores, winner, turn count, condition
 8. Go API writes result to PostgreSQL, updates ratings (Glicko-2)
-9. Index builder CronJob (next ~15-min cycle) reads new results from
+9. Index builder Deployment (next ~15-min cycle) reads new results from
    PostgreSQL, rebuilds all index JSON files, writes to PV
 
 **Stale job recovery:**
@@ -2267,7 +2278,7 @@ ai-code-battle/
 │   ├── acb-worker/              # Container: match execution worker
 │   ├── acb-evolver/             # Container: LLM evolution pipeline
 │   ├── acb-index-builder/       # Container: PostgreSQL -> JSON -> PV
-│   └── acb-replay-pruner/       # Container: PV replay cleanup
+│   # replay pruning is handled by acb-index-builder (weekly cycle)
 │
 ├── cmd/acb-api/                 # Go API service (replaces Cloudflare Worker)
 │   ├── main.go                  # HTTP server + ticker scheduler
@@ -2417,8 +2428,7 @@ ai-code-battle/
 | `acb-api` | `cmd/acb-api/` | Go on Alpine | API + scheduling | Deployment (1 replica) |
 | `acb-worker` | `cmd/acb-worker/` | Go on Alpine | Match execution | Deployment (2-10 replicas) |
 | `acb-evolver` | `cmd/acb-evolver/` | Go on Alpine | LLM evolution pipeline | Deployment (1 replica, self-restarts every 4h) |
-| `acb-index-builder` | `cmd/acb-index-builder/` | Go on Alpine | PostgreSQL -> JSON -> PV | CronJob (every 15 min) |
-| `acb-replay-pruner` | `cmd/acb-replay-pruner/` | Go on Alpine | PV replay cleanup | CronJob (weekly) |
+| `acb-index-builder` | `cmd/acb-index-builder/` | Go on Alpine | PostgreSQL -> JSON -> PV + weekly replay pruning | Deployment (sleep-loop) |
 | `acb-strategy-random` | `bots/random/` | Python 3.13 slim | RandomBot | Deployment (1 replica) |
 | `acb-strategy-gatherer` | `bots/gatherer/` | Go on Alpine | GathererBot | Deployment (1 replica) |
 | `acb-strategy-rusher` | `bots/rusher/` | Rust on Alpine | RusherBot | Deployment (1 replica) |
@@ -2431,7 +2441,7 @@ ai-code-battle/
 
 | Resource | Source | Namespace |
 |----------|--------|-----------|
-| All Deployments, Services, CronJobs, PVCs, IngressRoutes, SealedSecrets | `cluster-configuration/apexalgo-iad/ai-code-battle/` | `ai-code-battle` |
+| All Deployments, Services, Deployments, PVCs, IngressRoutes, SealedSecrets | `cluster-configuration/apexalgo-iad/ai-code-battle/` | `ai-code-battle` |
 | ArgoCD Application | `cluster-configuration/apexalgo-iad/ai-code-battle/argocd-application.yaml` | `argocd` |
 | PostgreSQL database `acb` | Created in existing CNPG cluster `cnpg-apexalgo` | `cnpg` |
 
@@ -2490,7 +2500,7 @@ Source (git push to main)
     └──► PostgreSQL migrations
          └── Run via init container or migration Job on deploy
 
-Index builder CronJob (every ~15 min):
+Index builder Deployment (every ~15 min):
     │
     ├── Query PostgreSQL directly
     ├── Generate JSON index files
@@ -2574,7 +2584,7 @@ match with all visual elements rendering correctly.
   `rating_history` tables in the `acb` database
 - Go API internal tickers: matchmaker (1 min), health checker (15 min),
   stale job reaper (5 min)
-- Index builder CronJob: reads PostgreSQL directly, generates index JSON
+- Index builder Deployment: reads PostgreSQL directly, generates index JSON
   files, writes to shared SATA (Cinder CSI) PV every ~15 minutes
 - Match worker Deployment (`acb-worker`): dequeues jobs from Valkey, runs
   matches, writes replays to PV, POSTs results to Go API
@@ -2598,7 +2608,7 @@ System recovers from worker pod failure via the stale job reaper.
 - Traefik IngressRoutes for `aicodebattle.com` (Nginx) and
   `aicodebattle.com/api/*` (Go API)
 - cert-manager Certificate for TLS
-- Index builder CronJob writing leaderboard, bot profiles, playlists to PV;
+- Index builder Deployment writing leaderboard, bot profiles, playlists to PV;
   Nginx serves replays and per-match metadata from the same PV
 
 **Exit criteria:** a participant can register a bot via the web form, the
@@ -2609,7 +2619,7 @@ matches and watch replays -- all served from the apexalgo-iad cluster.
 
 **Deliverables:**
 - K8s manifests committed to `cluster-configuration/apexalgo-iad/ai-code-battle/`:
-  namespace, Deployments, Services, CronJobs, PVCs, IngressRoutes,
+  namespace, Deployments, Services, Deployments, PVCs, IngressRoutes,
   SealedSecrets, cert-manager Certificate
 - ArgoCD Application syncing the manifests directory
 - Argo Events sensor: GitHub webhook triggers on push to `ai-code-battle` repo
@@ -2682,7 +2692,7 @@ evolution pipeline.
 - Embeddable replay widget: `/embed/{match_id}` route on the static site, minimal
   Chrome, auto-play, ~50KB, Open Graph tags
 - Replay playlists: auto-curated collections rebuilt by index builder
-  CronJob, written to the Nginx PV, browsable on the static site
+  Deployment, written to the Nginx PV, browsable on the static site
 - Prediction system: PostgreSQL `predictions` table, Go API endpoints for
   submit + resolve, prediction leaderboard JSON written to PV
 - Map evolution pipeline: engagement scoring, breeding/mutation, symmetry
@@ -3040,7 +3050,7 @@ narrative-driven content.
 **Detection algorithm:**
 
 ```sql
--- Run by the index builder CronJob
+-- Run by the index builder Deployment
 SELECT
     a.bot_id AS bot_a,
     b.bot_id AS bot_b,
@@ -3136,7 +3146,7 @@ CREATE INDEX idx_feedback_match ON replay_feedback(match_id, turn);
 The evolution pipeline's prompt builder (§10.3) consumes community
 feedback as an additional signal:
 
-1. The index builder CronJob aggregates high-upvote feedback of type `idea`
+1. The index builder Deployment aggregates high-upvote feedback of type `idea`
    and `mistake` into `data/evolution/community_hints.json` (written to the Nginx PV)
 2. The evolver reads this file and includes the top-voted recent hints
    in the prompt:
@@ -3363,7 +3373,7 @@ no side panel, no fog-of-war toggle. Just the match playing.
   <meta property="og:image" content="https://aicodebattle.com/thumbnails/m_7f3a9b2c.png" />
   ```
 - Thumbnail: auto-generated PNG of the final turn state, created by the
-  index builder CronJob or pre-rendered by the match worker
+  index builder Deployment or pre-rendered by the match worker
 
 **Infrastructure impact:** embed loads are static Nginx requests (cached by
 Cloudflare at the edge). Negligible additional load.
@@ -3411,7 +3421,7 @@ rows (Netflix-style). Each card shows a thumbnail, player names, and score.
 Click opens the replay.
 
 **Infrastructure impact:** playlist JSONs are tiny (<50 KB each).
-They're rebuilt by the index builder CronJob and written to the Nginx PV --
+They're rebuilt by the index builder Deployment and written to the Nginx PV --
 just additional PostgreSQL queries within the existing index build cycle.
 
 ### 14.5 Prediction System
@@ -3439,7 +3449,7 @@ At ~60 matches/hour, roughly 5–10% are flagged — about 3–6 per hour.
    executing (typically 1–5 minutes)
 6. Match executes normally
 7. On result submission, Go API resolves predictions in PostgreSQL
-8. Index builder CronJob updates the prediction leaderboard JSON on the PV
+8. Index builder Deployment updates the prediction leaderboard JSON on the PV
    (next ~90-min deploy cycle)
 
 **PostgreSQL schema:** (see §8.3 for the consolidated schema)
@@ -3928,7 +3938,7 @@ character in a single shareable image.
 **Card generation:**
 
 The card is rendered as a PNG via OffscreenCanvas (in the browser on
-demand, or pre-rendered by the index builder CronJob for top-50 bots).
+demand, or pre-rendered by the index builder Deployment for top-50 bots).
 
 **Card content:**
 
@@ -4048,7 +4058,7 @@ posts) and renders them client-side with a Markdown renderer.
 
 **Generation pipeline:**
 
-1. The index builder CronJob runs a weekly blog generation pass (triggered
+1. The index builder Deployment runs a weekly blog generation pass (triggered
    when `dayOfWeek == Monday` during its regular cycle)
 2. Queries PostgreSQL directly for all data points above
 3. Template-fills the structured sections (strategy distribution, ratings,
@@ -4072,7 +4082,7 @@ auto-generated.
 
 All platform data is already pre-computed and stored as static JSON files
 on the shared Nginx PV. Index files are rebuilt every ~15 min by the index
-builder CronJob. Replays and per-match data are written in real time by
+builder Deployment. Replays and per-match data are written in real time by
 match workers. The "API" is simply **documented file paths** -- no dynamic
 endpoints, no query parameters, no rate limiting needed.
 
@@ -4081,7 +4091,7 @@ endpoints, no query parameters, no rate limiting needed.
 ```
 BASE = https://aicodebattle.com
 
---- Index files (updated every ~15 min by CronJob) ---
+--- Index files (updated every ~15 min by Deployment) ---
 
 Leaderboard:
   GET {BASE}/data/leaderboard.json
@@ -4160,7 +4170,7 @@ no rate limiting -- it's just static files served by Nginx.
 **Why static JSON, not a dynamic API:**
 
 All this data already exists as static files on the Nginx PV. The index
-builder CronJob already produces leaderboard.json, bot profiles, match
+builder Deployment already produces leaderboard.json, bot profiles, match
 indexes, playlists, etc. Adding a dynamic API layer would add complexity
 for data that's already pre-computed and publicly readable. Nginx serves
 static files efficiently, and Cloudflare caches them at the edge.
@@ -4425,7 +4435,7 @@ Each entry shows the candidate ID, island, result, and reason.
 
 Both visualizations are built from `data/evolution/lineage.json` and
 `data/evolution/meta.json` (served from Nginx, produced by the index builder
-CronJob). The live feed overlay is the only component that polls
+Deployment). The live feed overlay is the only component that polls
 `evolution/live.json` (written by the evolver, served by Nginx).
 
 ### 15.5 Narrative Engine (Chronicles)
