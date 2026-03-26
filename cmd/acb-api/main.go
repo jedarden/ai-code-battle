@@ -26,6 +26,8 @@ type Config struct {
 	ValkeyPassword   string
 	WorkerAPIKey     string // API key workers use to submit results
 	EncryptionKey    string // AES-256-GCM key for shared secret encryption
+	DiscordWebhook   string // Discord webhook URL for alerts
+	SlackWebhook     string // Slack webhook URL for alerts
 	MatchmakerSecs   int
 	HealthCheckSecs  int
 	ReaperSecs       int
@@ -42,6 +44,8 @@ func loadConfig() Config {
 		ValkeyPassword:  os.Getenv("ACB_VALKEY_PASSWORD"),
 		WorkerAPIKey:    os.Getenv("ACB_WORKER_API_KEY"),
 		EncryptionKey:   os.Getenv("ACB_ENCRYPTION_KEY"),
+		DiscordWebhook:  os.Getenv("ACB_DISCORD_WEBHOOK"),
+		SlackWebhook:    os.Getenv("ACB_SLACK_WEBHOOK"),
 		MatchmakerSecs:  envInt("ACB_MATCHMAKER_INTERVAL", 60),
 		HealthCheckSecs: envInt("ACB_HEALTHCHECK_INTERVAL", 900),
 		ReaperSecs:      envInt("ACB_REAPER_INTERVAL", 300),
@@ -71,9 +75,10 @@ func main() {
 	defer rdb.Close()
 
 	srv := &Server{
-		cfg: cfg,
-		db:  db,
-		rdb: rdb,
+		cfg:     cfg,
+		db:      db,
+		rdb:     rdb,
+		alerter: NewAlerter(cfg.DiscordWebhook, cfg.SlackWebhook),
 	}
 
 	mux := http.NewServeMux()

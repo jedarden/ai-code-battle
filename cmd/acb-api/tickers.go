@@ -220,6 +220,9 @@ func (s *Server) tickHealthChecker(ctx context.Context) {
 					`UPDATE bots SET status = 'active', consec_fails = 0, last_active = NOW()
 					 WHERE bot_id = $1`, bot.ID)
 				log.Printf("health-checker: %s recovered → active", bot.ID)
+				if bot.Status == "inactive" {
+					s.alerter.BotRecovered(ctx, bot.ID)
+				}
 			}
 		} else {
 			newFails := bot.ConsecFails + 1
@@ -232,6 +235,7 @@ func (s *Server) tickHealthChecker(ctx context.Context) {
 				newStatus, newFails, bot.ID)
 			if newStatus != bot.Status {
 				log.Printf("health-checker: %s marked inactive after %d failures", bot.ID, newFails)
+				s.alerter.BotMarkedInactive(ctx, bot.ID, newFails)
 			}
 		}
 	}
@@ -285,6 +289,7 @@ func (s *Server) tickStaleReaper(ctx context.Context) {
 
 	if len(staleJobs) > 0 {
 		log.Printf("stale-reaper: processed %d stale jobs", len(staleJobs))
+		s.alerter.StaleJobsReaped(ctx, staleJobs)
 	}
 }
 

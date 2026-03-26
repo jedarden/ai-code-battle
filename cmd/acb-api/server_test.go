@@ -18,6 +18,7 @@ func newTestServer() *Server {
 			BotTimeoutSecs: 5,
 			MaxConsecFails: 3,
 		},
+		alerter: NewAlerter("", ""),
 	}
 }
 
@@ -71,7 +72,7 @@ func TestAuthenticateWorker(t *testing.T) {
 }
 
 func TestAuthenticateWorker_NoKeyConfigured(t *testing.T) {
-	srv := &Server{cfg: Config{WorkerAPIKey: ""}}
+	srv := &Server{cfg: Config{WorkerAPIKey: ""}, alerter: NewAlerter("", "")}
 	req := httptest.NewRequest("GET", "/", nil)
 	if !srv.authenticateWorker(req) {
 		t.Error("with no key configured, all requests should be authenticated")

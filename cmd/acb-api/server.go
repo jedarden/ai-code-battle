@@ -9,9 +9,10 @@ import (
 )
 
 type Server struct {
-	cfg Config
-	db  *sql.DB
-	rdb *redis.Client
+	cfg     Config
+	db      *sql.DB
+	rdb     *redis.Client
+	alerter *Alerter
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {

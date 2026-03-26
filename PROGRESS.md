@@ -7,6 +7,22 @@
 **Last Updated: 2026-03-26**
 
 ### Recent Changes (2026-03-26)
+- Added Discord/Slack alerting webhooks to Go API server (`cmd/acb-api/alerts.go`):
+  - `Alerter` module sends notifications to Discord and/or Slack incoming webhook URLs
+  - Discord embeds with color-coded severity (blue=info, yellow=warning, red=error) + timestamps
+  - Slack attachments with color-coded severity + footer
+  - Rate limiting with per-key dedup cooldown (5 min default) to prevent alert storms
+  - Garbage collection of expired dedup entries
+  - Helper methods: `BotMarkedInactive`, `BotRecovered`, `StaleJobsReaped`, `MatchError`
+  - Integrated into health checker ticker (alerts on bot inactive/recovered transitions)
+  - Integrated into stale job reaper ticker (alerts when stale jobs re-enqueued)
+  - Config via `ACB_DISCORD_WEBHOOK` and `ACB_SLACK_WEBHOOK` env vars
+  - 15 unit tests: enabled detection, Discord/Slack payload format, color codes, rate limiting,
+    cooldown expiry, no-dedup bypass, webhook errors, both-webhook dispatch, helper methods, GC
+  - Updated `.env.example` with Go API and alerting webhook configuration
+  - All tests pass (45 API tests total, 15 new + 30 existing)
+
+### Previous Changes (2026-03-26)
 - Added Traefik IngressRoute, cert-manager Certificate, and CI/CD pipeline manifests (`deploy/k8s/`):
   - `ingress/acb-api-ingressroute.yaml` — Traefik IngressRoute for `api.aicodebattle.com`
     with CORS middleware (allow origins for aicodebattle.com), security headers, rate limiting (100 req/min burst 200)
@@ -175,6 +191,13 @@
   - `service-account.yaml` - CI ServiceAccount + RBAC (pods, workflows access)
   - DAG builds all 10 images in parallel: acb-api, acb-worker, acb-indexer, 6 strategy bots, plus site build
 - [x] Registry credentials SealedSecret template (`deploy/k8s/sealed-secrets/registry-credentials.yaml`)
+- [x] Discord/Slack alerting webhooks (`cmd/acb-api/alerts.go`)
+  - Alerter module with Discord embeds and Slack attachments
+  - Color-coded severity levels (info/warning/error)
+  - Per-key rate limiting with configurable cooldown
+  - Integrated into health checker and stale job reaper tickers
+  - Helper methods for common alert events
+  - 15 unit tests covering all functionality
 
 ### Remaining Phase 6 Work (requires Cloudflare account access)
 
