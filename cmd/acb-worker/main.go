@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -81,15 +82,32 @@ func main() {
 		r2Client = NewR2Client(cfg)
 	}
 
+	// Create metrics
+	metrics := NewMetrics(cfg.WorkerID)
+
 	// Create worker
 	worker := &Worker{
 		cfg:       cfg,
 		api:       apiClient,
 		r2:        r2Client,
+		metrics:   metrics,
 		logger:    log.New(os.Stdout, fmt.Sprintf("[worker-%s] ", cfg.WorkerID), log.LstdFlags),
 		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
 		heartbeat: *heartbeat,
 	}
+
+	// Start metrics HTTP server
+	metricsAddr := getEnv("ACB_METRICS_ADDR", ":9090")
+	metricsServer := &http.Server{
+		Addr:    metricsAddr,
+		Handler: metrics.Handler(),
+	}
+	go func() {
+		worker.logger.Printf("Metrics server listening on %s", metricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			worker.logger.Printf("Metrics server error: %v", err)
+		}
+	}()
 
 	// Set up signal handling
 	ctx, cancel := context.WithCancel(context.Background())
@@ -104,6 +122,11 @@ func main() {
 
 	// Run worker loop
 	worker.Run(ctx)
+
+	// Shut down metrics server gracefully
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	metricsServer.Shutdown(shutdownCtx)
 }
 
 // getEnv gets an environment variable with a default value.
@@ -124,6 +147,7 @@ type Worker struct {
 	cfg       *Config
 	api       *APIClient
 	r2        *R2Client
+	metrics   *Metrics
 	logger    *log.Logger
 	rng       *rand.Rand
 	heartbeat time.Duration
@@ -151,6 +175,8 @@ func (w *Worker) Run(ctx context.Context) {
 
 // pollAndExecute polls for a job and executes it if available.
 func (w *Worker) pollAndExecute(ctx context.Context) error {
+	w.metrics.RecordPollCycle()
+
 	// Get next pending job
 	job, err := w.api.GetNextJob(ctx)
 	if err != nil {
@@ -172,27 +198,36 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 		return fmt.Errorf("failed to claim job %s: %w", job.ID, err)
 	}
 
+	w.metrics.RecordJobClaimed()
 	w.logger.Printf("Claimed job %s, executing match...", job.ID)
 
 	// Execute the match
+	matchStart := time.Now()
 	result, replay, err := w.executeMatch(ctx, claimResp)
 	if err != nil {
+		w.metrics.RecordMatchError()
 		w.logger.Printf("Match execution failed: %v", err)
 		// Mark job as failed
 		if failErr := w.api.FailJob(ctx, job.ID, w.cfg.WorkerID, err.Error()); failErr != nil {
+			w.metrics.RecordJobFailed()
 			w.logger.Printf("Failed to mark job as failed: %v", failErr)
 		}
 		return err
 	}
+	w.metrics.RecordMatch(time.Since(matchStart))
 
 	// Upload replay to R2
 	replayURL := ""
 	if w.r2 != nil {
+		uploadStart := time.Now()
+		replayData, _ := json.Marshal(replay)
 		replayURL, err = w.uploadReplay(ctx, claimResp.Match.ID, replay)
 		if err != nil {
+			w.metrics.RecordReplayUploadError()
 			w.logger.Printf("Failed to upload replay: %v", err)
 			// Continue without replay URL - match result is more important
 		} else {
+			w.metrics.RecordReplayUpload(time.Since(uploadStart), len(replayData))
 			w.logger.Printf("Uploaded replay to %s", replayURL)
 		}
 	}
@@ -316,7 +351,10 @@ func (w *Worker) sendHeartbeats(ctx context.Context, jobID string) {
 			return
 		case <-ticker.C:
 			if err := w.api.Heartbeat(ctx, jobID, w.cfg.WorkerID); err != nil {
+				w.metrics.RecordHeartbeatError()
 				w.logger.Printf("Heartbeat failed: %v", err)
+			} else {
+				w.metrics.RecordHeartbeat()
 			}
 		}
 	}

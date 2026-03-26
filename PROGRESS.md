@@ -4,20 +4,25 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-24**
+**Last Updated: 2026-03-26**
 
-### Recent Changes (2026-03-24)
+### Recent Changes (2026-03-26)
+- Added Prometheus-compatible metrics endpoint to match worker (`cmd/acb-worker/metrics.go`)
+  - Counters: matches_total, match_errors_total, jobs_claimed/failed, replays_uploaded, poll_cycles, heartbeats
+  - Histograms: match_duration_seconds, replay_upload_duration_seconds, replay_size_bytes
+  - Worker info gauge with worker_id label
+  - `/health` and `/ready` endpoints on metrics HTTP server (default :9090)
+  - Configurable via `ACB_METRICS_ADDR` environment variable
+- Instrumented worker execution flow with metrics recording
+- Added comprehensive tests (`cmd/acb-worker/metrics_test.go`)
+  - Health/ready endpoint tests, counter accuracy, histogram bucket correctness
+  - Concurrency safety test (10 goroutines x 100 operations)
+- All tests pass (engine + worker)
+
+### Previous Changes (2026-03-24)
 - Added GitHub Actions CI workflow (`.github/workflows/ci.yml`)
-  - Runs Go engine tests with race detector
-  - Runs TypeScript tests for worker-api and indexer
-  - Builds web app and uploads artifacts
-  - Builds all Go CLI tools
 - Added `README.md` with project overview and quick start guide
-- Added `.gitignore` for proper repository hygiene
-- Added `package-lock.json` files for reproducible builds
-- Verified all tests pass (glicko2.test.ts, generator.test.ts)
-- Verified web build succeeds
-- Verified compiled binaries work (acb-local, acb-mapgen, acb-worker)
+- Added `.gitignore` and `package-lock.json` files
 
 ### Phase 6 Progress
 
@@ -50,6 +55,12 @@
   - `/health` - Liveness probe (always returns 200)
   - `/ready` - Readiness probe (checks database connectivity, returns 503 if unavailable)
   - Documented in DEPLOYMENT.md
+- [x] Prometheus metrics endpoint (`cmd/acb-worker/metrics.go`)
+  - Counters: matches, errors, jobs, replays, polls, heartbeats
+  - Histograms: match duration, replay upload duration, replay size
+  - Worker info gauge with labels
+  - Separate HTTP server on configurable port (default :9090)
+  - Integrated into worker execution flow with full instrumentation
 - [x] GitHub Actions CI workflow
   - `.github/workflows/ci.yml` for automated testing
   - Go tests with race detector
