@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acb-index-builder
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-index-builder
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: index-builder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acb-index-builder
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: acb-index-builder
+        app.kubernetes.io/part-of: ai-code-battle
+        app.kubernetes.io/component: index-builder
+    spec:
+      containers:
+        - name: index-builder
+          image: forgejo.ardenone.com/ai-code-battle/acb-index-builder:latest
+          env:
+            - name: API_URL
+              valueFrom:
+                secretKeyRef:
+                  name: acb-api-key
+                  key: api-endpoint
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-api-key
+                  key: api-key
+            - name: OUTPUT_DIR
+              value: "/app/data"
+            - name: DEPLOY_COMMAND
+              value: ""
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+      restartPolicy: Always

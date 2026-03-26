@@ -1,0 +1,18 @@
+# SealedSecret template — replace with actual sealed values via kubeseal
+# Source secret keys:
+#   api-endpoint: Worker API endpoint URL
+#   api-key: Worker API authentication key
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: acb-api-key
+  namespace: ai-code-battle
+spec:
+  encryptedData:
+    api-endpoint: REPLACE_WITH_SEALED_VALUE
+    api-key: REPLACE_WITH_SEALED_VALUE
+  template:
+    metadata:
+      name: acb-api-key
+      namespace: ai-code-battle
+    type: Opaque

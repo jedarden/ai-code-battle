@@ -1,0 +1,16 @@
+# SealedSecret template — replace with actual sealed values via kubeseal
+# Source secret keys:
+#   token: Cloudflare API token (for wrangler pages deploy by index builder)
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: acb-cloudflare-api-token
+  namespace: ai-code-battle
+spec:
+  encryptedData:
+    token: REPLACE_WITH_SEALED_VALUE
+  template:
+    metadata:
+      name: acb-cloudflare-api-token
+      namespace: ai-code-battle
+    type: Opaque

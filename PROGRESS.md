@@ -7,6 +7,18 @@
 **Last Updated: 2026-03-26**
 
 ### Recent Changes (2026-03-26)
+- Added Kubernetes manifests for GitOps deployment via ArgoCD (`deploy/k8s/`)
+  - Namespace, ArgoCD Application with auto-sync and self-heal
+  - Deployments: match worker (2 replicas), index builder, 6 strategy bots
+  - ClusterIP Services for all 6 bots (cluster DNS: `acb-strategy-*.ai-code-battle.svc:8080`)
+  - SealedSecret templates: API key, R2 credentials, bot HMAC secrets, Cloudflare API token
+  - All manifests validated (20 files, valid YAML with correct apiVersion/kind)
+  - Container images from `forgejo.ardenone.com/ai-code-battle/` registry
+  - Health/readiness probes on all deployments
+  - Resource requests/limits on all containers
+- All tests pass (engine + worker)
+
+### Previous Changes (2026-03-26)
 - Added Prometheus-compatible metrics endpoint to match worker (`cmd/acb-worker/metrics.go`)
   - Counters: matches_total, match_errors_total, jobs_claimed/failed, replays_uploaded, poll_cycles, heartbeats
   - Histograms: match_duration_seconds, replay_upload_duration_seconds, replay_size_bytes
@@ -67,6 +79,16 @@
   - TypeScript tests for worker-api and indexer
   - Web build verification
   - Go binary builds
+- [x] Kubernetes manifests for ArgoCD GitOps (`deploy/k8s/`)
+  - `namespace.yaml` - Dedicated `ai-code-battle` namespace
+  - `argocd-application.yaml` - Auto-sync with prune and self-heal
+  - `deployments/acb-worker.yaml` - Match worker (2 replicas, metrics on :9090)
+  - `deployments/acb-index-builder.yaml` - Index builder (1 replica, Recreate strategy)
+  - `deployments/acb-strategy-{random,gatherer,rusher,guardian,swarm,hunter}.yaml` - 6 strategy bots
+  - `services/acb-strategy-*.yaml` - ClusterIP services for bot DNS resolution
+  - `sealed-secrets/` - Templates for API key, R2 creds, bot secrets, Cloudflare token
+  - All containers from `forgejo.ardenone.com/ai-code-battle/` registry
+  - Health/readiness probes and resource limits on all deployments
 
 ### Remaining Phase 6 Work (requires Cloudflare account access)
 
@@ -222,6 +244,13 @@ ai-code-battle/
 │   ├── guardian/       # PHP - GuardianBot
 │   ├── swarm/          # TypeScript - SwarmBot
 │   └── hunter/         # Java - HunterBot
+├── deploy/
+│   └── k8s/               # Kubernetes manifests (ArgoCD GitOps)
+│       ├── namespace.yaml
+│       ├── argocd-application.yaml
+│       ├── deployments/   # Worker, index builder, 6 strategy bots
+│       ├── services/      # ClusterIP services for bots
+│       └── sealed-secrets/ # Secret templates
 └── docs/
     └── plan/
         └── plan.md     # Full implementation plan

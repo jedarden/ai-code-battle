@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acb-strategy-guardian
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-strategy-guardian
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acb-strategy-guardian
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: acb-strategy-guardian
+        app.kubernetes.io/part-of: ai-code-battle
+        app.kubernetes.io/component: strategy-bot
+    spec:
+      containers:
+        - name: guardian
+          image: forgejo.ardenone.com/ai-code-battle/acb-strategy-guardian:latest
+          env:
+            - name: BOT_PORT
+              value: "8080"
+            - name: BOT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: acb-bot-secrets
+                  key: guardian
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+      restartPolicy: Always
