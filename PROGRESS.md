@@ -7,6 +7,24 @@
 **Last Updated: 2026-03-26**
 
 ### Recent Changes (2026-03-26)
+- Built Go API server (`cmd/acb-api/`) — the K8s-native API service per plan architecture:
+  - HTTP server with graceful shutdown, configurable via environment variables
+  - PostgreSQL schema: `bots`, `matches`, `match_participants`, `jobs`, `rating_history` tables
+  - Health (`/health`) and readiness (`/ready`) endpoints checking PostgreSQL and Valkey
+  - Bot registration (`POST /api/register`) with health check, HMAC secret generation, AES-256-GCM encryption
+  - Key rotation (`POST /api/rotate-key`) with retire option
+  - Bot status (`GET /api/status/{bot_id}`) with conservative display rating
+  - Job claim (`POST /api/jobs/claim`) via Valkey BRPOP + PostgreSQL state update
+  - Job result submission (`POST /api/jobs/{job_id}/result`) with transaction, participant scores, Glicko-2 rating update
+  - Glicko-2 rating system in Go: multi-player pairwise adaptation, volatility update (Illinois algorithm)
+  - Background tickers: matchmaker (1 min), health checker (15 min), stale job reaper (5 min)
+  - Worker API key authentication (Bearer token or X-API-Key header)
+  - Dockerfile: multi-stage Go build, non-root user, Alpine runtime
+  - K8s deployment manifest + ClusterIP Service
+  - 30 unit tests: Glicko-2 (8 tests), crypto (5 tests), config (3 tests), server/handlers (14 tests)
+  - All tests pass (engine + worker + mapgen + api)
+
+### Previous Changes (2026-03-26)
 - Fixed math bug: replaced broken Taylor series sin/cos approximations with
   `math.Sin`/`math.Cos` in `engine/match.go` and `cmd/acb-mapgen/main.go`.
   The Taylor series produced incorrect results for angles > π, causing
@@ -105,12 +123,26 @@
   - TypeScript tests for worker-api and indexer
   - Web build verification
   - Go binary builds
+- [x] Go API server (`cmd/acb-api/`)
+  - HTTP server with graceful shutdown and env-var configuration
+  - PostgreSQL schema with all core tables (bots, matches, match_participants, jobs, rating_history)
+  - `/health` and `/ready` endpoints (PostgreSQL + Valkey connectivity)
+  - Bot registration, key rotation, status endpoints
+  - Job claim (Valkey BRPOP) and result submission with Glicko-2 rating update
+  - Glicko-2 rating system: multi-player pairwise, volatility (Illinois algorithm)
+  - Background tickers: matchmaker (1 min), health checker (15 min), stale job reaper (5 min)
+  - AES-256-GCM encryption for shared secrets at rest
+  - Worker API key authentication
+  - Dockerfile + K8s Deployment + Service manifests
+  - 30 unit tests covering all components
 - [x] Kubernetes manifests for ArgoCD GitOps (`deploy/k8s/`)
   - `namespace.yaml` - Dedicated `ai-code-battle` namespace
   - `argocd-application.yaml` - Auto-sync with prune and self-heal
+  - `deployments/acb-api.yaml` - Go API (2 replicas, :8080)
   - `deployments/acb-worker.yaml` - Match worker (2 replicas, metrics on :9090)
   - `deployments/acb-index-builder.yaml` - Index builder (1 replica, Recreate strategy)
   - `deployments/acb-strategy-{random,gatherer,rusher,guardian,swarm,hunter}.yaml` - 6 strategy bots
+  - `services/acb-api.yaml` - ClusterIP service for Go API
   - `services/acb-strategy-*.yaml` - ClusterIP services for bot DNS resolution
   - `sealed-secrets/` - Templates for API key, R2 creds, bot secrets, Cloudflare token
   - All containers from `forgejo.ardenone.com/ai-code-battle/` registry
@@ -203,6 +235,19 @@ ai-code-battle/
 │   ├── auth.go         # HMAC authentication
 │   └── *_test.go       # Test files
 ├── cmd/
+│   ├── acb-api/        # Go API server (K8s-native)
+│   │   ├── main.go      # Server entry point
+│   │   ├── server.go    # Route registration
+│   │   ├── config.go    # Environment configuration
+│   │   ├── db.go        # PostgreSQL schema
+│   │   ├── health.go    # Health/ready endpoints
+│   │   ├── register.go  # Bot registration, key rotation, status
+│   │   ├── jobs.go      # Job claim and result submission
+│   │   ├── glicko2.go   # Glicko-2 rating system
+│   │   ├── crypto.go    # ID generation, AES-256-GCM encryption
+│   │   ├── tickers.go   # Matchmaker, health checker, stale reaper
+│   │   ├── Dockerfile   # API container
+│   │   └── *_test.go    # Test files (30 tests)
 │   ├── acb-local/      # CLI match runner
 │   ├── acb-mapgen/     # Map generator
 │   ├── acb-worker/     # Match execution worker
