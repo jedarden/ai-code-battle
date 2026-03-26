@@ -391,6 +391,75 @@ func TestCheckWinConditionsDraw(t *testing.T) {
 	}
 }
 
+func TestCheckWinConditionsDominance(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+	p1 := gs.AddPlayer()
+
+	// Player 0 has 9 bots, player 1 has 1 bot = 90% dominance
+	for i := 0; i < 9; i++ {
+		gs.SpawnBot(p0.ID, Position{Row: i, Col: 0})
+	}
+	gs.SpawnBot(p1.ID, Position{Row: 15, Col: 15})
+
+	// Dominance requires 100 consecutive turns at >= 80%
+	// First 99 turns should not trigger
+	for i := 0; i < 99; i++ {
+		result := gs.checkWinConditions()
+		if result != nil && result.Reason == "dominance" {
+			t.Fatalf("dominance should not trigger at turn %d (only %d consecutive)", i, i+1)
+		}
+	}
+
+	// 100th check should trigger dominance
+	result := gs.checkWinConditions()
+	if result == nil {
+		t.Fatal("expected dominance win after 100 consecutive turns")
+	}
+	if result.Winner != p0.ID {
+		t.Errorf("winner = %d, want %d", result.Winner, p0.ID)
+	}
+	if result.Reason != "dominance" {
+		t.Errorf("reason = %s, want dominance", result.Reason)
+	}
+}
+
+func TestCheckWinConditionsDominanceReset(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+	p1 := gs.AddPlayer()
+
+	// Player 0 has 9 bots, player 1 has 1 = 90% dominance
+	bots0 := make([]*Bot, 9)
+	for i := 0; i < 9; i++ {
+		bots0[i] = gs.SpawnBot(p0.ID, Position{Row: i, Col: 0})
+	}
+	gs.SpawnBot(p1.ID, Position{Row: 15, Col: 15})
+
+	// Run 50 turns of dominance
+	for i := 0; i < 50; i++ {
+		result := gs.checkWinConditions()
+		if result != nil && result.Reason == "dominance" {
+			t.Fatalf("dominance should not trigger at %d turns", i+1)
+		}
+	}
+
+	// Break dominance by killing some p0 bots
+	for i := 0; i < 6; i++ {
+		gs.KillBot(bots0[i], "test")
+	}
+	// Now p0 has 3 bots, p1 has 1 = 75% (< 80%)
+
+	result := gs.checkWinConditions()
+	// Should not trigger dominance and counter should reset
+	if result != nil && result.Reason == "dominance" {
+		t.Error("dominance should not trigger when below 80%")
+	}
+	if gs.Dominance[p0.ID] != 0 {
+		t.Errorf("dominance counter should reset to 0, got %d", gs.Dominance[p0.ID])
+	}
+}
+
 func TestCheckWinConditionsTurns(t *testing.T) {
 	gs := newTestGameState()
 	p0 := gs.AddPlayer()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"time"
@@ -144,10 +145,10 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 
 	// Generate cores with rotational symmetry
 	for p := 0; p < numPlayers; p++ {
-		angle := float64(p) * 2.0 * 3.14159 / float64(numPlayers)
+		angle := float64(p) * 2.0 * math.Pi / float64(numPlayers)
 		radius := 0.35 // 35% from center
-		r := centerRow + int(float64(centerRow)*radius*cos(angle))
-		c := centerCol + int(float64(centerCol)*radius*sin(angle))
+		r := centerRow + int(float64(centerRow)*radius*math.Cos(angle))
+		c := centerCol + int(float64(centerCol)*radius*math.Sin(angle))
 		m.Cores = append(m.Cores, Core{
 			Position: wrap(r, c),
 			Owner:    p,
@@ -165,19 +166,19 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 
 	for i := 0; i < nodesPerSector; i++ {
 		for attempt := 0; attempt < 100; attempt++ {
-			angle := rng.Float64() * 2.0 * 3.14159 / float64(numPlayers)
+			angle := rng.Float64() * 2.0 * math.Pi / float64(numPlayers)
 			radius := 0.2 + rng.Float64()*0.5 // 20-70% from center
-			r := centerRow + int(float64(centerRow)*radius*cos(angle))
-			c := centerCol + int(float64(centerCol)*radius*sin(angle))
+			r := centerRow + int(float64(centerRow)*radius*math.Cos(angle))
+			c := centerCol + int(float64(centerCol)*radius*math.Sin(angle))
 			pos := wrap(r, c)
 
 			if !usedPositions[pos] {
 				usedPositions[pos] = true
 				// Mirror for all players
 				for p := 0; p < numPlayers; p++ {
-					rotAngle := angle + float64(p)*2.0*3.14159/float64(numPlayers)
-					rr := centerRow + int(float64(centerRow)*radius*cos(rotAngle))
-					rc := centerCol + int(float64(centerCol)*radius*sin(rotAngle))
+					rotAngle := angle + float64(p)*2.0*math.Pi/float64(numPlayers)
+					rr := centerRow + int(float64(centerRow)*radius*math.Cos(rotAngle))
+					rc := centerCol + int(float64(centerCol)*radius*math.Sin(rotAngle))
 					m.EnergyNodes = append(m.EnergyNodes, wrap(rr, rc))
 				}
 				break
@@ -185,59 +186,130 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 		}
 	}
 
-	// Generate walls with rotational symmetry
-	totalTiles := rows * cols
-	targetWalls := int(float64(totalTiles) * wallDensity)
-	wallsPerSector := targetWalls / numPlayers
+	// Generate walls using cellular automata for natural-looking structures.
+	// Algorithm: seed the full grid, run automata to form clusters,
+	// enforce rotational symmetry by copying sector 0 to all sectors,
+	// then thin to target density.
 
-	for i := 0; i < wallsPerSector; i++ {
-		for attempt := 0; attempt < 100; attempt++ {
-			angle := rng.Float64() * 2.0 * 3.14159 / float64(numPlayers)
-			radius := 0.1 + rng.Float64()*0.7 // 10-80% from center
-			r := centerRow + int(float64(centerRow)*radius*cos(angle))
-			c := centerCol + int(float64(centerCol)*radius*sin(angle))
-			pos := wrap(r, c)
-
-			if !usedPositions[pos] {
-				usedPositions[pos] = true
-				// Mirror for all players
-				for p := 0; p < numPlayers; p++ {
-					rotAngle := angle + float64(p)*2.0*3.14159/float64(numPlayers)
-					rr := centerRow + int(float64(centerRow)*radius*cos(rotAngle))
-					rc := centerCol + int(float64(centerCol)*radius*sin(rotAngle))
-					m.Walls = append(m.Walls, wrap(rr, rc))
-				}
-				break
+	// Build a set of protected positions (cores, energy nodes, and neighbors)
+	protected := make(map[Position]bool)
+	clearRadius := 3
+	for _, core := range m.Cores {
+		for dr := -clearRadius; dr <= clearRadius; dr++ {
+			for dc := -clearRadius; dc <= clearRadius; dc++ {
+				protected[wrap(core.Position.Row+dr, core.Position.Col+dc)] = true
+			}
+		}
+	}
+	for _, en := range m.EnergyNodes {
+		for dr := -1; dr <= 1; dr++ {
+			for dc := -1; dc <= 1; dc++ {
+				protected[wrap(en.Row+dr, en.Col+dc)] = true
 			}
 		}
 	}
 
+	// Step 1: Seed full grid at ~40% random fill
+	grid := make([][]bool, rows)
+	for r := 0; r < rows; r++ {
+		grid[r] = make([]bool, cols)
+		for c := 0; c < cols; c++ {
+			if !protected[Position{Row: r, Col: c}] && rng.Float64() < 0.40 {
+				grid[r][c] = true
+			}
+		}
+	}
+
+	// Step 2: Run cellular automata smoothing (4 iterations)
+	// Rule: birth at >= 5 wall neighbors, survive at >= 4
+	for iter := 0; iter < 4; iter++ {
+		newGrid := make([][]bool, rows)
+		for r := 0; r < rows; r++ {
+			newGrid[r] = make([]bool, cols)
+			for c := 0; c < cols; c++ {
+				if protected[Position{Row: r, Col: c}] {
+					continue
+				}
+				neighbors := 0
+				for ndr := -1; ndr <= 1; ndr++ {
+					for ndc := -1; ndc <= 1; ndc++ {
+						if ndr == 0 && ndc == 0 {
+							continue
+						}
+						nr := ((r + ndr) % rows + rows) % rows
+						nc := ((c + ndc) % cols + cols) % cols
+						if grid[nr][nc] {
+							neighbors++
+						}
+					}
+				}
+				if grid[r][c] {
+					newGrid[r][c] = neighbors >= 4
+				} else {
+					newGrid[r][c] = neighbors >= 5
+				}
+			}
+		}
+		grid = newGrid
+	}
+
+	// Step 3: Enforce rotational symmetry by reading from sector 0
+	sectorAngle := 2.0 * math.Pi / float64(numPlayers)
+	symGrid := make([][]bool, rows)
+	for r := 0; r < rows; r++ {
+		symGrid[r] = make([]bool, cols)
+		for c := 0; c < cols; c++ {
+			if protected[Position{Row: r, Col: c}] {
+				continue
+			}
+			// Find the canonical position in sector 0
+			dr := float64(r) - float64(centerRow)
+			dc := float64(c) - float64(centerCol)
+			angle := math.Atan2(dc, dr)
+			if angle < 0 {
+				angle += 2.0 * math.Pi
+			}
+			sector := int(angle / sectorAngle)
+			if sector >= numPlayers {
+				sector = numPlayers - 1
+			}
+
+			if sector == 0 {
+				symGrid[r][c] = grid[r][c]
+			} else {
+				// Rotate back to sector 0
+				rotAngle := -float64(sector) * sectorAngle
+				cosA := math.Cos(rotAngle)
+				sinA := math.Sin(rotAngle)
+				srcR := int(math.Round(float64(centerRow) + dr*cosA - dc*sinA))
+				srcC := int(math.Round(float64(centerCol) + dr*sinA + dc*cosA))
+				sr := ((srcR % rows) + rows) % rows
+				sc := ((srcC % cols) + cols) % cols
+				symGrid[r][c] = grid[sr][sc]
+			}
+		}
+	}
+
+	// Step 4: Thin to target density if needed
+	totalTiles := rows * cols
+	targetWalls := int(float64(totalTiles) * wallDensity)
+	var wallPositions []Position
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			if symGrid[r][c] {
+				wallPositions = append(wallPositions, Position{Row: r, Col: c})
+			}
+		}
+	}
+	if len(wallPositions) > targetWalls {
+		rng.Shuffle(len(wallPositions), func(i, j int) {
+			wallPositions[i], wallPositions[j] = wallPositions[j], wallPositions[i]
+		})
+		wallPositions = wallPositions[:targetWalls]
+	}
+
+	m.Walls = wallPositions
+
 	return m
 }
 
-// Simple trig functions without importing math
-func cos(x float64) float64 {
-	// Normalize to [0, 2π)
-	for x < 0 {
-		x += 2.0 * 3.14159
-	}
-	for x >= 2.0*3.14159 {
-		x -= 2.0 * 3.14159
-	}
-
-	// Taylor series approximation
-	return 1 - x*x/2 + x*x*x*x/24 - x*x*x*x*x*x/720
-}
-
-func sin(x float64) float64 {
-	// Normalize to [0, 2π)
-	for x < 0 {
-		x += 2.0 * 3.14159
-	}
-	for x >= 2.0*3.14159 {
-		x -= 2.0 * 3.14159
-	}
-
-	// Taylor series approximation
-	return x - x*x*x/6 + x*x*x*x*x/120
-}

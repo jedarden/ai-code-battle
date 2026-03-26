@@ -7,6 +7,32 @@
 **Last Updated: 2026-03-26**
 
 ### Recent Changes (2026-03-26)
+- Fixed math bug: replaced broken Taylor series sin/cos approximations with
+  `math.Sin`/`math.Cos` in `engine/match.go` and `cmd/acb-mapgen/main.go`.
+  The Taylor series produced incorrect results for angles > π, causing
+  incorrect core/energy/wall placement in 3+ player maps.
+- Replaced random wall scatter with cellular automata wall generation in
+  `cmd/acb-mapgen/main.go`:
+  - Seeds full grid at 40% density
+  - Runs 4 iterations of B5/S4 cellular automata smoothing
+  - Enforces rotational symmetry by mirroring sector 0
+  - Thins to target density
+  - Protected zones around cores (3-tile radius) and energy nodes
+  - Produces natural cave-like wall structures instead of scattered dots
+- Added comprehensive map generation tests (`cmd/acb-mapgen/mapgen_test.go`):
+  - Connectivity validation across all player counts and 10 seeds each
+  - Core count and ownership verification
+  - Energy node/wall non-overlap
+  - Wall density bounds checking
+  - Disconnected map detection (BFS validation)
+  - Small grid generation
+  - Determinism (same seed = same map)
+- Added dominance win condition tests (`engine/turn_test.go`):
+  - 100-turn consecutive dominance threshold verification
+  - Dominance counter reset when falling below 80%
+- All tests pass (engine + worker + mapgen)
+
+### Previous Changes (2026-03-26)
 - Added Kubernetes manifests for GitOps deployment via ArgoCD (`deploy/k8s/`)
   - Namespace, ArgoCD Application with auto-sync and self-heal
   - Deployments: match worker (2 replicas), index builder, 6 strategy bots

@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -230,9 +231,9 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 		// 120° rotational symmetry (equilateral triangle)
 		// Simplified: place at roughly equal angles
 		for i := 0; i < 3; i++ {
-			angle := float64(i) * 2.0 * 3.14159 / 3.0
-			row := centerRow + int(float64(centerRow/2)*0.8*(1.0+0.5*cos(angle)))
-			col := centerCol + int(float64(centerCol/2)*0.8*(1.0+0.5*sin(angle)))
+			angle := float64(i) * 2.0 * math.Pi / 3.0
+			row := centerRow + int(float64(centerRow/2)*0.8*(1.0+0.5*math.Cos(angle)))
+			col := centerCol + int(float64(centerCol/2)*0.8*(1.0+0.5*math.Sin(angle)))
 			pos := Position{Row: row, Col: col}
 			gs.AddCore(i, pos)
 			gs.SpawnBot(i, pos)
@@ -255,9 +256,9 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	default:
 		// Fallback: place cores in a circle
 		for i := 0; i < numPlayers; i++ {
-			angle := float64(i) * 2.0 * 3.14159 / float64(numPlayers)
-			row := centerRow + int(float64(centerRow/2)*0.7*cos(angle))
-			col := centerCol + int(float64(centerCol/2)*0.7*sin(angle))
+			angle := float64(i) * 2.0 * math.Pi / float64(numPlayers)
+			row := centerRow + int(float64(centerRow/2)*0.7*math.Cos(angle))
+			col := centerCol + int(float64(centerCol/2)*0.7*math.Sin(angle))
 			pos := Position{Row: row, Col: col}
 			gs.AddCore(i, pos)
 			gs.SpawnBot(i, pos)
@@ -282,14 +283,14 @@ func (mr *MatchRunner) placeEnergyNodes(gs *GameState, numPlayers int) {
 
 	for i := 0; i < nodesPerSector; i++ {
 		// Generate one position in the first sector
-		angle := mr.rng.Float64() * 2.0 * 3.14159 / float64(numPlayers)
+		angle := mr.rng.Float64() * 2.0 * math.Pi / float64(numPlayers)
 		radius := 0.3 + mr.rng.Float64()*0.4 // 30-70% of half-size
 
 		// Mirror for all players
 		for p := 0; p < numPlayers; p++ {
-			rotAngle := angle + float64(p)*2.0*3.14159/float64(numPlayers)
-			r := centerRow + int(float64(centerRow)*radius*cos(rotAngle))
-			c := centerCol + int(float64(centerCol)*radius*sin(rotAngle))
+			rotAngle := angle + float64(p)*2.0*math.Pi/float64(numPlayers)
+			r := centerRow + int(float64(centerRow)*radius*math.Cos(rotAngle))
+			c := centerCol + int(float64(centerCol)*radius*math.Sin(rotAngle))
 			gs.AddEnergyNode(Position{Row: r, Col: c})
 		}
 	}
@@ -307,19 +308,19 @@ func (mr *MatchRunner) placeWalls(gs *GameState, numPlayers int) {
 
 	for i := 0; i < wallsPerSector; i++ {
 		// Generate one position in the first sector
-		angle := mr.rng.Float64() * 2.0 * 3.14159 / float64(numPlayers)
+		angle := mr.rng.Float64() * 2.0 * math.Pi / float64(numPlayers)
 		radius := 0.1 + mr.rng.Float64()*0.8 // 10-90% of half-size
-		row := centerRow + int(float64(centerRow)*radius*cos(angle))
-		col := centerCol + int(float64(centerCol)*radius*sin(angle))
+		row := centerRow + int(float64(centerRow)*radius*math.Cos(angle))
+		col := centerCol + int(float64(centerCol)*radius*math.Sin(angle))
 
 		// Check it's not on a core or energy node
 		pos := Position{Row: row, Col: col}
 		if mr.isValidWallPosition(gs, pos) {
 			// Mirror for all players
 			for p := 0; p < numPlayers; p++ {
-				rotAngle := angle + float64(p)*2.0*3.14159/float64(numPlayers)
-				r := centerRow + int(float64(centerRow)*radius*cos(rotAngle))
-				c := centerCol + int(float64(centerCol)*radius*sin(rotAngle))
+				rotAngle := angle + float64(p)*2.0*math.Pi/float64(numPlayers)
+				r := centerRow + int(float64(centerRow)*radius*math.Cos(rotAngle))
+				c := centerCol + int(float64(centerCol)*radius*math.Sin(rotAngle))
 				mirrorPos := Position{Row: r, Col: c}
 				if mr.isValidWallPosition(gs, mirrorPos) {
 					gs.Grid.SetPos(mirrorPos, TileWall)
@@ -346,13 +347,3 @@ func (mr *MatchRunner) isValidWallPosition(gs *GameState, pos Position) bool {
 	return true
 }
 
-// cos and sin helpers (avoid importing math for simple cases)
-func cos(x float64) float64 {
-	// Simple approximation using Taylor series
-	return 1 - x*x/2 + x*x*x*x/24 - x*x*x*x*x*x/720
-}
-
-func sin(x float64) float64 {
-	// Simple approximation using Taylor series
-	return x - x*x*x/6 + x*x*x*x*x/120
-}
