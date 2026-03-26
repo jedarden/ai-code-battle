@@ -7,6 +7,21 @@
 **Last Updated: 2026-03-26**
 
 ### Recent Changes (2026-03-26)
+- Added Traefik IngressRoute, cert-manager Certificate, and CI/CD pipeline manifests (`deploy/k8s/`):
+  - `ingress/acb-api-ingressroute.yaml` — Traefik IngressRoute for `api.aicodebattle.com`
+    with CORS middleware (allow origins for aicodebattle.com), security headers, rate limiting (100 req/min burst 200)
+  - `ingress/acb-api-certificate.yaml` — cert-manager Certificate (Let's Encrypt prod, ECDSA P-256)
+  - `ci/event-source.yaml` — Argo Events webhook EventSource (port 12000)
+  - `ci/sensor.yaml` — Argo Events Sensor: triggers Argo Workflow on push to master
+    with DAG of parallel Kaniko builds for all 10 container images + site build
+  - `ci/workflow-template-build-image.yaml` — WorkflowTemplate: Kaniko build with layer caching
+  - `ci/workflow-template-build-site.yaml` — WorkflowTemplate: npm ci + build for web SPA
+  - `ci/service-account.yaml` — ServiceAccount + Role + RoleBinding for CI workflows
+  - `sealed-secrets/registry-credentials.yaml` — SealedSecret template for Forgejo registry auth
+  - All 30 K8s manifest files validated (valid YAML with correct apiVersion/kind)
+  - All tests pass (engine + worker + mapgen + api)
+
+### Previous Changes (2026-03-26)
 - Built Go API server (`cmd/acb-api/`) — the K8s-native API service per plan architecture:
   - HTTP server with graceful shutdown, configurable via environment variables
   - PostgreSQL schema: `bots`, `matches`, `match_participants`, `jobs`, `rating_history` tables
@@ -147,6 +162,19 @@
   - `sealed-secrets/` - Templates for API key, R2 creds, bot secrets, Cloudflare token
   - All containers from `forgejo.ardenone.com/ai-code-battle/` registry
   - Health/readiness probes and resource limits on all deployments
+- [x] Traefik IngressRoute + TLS (`deploy/k8s/ingress/`)
+  - `acb-api-ingressroute.yaml` - IngressRoute for `api.aicodebattle.com` (websecure entrypoint)
+  - CORS middleware: allow origins for aicodebattle.com, security headers (nosniff, DENY, strict-origin)
+  - Rate limiting middleware: 100 req/min, burst 200
+  - `acb-api-certificate.yaml` - cert-manager Certificate (Let's Encrypt prod, ECDSA P-256)
+- [x] Argo Events + Workflows CI/CD pipeline (`deploy/k8s/ci/`)
+  - `event-source.yaml` - Webhook EventSource (port 12000)
+  - `sensor.yaml` - Sensor triggers on master push, submits build-all DAG Workflow
+  - `workflow-template-build-image.yaml` - Kaniko build with layer caching for container images
+  - `workflow-template-build-site.yaml` - npm build for web SPA (outputs dist/ artifact)
+  - `service-account.yaml` - CI ServiceAccount + RBAC (pods, workflows access)
+  - DAG builds all 10 images in parallel: acb-api, acb-worker, acb-indexer, 6 strategy bots, plus site build
+- [x] Registry credentials SealedSecret template (`deploy/k8s/sealed-secrets/registry-credentials.yaml`)
 
 ### Remaining Phase 6 Work (requires Cloudflare account access)
 
@@ -321,6 +349,8 @@ ai-code-battle/
 │       ├── argocd-application.yaml
 │       ├── deployments/   # Worker, index builder, 6 strategy bots
 │       ├── services/      # ClusterIP services for bots
+│       ├── ingress/       # Traefik IngressRoute + cert-manager Certificate
+│       ├── ci/            # Argo Events + Workflows CI/CD pipeline
 │       └── sealed-secrets/ # Secret templates
 └── docs/
     └── plan/

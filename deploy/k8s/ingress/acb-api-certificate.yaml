@@ -1,0 +1,19 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: acb-api-tls
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-api
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: tls
+spec:
+  secretName: acb-api-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - api.aicodebattle.com
+  privateKey:
+    algorithm: ECDSA
+    size: 256

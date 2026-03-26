@@ -1,0 +1,64 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: acb-api
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-api
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: ingress
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`api.aicodebattle.com`)
+      kind: Rule
+      services:
+        - name: acb-api
+          port: 8080
+      middlewares:
+        - name: acb-api-headers
+        - name: acb-api-ratelimit
+  tls:
+    secretName: acb-api-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: acb-api-headers
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-api
+    app.kubernetes.io/part-of: ai-code-battle
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - OPTIONS
+    accessControlAllowOriginList:
+      - "https://aicodebattle.com"
+      - "https://www.aicodebattle.com"
+    accessControlAllowHeaders:
+      - Content-Type
+      - Authorization
+      - X-API-Key
+    accessControlMaxAge: 86400
+    customResponseHeaders:
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+      Referrer-Policy: strict-origin-when-cross-origin
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: acb-api-ratelimit
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-api
+    app.kubernetes.io/part-of: ai-code-battle
+spec:
+  rateLimit:
+    average: 100
+    burst: 200
+    period: 1m
