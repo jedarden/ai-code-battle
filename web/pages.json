@@ -15,7 +15,7 @@
   },
   "data_paths": {
     "pages_data": "https://aicodebattle.com/data",
-    "r2_data": "https://data.aicodebattle.com"
+    "r2_data": "https://r2.aicodebattle.com"
   },
   "deployment": {
     "method": "wrangler pages deploy",
