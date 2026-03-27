@@ -177,3 +177,106 @@ func (s *Store) TotalCount(ctx context.Context) (int, error) {
 	}
 	return n, nil
 }
+
+// SetBotID records the deployed bot_id for a promoted program.
+func (s *Store) SetBotID(ctx context.Context, id int64, botID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE programs SET bot_id = $1 WHERE id = $2`, botID, id)
+	if err != nil {
+		return fmt.Errorf("set bot_id for program %d: %w", id, err)
+	}
+	return nil
+}
+
+// PromotedProgram holds a promoted program linked to its live bot.
+type PromotedProgram struct {
+	ProgramID      int64
+	BotID          string
+	BotName        string // K8s/API name, e.g. "acb-evo-42"
+	BotSecret      string // plaintext secret stored for retirement operations
+	Island         string
+	BehaviorVector []float64
+	Fitness        float64
+}
+
+// ListPromoted returns all programs that have been promoted (bot_id is set).
+func (s *Store) ListPromoted(ctx context.Context) ([]*PromotedProgram, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, bot_id, COALESCE(bot_name, ''), COALESCE(bot_secret, ''),
+		       island, behavior_vector, fitness
+		FROM programs
+		WHERE promoted = TRUE AND bot_id IS NOT NULL
+		ORDER BY fitness DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list promoted programs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*PromotedProgram
+	for rows.Next() {
+		p := &PromotedProgram{}
+		if err := rows.Scan(&p.ProgramID, &p.BotID, &p.BotName, &p.BotSecret,
+			&p.Island, pq.Array(&p.BehaviorVector), &p.Fitness); err != nil {
+			return nil, fmt.Errorf("scan promoted program: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SetBotNameAndSecret records the K8s bot name and plaintext shared secret for
+// a promoted program.  These are stored so the retirement path can locate and
+// clean up the bot without requiring an extra API call.
+func (s *Store) SetBotNameAndSecret(ctx context.Context, id int64, botName, botSecret string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE programs SET bot_name = $1, bot_secret = $2 WHERE id = $3`,
+		botName, botSecret, id)
+	if err != nil {
+		return fmt.Errorf("set bot name/secret for program %d: %w", id, err)
+	}
+	return nil
+}
+
+// PromotedCount returns the number of currently promoted (deployed) programs.
+func (s *Store) PromotedCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM programs WHERE promoted = TRUE AND bot_id IS NOT NULL`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("promoted count: %w", err)
+	}
+	return n, nil
+}
+
+// UnsetPromoted clears the promoted flag and bot_id for a retired program.
+func (s *Store) UnsetPromoted(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE programs SET promoted = FALSE, bot_id = NULL WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("unset promoted for program %d: %w", id, err)
+	}
+	return nil
+}
+
+// GetByBotID returns the program associated with a deployed bot ID, or nil.
+func (s *Store) GetByBotID(ctx context.Context, botID string) (*Program, error) {
+	p := &Program{}
+	var parentJSON string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, code, language, island, generation, parent_ids,
+		       behavior_vector, fitness, promoted, created_at
+		FROM programs WHERE bot_id = $1`, botID).Scan(
+		&p.ID, &p.Code, &p.Language, &p.Island, &p.Generation,
+		&parentJSON, pq.Array(&p.BehaviorVector), &p.Fitness, &p.Promoted, &p.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get program by bot_id %s: %w", botID, err)
+	}
+	if err := json.Unmarshal([]byte(parentJSON), &p.ParentIDs); err != nil {
+		return nil, fmt.Errorf("unmarshal parent_ids: %w", err)
+	}
+	return p, nil
+}

@@ -7,6 +7,8 @@
 //	stats             Print program counts per island
 //	validate          Run the 3-stage validation pipeline on a bot source file
 //	validation-stats  Show per-island validation pass-rate metrics
+//	evaluate          Run the 10-match arena tournament and apply the promotion gate
+//	retire            Enforce retirement policy (rating threshold + population cap)
 package main
 
 import (
@@ -21,6 +23,9 @@ import (
 	_ "github.com/lib/pq"
 
 	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/arena"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/mapelites"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/promoter"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/validator"
 )
 
@@ -38,6 +43,16 @@ func main() {
 	ctx := context.Background()
 
 	switch os.Args[1] {
+	case "evaluate":
+		db := mustOpenDB(dbURL)
+		defer db.Close()
+		runEvaluate(ctx, db, os.Args[2:])
+
+	case "retire":
+		db := mustOpenDB(dbURL)
+		defer db.Close()
+		runRetire(ctx, db, os.Args[2:])
+
 	case "init-schema":
 		db := mustOpenDB(dbURL)
 		defer db.Close()
@@ -90,9 +105,256 @@ func main() {
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats>")
+		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats|evaluate|retire>")
 		os.Exit(1)
 	}
+}
+
+// runEvaluate runs the 10-match mini-tournament and applies the promotion gate.
+//
+//	evaluate -lang go -island alpha [-program-id 0] [-promote] [-nash 0.5] [-win-lower 0.4] [-nolog] <file>
+func runEvaluate(ctx context.Context, db *sql.DB, args []string) {
+	fs := flag.NewFlagSet("evaluate", flag.ExitOnError)
+	lang := fs.String("lang", "", "bot language (go|python|rust|typescript|java|php) [required]")
+	programID := fs.Int64("program-id", 0, "programs.id to update fitness after evaluation (0 = skip)")
+	doPromote := fs.Bool("promote", false, "promote the candidate if the gate passes")
+	nashThreshold := fs.Float64("nash", 0.50, "Nash value threshold for promotion")
+	winLower := fs.Float64("win-lower", 0.40, "Wilson CI lower-bound threshold (0 to disable)")
+	nolog := fs.Bool("nolog", false, "skip writing validation result to DB")
+
+	// Promoter flags (used only when -promote is set)
+	repoDir := fs.String("repo-dir", envOrDefault("ACB_REPO_DIR", "."), "git repo root for K8s manifests")
+	registry := fs.String("registry", envOrDefault("ACB_REGISTRY", "forgejo.ardenone.com/ai-code-battle"), "container registry")
+	kubectlServer := fs.String("kubectl-server", envOrDefault("ACB_KUBECTL_SERVER", "http://kubectl-ardenone-cluster:8001"), "kubectl API server URL")
+	encKey := fs.String("enc-key", os.Getenv("ACB_ENCRYPTION_KEY"), "AES-256-GCM encryption key (hex) for bots table")
+
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+	if *lang == "" {
+		fmt.Fprintln(os.Stderr, "evaluate: -lang is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "evaluate: file argument is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	code, err := os.ReadFile(fs.Arg(0))
+	if err != nil {
+		log.Fatalf("read file: %v", err)
+	}
+
+	store := evolverdb.NewStore(db)
+
+	// Pre-populate MAP-Elites grid from existing promoted programs so the gate
+	// can detect niche collisions against the current population.
+	const gridSize = 10
+	grid := mapelites.New(gridSize)
+	if promoted, err := store.ListPromoted(ctx); err == nil {
+		for _, pp := range promoted {
+			if len(pp.BehaviorVector) >= 2 {
+				grid.TryPlace(pp.ProgramID, pp.Fitness, pp.BehaviorVector[0], pp.BehaviorVector[1])
+			}
+		}
+	}
+
+	// Run the arena tournament.
+	arenaCfg := arena.DefaultConfig()
+	a := arena.New(db, arenaCfg)
+
+	fmt.Printf("evaluate: running %d-match tournament for %s bot…\n", arena.DefaultNumMatches, *lang)
+	result, err := a.Run(ctx, string(code), *lang)
+	if err != nil {
+		log.Fatalf("arena: %v", err)
+	}
+
+	// Print match summary.
+	total := result.Wins + result.Losses + result.Draws
+	fmt.Printf("\nTournament result: %d W / %d L / %d D / %d err  (total=%d)\n",
+		result.Wins, result.Losses, result.Draws, result.Errors, total)
+	wr := arena.ComputeFromResult(result)
+	fmt.Printf("Win rate: %.3f  (95%% CI %.3f–%.3f)\n", wr.Rate, wr.Lower, wr.Upper)
+
+	nash := arena.ComputeNash(result.WinRateVec)
+	fmt.Printf("Nash value (PSRO): %.3f  (opponent mix: %v)\n", nash.NashValue, nash.WinRatePerOpponent)
+
+	// Compute fitness as overall win rate.
+	fitness := wr.Rate
+
+	// Look up the program if -program-id was given.
+	var program *evolverdb.Program
+	if *programID > 0 {
+		program, err = store.Get(ctx, *programID)
+		if err != nil {
+			log.Fatalf("get program %d: %v", *programID, err)
+		}
+		if program == nil {
+			log.Fatalf("program %d not found", *programID)
+		}
+		// Update fitness in DB.
+		if !*nolog {
+			if err := store.UpdateFitness(ctx, *programID, fitness, program.BehaviorVector); err != nil {
+				log.Printf("warn: update fitness: %v", err)
+			} else {
+				fmt.Printf("Updated program %d fitness to %.3f\n", *programID, fitness)
+			}
+		}
+	}
+
+	// Apply the promotion gate.
+	gateCfg := arena.GateConfig{
+		NashThreshold:     *nashThreshold,
+		WinRateLowerBound: *winLower,
+	}
+	gate := arena.NewGate(gateCfg, grid)
+
+	var behaviorVec []float64
+	if program != nil {
+		behaviorVec = program.BehaviorVector
+	}
+	gateResult := gate.Evaluate(result, *programID, fitness, behaviorVec)
+
+	fmt.Printf("\nGate: %s\n", gateResult.Reason)
+	fmt.Printf("MAP-Elites: placed=%v improved=%v cell=[%d,%d]\n",
+		gateResult.MapElitesPlaced, gateResult.MapElitesImproved,
+		gateResult.Placement.X, gateResult.Placement.Y)
+
+	if !gateResult.Promoted {
+		fmt.Println("Decision: REJECTED")
+		return
+	}
+
+	fmt.Println("Decision: PROMOTED")
+
+	if !*doPromote {
+		fmt.Println("(pass -promote to execute deployment)")
+		return
+	}
+	if program == nil {
+		log.Fatalf("promote: -program-id is required when -promote is set")
+	}
+
+	promCfg := promoter.DefaultConfig()
+	promCfg.Registry = *registry
+	promCfg.RepoDir = *repoDir
+	promCfg.KubectlServer = *kubectlServer
+	promCfg.EncryptionKey = *encKey
+
+	p := promoter.New(store, db, promCfg)
+	res, err := p.Promote(ctx, program)
+	if err != nil {
+		log.Fatalf("promote: %v", err)
+	}
+	fmt.Printf("Promoted: bot_name=%s bot_id=%s endpoint=%s\n", res.BotName, res.BotID, res.Endpoint)
+}
+
+// runRetire enforces the retirement policy (rating threshold + population cap).
+//
+//	retire [-threshold 1000] [-cap 50] [-dry-run] [-kubectl-server URL]
+func runRetire(ctx context.Context, db *sql.DB, args []string) {
+	fs := flag.NewFlagSet("retire", flag.ExitOnError)
+	threshold := fs.Float64("threshold", 1000.0, "minimum display rating (mu-2*phi) to keep a bot")
+	cap := fs.Int("cap", 50, "maximum number of simultaneously promoted evolved bots")
+	dryRun := fs.Bool("dry-run", false, "print what would be retired without making changes")
+	repoDir := fs.String("repo-dir", envOrDefault("ACB_REPO_DIR", "."), "git repo root")
+	registry := fs.String("registry", envOrDefault("ACB_REGISTRY", "forgejo.ardenone.com/ai-code-battle"), "container registry")
+	kubectlServer := fs.String("kubectl-server", envOrDefault("ACB_KUBECTL_SERVER", "http://kubectl-ardenone-cluster:8001"), "kubectl API server URL")
+	encKey := fs.String("enc-key", os.Getenv("ACB_ENCRYPTION_KEY"), "AES-256-GCM encryption key (hex)")
+
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	store := evolverdb.NewStore(db)
+
+	promCfg := promoter.DefaultConfig()
+	promCfg.RatingThreshold = *threshold
+	promCfg.PopCap = *cap
+	promCfg.RepoDir = *repoDir
+	promCfg.Registry = *registry
+	promCfg.KubectlServer = *kubectlServer
+	promCfg.EncryptionKey = *encKey
+
+	if *dryRun {
+		// Simulate by temporarily setting an impossible cap to list candidates.
+		fmt.Println("retire: dry-run mode — no changes will be made")
+	}
+
+	p := promoter.New(store, db, promCfg)
+
+	if *dryRun {
+		// Read-only preview using the same DB query logic without executing retirements.
+		rows, err := db.QueryContext(ctx, `
+			SELECT p.id, p.bot_id, COALESCE(p.bot_name, ''),
+			       b.rating_mu - 2*b.rating_phi AS display_rating
+			FROM programs p
+			JOIN bots b ON p.bot_id = b.bot_id
+			WHERE p.promoted = TRUE AND p.bot_id IS NOT NULL
+			  AND b.status = 'active' AND b.owner = 'acb-evolver'
+			ORDER BY display_rating ASC`)
+		if err != nil {
+			log.Fatalf("query: %v", err)
+		}
+		defer rows.Close()
+		type row struct {
+			programID     int64
+			botID, botName string
+			displayRating float64
+		}
+		var bots []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.programID, &r.botID, &r.botName, &r.displayRating); err != nil {
+				log.Fatalf("scan: %v", err)
+			}
+			bots = append(bots, r)
+		}
+		_ = rows.Err()
+
+		remaining := len(bots)
+		fmt.Printf("Active evolved bots: %d  (threshold=%.0f cap=%d)\n", remaining, *threshold, *cap)
+		for _, b := range bots {
+			var why string
+			if b.displayRating < *threshold {
+				why = fmt.Sprintf("rating %.0f < threshold", b.displayRating)
+			} else if remaining > *cap {
+				why = "over cap"
+			}
+			mark := "  keep"
+			if why != "" {
+				mark = "  RETIRE"
+				remaining--
+			}
+			fmt.Printf("%s  bot_id=%-12s bot_name=%-20s rating=%.0f  %s\n",
+				mark, b.botID, b.botName, b.displayRating, why)
+		}
+		return
+	}
+
+	retired, err := p.EnforcePolicy(ctx)
+	if err != nil {
+		log.Fatalf("enforce policy: %v", err)
+	}
+
+	if len(retired) == 0 {
+		fmt.Println("retire: nothing to retire")
+		return
+	}
+	fmt.Printf("retire: retired %d bot(s):\n", len(retired))
+	for _, r := range retired {
+		fmt.Printf("  bot_id=%-12s bot_name=%-20s rating=%.0f  reason=%s\n",
+			r.BotID, r.BotName, r.DisplayRating, r.Reason)
+	}
+}
+
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 // runValidate parses flags, runs the three-stage validation pipeline on a bot
