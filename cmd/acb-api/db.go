@@ -66,6 +66,21 @@ CREATE TABLE IF NOT EXISTS rating_history (
     PRIMARY KEY (bot_id, match_id)
 );
 CREATE INDEX IF NOT EXISTS idx_rating_history_bot ON rating_history(bot_id, recorded_at);
+
+CREATE TABLE IF NOT EXISTS programs (
+    id              BIGSERIAL PRIMARY KEY,
+    code            TEXT NOT NULL,
+    language        VARCHAR(32) NOT NULL,
+    island          VARCHAR(16) NOT NULL,
+    generation      INTEGER NOT NULL DEFAULT 0,
+    parent_ids      JSONB NOT NULL DEFAULT '[]',
+    behavior_vector DOUBLE PRECISION[] NOT NULL DEFAULT '{}',
+    fitness         DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    promoted        BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_programs_island ON programs(island);
+CREATE INDEX IF NOT EXISTS idx_programs_island_fitness ON programs(island, fitness DESC);
 `
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {
