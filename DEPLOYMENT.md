@@ -8,24 +8,25 @@ The platform is split across two tiers:
 
 1. **Cloudflare (free tier)** - Web-facing infrastructure
    - Pages: SPA shell + pre-computed JSON index files
-   - Worker: API endpoints for registration, job coordination
-   - D1: SQLite database for bots, matches, ratings
-   - R2: Replays, match metadata, maps, thumbnails
+   - R2: Replays, match metadata, maps, thumbnails (custom domain: r2.aicodebattle.com)
 
-2. **Rackspace Spot** - Compute tier
-   - Match workers: Execute matches, upload replays to R2
+2. **Kubernetes (apexalgo-iad)** - Compute tier
+   - Matchmaker: Pairs bots, creates jobs in PostgreSQL
+   - Match workers: Execute matches, upload replays to B2
    - Bot containers: Run strategy bot HTTP servers
-   - Index builder: Generates JSON indexes, deploys to Pages
+   - Index builder: Generates JSON indexes, uploads to B2/Pages
+   - PostgreSQL: Bots, matches, ratings, job queue
+   - Traefik: Ingress for api.aicodebattle.com
 
 ## Prerequisites
 
 - Cloudflare account with:
-  - Pages project created
-  - Worker deployed
-  - D1 database created
-  - R2 bucket with custom domain configured
-- Rackspace Spot account or equivalent container hosting
-- Docker and docker-compose installed
+  - Pages project created (aicodebattle)
+  - R2 bucket with custom domain configured (r2.aicodebattle.com)
+- Kubernetes cluster with:
+  - PostgreSQL database
+  - Traefik ingress
+- Docker and docker-compose installed (for local development)
 
 ## Environment Setup
 
@@ -35,9 +36,8 @@ The platform is split across two tiers:
    ```
 
 2. Edit `.env` and fill in your values:
-   - `ACB_API_ENDPOINT`: Your Cloudflare Worker URL
-   - `ACB_API_KEY`: Worker API key
-   - `ACB_R2_*`: R2 credentials from Cloudflare dashboard
+   - `ACB_DATABASE_URL`: PostgreSQL connection URL
+   - `ACB_R2_*`: B2/R2 credentials for replay storage
    - `BOT_SECRET_*`: Generate unique secrets for each bot
 
 ## Deploying Strategy Bots
@@ -89,26 +89,29 @@ docker-compose -f docker-compose.workers.yml run indexer
 
 ## Cloudflare Configuration
 
-### Worker API
+### Pages Project
 
-Deploy the worker:
+Create the Pages project in Cloudflare dashboard:
+1. Go to Workers & Pages > Create application > Pages > Upload assets
+2. Project name: `aicodebattle`
+3. Upload the `web/dist/` directory
+
+Or use wrangler CLI:
 ```bash
-cd worker-api
+npm install -g wrangler
+wrangler login
+cd web
 npm install
-wrangler deploy
+npm run build
+wrangler pages deploy dist --project-name=aicodebattle
 ```
 
-### D1 Database
+### Custom Domain for Pages
 
-Create the database:
-```bash
-wrangler d1 create acb-db
-```
-
-Apply migrations (if any):
-```bash
-wrangler d1 execute acb-db --file=./schema.sql
-```
+Configure custom domain in Cloudflare dashboard:
+1. Go to your Pages project > Custom domains
+2. Add domain: `aicodebattle.com`
+3. DNS will be automatically configured
 
 ### R2 Bucket
 
@@ -118,77 +121,54 @@ wrangler r2 bucket create acb-data
 ```
 
 Configure custom domain in Cloudflare dashboard:
-- Domain: `data.aicodebattle.com`
-- Bucket: `acb-data`
+1. Go to R2 > acb-data > Settings > Custom Domains
+2. Add domain: `r2.aicodebattle.com`
 
-### Pages
+### DNS Configuration
 
-Deploy the web SPA:
-```bash
-cd web
-npm install
-npm run build
-wrangler pages deploy dist --project-name=aicodebattle
-```
+In Cloudflare DNS settings:
+- `aicodebattle.com` → CNAME to Pages (auto-configured when adding custom domain)
+- `api.aicodebattle.com` → A record pointing to Traefik LoadBalancer IP (proxied)
+- `r2.aicodebattle.com` → CNAME to R2 (auto-configured when adding custom domain)
 
 ## Monitoring
 
 ### Health Endpoints
 
-The Worker API provides two health endpoints for monitoring:
+The API server provides health endpoints for Kubernetes probes:
 
 - **Liveness**: `GET /health` or `GET /api/health`
-  - Returns 200 if the worker process is running
-  - Use for Kubernetes liveness probes
+  - Returns 200 if the process is running
 
 - **Readiness**: `GET /ready` or `GET /api/ready`
-  - Returns 200 if database is connected and ready
+  - Returns 200 if database is connected
   - Returns 503 if database is unavailable
-  - Use for Kubernetes readiness probes
 
-Example responses:
+### Kubernetes Monitoring
 
-```json
-// GET /health
-{
-  "success": true,
-  "data": {
-    "status": "healthy",
-    "timestamp": "2024-01-15T10:30:00.000Z"
-  }
-}
-
-// GET /ready (when healthy)
-{
-  "success": true,
-  "data": {
-    "status": "ready",
-    "database": "connected",
-    "timestamp": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
+- Use `kubectl --server=http://kubectl-apexalgo-iad:8001` for read-only cluster access
+- Check pod status: `kubectl get pods -n ai-code-battle`
+- View logs: `kubectl logs -n ai-code-battle deployment/acb-matchmaker`
 
 ### Cloudflare Monitoring
 
 - Cloudflare Analytics: Available in Cloudflare dashboard
-- Worker Logs: `wrangler tail`
-- Container Logs: `docker-compose logs -f`
+- Pages deployments: Workers & Pages > aicodebattle
 
 ## Troubleshooting
 
 ### Worker can't connect to API
 
-Check that `ACB_API_ENDPOINT` is correct and accessible from the worker container.
+Check that the API service is running and accessible via Traefik ingress at `api.aicodebattle.com`.
 
 ### Bot authentication failures
 
-Verify `BOT_SECRET_*` values match what's registered in the Worker API.
+Verify `BOT_SECRET_*` values match what's registered in the database.
 
-### R2 upload failures
+### B2/R2 upload failures
 
-Check R2 credentials and bucket permissions.
+Check B2/R2 credentials and bucket permissions.
 
 ### Index builder not deploying
 
-Ensure `DEPLOY_COMMAND` is set correctly and Cloudflare API token has Pages deploy permissions.
+Ensure `DEPLOY_COMMAND` is set correctly and credentials have upload permissions.
