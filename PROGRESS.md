@@ -1,12 +1,23 @@
 # AI Code Battle - Implementation Progress
 
-## Current Phase: Phase 6 - Deployment & Production
+## Current Phase: Phase 9 - Platform Depth
 
 **Status: 🔄 In Progress**
 
 **Last Updated: 2026-03-29**
 
 ### Recent Changes (2026-03-29)
+- **Phase 7-9 Implementation**: Committed extensive feature work spanning evolution,
+  enhanced features, and platform depth:
+  - Phase 7: Evolution live-export for dashboard JSON generation
+  - Phase 8: WASM game engine, in-browser sandbox, win probability, replay commentary,
+    clip maker, rivalry detection, replay feedback system
+  - Phase 9: Predictions API, series management, seasons, narrative generator
+- **Updated .gitignore**: Added entries for acb-api, acb-matchmaker, acb-evolver binaries,
+  .beads/ directory, and .needle.yaml
+- All tests pass (engine + cmd packages)
+
+### Previous Changes (2026-03-29)
 - **Architecture Conformance Fix**: Separated matchmaker from acb-api into acb-matchmaker
   per plan §12 Phase 4:
   - Plan specifies "Matchmaker Deployment (`acb-matchmaker`): internal tickers for pairing
@@ -270,6 +281,64 @@
 - [x] R2 bucket custom domain documentation
   - Documented in `web/pages.json` data_paths section
 
+### Phase 7 Completed ✅
+
+- [x] Evolution pipeline (`cmd/acb-evolver/`)
+  - Programs database with island model (4 islands)
+  - MAP-Elites behavior grid integration
+  - Validation pipeline: syntax → schema → sandbox smoke test
+  - Evaluation arena: 10-match mini-tournament
+  - Promotion gate: Nash equilibrium computation + MAP-Elites niche fill
+  - Retirement policy: auto-retire low-rated evolved bots
+  - Live export: generates live.json for dashboard
+- [x] LLM integration (`cmd/acb-evolver/internal/llm/`)
+  - Prompt builder for parent sampling and replay analysis
+  - Ensemble support (fast + strong model tiers)
+- [x] Selector and prompt modules for evolution
+
+### Phase 8 Completed ✅
+
+- [x] WASM game engine (`cmd/acb-wasm/`)
+  - GOOS=js GOARCH=wasm build with JS bindings
+  - `loadState()`, `step()`, `runMatch()` API
+  - Pre-compiled strategy bot WASM builds
+- [x] In-browser sandbox (`web/src/pages/sandbox.ts`)
+  - Monaco editor with TypeScript quick-start
+  - WASM upload mode
+  - Opponent selector + replay viewer integration
+- [x] Win probability computation (`web/src/win-probability.ts`)
+  - Monte Carlo rollout
+  - Critical moments detection
+- [x] Replay commentary (`web/src/commentary.ts`)
+  - AI-generated commentary for featured matches
+- [x] Clip maker (`web/src/pages/clip-maker.ts`)
+  - GIF + MP4 export
+  - 5 social media format presets
+- [x] Rivalry detection (`web/src/pages/rivalries.ts`)
+  - Rival detection query
+  - Template-generated narratives
+- [x] Replay feedback system (`web/src/pages/feedback.ts`)
+  - Tagged annotations
+  - Feeds evolution pipeline
+
+### Phase 9 In Progress 🔄
+
+- [x] Predictions API (`cmd/acb-api/predictions.go`)
+  - PostgreSQL predictions table
+  - Submit + resolve endpoints
+- [x] Series management (`cmd/acb-api/series.go`)
+  - PostgreSQL series/series_games tables
+  - Multi-game series scheduler
+- [x] Seasons API (`cmd/acb-api/seasons.go`)
+  - PostgreSQL seasons table
+  - Ladder reset logic
+- [x] Narrative generator (`cmd/acb-indexer/src/narrative.ts`)
+  - Rivalry narrative templates
+- [ ] Embeddable replay widget (`/embed/{match_id}`)
+- [ ] Replay playlists
+- [ ] Map evolution pipeline
+- [ ] Bot profile cards
+
 ### Phase 4 Completed
 
 ### Phase 3 Completed
@@ -346,7 +415,33 @@ ai-code-battle/
 │           ├── api.ts         # Worker API client
 │           ├── generator.ts   # Index file generator
 │           ├── writer.ts      # File system writer
+│           ├── narrative.ts   # Rivalry narrative generator
 │           └── generator.test.ts
+├── cmd/
+│   ├── acb-evolver/    # Evolution pipeline
+│   │   ├── main.go      # CLI entry point
+│   │   └── internal/
+│   │       ├── db/       # Programs database
+│   │       ├── arena/    # Tournament evaluation
+│   │       ├── validator/# 3-stage validation
+│   │       ├── promoter/ # Promotion gate
+│   │       ├── selector/ # Parent sampling
+│   │       ├── prompt/   # LLM prompt builder
+│   │       ├── llm/      # LLM client
+│   │       ├── mapelites/ # Behavior grid
+│   │       └── live/     # Dashboard export
+│   ├── acb-wasm/       # WASM game engine
+│   │   ├── main.go      # JS bindings
+│   │   ├── bots.go      # Bot interface
+│   │   ├── build.sh     # Build script
+│   │   ├── strategies/  # Strategy implementations
+│   │   └── botmain/     # Per-bot main packages
+│   └── acb-matchmaker/ # Internal matchmaker
+│       ├── main.go      # Ticker orchestration
+│       ├── tickers.go   # Pairing, health, reaping
+│       ├── config.go    # Configuration
+│       ├── crypto.go    # Shared crypto
+│       └── alerts.go    # Discord/Slack alerts
 ├── worker-api/
 │   ├── package.json    # npm dependencies
 │   ├── wrangler.toml   # Cloudflare Worker config
@@ -381,6 +476,9 @@ ai-code-battle/
 │       ├── api-types.ts    # API client and types
 │       ├── router.ts       # Hash-based SPA router
 │       ├── replay-viewer.ts # Canvas viewer class
+│       ├── engine.ts       # Browser game engine
+│       ├── commentary.ts   # AI replay commentary
+│       ├── win-probability.ts # Monte Carlo win prob
 │       ├── main.ts         # Standalone replay viewer
 │       ├── app.ts          # SPA entry point
 │       └── pages/          # SPA page components
@@ -389,7 +487,12 @@ ai-code-battle/
 │           ├── matches.ts
 │           ├── bots.ts
 │           ├── bot-profile.ts
-│           └── register.ts
+│           ├── register.ts
+│           ├── sandbox.ts      # In-browser bot editor
+│           ├── evolution.ts    # Evolution dashboard
+│           ├── clip-maker.ts   # GIF/MP4 export
+│           ├── rivalries.ts    # Rivalry pages
+│           └── feedback.ts     # Replay feedback
 ├── bots/
 │   ├── random/         # Python - RandomBot
 │   ├── gatherer/       # Go - GathererBot
