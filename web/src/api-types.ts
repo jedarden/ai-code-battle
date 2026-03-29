@@ -58,6 +58,11 @@ export interface BotProfile {
   updated_at: string;
   rating_history: RatingHistoryEntry[];
   recent_matches: MatchSummary[];
+  // Evolution fields (optional - only present for evolved bots)
+  evolved?: boolean;
+  island?: string;
+  generation?: number;
+  parent_ids?: string[];
 }
 
 export interface BotDirectoryEntry {

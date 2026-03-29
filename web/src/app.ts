@@ -124,6 +124,28 @@ function renderReplayPage(params: Record<string, string>): void {
           </div>
 
           <div class="panel">
+            <h2>Accessibility</h2>
+            <div class="accessibility-options">
+              <label class="checkbox-label">
+                <input type="checkbox" id="color-blind-toggle" checked>
+                Color-blind safe palette
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="shapes-toggle" checked>
+                Shapes per player
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="high-contrast-toggle">
+                High contrast mode
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="reduced-motion-toggle">
+                Reduced motion
+              </label>
+            </div>
+          </div>
+
+          <div class="panel">
             <h2>Match Info</h2>
             <dl class="match-info">
               <dt>Match ID</dt>
@@ -274,6 +296,32 @@ function renderReplayPage(params: Record<string, string>): void {
         padding: 8px;
         border-radius: 6px;
         font-size: 14px;
+      }
+
+      .accessibility-options {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+      }
+
+      .checkbox-label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      .checkbox-label:hover {
+        color: var(--text-primary);
       }
 
       .match-info dt {
@@ -478,6 +526,32 @@ function initReplayViewer(initialUrl?: string): void {
       loadReplay(replay);
     }
   });
+
+  // Accessibility toggle handlers
+  const colorBlindToggle = document.getElementById('color-blind-toggle') as HTMLInputElement;
+  const shapesToggle = document.getElementById('shapes-toggle') as HTMLInputElement;
+  const highContrastToggle = document.getElementById('high-contrast-toggle') as HTMLInputElement;
+  const reducedMotionToggle = document.getElementById('reduced-motion-toggle') as HTMLInputElement;
+
+  function updateAccessibility(): void {
+    viewer.setAccessibility({
+      colorBlindSafe: colorBlindToggle.checked,
+      showShapes: shapesToggle.checked,
+      highContrast: highContrastToggle.checked,
+      reducedMotion: reducedMotionToggle.checked,
+    });
+  }
+
+  colorBlindToggle.addEventListener('change', updateAccessibility);
+  shapesToggle.addEventListener('change', updateAccessibility);
+  highContrastToggle.addEventListener('change', updateAccessibility);
+  reducedMotionToggle.addEventListener('change', updateAccessibility);
+
+  // Initialize accessibility from system preferences
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    reducedMotionToggle.checked = true;
+    updateAccessibility();
+  }
 
   viewer.onTurnChange = () => { updateUI(); updateEventLog(); };
   viewer.onPlayStateChange = (playing) => { playBtn.textContent = playing ? 'Pause' : 'Play'; };

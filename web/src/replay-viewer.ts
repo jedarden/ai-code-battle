@@ -1,7 +1,29 @@
 import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent } from './types';
 
-// Player colors - accessible and distinct
-const PLAYER_COLORS = [
+// ── Accessibility: Paul Tol's color-blind safe palette ──────────────────────────
+// These colors are designed to be distinguishable for all color vision deficiencies
+// See: https://personal.sron.nl/~pault/
+const TOL_PALETTE = [
+  '#332288', // Indigo (player 0)
+  '#88ccee', // Cyan (player 1)
+  '#44aa99', // Teal (player 2)
+  '#117733', // Green (player 3)
+  '#999933', // Olive (player 4)
+  '#ddcc77', // Sand (player 5)
+];
+
+// High contrast version for accessibility mode
+const HIGH_CONTRAST_PALETTE = [
+  '#0000ff', // Blue (player 0)
+  '#ff0000', // Red (player 1)
+  '#00ff00', // Green (player 2)
+  '#ff00ff', // Magenta (player 3)
+  '#00ffff', // Cyan (player 4)
+  '#ffff00', // Yellow (player 5)
+];
+
+// Default palette (original - not color-blind safe, used for backwards compat)
+const DEFAULT_PLAYER_COLORS = [
   '#3b82f6', // Blue (player 0)
   '#ef4444', // Red (player 1)
   '#22c55e', // Green (player 2)
@@ -10,18 +32,51 @@ const PLAYER_COLORS = [
   '#06b6d4', // Cyan (player 5)
 ];
 
+// Shape types for each player (0-5) - allows shape + color identification
+type PlayerShape = 'circle' | 'square' | 'triangle' | 'diamond' | 'pentagon' | 'hexagon';
+const PLAYER_SHAPES: PlayerShape[] = ['circle', 'square', 'triangle', 'diamond', 'pentagon', 'hexagon'];
+
 const NEUTRAL_COLOR = '#6b7280'; // Gray
 const WALL_COLOR = '#1f2937'; // Dark gray
 const ENERGY_COLOR = '#fbbf24'; // Yellow
 const BACKGROUND_COLOR = '#111827'; // Very dark gray
 const GRID_COLOR = '#374151'; // Medium gray
 
+// High contrast versions
+const HIGH_CONTRAST_NEUTRAL = '#888888';
+const HIGH_CONTRAST_WALL = '#444444';
+const HIGH_CONTRAST_ENERGY = '#ffff00';
+const HIGH_CONTRAST_BACKGROUND = '#000000';
+const HIGH_CONTRAST_GRID = '#666666';
+
 export interface ViewerOptions {
   cellSize?: number;
   showGrid?: boolean;
   fogOfWarPlayer?: number | null; // null = disabled, number = player perspective
   animationSpeed?: number; // ms per frame
+  // Accessibility options
+  colorBlindSafe?: boolean;  // Use Tol palette (default: true)
+  highContrast?: boolean;    // High contrast mode
+  showShapes?: boolean;      // Draw different shapes per player (default: true)
+  reducedMotion?: boolean;   // Skip animations (auto-detected from prefers-reduced-motion)
 }
+
+// Accessibility mode configuration
+export interface AccessibilitySettings {
+  colorBlindSafe: boolean;
+  highContrast: boolean;
+  showShapes: boolean;
+  reducedMotion: boolean;
+}
+
+// Default accessibility settings
+export const DEFAULT_ACCESSIBILITY: AccessibilitySettings = {
+  colorBlindSafe: true,
+  highContrast: false,
+  showShapes: true,
+  reducedMotion: typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+};
 
 export class ReplayViewer {
   private canvas: HTMLCanvasElement;
@@ -35,6 +90,8 @@ export class ReplayViewer {
   private showGrid: boolean;
   private fogOfWarPlayer: number | null;
   private animationSpeed: number;
+  private accessibility: AccessibilitySettings;
+  private screenReaderRegion: HTMLElement | null = null;
 
   // Event callbacks
   public onTurnChange?: (turn: number) => void;
@@ -52,7 +109,37 @@ export class ReplayViewer {
     this.fogOfWarPlayer = options.fogOfWarPlayer ?? null;
     this.animationSpeed = options.animationSpeed ?? 100;
 
+    // Initialize accessibility settings
+    this.accessibility = {
+      colorBlindSafe: options.colorBlindSafe ?? DEFAULT_ACCESSIBILITY.colorBlindSafe,
+      highContrast: options.highContrast ?? DEFAULT_ACCESSIBILITY.highContrast,
+      showShapes: options.showShapes ?? DEFAULT_ACCESSIBILITY.showShapes,
+      reducedMotion: options.reducedMotion ??
+        (options.reducedMotion ?? DEFAULT_ACCESSIBILITY.reducedMotion),
+    };
+
+    // Create screen reader region for announcements
+    this.createScreenReaderRegion();
+
     this.render = this.render.bind(this);
+  }
+
+  // Create or get the aria-live region for screen reader announcements
+  private createScreenReaderRegion(): void {
+    const existingRegion = document.getElementById('acb-screen-reader-region');
+    if (existingRegion) {
+      this.screenReaderRegion = existingRegion;
+      return;
+    }
+
+    const region = document.createElement('div');
+    region.id = 'acb-screen-reader-region';
+    region.setAttribute('role', 'status');
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'true');
+    region.style.cssText = 'position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden;';
+    document.body.appendChild(region);
+    this.screenReaderRegion = region;
   }
 
   loadReplay(replay: Replay): void {
@@ -140,6 +227,164 @@ export class ReplayViewer {
     return this.fogOfWarPlayer;
   }
 
+  // ── Accessibility Controls ─────────────────────────────────────────────────────
+
+  setAccessibility(settings: Partial<AccessibilitySettings>): void {
+    this.accessibility = { ...this.accessibility, ...settings };
+    this.render();
+  }
+
+  getAccessibility(): AccessibilitySettings {
+    return { ...this.accessibility };
+  }
+
+  // Get the active color palette based on accessibility settings
+  private getPlayerColors(): string[] {
+    if (this.accessibility.highContrast) {
+      return HIGH_CONTRAST_PALETTE;
+    }
+    return this.accessibility.colorBlindSafe ? TOL_PALETTE : DEFAULT_PLAYER_COLORS;
+  }
+
+  // Get background color based on accessibility mode
+  private getBackgroundColor(): string {
+    return this.accessibility.highContrast ? HIGH_CONTRAST_BACKGROUND : BACKGROUND_COLOR;
+  }
+
+  // Get wall color based on accessibility mode
+  private getWallColor(): string {
+    return this.accessibility.highContrast ? HIGH_CONTRAST_WALL : WALL_COLOR;
+  }
+
+  // Get energy color based on accessibility mode
+  private getEnergyColor(): string {
+    return this.accessibility.highContrast ? HIGH_CONTRAST_ENERGY : ENERGY_COLOR;
+  }
+
+  // Get grid color based on accessibility mode
+  private getGridColor(): string {
+    return this.accessibility.highContrast ? HIGH_CONTRAST_GRID : GRID_COLOR;
+  }
+
+  // Announce events to screen readers
+  private announceToScreenReader(message: string): void {
+    if (this.screenReaderRegion) {
+      this.screenReaderRegion.textContent = message;
+    }
+  }
+
+  // Generate text description of turn events for screen readers
+  private generateTurnDescription(events: GameEvent[]): string {
+    if (events.length === 0) {
+      return `Turn ${this.currentTurn}: No events.`;
+    }
+
+    const descriptions = events.map(e => {
+      const details = e.details as Record<string, unknown>;
+      switch (e.type) {
+        case 'bot_died':
+          return `Bot ${(details as { bot_id: number }).bot_id} was destroyed`;
+        case 'bot_spawned':
+          return `New bot ${(details as { bot_id: number }).bot_id} spawned`;
+        case 'energy_collected':
+          return 'Energy collected';
+        case 'core_captured':
+          return `Core captured by player ${(details as { new_owner: number }).new_owner}`;
+        case 'core_destroyed':
+          return 'Core destroyed';
+        default:
+          return e.type.replace(/_/g, ' ');
+      }
+    });
+
+    return `Turn ${this.currentTurn}: ${descriptions.join(', ')}.`;
+  }
+
+  // Draw a player shape (circle, square, triangle, etc.)
+  private drawPlayerShape(x: number, y: number, radius: number, playerIdx: number, color: string): void {
+    const { ctx } = this;
+    const shape = PLAYER_SHAPES[playerIdx % PLAYER_SHAPES.length];
+
+    ctx.fillStyle = color;
+    ctx.strokeStyle = this.accessibility.highContrast ? '#ffffff' : '#ffffff';
+    ctx.lineWidth = this.accessibility.highContrast ? 2 : 1;
+
+    if (!this.accessibility.showShapes) {
+      // Default: draw circle
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+
+    switch (shape) {
+      case 'circle':
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'square':
+        ctx.beginPath();
+        ctx.rect(x - radius, y - radius, radius * 2, radius * 2);
+        ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'triangle':
+        ctx.beginPath();
+        ctx.moveTo(x, y - radius);
+        ctx.lineTo(x + radius * 0.866, y + radius * 0.5);
+        ctx.lineTo(x - radius * 0.866, y + radius * 0.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'diamond':
+        ctx.beginPath();
+        ctx.moveTo(x, y - radius);
+        ctx.lineTo(x + radius * 0.707, y);
+        ctx.lineTo(x, y + radius);
+        ctx.lineTo(x - radius * 0.707, y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'pentagon':
+        this.drawPolygon(x, y, radius, 5);
+        ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'hexagon':
+        this.drawPolygon(x, y, radius, 6);
+        ctx.fill();
+        ctx.stroke();
+        break;
+    }
+  }
+
+  // Helper to draw regular polygons
+  private drawPolygon(cx: number, cy: number, radius: number, sides: number): void {
+    const { ctx } = this;
+    ctx.beginPath();
+    for (let i = 0; i < sides; i++) {
+      const angle = (i * 2 * Math.PI / sides) - Math.PI / 2;
+      const x = cx + radius * Math.cos(angle);
+      const y = cy + radius * Math.sin(angle);
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.closePath();
+  }
+
   private animate(timestamp: number): void {
     if (!this.isPlaying || !this.replay) return;
 
@@ -167,15 +412,21 @@ export class ReplayViewer {
 
     const { ctx, cellSize, canvas } = this;
     const { rows, cols } = this.replay.map;
+    const colors = this.getPlayerColors();
+    const bgColor = this.getBackgroundColor();
+    const gridColor = this.getGridColor();
+    const wallColor = this.getWallColor();
+    const energyColor = this.getEnergyColor();
+    const neutralColor = this.accessibility.highContrast ? HIGH_CONTRAST_NEUTRAL : NEUTRAL_COLOR;
 
     // Clear canvas
-    ctx.fillStyle = BACKGROUND_COLOR;
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw grid lines
     if (this.showGrid) {
-      ctx.strokeStyle = GRID_COLOR;
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = gridColor;
+      ctx.lineWidth = this.accessibility.highContrast ? 1 : 0.5;
       for (let r = 0; r <= rows; r++) {
         ctx.beginPath();
         ctx.moveTo(0, r * cellSize);
@@ -201,32 +452,38 @@ export class ReplayViewer {
 
     // Draw walls (always visible)
     for (const wall of this.replay.map.walls) {
-      this.drawCell(wall.row, wall.col, WALL_COLOR);
+      this.drawCell(wall.row, wall.col, wallColor);
     }
 
     // Draw cores
     for (const core of turnData.cores) {
       if (visible && !visible.has(this.posKey(core.position))) continue;
-      const color = core.active ? PLAYER_COLORS[core.owner] : NEUTRAL_COLOR;
+      const color = core.active ? colors[core.owner] : neutralColor;
       this.drawCore(core.position.row, core.position.col, color, core.active);
     }
 
     // Draw energy
     for (const energy of turnData.energy) {
       if (visible && !visible.has(this.posKey(energy))) continue;
-      this.drawEnergy(energy.row, energy.col);
+      this.drawEnergy(energy.row, energy.col, energyColor);
     }
 
-    // Draw bots
+    // Draw bots with accessible shapes
     for (const bot of turnData.bots) {
       if (!bot.alive) continue;
       if (visible && !visible.has(this.posKey(bot.position))) continue;
-      const color = PLAYER_COLORS[bot.owner];
+      const color = colors[bot.owner];
       this.drawBot(bot, color);
     }
 
     // Draw score overlay
-    this.drawScoreOverlay(turnData);
+    this.drawScoreOverlay(turnData, colors);
+
+    // Announce turn to screen reader if reduced motion is preferred
+    if (this.accessibility.reducedMotion) {
+      const events = turnData.events ?? [];
+      this.announceToScreenReader(this.generateTurnDescription(events));
+    }
   }
 
   private computeVisibility(turnData: ReplayTurn, player: number): Set<string> {
@@ -281,8 +538,8 @@ export class ReplayViewer {
 
     // Draw inactive marker
     if (!active) {
-      ctx.strokeStyle = BACKGROUND_COLOR;
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = this.getBackgroundColor();
+      ctx.lineWidth = this.accessibility.highContrast ? 3 : 2;
       ctx.beginPath();
       ctx.moveTo(x - radius / 2, y - radius / 2);
       ctx.lineTo(x + radius / 2, y + radius / 2);
@@ -290,64 +547,73 @@ export class ReplayViewer {
     }
   }
 
-  private drawEnergy(row: number, col: number): void {
+  private drawEnergy(row: number, col: number, color: string): void {
     const { ctx, cellSize } = this;
     const x = col * cellSize + cellSize / 2;
     const y = row * cellSize + cellSize / 2;
     const radius = (cellSize / 3);
 
-    ctx.fillStyle = ENERGY_COLOR;
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  private drawBot(bot: ReplayBot, color: string): void {
-    const { ctx, cellSize } = this;
-    const x = bot.position.col * cellSize + cellSize / 2;
-    const y = bot.position.row * cellSize + cellSize / 2;
-    const radius = (cellSize / 2) - 1;
-
-    // Draw bot as filled circle
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw border
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    // Add star shape for accessibility
+    if (this.accessibility.showShapes) {
+      ctx.strokeStyle = this.accessibility.highContrast ? '#000000' : '#1f2937';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
   }
 
-  private drawScoreOverlay(turnData: ReplayTurn): void {
+  private drawBot(bot: ReplayBot, color: string): void {
+    const { cellSize } = this;
+    const x = bot.position.col * cellSize + cellSize / 2;
+    const y = bot.position.row * cellSize + cellSize / 2;
+    const radius = (cellSize / 2) - 1;
+
+    // Draw bot with player-specific shape for accessibility
+    this.drawPlayerShape(x, y, radius, bot.owner, color);
+  }
+
+  private drawScoreOverlay(turnData: ReplayTurn, colors: string[]): void {
     if (!this.replay) return;
 
     const { ctx } = this;
     const padding = 10;
-    const lineHeight = 20;
+    const lineHeight = 24; // Increased for shape indicators
 
     // Draw semi-transparent background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(0, 0, 150, padding * 2 + lineHeight * this.replay.players.length);
+    ctx.fillStyle = this.accessibility.highContrast ? 'rgba(0, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.7)';
+    const bgHeight = padding * 2 + lineHeight * this.replay.players.length;
+    ctx.fillRect(0, 0, 170, bgHeight);
 
     // Draw scores for each player
-    ctx.font = '14px monospace';
+    ctx.font = this.accessibility.highContrast ? 'bold 14px monospace' : '14px monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
     this.replay.players.forEach((player, idx) => {
       const score = turnData.scores[idx] ?? 0;
       const energy = turnData.energy_held[idx] ?? 0;
-      const color = PLAYER_COLORS[idx];
+      const color = colors[idx];
+      const yOffset = padding + idx * lineHeight;
 
-      // Draw color indicator
-      ctx.fillStyle = color;
-      ctx.fillRect(padding, padding + idx * lineHeight, 12, 12);
+      // Draw shape indicator for accessibility
+      const indicatorSize = 14;
+      const indicatorX = padding + indicatorSize / 2;
+      const indicatorY = yOffset + indicatorSize / 2 + 3;
 
-      // Draw text
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(`${player.name}: ${score} (E:${energy})`, padding + 18, padding + idx * lineHeight);
+      if (this.accessibility.showShapes) {
+        this.drawPlayerShape(indicatorX, indicatorY, indicatorSize / 2 - 1, idx, color);
+      } else {
+        ctx.fillStyle = color;
+        ctx.fillRect(padding, yOffset + 3, indicatorSize, indicatorSize);
+      }
+
+      // Draw text with better contrast in high contrast mode
+      ctx.fillStyle = this.accessibility.highContrast ? '#ffffff' : '#e5e7eb';
+      ctx.fillText(`${player.name}: ${score} (E:${energy})`, padding + 22, yOffset + 4);
     });
   }
 
