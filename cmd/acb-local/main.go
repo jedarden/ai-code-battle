@@ -13,6 +13,17 @@ import (
 	"github.com/aicodebattle/acb/engine"
 )
 
+// availableBots maps bot names to constructor functions.
+var availableBots = map[string]func(int64) engine.BotInterface{
+	"idle":     func(seed int64) engine.BotInterface { return engine.NewIdleBot() },
+	"random":   func(seed int64) engine.BotInterface { return engine.NewRandomBot(seed) },
+	"gatherer": func(seed int64) engine.BotInterface { return engine.NewGathererBot(seed) },
+	"rusher":   func(seed int64) engine.BotInterface { return engine.NewRusherBot(seed) },
+	"guardian": func(seed int64) engine.BotInterface { return engine.NewGuardianBot(seed) },
+	"swarm":    func(seed int64) engine.BotInterface { return engine.NewSwarmBot(seed) },
+	"hunter":   func(seed int64) engine.BotInterface { return engine.NewHunterBot(seed) },
+}
+
 func main() {
 	// Command-line flags
 	seed := flag.Int64("seed", time.Now().UnixNano(), "Random seed")
@@ -21,15 +32,20 @@ func main() {
 	maxTurns := flag.Int("max-turns", 500, "Maximum turns")
 	output := flag.String("output", "replay.json", "Output replay file")
 	verbose := flag.Bool("verbose", false, "Verbose output")
+	bot0Name := flag.String("bot0", "gatherer", "Bot 0 strategy (idle, random, gatherer, rusher, guardian, swarm, hunter)")
+	bot1Name := flag.String("bot1", "rusher", "Bot 1 strategy (idle, random, gatherer, rusher, guardian, swarm, hunter)")
+	listBots := flag.Bool("list-bots", false, "List available bot strategies")
 	help := flag.Bool("help", false, "Show help")
 
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: acb-local [options]\n\n")
-		fmt.Fprintf(flag.CommandLine.Output(), "Run a match between two local bots (using stdin/stdout).\n\n")
-		fmt.Fprintf(flag.CommandLine.Output(), "The game state is sent to each bot via stdout, and moves are read from stdin.\n")
-		fmt.Fprintf(flag.CommandLine.Output(), "Bots should be implemented as separate processes that communicate via pipes.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Run a match between two local bots.\n\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "Options:\n")
 		flag.PrintDefaults()
+		fmt.Fprintf(flag.CommandLine.Output(), "\nAvailable bot strategies:\n")
+		for name := range availableBots {
+			fmt.Fprintf(flag.CommandLine.Output(), "  %s\n", name)
+		}
 	}
 
 	flag.Parse()
@@ -37,6 +53,25 @@ func main() {
 	if *help {
 		flag.Usage()
 		os.Exit(0)
+	}
+
+	if *listBots {
+		fmt.Println("Available bot strategies:")
+		for name := range availableBots {
+			fmt.Printf("  %s\n", name)
+		}
+		os.Exit(0)
+	}
+
+	// Validate bot names
+	bot0Factory, ok := availableBots[*bot0Name]
+	if !ok {
+		log.Fatalf("Unknown bot strategy: %s (use -list-bots to see available strategies)", *bot0Name)
+	}
+
+	bot1Factory, ok := availableBots[*bot1Name]
+	if !ok {
+		log.Fatalf("Unknown bot strategy: %s (use -list-bots to see available strategies)", *bot1Name)
 	}
 
 	// Create game config
@@ -59,17 +94,16 @@ func main() {
 
 	mr := engine.NewMatchRunner(config, opts...)
 
-	// For Phase 1, we use idle bots as placeholders
-	// In a real scenario, these would be external processes communicating via pipes
-	// For testing the engine, we'll use two random bots
-	bot0 := engine.NewRandomBot(rng.Int63())
-	bot1 := engine.NewRandomBot(rng.Int63())
+	// Create bots with different seeds
+	bot0 := bot0Factory(rng.Int63())
+	bot1 := bot1Factory(rng.Int63())
 
-	mr.AddBot(bot0, "RandomBot1")
-	mr.AddBot(bot1, "RandomBot2")
+	mr.AddBot(bot0, *bot0Name)
+	mr.AddBot(bot1, *bot1Name)
 
 	if *verbose {
 		log.Printf("Starting match with seed %d", *seed)
+		log.Printf("Bot 0: %s, Bot 1: %s", *bot0Name, *bot1Name)
 		log.Printf("Config: %dx%d, max %d turns", config.Rows, config.Cols, config.MaxTurns)
 	}
 
@@ -95,6 +129,7 @@ func main() {
 
 	// Print result
 	fmt.Printf("Match complete!\n")
+	fmt.Printf("  Players: %s vs %s\n", *bot0Name, *bot1Name)
 	fmt.Printf("  Winner: Player %d\n", result.Winner)
 	fmt.Printf("  Reason: %s\n", result.Reason)
 	fmt.Printf("  Turns: %d\n", result.Turns)
