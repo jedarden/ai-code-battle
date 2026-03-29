@@ -127,6 +127,10 @@ export class ReplayViewer {
     return this.animationSpeed;
   }
 
+  getIsPlaying(): boolean {
+    return this.isPlaying;
+  }
+
   setFogOfWar(player: number | null): void {
     this.fogOfWarPlayer = player;
     this.render();

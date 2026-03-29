@@ -334,8 +334,19 @@
   - Ladder reset logic
 - [x] Narrative generator (`cmd/acb-indexer/src/narrative.ts`)
   - Rivalry narrative templates
-- [ ] Embeddable replay widget (`/embed/{match_id}`)
-- [ ] Replay playlists
+- [x] Embeddable replay widget (`web/embed.html`, `web/src/embed.ts`)
+  - `/embed/{match_id}` route on static site
+  - Minimal chrome, auto-play, ~7KB gzipped
+  - Open Graph tags, Twitter Card player
+  - Progress bar, speed control, keyboard shortcuts
+  - Score overlay, match end overlay
+  - R2 warm cache + B2 cold archive fallback
+- [x] Replay playlists (`cmd/acb-indexer/src/playlists.ts`, `web/src/pages/playlists.ts`)
+  - Auto-curated collections: featured, upsets, comebacks, domination, close games, long games, weekly
+  - Index builder generates playlists from match data
+  - SPA page for browsing playlists
+  - Embed code copy button
+  - Placeholder data directory
 - [ ] Map evolution pipeline
 - [ ] Bot profile cards
 

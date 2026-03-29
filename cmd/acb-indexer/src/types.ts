@@ -194,3 +194,49 @@ export interface EvolutionLiveData {
   lineage: EvolutionLineageNode[];
   meta_snapshots: EvolutionMetaSnapshot[];
 }
+
+// Replay Playlist types
+
+export interface PlaylistMatch {
+  match_id: string;
+  order: number; // Position in playlist
+  title?: string; // Optional custom title (e.g., "The Upset")
+  thumbnail_url?: string;
+}
+
+export interface Playlist {
+  slug: string;
+  title: string;
+  description: string;
+  category: PlaylistCategory;
+  match_count: number;
+  created_at: string;
+  updated_at: string;
+  matches: PlaylistMatch[];
+}
+
+export type PlaylistCategory =
+  | 'featured'      // Curated featured matches
+  | 'rivalry'       // Matches between specific rivals
+  | 'upsets'        // Unexpected outcomes
+  | 'comebacks'     // Big turnarounds
+  | 'domination'    // One-sided victories
+  | 'close_games'   // Narrow wins
+  | 'long_games'    // High turn counts
+  | 'tutorial'      // Tutorial/example matches
+  | 'season'        // Season highlights
+  | 'weekly';       // Weekly best
+
+export interface PlaylistIndex {
+  updated_at: string;
+  playlists: PlaylistSummary[];
+}
+
+export interface PlaylistSummary {
+  slug: string;
+  title: string;
+  description: string;
+  category: PlaylistCategory;
+  match_count: number;
+  thumbnail_match_id?: string;
+}

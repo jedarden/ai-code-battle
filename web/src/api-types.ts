@@ -232,3 +232,62 @@ export async function rotateApiKey(botId: string, currentKey: string): Promise<R
   });
   return response.json();
 }
+
+// Playlist types
+
+export type PlaylistCategory =
+  | 'featured'
+  | 'rivalry'
+  | 'upsets'
+  | 'comebacks'
+  | 'domination'
+  | 'close_games'
+  | 'long_games'
+  | 'tutorial'
+  | 'season'
+  | 'weekly';
+
+export interface PlaylistMatch {
+  match_id: string;
+  order: number;
+  title?: string;
+  thumbnail_url?: string;
+}
+
+export interface Playlist {
+  slug: string;
+  title: string;
+  description: string;
+  category: PlaylistCategory;
+  match_count: number;
+  created_at: string;
+  updated_at: string;
+  matches: PlaylistMatch[];
+}
+
+export interface PlaylistSummary {
+  slug: string;
+  title: string;
+  description: string;
+  category: PlaylistCategory;
+  match_count: number;
+  updated_at: string;
+  thumbnail_match_id?: string;
+}
+
+export interface PlaylistIndex {
+  updated_at: string;
+  playlists: PlaylistSummary[];
+}
+
+export async function fetchPlaylistIndex(): Promise<PlaylistIndex> {
+  const response = await fetch('/data/playlists/index.json');
+  if (!response.ok) throw new Error(`Failed to fetch playlist index: ${response.status}`);
+  return response.json();
+}
+
+export async function fetchPlaylist(slug: string): Promise<Playlist> {
+  const response = await fetch(`/data/playlists/${slug}.json`);
+  if (!response.ok) throw new Error(`Failed to fetch playlist: ${response.status}`);
+  return response.json();
+}
