@@ -208,8 +208,13 @@ export async function registerBot(request: RegisterRequest): Promise<RegisterRes
   return response.json();
 }
 
+// R2_BASE_URL is the Cloudflare R2 bucket custom domain for live data.
+// The evolver writes live.json here every cycle with Cache-Control: max-age=10.
+const R2_BASE_URL = 'https://r2.aicodebattle.com';
+
 export async function fetchEvolutionData(): Promise<EvolutionLiveData> {
-  const response = await fetch('/data/evolution/live.json');
+  // Fetch from R2 for real-time updates (not from static Pages)
+  const response = await fetch(`${R2_BASE_URL}/evolution/live.json`);
   if (!response.ok) throw new Error(`Failed to fetch evolution data: ${response.status}`);
   return response.json();
 }

@@ -265,3 +265,8 @@ func dirOf(p string) string {
 func round3(v float64) float64 {
 	return math.Round(v*1000) / 1000
 }
+
+// marshal returns indented JSON for the live data.
+func marshal(d *LiveData) ([]byte, error) {
+	return json.MarshalIndent(d, "", "  ")
+}

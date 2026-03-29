@@ -4,9 +4,17 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-29** (Blog infrastructure)
+**Last Updated: 2026-03-29** (Live evolution observatory)
 
 ### Recent Changes (2026-03-29)
+- **Phase 10 Live Evolution Observatory** (`cmd/acb-evolver/internal/live/r2.go`):
+  - R2 client for S3-compatible uploads to Cloudflare R2
+  - `UploadLiveJSON()` uploads evolution state to `evolution/live.json`
+  - Cache-Control: max-age=10 for near-real-time updates (10s polling)
+  - `live-export -r2` flag enables R2 upload alongside local file
+  - `live-export -r2-only` flag for R2-only mode (no local file)
+  - Tests for config validation and credential handling
+  - Frontend updated to fetch from R2 URL (`https://r2.aicodebattle.com/evolution/live.json`)
 - **Phase 10 Blog Infrastructure** (`cmd/acb-index-builder/blog.go`, `web/src/pages/blog.ts`):
   - Weekly meta report generation: auto-generated blog posts with competitive analysis
   - Story arc chronicles: rise stories, upset narratives, rivalry updates
@@ -421,7 +429,12 @@
   - Individual post page with markdown rendering
   - Blog routes added to SPA router
   - Blog link added to navigation
-- [ ] Live evolution observatory (evolver writes live.json to R2)
+- [x] Live evolution observatory (evolver writes live.json to R2)
+  - R2 client module (`cmd/acb-evolver/internal/live/r2.go`) for S3-compatible uploads
+  - `live-export -r2` and `live-export -r2-only` flags for R2 upload
+  - Frontend fetches from R2 (`https://r2.aicodebattle.com/evolution/live.json`)
+  - Cache-Control: max-age=10 for near-real-time updates
+  - Tests for R2 config validation and credential handling
 - [ ] Narrative engine (weekly story arc detection + LLM chronicles)
 - [ ] Public match data documentation (OpenAPI-style)
 

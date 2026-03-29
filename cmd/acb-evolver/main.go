@@ -484,10 +484,12 @@ func runValidationStats(ctx context.Context, store *evolverdb.Store) {
 
 // runLiveExport exports the current evolution state to live.json.
 //
-//	live-export [-out evolution/live.json]
+//	live-export [-out evolution/live.json] [-r2] [-r2-only]
 func runLiveExport(ctx context.Context, db *sql.DB, args []string) {
 	fs := flag.NewFlagSet("live-export", flag.ExitOnError)
 	out := fs.String("out", envOrDefault("ACB_EVOLUTION_OUT", "evolution/live.json"), "output file path")
+	uploadR2 := fs.Bool("r2", false, "upload to R2 in addition to writing local file")
+	r2Only := fs.Bool("r2-only", false, "upload to R2 only, skip local file")
 	if err := fs.Parse(args); err != nil {
 		os.Exit(1)
 	}
@@ -496,11 +498,31 @@ func runLiveExport(ctx context.Context, db *sql.DB, args []string) {
 	if err != nil {
 		log.Fatalf("live-export: %v", err)
 	}
-	if err := live.WriteFile(data, *out); err != nil {
-		log.Fatalf("live-export write: %v", err)
+
+	// Write local file unless r2-only is set
+	if !*r2Only {
+		if err := live.WriteFile(data, *out); err != nil {
+			log.Fatalf("live-export write: %v", err)
+		}
+		log.Printf("live-export: wrote %d programs (%d promoted) to %s",
+			data.TotalPrograms, data.PromotedCount, *out)
 	}
-	log.Printf("live-export: wrote %d programs (%d promoted) to %s",
-		data.TotalPrograms, data.PromotedCount, *out)
+
+	// Upload to R2 if requested
+	if *uploadR2 || *r2Only {
+		r2Cfg := live.R2ConfigFromEnv()
+		if !r2Cfg.HasCredentials() {
+			log.Fatalf("live-export: R2 credentials not configured (set ACB_R2_ACCESS_KEY, ACB_R2_SECRET_KEY, ACB_R2_ENDPOINT, ACB_R2_BUCKET)")
+		}
+		r2Client, err := live.NewR2Client(r2Cfg)
+		if err != nil {
+			log.Fatalf("live-export: create R2 client: %v", err)
+		}
+		if err := r2Client.UploadLiveJSON(ctx, data); err != nil {
+			log.Fatalf("live-export: upload to R2: %v", err)
+		}
+		log.Printf("live-export: uploaded to R2 at evolution/live.json (%d programs)", data.TotalPrograms)
+	}
 }
 
 func mustOpenDB(url string) *sql.DB {
