@@ -6,6 +6,91 @@ import (
 )
 
 const schemaSQL = `
+-- ---- Phase 9 tables ----
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id            BIGSERIAL PRIMARY KEY,
+    match_id      VARCHAR(32) NOT NULL REFERENCES matches(match_id),
+    predictor_id  VARCHAR(64) NOT NULL,
+    predicted_bot VARCHAR(16) NOT NULL,
+    correct       BOOLEAN,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at   TIMESTAMPTZ,
+    UNIQUE(match_id, predictor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(match_id);
+CREATE INDEX IF NOT EXISTS idx_predictions_predictor ON predictions(predictor_id);
+
+CREATE TABLE IF NOT EXISTS predictor_stats (
+    predictor_id  VARCHAR(64) PRIMARY KEY,
+    correct       INTEGER NOT NULL DEFAULT 0,
+    incorrect     INTEGER NOT NULL DEFAULT 0,
+    streak        INTEGER NOT NULL DEFAULT 0,
+    best_streak   INTEGER NOT NULL DEFAULT 0,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS series (
+    id         BIGSERIAL PRIMARY KEY,
+    bot_a_id   VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
+    bot_b_id   VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
+    format     INTEGER NOT NULL DEFAULT 5,  -- best of N (3, 5, 7...)
+    a_wins     INTEGER NOT NULL DEFAULT 0,
+    b_wins     INTEGER NOT NULL DEFAULT 0,
+    status     VARCHAR(16) NOT NULL DEFAULT 'active',
+    winner_id  VARCHAR(16),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_series_bots ON series(bot_a_id, bot_b_id);
+CREATE INDEX IF NOT EXISTS idx_series_status ON series(status);
+
+CREATE TABLE IF NOT EXISTS series_games (
+    id        BIGSERIAL PRIMARY KEY,
+    series_id BIGINT NOT NULL REFERENCES series(id),
+    match_id  VARCHAR(32) NOT NULL REFERENCES matches(match_id),
+    game_num  INTEGER NOT NULL,
+    winner_id VARCHAR(16),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_series_games_series ON series_games(series_id);
+
+CREATE TABLE IF NOT EXISTS seasons (
+    id            BIGSERIAL PRIMARY KEY,
+    name          VARCHAR(64) NOT NULL,
+    theme         VARCHAR(128),
+    rules_version VARCHAR(32) NOT NULL DEFAULT '1.0',
+    status        VARCHAR(16) NOT NULL DEFAULT 'active',
+    champion_id   VARCHAR(16),
+    starts_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ends_at       TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS season_snapshots (
+    id         BIGSERIAL PRIMARY KEY,
+    season_id  BIGINT NOT NULL REFERENCES seasons(id),
+    bot_id     VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
+    rank       INTEGER NOT NULL,
+    rating     DOUBLE PRECISION NOT NULL,
+    wins       INTEGER NOT NULL DEFAULT 0,
+    losses     INTEGER NOT NULL DEFAULT 0,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_season_snapshots_season ON season_snapshots(season_id, rank);
+
+-- Map engagement scores (written by acb-mapgen or evolution pipeline)
+CREATE TABLE IF NOT EXISTS map_scores (
+    map_id          VARCHAR(32) PRIMARY KEY,
+    engagement      DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    symmetry_score  DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    wall_density    DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    last_used_at    TIMESTAMPTZ,
+    match_count     INTEGER NOT NULL DEFAULT 0,
+    avg_turns       DOUBLE PRECISION,
+    scored_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS bots (
     bot_id        VARCHAR(16) PRIMARY KEY,
     name          VARCHAR(32) UNIQUE NOT NULL,

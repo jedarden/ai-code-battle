@@ -11,13 +11,15 @@ import (
 	"time"
 )
 
-func (s *Server) StartTickers(ctx context.Context) {
-	go s.runTicker(ctx, "matchmaker", time.Duration(s.cfg.MatchmakerSecs)*time.Second, s.tickMatchmaker)
-	go s.runTicker(ctx, "health-checker", time.Duration(s.cfg.HealthCheckSecs)*time.Second, s.tickHealthChecker)
-	go s.runTicker(ctx, "stale-reaper", time.Duration(s.cfg.ReaperSecs)*time.Second, s.tickStaleReaper)
+const valkeyJobQueue = "acb:jobs:pending"
+
+func (m *Matchmaker) StartTickers(ctx context.Context) {
+	go m.runTicker(ctx, "matchmaker", time.Duration(m.cfg.MatchmakerSecs)*time.Second, m.tickMatchmaker)
+	go m.runTicker(ctx, "health-checker", time.Duration(m.cfg.HealthCheckSecs)*time.Second, m.tickHealthChecker)
+	go m.runTicker(ctx, "stale-reaper", time.Duration(m.cfg.ReaperSecs)*time.Second, m.tickStaleReaper)
 }
 
-func (s *Server) runTicker(ctx context.Context, name string, interval time.Duration, fn func(context.Context)) {
+func (m *Matchmaker) runTicker(ctx context.Context, name string, interval time.Duration, fn func(context.Context)) {
 	log.Printf("starting ticker: %s (every %s)", name, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -33,9 +35,9 @@ func (s *Server) runTicker(ctx context.Context, name string, interval time.Durat
 }
 
 // tickMatchmaker creates matches between active bots and enqueues jobs.
-func (s *Server) tickMatchmaker(ctx context.Context) {
+func (m *Matchmaker) tickMatchmaker(ctx context.Context) {
 	// Get all active bots
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := m.db.QueryContext(ctx,
 		`SELECT bot_id, endpoint_url, shared_secret, rating_mu, rating_phi
 		 FROM bots WHERE status = 'active' ORDER BY rating_mu DESC`)
 	if err != nil {
@@ -44,10 +46,10 @@ func (s *Server) tickMatchmaker(ctx context.Context) {
 	}
 
 	type botInfo struct {
-		ID        string
-		Endpoint  string
-		Secret    string
-		Mu, Phi   float64
+		ID       string
+		Endpoint string
+		Secret   string
+		Mu, Phi  float64
 	}
 	var bots []botInfo
 	for rows.Next() {
@@ -110,11 +112,11 @@ func (s *Server) tickMatchmaker(ctx context.Context) {
 	// Decrypt secrets for the worker
 	secretA := botA.Secret
 	secretB := botB.Secret
-	if s.cfg.EncryptionKey != "" {
-		if dec, err := decryptSecret(botA.Secret, s.cfg.EncryptionKey); err == nil {
+	if m.cfg.EncryptionKey != "" {
+		if dec, err := decryptSecret(botA.Secret, m.cfg.EncryptionKey); err == nil {
 			secretA = dec
 		}
-		if dec, err := decryptSecret(botB.Secret, s.cfg.EncryptionKey); err == nil {
+		if dec, err := decryptSecret(botB.Secret, m.cfg.EncryptionKey); err == nil {
 			secretB = dec
 		}
 	}
@@ -132,7 +134,7 @@ func (s *Server) tickMatchmaker(ctx context.Context) {
 	}
 	configJSON, _ := json.Marshal(config)
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
 		log.Printf("matchmaker: tx error: %v", err)
 		return
@@ -169,7 +171,7 @@ func (s *Server) tickMatchmaker(ctx context.Context) {
 	}
 
 	// Enqueue in Valkey
-	if err := s.rdb.LPush(ctx, valkeyJobQueue, jobID).Err(); err != nil {
+	if err := m.rdb.LPush(ctx, valkeyJobQueue, jobID).Err(); err != nil {
 		log.Printf("matchmaker: valkey push error: %v", err)
 		return
 	}
@@ -178,8 +180,8 @@ func (s *Server) tickMatchmaker(ctx context.Context) {
 }
 
 // tickHealthChecker pings each active bot's /health endpoint.
-func (s *Server) tickHealthChecker(ctx context.Context) {
-	rows, err := s.db.QueryContext(ctx,
+func (m *Matchmaker) tickHealthChecker(ctx context.Context) {
+	rows, err := m.db.QueryContext(ctx,
 		`SELECT bot_id, endpoint_url, status, consec_fails FROM bots WHERE status IN ('active', 'inactive')`)
 	if err != nil {
 		log.Printf("health-checker: query error: %v", err)
@@ -204,7 +206,7 @@ func (s *Server) tickHealthChecker(ctx context.Context) {
 	}
 	rows.Close()
 
-	client := &http.Client{Timeout: time.Duration(s.cfg.BotTimeoutSecs) * time.Second}
+	client := &http.Client{Timeout: time.Duration(m.cfg.BotTimeoutSecs) * time.Second}
 
 	for _, bot := range bots {
 		healthy := false
@@ -216,36 +218,36 @@ func (s *Server) tickHealthChecker(ctx context.Context) {
 
 		if healthy {
 			if bot.Status == "inactive" || bot.ConsecFails > 0 {
-				s.db.ExecContext(ctx,
+				m.db.ExecContext(ctx,
 					`UPDATE bots SET status = 'active', consec_fails = 0, last_active = NOW()
 					 WHERE bot_id = $1`, bot.ID)
 				log.Printf("health-checker: %s recovered → active", bot.ID)
 				if bot.Status == "inactive" {
-					s.alerter.BotRecovered(ctx, bot.ID)
+					m.alerter.BotRecovered(ctx, bot.ID)
 				}
 			}
 		} else {
 			newFails := bot.ConsecFails + 1
 			newStatus := bot.Status
-			if newFails >= s.cfg.MaxConsecFails {
+			if newFails >= m.cfg.MaxConsecFails {
 				newStatus = "inactive"
 			}
-			s.db.ExecContext(ctx,
+			m.db.ExecContext(ctx,
 				`UPDATE bots SET status = $1, consec_fails = $2 WHERE bot_id = $3`,
 				newStatus, newFails, bot.ID)
 			if newStatus != bot.Status {
 				log.Printf("health-checker: %s marked inactive after %d failures", bot.ID, newFails)
-				s.alerter.BotMarkedInactive(ctx, bot.ID, newFails)
+				m.alerter.BotMarkedInactive(ctx, bot.ID, newFails)
 			}
 		}
 	}
 }
 
 // tickStaleReaper re-enqueues jobs that have been running too long.
-func (s *Server) tickStaleReaper(ctx context.Context) {
-	threshold := time.Duration(s.cfg.StaleJobMinutes) * time.Minute
+func (m *Matchmaker) tickStaleReaper(ctx context.Context) {
+	threshold := time.Duration(m.cfg.StaleJobMinutes) * time.Minute
 
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := m.db.QueryContext(ctx,
 		`SELECT job_id FROM jobs
 		 WHERE status = 'running' AND claimed_at < $1`,
 		time.Now().Add(-threshold))
@@ -266,7 +268,7 @@ func (s *Server) tickStaleReaper(ctx context.Context) {
 	rows.Close()
 
 	for _, jobID := range staleJobs {
-		result, err := s.db.ExecContext(ctx,
+		result, err := m.db.ExecContext(ctx,
 			`UPDATE jobs SET status = 'pending', worker_id = NULL, claimed_at = NULL
 			 WHERE job_id = $1 AND status = 'running'`, jobID)
 		if err != nil {
@@ -279,7 +281,7 @@ func (s *Server) tickStaleReaper(ctx context.Context) {
 			continue // already completed or re-enqueued by another reaper
 		}
 
-		if err := s.rdb.LPush(ctx, valkeyJobQueue, jobID).Err(); err != nil {
+		if err := m.rdb.LPush(ctx, valkeyJobQueue, jobID).Err(); err != nil {
 			log.Printf("stale-reaper: re-enqueue error for %s: %v", jobID, err)
 			continue
 		}
@@ -289,14 +291,14 @@ func (s *Server) tickStaleReaper(ctx context.Context) {
 
 	if len(staleJobs) > 0 {
 		log.Printf("stale-reaper: processed %d stale jobs", len(staleJobs))
-		s.alerter.StaleJobsReaped(ctx, staleJobs)
+		m.alerter.StaleJobsReaped(ctx, staleJobs)
 	}
 }
 
 // queryActiveBotCount returns the number of active bots (used by tests).
-func (s *Server) queryActiveBotCount(ctx context.Context) (int, error) {
+func (m *Matchmaker) queryActiveBotCount(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bots WHERE status = 'active'`).Scan(&count)
+	err := m.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bots WHERE status = 'active'`).Scan(&count)
 	return count, err
 }
 

@@ -12,7 +12,7 @@ type Server struct {
 	cfg     Config
 	db      *sql.DB
 	rdb     *redis.Client
-	alerter *Alerter
+	// Note: alerter removed - alerting now handled by acb-matchmaker deployment
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {

@@ -75,10 +75,10 @@ func main() {
 	defer rdb.Close()
 
 	srv := &Server{
-		cfg:     cfg,
-		db:      db,
-		rdb:     rdb,
-		alerter: NewAlerter(cfg.DiscordWebhook, cfg.SlackWebhook),
+		cfg: cfg,
+		db:  db,
+		rdb: rdb,
+		// Note: alerter moved to acb-matchmaker deployment
 	}
 
 	mux := http.NewServeMux()
@@ -95,8 +95,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start background tickers
-	srv.StartTickers(ctx)
+	// Note: Background tickers (matchmaker, health-checker, stale-reaper) are now
+	// handled by the separate acb-matchmaker deployment per plan §12 Phase 4.
+	// This API server only handles HTTP endpoints for bot registration, job
+	// coordination, and bot status.
+
+	_ = ctx // ctx no longer needed since tickers moved to acb-matchmaker
 
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)

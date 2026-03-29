@@ -4,9 +4,23 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-28**
+**Last Updated: 2026-03-29**
 
-### Recent Changes (2026-03-28)
+### Recent Changes (2026-03-29)
+- **Architecture Conformance Fix**: Separated matchmaker from acb-api into acb-matchmaker
+  per plan §12 Phase 4:
+  - Plan specifies "Matchmaker Deployment (`acb-matchmaker`): internal tickers for pairing
+    bots (1 min), health checking (15 min), stale job reaping (5 min). No external exposure."
+  - Created `cmd/acb-matchmaker/` with main.go, tickers.go, config.go, crypto.go, alerts.go
+  - Removed tickers.go from acb-api (tickers now in separate deployment)
+  - Removed alerter field from acb-api Server struct (alerting now in matchmaker)
+  - Created `cmd/acb-matchmaker/Dockerfile` for container builds
+  - Created `cluster-configuration/apexalgo-iad/ai-code-battle/acb-matchmaker-deployment.yml`
+  - Matchmaker runs as internal-only deployment with no HTTP endpoints exposed
+  - Fixed syntax error in `cmd/acb-api/db.go` (prematurely closed schemaSQL string)
+  - All tests pass (acb-api + acb-matchmaker builds successfully)
+
+### Previous Changes (2026-03-28)
 - **Architecture Conformance Fix**: Migrated K8s manifests from `deploy/k8s/` to
   `cluster-configuration/apexalgo-iad/ai-code-battle/` per plan specification:
   - Plan §9.3 and §9.7 specify K8s manifests go in `cluster-configuration/` for ArgoCD GitOps
