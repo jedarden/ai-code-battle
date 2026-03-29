@@ -153,3 +153,138 @@ func TestLooksLikeCode(t *testing.T) {
 		t.Error("expected plain prose not to look like code")
 	}
 }
+
+func TestExtractCandidates_unlabeledBlock_proseSkipped(t *testing.T) {
+	// An unlabelled block that looks like prose should be skipped
+	text := "```\nThis is just prose, not code.\n```"
+	_, err := ExtractCandidates(text, "")
+	if err == nil {
+		t.Error("expected error for prose-only unlabeled block")
+	}
+}
+
+func TestExtractCandidates_unlabeledBlock_codeKept(t *testing.T) {
+	// An unlabelled block that looks like code should be kept
+	text := "```\nfunc main() { return; }\n```"
+	candidates, err := ExtractCandidates(text, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate, got %d", len(candidates))
+	}
+}
+
+func TestExtractCandidates_javaScriptAlias(t *testing.T) {
+	text := "```javascript\nconst x = 1;\n```"
+	candidates, err := ExtractCandidates(text, "typescript")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Language != "typescript" {
+		t.Errorf("expected javascript to map to typescript, got %+v", candidates)
+	}
+}
+
+func TestExtractCandidates_jsAlias(t *testing.T) {
+	text := "```js\nconst x = 1;\n```"
+	candidates, err := ExtractCandidates(text, "typescript")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Language != "typescript" {
+		t.Errorf("expected js to map to typescript, got %+v", candidates)
+	}
+}
+
+func TestExtractCandidates_rustAlias(t *testing.T) {
+	text := "```rs\nfn main() {}\n```"
+	candidates, err := ExtractCandidates(text, "rust")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Language != "rust" {
+		t.Errorf("expected rs to map to rust, got %+v", candidates)
+	}
+}
+
+func TestExtractCandidates_whitespaceInLanguageTag(t *testing.T) {
+	// Language tag with trailing whitespace
+	text := "```go  \npackage main\n```"
+	candidates, err := ExtractCandidates(text, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate, got %d", len(candidates))
+	}
+}
+
+func TestExtractCandidates_noLanguageTag(t *testing.T) {
+	// Block with no language tag but code-like content
+	text := "```\nif (x > 0) { return x; }\n```"
+	candidates, err := ExtractCandidates(text, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate, got %d", len(candidates))
+	}
+}
+
+func TestExtractBestCandidate_allSameLength(t *testing.T) {
+	// When all candidates are same length, first one wins
+	text := "```go\nabc\n```\n```go\nxyz\n```"
+	best, err := ExtractBestCandidate(text, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if best.Code != "abc" && best.Code != "xyz" {
+		t.Errorf("unexpected code: %q", best.Code)
+	}
+}
+
+func TestExtractCandidates_codeWithBackticks(t *testing.T) {
+	// Code that contains backticks (nested)
+	text := "```go\nconst msg = `hello`\n```"
+	candidates, err := ExtractCandidates(text, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate, got %d", len(candidates))
+	}
+}
+
+func TestValidLanguages(t *testing.T) {
+	validLangs := []string{"go", "python", "rust", "typescript", "java", "php"}
+	for _, lang := range validLangs {
+		if !ValidLanguages[lang] {
+			t.Errorf("expected %q to be a valid language", lang)
+		}
+	}
+}
+
+func TestExtractCandidates_multipleBlocksSameLang(t *testing.T) {
+	// Multiple blocks of same language
+	text := "```go\npackage main\n```\nSome text\n```go\nfunc main() {}\n```"
+	candidates, err := ExtractCandidates(text, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Errorf("expected 2 candidates, got %d", len(candidates))
+	}
+}
+
+func TestExtractCandidates_trailingNewlines(t *testing.T) {
+	// Code with trailing newlines
+	text := "```go\npackage main\n\n\n```"
+	candidates, err := ExtractCandidates(text, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate, got %d", len(candidates))
+	}
+}

@@ -170,3 +170,187 @@ func TestAssemble_generationAppearsInIslandContext(t *testing.T) {
 		t.Error("expected generation number in island context")
 	}
 }
+
+func TestAssemble_emptyParents_noParentSection(t *testing.T) {
+	r := Request{
+		Parents:    nil,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "go",
+		Generation: 1,
+	}
+	got := Assemble(r)
+	if strings.Contains(got, "## Parent Programs") {
+		t.Error("expected no parent section when parents is nil")
+	}
+}
+
+func TestAssemble_emptyReplays_noReplaySection(t *testing.T) {
+	r := Request{
+		Replays:    nil,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "go",
+		Generation: 1,
+	}
+	got := Assemble(r)
+	if strings.Contains(got, "## Recent Match Analysis") {
+		t.Error("expected no replay section when replays is nil")
+	}
+}
+
+func TestAssemble_multipleReplays(t *testing.T) {
+	replays := []MatchSummary{
+		{MatchID: "m1", WinnerName: "w1", Condition: "elimination", TurnCount: 100},
+		{MatchID: "m2", WinnerName: "w2", Condition: "dominance", TurnCount: 200},
+		{MatchID: "m3", WinnerName: "w3", Condition: "turns", TurnCount: 500},
+	}
+	r := Request{
+		Replays:    replays,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "go",
+		Generation: 1,
+	}
+	got := Assemble(r)
+
+	for _, id := range []string{"m1", "m2", "m3"} {
+		if !strings.Contains(got, id) {
+			t.Errorf("expected match ID %s in prompt", id)
+		}
+	}
+}
+
+func TestAssemble_drawResult(t *testing.T) {
+	replays := []MatchSummary{
+		{MatchID: "draw-match", Condition: "draw", TurnCount: 500},
+	}
+	r := Request{
+		Replays:    replays,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "go",
+		Generation: 1,
+	}
+	got := Assemble(r)
+	if !strings.Contains(got, "Draw") {
+		t.Error("expected Draw in prompt for draw condition")
+	}
+}
+
+func TestAssemble_allIslandsHaveContext(t *testing.T) {
+	for _, island := range evolverdb.AllIslands {
+		r := Request{
+			Island:     island,
+			TargetLang: "go",
+			Generation: 1,
+		}
+		got := Assemble(r)
+		if !strings.Contains(got, island) {
+			t.Errorf("expected island %s in prompt", island)
+		}
+	}
+}
+
+func TestAssemble_behaviorVectorDisplay(t *testing.T) {
+	parents := []*evolverdb.Program{
+		{
+			ID:             1,
+			Code:           "code",
+			Language:       "go",
+			Fitness:        0.5,
+			BehaviorVector: []float64{0.25, 0.75},
+		},
+	}
+	r := Request{
+		Parents:    parents,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "go",
+		Generation: 1,
+	}
+	got := Assemble(r)
+	if !strings.Contains(got, "aggression=0.25") {
+		t.Error("expected aggression value in prompt")
+	}
+	if !strings.Contains(got, "economy=0.75") {
+		t.Error("expected economy value in prompt")
+	}
+}
+
+func TestAssemble_parentWithoutBehaviorVector(t *testing.T) {
+	parents := []*evolverdb.Program{
+		{
+			ID:             1,
+			Code:           "code",
+			Language:       "go",
+			Fitness:        0.5,
+			BehaviorVector: nil, // No behavior vector
+		},
+	}
+	r := Request{
+		Parents:    parents,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "go",
+		Generation: 1,
+	}
+	got := Assemble(r)
+	// Should still include the parent, just without behavior info
+	if !strings.Contains(got, "code") {
+		t.Error("expected parent code in prompt even without behavior vector")
+	}
+}
+
+func TestAssemble_codeBlockLanguage(t *testing.T) {
+	parents := []*evolverdb.Program{
+		{Code: "code", Language: "python", Fitness: 0.5},
+	}
+	r := Request{
+		Parents:    parents,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "python",
+		Generation: 1,
+	}
+	got := Assemble(r)
+	if !strings.Contains(got, "```python") {
+		t.Error("expected python code block in prompt")
+	}
+}
+
+func TestAssemble_scoresDisplay(t *testing.T) {
+	replays := []MatchSummary{
+		{
+			MatchID:   "m1",
+			Scores:    []int{100, 50, 25},
+			Condition: "turns",
+			TurnCount: 100,
+		},
+	}
+	r := Request{
+		Replays:    replays,
+		Island:     evolverdb.IslandAlpha,
+		TargetLang: "go",
+		Generation: 1,
+	}
+	got := Assemble(r)
+	if !strings.Contains(got, "[100 50 25]") {
+		t.Error("expected scores to be displayed")
+	}
+}
+
+func TestLangDisplayName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"go", "Go"},
+		{"python", "Python"},
+		{"rust", "Rust"},
+		{"typescript", "TypeScript"},
+		{"java", "Java"},
+		{"php", "PHP"},
+		{"unknown", "unknown"},
+	}
+
+	for _, tc := range tests {
+		got := langDisplayName(tc.input)
+		if got != tc.expected {
+			t.Errorf("langDisplayName(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
