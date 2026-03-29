@@ -8,21 +8,18 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// Server is a stub for the v1 API.
+// The full API (registration, job claim/result, ratings) is deferred.
+// Matchmaking is handled by acb-matchmaker; workers communicate directly with PostgreSQL.
 type Server struct {
-	cfg     Config
-	db      *sql.DB
-	rdb     *redis.Client
-	// Note: alerter removed - alerting now handled by acb-matchmaker deployment
+	cfg Config
+	db  *sql.DB
+	rdb *redis.Client
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /ready", s.handleReady)
-	mux.HandleFunc("POST /api/register", s.handleRegister)
-	mux.HandleFunc("POST /api/rotate-key", s.handleRotateKey)
-	mux.HandleFunc("GET /api/status/{bot_id}", s.handleBotStatus)
-	mux.HandleFunc("POST /api/jobs/claim", s.handleJobClaim)
-	mux.HandleFunc("POST /api/jobs/{job_id}/result", s.handleJobResult)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

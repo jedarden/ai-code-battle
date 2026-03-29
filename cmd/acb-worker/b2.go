@@ -1,4 +1,4 @@
-// R2 client for uploading replays
+// B2 client for uploading replays to Backblaze B2 (cold archive)
 package main
 
 import (
@@ -12,28 +12,28 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// R2Client handles R2 bucket operations.
-type R2Client struct {
+// B2Client handles B2 bucket operations (S3-compatible).
+type B2Client struct {
 	client   *s3.Client
 	bucket   string
 	endpoint string
 }
 
-// NewR2Client creates a new R2 client.
-func NewR2Client(cfg *Config) *R2Client {
-	// Create custom endpoint resolver for R2
+// NewB2Client creates a new B2 client.
+func NewB2Client(cfg *Config) *B2Client {
+	// Create custom endpoint resolver for B2 (S3-compatible)
 	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 		return aws.Endpoint{
-			URL:           cfg.R2Endpoint,
-			SigningRegion: "auto",
+			URL:           cfg.B2Endpoint,
+			SigningRegion: cfg.B2Region,
 		}, nil
 	})
 
-	// Load AWS config with R2 credentials
+	// Load AWS config with B2 credentials
 	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			cfg.R2AccessKey,
-			cfg.R2SecretKey,
+			cfg.B2AccessKey,
+			cfg.B2SecretKey,
 			"",
 		)),
 		config.WithEndpointResolverWithOptions(customResolver),
@@ -42,15 +42,15 @@ func NewR2Client(cfg *Config) *R2Client {
 		panic(fmt.Sprintf("failed to load AWS config: %v", err))
 	}
 
-	return &R2Client{
+	return &B2Client{
 		client:   s3.NewFromConfig(awsCfg),
-		bucket:   cfg.R2Bucket,
-		endpoint: cfg.R2Endpoint,
+		bucket:   cfg.B2Bucket,
+		endpoint: cfg.B2Endpoint,
 	}
 }
 
-// Upload uploads data to R2.
-func (c *R2Client) Upload(ctx context.Context, key string, data []byte, contentType string) error {
+// Upload uploads data to B2.
+func (c *B2Client) Upload(ctx context.Context, key string, data []byte, contentType string) error {
 	_, err := c.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:       aws.String(c.bucket),
 		Key:          aws.String(key),
@@ -61,8 +61,8 @@ func (c *R2Client) Upload(ctx context.Context, key string, data []byte, contentT
 	return err
 }
 
-// Download downloads data from R2.
-func (c *R2Client) Download(ctx context.Context, key string) ([]byte, error) {
+// Download downloads data from B2.
+func (c *B2Client) Download(ctx context.Context, key string) ([]byte, error) {
 	resp, err := c.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
@@ -80,8 +80,8 @@ func (c *R2Client) Download(ctx context.Context, key string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Delete deletes an object from R2.
-func (c *R2Client) Delete(ctx context.Context, key string) error {
+// Delete deletes an object from B2.
+func (c *B2Client) Delete(ctx context.Context, key string) error {
 	_, err := c.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
@@ -90,7 +90,7 @@ func (c *R2Client) Delete(ctx context.Context, key string) error {
 }
 
 // List lists objects with a prefix.
-func (c *R2Client) List(ctx context.Context, prefix string) ([]string, error) {
+func (c *B2Client) List(ctx context.Context, prefix string) ([]string, error) {
 	var keys []string
 
 	paginator := s3.NewListObjectsV2Paginator(c.client, &s3.ListObjectsV2Input{
@@ -114,7 +114,7 @@ func (c *R2Client) List(ctx context.Context, prefix string) ([]string, error) {
 	return keys, nil
 }
 
-// Endpoint returns the R2 endpoint URL.
-func (c *R2Client) Endpoint() string {
+// Endpoint returns the B2 endpoint URL.
+func (c *B2Client) Endpoint() string {
 	return c.endpoint
 }

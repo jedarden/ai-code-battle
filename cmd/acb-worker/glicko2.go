@@ -1,9 +1,8 @@
+// Glicko-2 Rating System Implementation for acb-worker
+// Based on: http://www.glicko.net/glicko/glicko2.pdf
 package main
 
 import "math"
-
-// Glicko-2 Rating System Implementation
-// Based on: http://www.glicko.net/glicko/glicko2.pdf
 
 const (
 	glicko2Scale     = 173.7178
@@ -13,6 +12,7 @@ const (
 	glicko2Epsilon   = 1e-6
 )
 
+// Glicko2Rating represents a Glicko-2 rating.
 type Glicko2Rating struct {
 	Mu    float64 `json:"mu"`
 	Phi   float64 `json:"phi"`
@@ -144,12 +144,12 @@ func updateSingleRating(r Glicko2Rating, opps []opponent) Glicko2Rating {
 	}
 }
 
-// updateRatings computes new ratings for all participants in a multi-player match.
+// UpdateRatings computes new ratings for all participants in a multi-player match.
 // Scores are used pairwise: for each pair (i, j), player i gets:
 //   - 1.0 if scores[i] > scores[j]
 //   - 0.5 if scores[i] == scores[j]
 //   - 0.0 if scores[i] < scores[j]
-func updateRatings(ratings []Glicko2Rating, scores []float64) []Glicko2Rating {
+func UpdateRatings(ratings []Glicko2Rating, scores []float64) []Glicko2Rating {
 	n := len(ratings)
 	if n < 2 {
 		return ratings
@@ -182,4 +182,30 @@ func updateRatings(ratings []Glicko2Rating, scores []float64) []Glicko2Rating {
 	}
 
 	return result
+}
+
+// ComputeRatingUpdates computes rating updates for match participants.
+// botIDs, currentRatings, and scores must all have the same length.
+func ComputeRatingUpdates(botIDs []string, currentRatings []Glicko2Rating, scores []float64) []RatingUpdate {
+	if len(botIDs) != len(currentRatings) || len(botIDs) != len(scores) {
+		return nil
+	}
+
+	newRatings := UpdateRatings(currentRatings, scores)
+	updates := make([]RatingUpdate, len(botIDs))
+
+	for i := range botIDs {
+		updates[i] = RatingUpdate{
+			BotID:                 botIDs[i],
+			Mu:                    newRatings[i].Mu,
+			Phi:                   newRatings[i].Phi,
+			Sigma:                 newRatings[i].Sigma,
+			DisplayRating:         newRatings[i].DisplayRating(),
+			RatingMuBefore:        currentRatings[i].Mu,
+			RatingPhiBefore:       currentRatings[i].Phi,
+			RatingDeviationChange: newRatings[i].Phi - currentRatings[i].Phi,
+		}
+	}
+
+	return updates
 }

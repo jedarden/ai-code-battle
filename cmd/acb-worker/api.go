@@ -1,37 +1,12 @@
-// API client for Worker API communication
+// API types for acb-worker
+// HTTP API client removed - worker now uses direct PostgreSQL writes
 package main
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 	"time"
 )
 
-// APIClient communicates with the Worker API.
-type APIClient struct {
-	endpoint   string
-	apiKey     string
-	httpClient *http.Client
-	maxRetries int
-}
-
-// NewAPIClient creates a new API client.
-func NewAPIClient(cfg *Config) *APIClient {
-	return &APIClient{
-		endpoint: cfg.APIEndpoint,
-		apiKey:   cfg.APIKey,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		maxRetries: cfg.MaxRetries,
-	}
-}
-
-// Job represents a pending job from the API.
+// Job represents a pending job (kept for compatibility).
 type Job struct {
 	ID          string     `json:"id"`
 	MatchID     string     `json:"match_id"`
@@ -43,6 +18,7 @@ type Job struct {
 }
 
 // JobClaimResponse contains the data needed to execute a match.
+// This maps to JobClaimData from db.go for compatibility.
 type JobClaimResponse struct {
 	Job          Job           `json:"job"`
 	Match        Match         `json:"match"`
@@ -100,175 +76,97 @@ type BotSecret struct {
 	Secret string `json:"secret"`
 }
 
-// APIResponse is a generic API response.
-type APIResponse struct {
-	Success bool            `json:"success"`
-	Data    json.RawMessage `json:"data,omitempty"`
-	Error   string          `json:"error,omitempty"`
+// MatchResult represents the result of a match for submission.
+type MatchResult struct {
+	WinnerID  string         `json:"winner_id"`
+	Turns     int            `json:"turns"`
+	EndReason string         `json:"end_reason"`
+	Scores    map[string]int `json:"scores"`
 }
 
-// GetNextJob fetches the next pending job.
-func (c *APIClient) GetNextJob(ctx context.Context) (*Job, error) {
-	resp, err := c.doRequest(ctx, "GET", "/api/jobs/next", nil)
-	if err != nil {
-		return nil, err
+// ConvertDBJobToJob converts a DBJob to Job type.
+func ConvertDBJobToJob(dbJob *DBJob) *Job {
+	if dbJob == nil {
+		return nil
 	}
-
-	var apiResp APIResponse
-	if err := json.Unmarshal(resp, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	return &Job{
+		ID:          dbJob.ID,
+		MatchID:     dbJob.MatchID,
+		Status:      dbJob.Status,
+		WorkerID:    dbJob.WorkerID,
+		ClaimedAt:   dbJob.ClaimedAt,
+		HeartbeatAt: dbJob.HeartbeatAt,
+		CreatedAt:   dbJob.CreatedAt,
 	}
-
-	if !apiResp.Success {
-		return nil, fmt.Errorf("API error: %s", apiResp.Error)
-	}
-
-	if apiResp.Data == nil {
-		return nil, nil // No pending jobs
-	}
-
-	var job Job
-	if err := json.Unmarshal(apiResp.Data, &job); err != nil {
-		return nil, fmt.Errorf("failed to parse job: %w", err)
-	}
-
-	return &job, nil
 }
 
-// ClaimJob claims a job for execution.
-func (c *APIClient) ClaimJob(ctx context.Context, jobID string, workerID string) (*JobClaimResponse, error) {
-	body := map[string]string{"worker_id": workerID}
-
-	resp, err := c.doRequest(ctx, "POST", "/api/jobs/"+jobID+"/claim", body)
-	if err != nil {
-		return nil, err
+// ConvertDBClaimToResponse converts JobClaimData to JobClaimResponse.
+func ConvertDBClaimToResponse(data *JobClaimData) *JobClaimResponse {
+	if data == nil {
+		return nil
 	}
 
-	var apiResp APIResponse
-	if err := json.Unmarshal(resp, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	// Convert participants
+	participants := make([]Participant, len(data.Participants))
+	botSecrets := make([]BotSecret, len(data.Participants))
+	bots := make([]BotInfo, len(data.Bots))
 
-	if !apiResp.Success {
-		return nil, fmt.Errorf("API error: %s", apiResp.Error)
-	}
-
-	var claimResp JobClaimResponse
-	if err := json.Unmarshal(apiResp.Data, &claimResp); err != nil {
-		return nil, fmt.Errorf("failed to parse claim response: %w", err)
-	}
-
-	return &claimResp, nil
-}
-
-// Heartbeat sends a heartbeat for a claimed job.
-func (c *APIClient) Heartbeat(ctx context.Context, jobID string, workerID string) error {
-	body := map[string]string{"worker_id": workerID}
-
-	_, err := c.doRequest(ctx, "POST", "/api/jobs/"+jobID+"/heartbeat", body)
-	return err
-}
-
-// SubmitResult submits the result of a completed match.
-func (c *APIClient) SubmitResult(ctx context.Context, jobID string, result *MatchResult, replayURL string) error {
-	body := map[string]interface{}{
-		"winner_id":   result.WinnerID,
-		"turns":       result.Turns,
-		"end_reason":  result.EndReason,
-		"replay_url":  replayURL,
-		"scores":      result.Scores,
-	}
-
-	_, err := c.doRequest(ctx, "POST", "/api/jobs/"+jobID+"/result", body)
-	return err
-}
-
-// FailJob marks a job as failed.
-func (c *APIClient) FailJob(ctx context.Context, jobID string, workerID string, errorMessage string) error {
-	body := map[string]string{
-		"worker_id":     workerID,
-		"error_message": errorMessage,
-	}
-
-	_, err := c.doRequest(ctx, "POST", "/api/jobs/"+jobID+"/fail", body)
-	return err
-}
-
-// doRequest makes an HTTP request with retries.
-func (c *APIClient) doRequest(ctx context.Context, method string, path string, body interface{}) ([]byte, error) {
-	var lastErr error
-
-	for attempt := 0; attempt <= c.maxRetries; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(time.Second * time.Duration(attempt)):
-			}
+	for i, p := range data.Participants {
+		participants[i] = Participant{
+			ID:                   p.MatchID + "-" + p.BotID,
+			MatchID:              p.MatchID,
+			BotID:                p.BotID,
+			PlayerIndex:          p.PlayerSlot,
+			Score:                p.Score,
+			RatingBefore:         int(p.RatingMuBefore),
+			RatingDeviationBefore: int(p.RatingPhiBefore),
 		}
-
-		resp, err := c.doSingleRequest(ctx, method, path, body)
-		if err != nil {
-			lastErr = err
-			// Check if it's a client error (don't retry)
-			if httpErr, ok := err.(*HTTPError); ok && httpErr.StatusCode >= 400 && httpErr.StatusCode < 500 {
-				return nil, err
-			}
-			continue
-		}
-
-		return resp, nil
-	}
-
-	return nil, fmt.Errorf("request failed after %d retries: %w", c.maxRetries, lastErr)
-}
-
-// doSingleRequest makes a single HTTP request.
-func (c *APIClient) doSingleRequest(ctx context.Context, method string, path string, body interface{}) ([]byte, error) {
-	var reqBody io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
-		}
-		reqBody = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, &HTTPError{
-			StatusCode: resp.StatusCode,
-			Body:       string(respBody),
+		botSecrets[i] = BotSecret{
+			BotID:  p.BotID,
+			Secret: "", // Will be filled from bots lookup
 		}
 	}
 
-	return respBody, nil
-}
+	// Convert bots and match secrets
+	botSecretMap := make(map[string]string)
+	for i, b := range data.Bots {
+		bots[i] = BotInfo{
+			ID:          b.ID,
+			EndpointURL: b.EndpointURL,
+		}
+		botSecretMap[b.ID] = b.Secret
+	}
 
-// HTTPError represents an HTTP error response.
-type HTTPError struct {
-	StatusCode int
-	Body       string
-}
+	// Fill in secrets
+	for i, p := range data.Participants {
+		botSecrets[i].Secret = botSecretMap[p.BotID]
+	}
 
-func (e *HTTPError) Error() string {
-	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+	return &JobClaimResponse{
+		Job: Job{
+			ID:        data.Job.ID,
+			MatchID:   data.Job.MatchID,
+			Status:    data.Job.Status,
+			WorkerID:  data.Job.WorkerID,
+			ClaimedAt: data.Job.ClaimedAt,
+			CreatedAt: data.Job.CreatedAt,
+		},
+		Match: Match{
+			ID:        data.Match.ID,
+			Status:    data.Match.Status,
+			MapID:     data.Match.MapID,
+			CreatedAt: data.Match.CreatedAt,
+		},
+		Participants: participants,
+		Map: MapData{
+			ID:     data.Map.ID,
+			Width:  data.Map.Width,
+			Height: data.Map.Height,
+			Walls:  data.Map.Walls,
+			Spawns: data.Map.Spawns,
+			Cores:  data.Map.Cores,
+		},
+		Bots:       bots,
+		BotSecrets: botSecrets,
+	}
 }
