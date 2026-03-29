@@ -12,6 +12,7 @@ import { renderClipMakerPage } from './pages/clip-maker';
 import { renderRivalriesPage } from './pages/rivalries';
 import { renderFeedbackPage } from './pages/feedback';
 import { renderPlaylistsPage } from './pages/playlists';
+import { renderBlogPage, renderBlogPostPage } from './pages/blog';
 import { ReplayViewer } from './replay-viewer';
 import type { Replay } from './types';
 
@@ -29,6 +30,8 @@ router
   .on('/rivalries', renderRivalriesPage)
   .on('/feedback', renderFeedbackPage)
   .on('/playlists', renderPlaylistsPage)
+  .on('/blog', renderBlogPage)
+  .on('/blog/:slug', renderBlogPostPage)
   .on('/replay', renderReplayPage)
   .on('/docs', renderDocsPage)
   .notFound(renderNotFoundPage);

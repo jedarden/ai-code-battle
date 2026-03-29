@@ -4,9 +4,22 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-29** (Accessibility suite)
+**Last Updated: 2026-03-29** (Blog infrastructure)
 
 ### Recent Changes (2026-03-29)
+- **Phase 10 Blog Infrastructure** (`cmd/acb-index-builder/blog.go`, `web/src/pages/blog.ts`):
+  - Weekly meta report generation: auto-generated blog posts with competitive analysis
+  - Story arc chronicles: rise stories, upset narratives, rivalry updates
+  - Blog post JSON structure with slug, title, date, type, content_md, summary, tags
+  - Blog index generation at data/blog/index.json
+  - Individual posts at data/blog/posts/{slug}.json
+  - Blog page component with filtering (all/meta-report/chronicle)
+  - Individual blog post page with markdown rendering
+  - Added /blog and /blog/:slug routes to SPA router
+  - Added Blog link to navigation menu
+  - Placeholder data files for initial blog content
+
+### Previous Changes (2026-03-29)
 - **Phase 10 Accessibility Suite** (`web/src/replay-viewer.ts`, `web/src/app.ts`):
   - Paul Tol color-blind safe palette (8 distinct colors for up to 6 players)
   - Player shapes: circle, square, triangle, diamond, pentagon, hexagon
@@ -400,10 +413,17 @@
   - High contrast mode (brighter colors, darker walls)
   - Reduced motion support (auto-detect prefers-reduced-motion)
   - Accessibility controls UI in replay page
-- [ ] Weekly meta report (auto-generated blog post)
-- [ ] Public match data documentation (OpenAPI-style)
+- [x] Weekly meta report blog infrastructure
+  - Blog generation module in Go index builder (`cmd/acb-index-builder/blog.go`)
+  - Meta report content generation (leaderboard, strategies, rising/falling bots, rivalries)
+  - Chronicle generation (rise stories, upset narratives, rivalry chronicles)
+  - Blog page component with filtering and post rendering (`web/src/pages/blog.ts`)
+  - Individual post page with markdown rendering
+  - Blog routes added to SPA router
+  - Blog link added to navigation
 - [ ] Live evolution observatory (evolver writes live.json to R2)
 - [ ] Narrative engine (weekly story arc detection + LLM chronicles)
+- [ ] Public match data documentation (OpenAPI-style)
 
 ### Phase 4 Completed
 

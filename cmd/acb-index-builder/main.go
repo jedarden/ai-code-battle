@@ -146,6 +146,12 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		return fmt.Errorf("generate indexes: %w", err)
 	}
 
+	// Generate blog posts (weekly meta reports and chronicles)
+	if err := generateBlog(data, cfg.OutputDir); err != nil {
+		slog.Error("Failed to generate blog", "error", err)
+		// Non-fatal - continue with rest of build
+	}
+
 	// Generate bot profile cards (PNG images for social sharing)
 	if err := generateAllBotCards(data, cfg.OutputDir); err != nil {
 		slog.Error("Failed to generate bot cards", "error", err)
