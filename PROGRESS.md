@@ -4,9 +4,27 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-29**
+**Last Updated: 2026-03-29** (Go index-builder implementation)
 
 ### Recent Changes (2026-03-29)
+- **Go Index Builder** (`cmd/acb-index-builder/`): New Go implementation per plan §11.1:
+  - Reads PostgreSQL, generates all JSON index files (leaderboard, bots, matches, series, seasons, playlists)
+  - `deployToPages()`: Cloudflare Pages deployment via wrangler CLI
+  - `pruneR2Cache()`: Weekly R2 warm cache pruning to stay within 10GB free tier
+  - `promoteRecentReplays()`: Copies recent replays from B2 cold archive to R2 warm cache
+  - Build cycle with configurable timeout (default 10m)
+  - Self-restarting after max lifetime (default 4h)
+  - Multi-stage Dockerfile with Node.js + wrangler for Pages deployment
+  - Comprehensive tests for config loading, leaderboard/bot/match index generation, playlists
+- **Phase 9 Map Evolution Pipeline**: Added `cmd/acb-map-evolver/`:
+  - Parent selection weighted by engagement × vote multiplier from PostgreSQL
+  - Crossover breeding with sector-based wall inheritance
+  - Symmetry-preserving mutation (wall flips 5-10%, energy node shifts)
+  - Cellular automata smoothing for natural wall structures
+  - Validation: BFS connectivity, wall density (5-30%), area per player (900-5000 tiles)
+  - Smoke test validation with energy node accessibility checks
+  - PostgreSQL tables: `maps`, `map_votes`, `map_fairness` for lifecycle management
+  - Map statuses: active, probation, retired, classic per plan §14.6
 - **Phase 7-9 Implementation**: Committed extensive feature work spanning evolution,
   enhanced features, and platform depth:
   - Phase 7: Evolution live-export for dashboard JSON generation
@@ -347,7 +365,12 @@
   - SPA page for browsing playlists
   - Embed code copy button
   - Placeholder data directory
-- [ ] Map evolution pipeline
+- [x] Map evolution pipeline (`cmd/acb-map-evolver/`)
+  - Parent selection by engagement × vote multiplier
+  - Crossover breeding with sector-based inheritance
+  - Symmetry-preserving mutation
+  - Validation: connectivity, density, energy access
+  - PostgreSQL tables: maps, map_votes, map_fairness
 - [ ] Bot profile cards
 
 ### Phase 4 Completed
