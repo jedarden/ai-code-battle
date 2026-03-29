@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,73 @@ import (
 	"strings"
 	"time"
 )
+
+// fetchExemptMatchIDs retrieves match IDs that should never be pruned (from series, seasons, playlists)
+func fetchExemptMatchIDs(ctx context.Context, db *sql.DB) (map[string]bool, error) {
+	if db == nil {
+		return make(map[string]bool), nil
+	}
+
+	exempt := make(map[string]bool)
+
+	// Matches in active series
+	seriesQuery := `
+		SELECT DISTINCT sm.match_id
+		FROM series_matches sm
+		JOIN series s ON sm.series_id = s.id
+		WHERE s.status IN ('active', 'pending')
+	`
+	rows, err := db.QueryContext(ctx, seriesQuery)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err == nil {
+				exempt[id] = true
+			}
+		}
+		rows.Close()
+	}
+
+	// Matches in active seasons
+	seasonQuery := `
+		SELECT DISTINCT match_id
+		FROM season_matches
+		WHERE season_id IN (
+			SELECT id FROM seasons WHERE ends_at IS NULL OR ends_at > NOW()
+		)
+	`
+	rows, err = db.QueryContext(ctx, seasonQuery)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err == nil {
+				exempt[id] = true
+			}
+		}
+		rows.Close()
+	}
+
+	// Matches in featured playlists
+	playlistQuery := `
+		SELECT DISTINCT pm.match_id
+		FROM playlist_matches pm
+		JOIN playlists p ON pm.playlist_id = p.id
+		WHERE p.featured = true
+	`
+	rows, err = db.QueryContext(ctx, playlistQuery)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err == nil {
+				exempt[id] = true
+			}
+		}
+		rows.Close()
+	}
+
+	slog.Debug("Fetched exempt match IDs for pruning", "count", len(exempt))
+	return exempt, nil
+}
 
 // deployToPages deploys the generated files to Cloudflare Pages via wrangler
 func deployToPages(cfg *Config) error {
@@ -59,6 +127,11 @@ func deployToPages(cfg *Config) error {
 // pruneR2Cache removes old replays from R2 warm cache to stay within the 10GB free tier
 // It also promotes recent replays from B2 to R2
 func pruneR2Cache(ctx context.Context, cfg *Config) error {
+	return pruneR2CacheWithDB(ctx, cfg, nil)
+}
+
+// pruneR2CacheWithDB removes old replays from R2, respecting exempt matches
+func pruneR2CacheWithDB(ctx context.Context, cfg *Config, db *sql.DB) error {
 	// R2 max size in bytes (10 GB with 500MB buffer for safety)
 	maxSize := int64(10*1024*1024*1024 - 500*1024*1024)
 
@@ -86,12 +159,29 @@ func pruneR2Cache(ctx context.Context, cfg *Config) error {
 		return nil
 	}
 
+	// Get exempt match IDs if db is provided
+	exemptMatchIDs := make(map[string]bool)
+	if db != nil {
+		exemptMatchIDs, err = fetchExemptMatchIDs(ctx, db)
+		if err != nil {
+			slog.Warn("Failed to fetch exempt match IDs, will proceed without exemptions", "error", err)
+		}
+	}
+
 	// Sort objects by age (oldest first) and delete until under limit
 	// Objects are already sorted by LastModified from listR2Objects
 	toDelete := int64(0)
+	prunedCount := 0
 	for _, obj := range objects {
 		if totalSize-toDelete <= maxSize {
 			break
+		}
+
+		// Extract match ID from key (replays/{match_id}.json.gz)
+		matchID := extractMatchIDFromKey(obj.Key)
+		if exemptMatchIDs[matchID] {
+			slog.Debug("Skipping exempt match from pruning", "key", obj.Key, "match_id", matchID)
+			continue
 		}
 
 		if err := deleteR2Object(ctx, cfg, obj.Key); err != nil {
@@ -100,15 +190,31 @@ func pruneR2Cache(ctx context.Context, cfg *Config) error {
 		}
 
 		toDelete += obj.Size
+		prunedCount++
 		slog.Info("Pruned R2 object", "key", obj.Key, "size_mb", obj.Size/(1024*1024))
 	}
 
 	slog.Info("R2 pruning complete",
-		"pruned_count", len(objects),
+		"pruned_count", prunedCount,
 		"pruned_size_gb", float64(toDelete)/(1024*1024*1024),
 	)
 
 	return nil
+}
+
+// extractMatchIDFromKey extracts the match ID from a replay key
+func extractMatchIDFromKey(key string) string {
+	// Key format: replays/{match_id}.json.gz
+	parts := strings.Split(key, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	filename := parts[len(parts)-1]
+	// Remove .json.gz extension
+	if strings.HasSuffix(filename, ".json.gz") {
+		return filename[:len(filename)-8]
+	}
+	return filename
 }
 
 // promoteRecentReplays copies recent replays from B2 to R2 warm cache
@@ -147,39 +253,78 @@ type R2Object struct {
 	LastModified time.Time
 }
 
+// getR2Client returns an S3 client for R2
+func getR2Client(cfg *Config) (*S3Client, error) {
+	if cfg.R2AccessKey == "" || cfg.R2SecretKey == "" || cfg.R2BucketName == "" {
+		return nil, fmt.Errorf("R2 credentials not configured")
+	}
+	return NewS3Client(cfg.R2Endpoint, cfg.R2AccessKey, cfg.R2SecretKey, cfg.R2BucketName)
+}
+
+// getB2Client returns an S3 client for B2
+func getB2Client(cfg *Config) (*S3Client, error) {
+	if cfg.B2AccessKey == "" || cfg.B2SecretKey == "" || cfg.B2BucketName == "" {
+		return nil, fmt.Errorf("B2 credentials not configured")
+	}
+	return NewS3Client(cfg.B2Endpoint, cfg.B2AccessKey, cfg.B2SecretKey, cfg.B2BucketName)
+}
+
 // listR2Objects lists all objects in R2 under a prefix, sorted by LastModified (oldest first)
 func listR2Objects(ctx context.Context, cfg *Config, prefix string) ([]R2Object, error) {
-	// This is a simplified implementation
-	// In production, use the AWS SDK for Go v2 with S3-compatible API
-	//
-	// Example using minio client or aws-sdk-go-v2:
-	// cfg := aws.NewConfig().
-	//     WithEndpoint(cfg.R2Endpoint).
-	//     WithCredentials(credentials.NewStaticCredentials(cfg.R2AccessKey, cfg.R2SecretKey, ""))
-	//
-	// For now, return empty list - actual implementation requires AWS SDK
+	client, err := getR2Client(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create R2 client: %w", err)
+	}
 
-	slog.Warn("listR2Objects not fully implemented - requires AWS SDK integration")
-	return []R2Object{}, nil
+	return client.listObjects(ctx, prefix)
 }
 
 // deleteR2Object deletes an object from R2
 func deleteR2Object(ctx context.Context, cfg *Config, key string) error {
-	// Requires AWS SDK integration
-	slog.Warn("deleteR2Object not fully implemented - requires AWS SDK integration")
-	return nil
+	client, err := getR2Client(cfg)
+	if err != nil {
+		return fmt.Errorf("create R2 client: %w", err)
+	}
+
+	return client.deleteObject(ctx, key)
 }
 
 // checkR2ObjectExists checks if an object exists in R2
 func checkR2ObjectExists(ctx context.Context, cfg *Config, key string) (bool, error) {
-	// Requires AWS SDK integration
-	return false, nil
+	client, err := getR2Client(cfg)
+	if err != nil {
+		return false, fmt.Errorf("create R2 client: %w", err)
+	}
+
+	return client.objectExists(ctx, key)
 }
 
-// copyB2ToR2 copies an object from B2 to R2
+// copyB2ToR2 copies an object from B2 to R2 by downloading from B2 and uploading to R2
 func copyB2ToR2(ctx context.Context, cfg *Config, b2Key, r2Key string) error {
-	// Requires AWS SDK integration for both B2 and R2
-	slog.Warn("copyB2ToR2 not fully implemented - requires AWS SDK integration")
+	b2Client, err := getB2Client(cfg)
+	if err != nil {
+		return fmt.Errorf("create B2 client: %w", err)
+	}
+
+	r2Client, err := getR2Client(cfg)
+	if err != nil {
+		return fmt.Errorf("create R2 client: %w", err)
+	}
+
+	// Download from B2
+	body, err := b2Client.downloadObject(ctx, b2Key)
+	if err != nil {
+		return fmt.Errorf("download from B2: %w", err)
+	}
+	defer body.Close()
+
+	// Upload to R2
+	contentType := getS3ContentType(r2Key)
+	if err := r2Client.uploadFile(ctx, r2Key, body, contentType); err != nil {
+		return fmt.Errorf("upload to R2: %w", err)
+	}
+
+	slog.Info("Copied object from B2 to R2", "b2_key", b2Key, "r2_key", r2Key)
 	return nil
 }
 

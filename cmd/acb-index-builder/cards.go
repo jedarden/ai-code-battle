@@ -432,37 +432,46 @@ func blendColors(bg, fg color.Color) color.RGBA {
 	}
 }
 
-// uploadFileToR2 uploads a file to R2 (stub - requires AWS SDK)
+// uploadFileToR2 uploads a file to R2
 func uploadFileToR2(ctx context.Context, cfg *Config, filePath, key string) error {
-	// This is a stub - actual implementation requires AWS SDK for Go v2
-	// with S3-compatible API for Cloudflare R2
-	//
-	// Example:
-	// cfg, err := config.LoadDefaultConfig(ctx,
-	//     config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-	//         cfg.R2AccessKey, cfg.R2SecretKey, "")),
-	//     config.WithRegion("auto"),
-	// )
-	// client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-	//     o.BaseEndpoint = aws.String(cfg.R2Endpoint)
-	// })
-	// _, err := client.PutObject(ctx, &s3.PutObjectInput{
-	//     Bucket: aws.String(cfg.R2Bucket),
-	//     Key:    aws.String(key),
-	//     Body:   file,
-	// })
+	client, err := getR2Client(cfg)
+	if err != nil {
+		return fmt.Errorf("create R2 client: %w", err)
+	}
 
-	slog.Debug("uploadFileToR2 stub called", "file", filePath, "key", key)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	contentType := getS3ContentType(key)
+	if err := client.uploadFile(ctx, key, file, contentType); err != nil {
+		return fmt.Errorf("upload to R2: %w", err)
+	}
+
+	slog.Debug("Uploaded file to R2", "file", filePath, "key", key)
 	return nil
 }
 
-// uploadFileToB2 uploads a file to B2 (stub - requires AWS SDK)
+// uploadFileToB2 uploads a file to B2
 func uploadFileToB2(ctx context.Context, cfg *Config, filePath, key string) error {
-	// This is a stub - actual implementation requires AWS SDK for Go v2
-	// with S3-compatible API for Backblaze B2
-	//
-	// Same pattern as R2, but with B2 endpoint and credentials
+	client, err := getB2Client(cfg)
+	if err != nil {
+		return fmt.Errorf("create B2 client: %w", err)
+	}
 
-	slog.Debug("uploadFileToB2 stub called", "file", filePath, "key", key)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	contentType := getS3ContentType(key)
+	if err := client.uploadFile(ctx, key, file, contentType); err != nil {
+		return fmt.Errorf("upload to B2: %w", err)
+	}
+
+	slog.Debug("Uploaded file to B2", "file", filePath, "key", key)
 	return nil
 }

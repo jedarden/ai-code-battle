@@ -174,5 +174,143 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		// Non-fatal
 	}
 
+	// Promote recent replays from B2 to R2 warm cache
+	if err := promoteRecentReplaysForCycle(ctx, db, cfg); err != nil {
+		slog.Error("Failed to promote recent replays", "error", err)
+		// Non-fatal
+	}
+
 	return nil
+}
+
+// promoteRecentReplaysForCycle promotes recent replays from B2 to R2
+func promoteRecentReplaysForCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
+	// Get recent match IDs from the last 24 hours
+	recentMatchIDs, err := fetchRecentMatchIDs(ctx, db, 24*time.Hour)
+	if err != nil {
+		return fmt.Errorf("fetch recent match IDs: %w", err)
+	}
+
+	if len(recentMatchIDs) == 0 {
+		slog.Debug("No recent matches to promote")
+		return nil
+	}
+
+	// Get exempt match IDs (playlists, series, seasons)
+	exemptMatchIDs, err := fetchExemptMatchIDs(ctx, db)
+	if err != nil {
+		slog.Warn("Failed to fetch exempt match IDs, promoting all", "error", err)
+		exemptMatchIDs = make(map[string]bool)
+	}
+
+	// Combine recent and exempt matches for promotion
+	matchIDsToPromote := recentMatchIDs
+	for matchID := range exemptMatchIDs {
+		matchIDsToPromote = append(matchIDsToPromote, matchID)
+	}
+
+	if len(matchIDsToPromote) == 0 {
+		slog.Debug("No matches to promote")
+		return nil
+	}
+
+	slog.Info("Promoting replays to R2",
+		"recent_count", len(recentMatchIDs),
+		"exempt_count", len(exemptMatchIDs),
+		"total", len(matchIDsToPromote))
+
+	return promoteRecentReplays(ctx, cfg, matchIDsToPromote)
+}
+
+// fetchRecentMatchIDs retrieves match IDs from the last duration
+func fetchRecentMatchIDs(ctx context.Context, db *sql.DB, since time.Duration) ([]string, error) {
+	query := `
+		SELECT match_id
+		FROM matches
+		WHERE status = 'completed'
+		  AND completed_at > NOW() - $1::interval
+		ORDER BY completed_at DESC
+	`
+
+	intervalStr := fmt.Sprintf("%.0f seconds", since.Seconds())
+	rows, err := db.QueryContext(ctx, query, intervalStr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matchIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		matchIDs = append(matchIDs, id)
+	}
+
+	return matchIDs, nil
+}
+
+// fetchExemptMatchIDs retrieves match IDs that are part of playlists, series, or seasons
+// These matches should never be pruned from R2
+func fetchExemptMatchIDs(ctx context.Context, db *sql.DB) (map[string]bool, error) {
+	exempt := make(map[string]bool)
+
+	// Matches in active series
+	seriesQuery := `
+		SELECT DISTINCT sm.match_id
+		FROM series_matches sm
+		JOIN series s ON sm.series_id = s.id
+		WHERE s.status IN ('active', 'pending')
+	`
+	rows, err := db.QueryContext(ctx, seriesQuery)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err == nil {
+				exempt[id] = true
+			}
+		}
+		rows.Close()
+	}
+
+	// Matches in active seasons
+	seasonQuery := `
+		SELECT DISTINCT season_match_id
+		FROM season_matches
+		WHERE season_id IN (
+			SELECT id FROM seasons WHERE ends_at IS NULL OR ends_at > NOW()
+		)
+	`
+	rows, err = db.QueryContext(ctx, seasonQuery)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err == nil {
+				exempt[id] = true
+			}
+		}
+		rows.Close()
+	}
+
+	// Matches in featured playlists
+	playlistQuery := `
+		SELECT DISTINCT pm.match_id
+		FROM playlist_matches pm
+		JOIN playlists p ON pm.playlist_id = p.id
+		WHERE p.featured = true
+	`
+	rows, err = db.QueryContext(ctx, playlistQuery)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err == nil {
+				exempt[id] = true
+			}
+		}
+		rows.Close()
+	}
+
+	slog.Debug("Fetched exempt match IDs", "count", len(exempt))
+	return exempt, nil
 }
