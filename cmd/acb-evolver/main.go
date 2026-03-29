@@ -18,17 +18,25 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
+	"time"
 
 	_ "github.com/lib/pq"
 
 	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/arena"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/live"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/llm"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/mapelites"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/meta"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/promoter"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/prompt"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/replay"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/selector"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/validator"
+	"github.com/aicodebattle/acb/engine"
 )
 
 func main() {
@@ -49,6 +57,9 @@ func main() {
 		db := mustOpenDB(dbURL)
 		defer db.Close()
 		runLiveExport(ctx, db, os.Args[2:])
+
+	case "evolve":
+		runEvolve(ctx, dbURL, os.Args[2:])
 
 	case "evaluate":
 		db := mustOpenDB(dbURL)
@@ -112,8 +123,200 @@ func main() {
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats|evaluate|retire|live-export>")
+		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats|evolve|evaluate|retire|live-export>")
 		os.Exit(1)
+	}
+}
+
+// runEvolve generates a new candidate bot using the LLM ensemble.
+//
+//	evolve -island alpha -lang go [-replay file.json] [-llm-url URL] [-num-parents 2] [-seed N] [-out file.go]
+func runEvolve(ctx context.Context, dbURL string, args []string) {
+	fs := flag.NewFlagSet("evolve", flag.ExitOnError)
+	island := fs.String("island", "", "island name (alpha|beta|gamma|delta) [required]")
+	lang := fs.String("lang", "", "target language (go|python|rust|typescript|java|php) [required]")
+	replayFile := fs.String("replay", "", "optional replay JSON file for analysis (can be specified multiple times as comma-separated)")
+	llmURL := fs.String("llm-url", envOrDefault("ACB_LLM_URL", "http://zai-proxy-apexalgo.tail1b1987.ts.net:8080"), "LLM proxy URL")
+	numParents := fs.Int("num-parents", 2, "number of parents to select via tournament selection")
+	tournamentK := fs.Int("tournament-k", 3, "tournament size for parent selection")
+	seed := fs.Int64("seed", 0, "random seed (0 = use time)")
+	topBotLimit := fs.Int("top-bots", 10, "number of top bots to include in meta description")
+	outFile := fs.String("out", "", "output file for generated code (default: stdout)")
+	verbose := fs.Bool("v", false, "verbose output")
+
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+	if *island == "" {
+		fmt.Fprintln(os.Stderr, "evolve: -island is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+	if *lang == "" {
+		fmt.Fprintln(os.Stderr, "evolve: -lang is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	// Validate island
+	validIsland := false
+	for _, i := range evolverdb.AllIslands {
+		if i == *island {
+			validIsland = true
+			break
+		}
+	}
+	if !validIsland {
+		fmt.Fprintf(os.Stderr, "evolve: invalid island %q (must be one of: alpha, beta, gamma, delta)\n", *island)
+		os.Exit(1)
+	}
+
+	// Initialize RNG
+	rng := rand.New(rand.NewSource(*seed))
+	if *seed == 0 {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
+	// Open database
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	store := evolverdb.NewStore(db)
+
+	// 1. Load programs from the island
+	if *verbose {
+		log.Printf("Loading programs from island %s...", *island)
+	}
+	programs, err := store.ListByIsland(ctx, *island)
+	if err != nil {
+		log.Fatalf("list programs: %v", err)
+	}
+	if len(programs) == 0 {
+		log.Fatalf("no programs found on island %s - seed the database first", *island)
+	}
+	if *verbose {
+		log.Printf("Found %d programs on island %s", len(programs), *island)
+	}
+
+	// 2. Select parents via tournament selection
+	if *verbose {
+		log.Printf("Selecting %d parents via %d-way tournament selection...", *numParents, *tournamentK)
+	}
+	parents := selector.SelectParents(programs, *numParents, *tournamentK, rng)
+	if *verbose {
+		for i, p := range parents {
+			log.Printf("  Parent %d: id=%d fitness=%.3f lang=%s", i+1, p.ID, p.Fitness, p.Language)
+		}
+	}
+
+	// 3. Load and analyze replays (if provided)
+	var analyses []*replay.Analysis
+	if *replayFile != "" {
+		analyzer := replay.NewAnalyzer()
+		replayFiles := strings.Split(*replayFile, ",")
+		for _, rf := range replayFiles {
+			rf = strings.TrimSpace(rf)
+			if rf == "" {
+				continue
+			}
+			if *verbose {
+				log.Printf("Loading replay: %s", rf)
+			}
+			rep, err := engine.LoadReplayFile(rf)
+			if err != nil {
+				log.Printf("warn: failed to load replay %s: %v", rf, err)
+				continue
+			}
+			analysis := analyzer.Analyze(rep)
+			if analysis != nil {
+				analyses = append(analyses, analysis)
+			}
+		}
+		if *verbose {
+			log.Printf("Analyzed %d replays", len(analyses))
+		}
+	}
+
+	// 4. Build meta description
+	if *verbose {
+		log.Printf("Building meta description...")
+	}
+	metaBuilder := meta.NewBuilder(store)
+	metaDesc, err := metaBuilder.Build(ctx, *topBotLimit)
+	if err != nil {
+		log.Printf("warn: failed to build meta description: %v", err)
+		// Create a minimal meta description
+		metaDesc = &meta.Description{
+			TotalBots:   len(programs),
+			IslandStats: make(map[string]meta.IslandStats),
+		}
+	}
+
+	// 5. Determine generation number (max generation on island + 1)
+	maxGen := 0
+	for _, p := range programs {
+		if p.Generation > maxGen {
+			maxGen = p.Generation
+		}
+	}
+	generation := maxGen + 1
+
+	// 6. Assemble the prompt
+	if *verbose {
+		log.Printf("Assembling prompt for generation %d...", generation)
+	}
+	req := prompt.BuildRequest(parents, analyses, metaDesc, *island, *lang, generation)
+	fullPrompt := prompt.Assemble(req)
+
+	if *verbose {
+		log.Printf("Prompt length: %d bytes", len(fullPrompt))
+	}
+
+	// 7. Create LLM client and run ensemble
+	if *verbose {
+		log.Printf("Connecting to LLM at %s...", *llmURL)
+	}
+	client := llm.NewClient(*llmURL, "")
+
+	cfg := llm.DefaultEnsembleConfig()
+	cfg.NumCandidates = 3
+	cfg.RefineTop = true
+
+	if *verbose {
+		log.Printf("Running ensemble generation (%d candidates, refinement enabled)...", cfg.NumCandidates)
+	}
+
+	result, err := client.Ensemble(ctx, fullPrompt, *lang, cfg)
+	if err != nil {
+		log.Fatalf("LLM ensemble failed: %v", err)
+	}
+
+	if result.Best == nil {
+		log.Fatal("No valid candidate generated")
+	}
+
+	// 8. Output the result
+	if *verbose {
+		log.Printf("Generation complete!")
+		log.Printf("  Candidates generated: %d", len(result.AllCandidates))
+		log.Printf("  Refinement applied: %v", result.RefinementApplied)
+		log.Printf("  Best candidate length: %d bytes", len(result.Best.Code))
+		if len(result.Errors) > 0 {
+			log.Printf("  Errors: %d", len(result.Errors))
+		}
+	}
+
+	if *outFile != "" {
+		if err := os.WriteFile(*outFile, []byte(result.Best.Code), 0644); err != nil {
+			log.Fatalf("write output file: %v", err)
+		}
+		if *verbose {
+			log.Printf("Wrote candidate to %s", *outFile)
+		}
+	} else {
+		fmt.Print(result.Best.Code)
 	}
 }
 
