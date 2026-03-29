@@ -13,6 +13,7 @@ import { renderRivalriesPage } from './pages/rivalries';
 import { renderFeedbackPage } from './pages/feedback';
 import { renderPlaylistsPage } from './pages/playlists';
 import { renderBlogPage, renderBlogPostPage } from './pages/blog';
+import { renderDocsApiPage } from './pages/docs-api';
 import { ReplayViewer } from './replay-viewer';
 import type { Replay } from './types';
 
@@ -34,6 +35,7 @@ router
   .on('/blog/:slug', renderBlogPostPage)
   .on('/replay', renderReplayPage)
   .on('/docs', renderDocsPage)
+  .on('/docs/api', renderDocsApiPage)
   .notFound(renderNotFoundPage);
 
 // Update active nav link on route change
@@ -674,6 +676,12 @@ function renderDocsPage(): void {
         <section>
           <h2>Example Bot</h2>
           <p>See the <a href="https://github.com/aicodebattle/acb/tree/main/bots" target="_blank">example bots</a> in various languages for reference implementations.</p>
+        </section>
+
+        <section>
+          <h2>Data &amp; API</h2>
+          <p>All match data (leaderboards, replays, bot profiles) is exposed as static JSON files served from CDN.</p>
+          <p><a href="#/docs/api" class="btn secondary">View API Reference</a></p>
         </section>
       </div>
     </div>

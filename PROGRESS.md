@@ -4,9 +4,18 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-29** (Live evolution observatory)
+**Last Updated: 2026-03-29** (Public API documentation)
 
 ### Recent Changes (2026-03-29)
+- **Phase 10 Public Match Data Documentation** (`web/src/pages/docs-api.ts`):
+  - New `/docs/api` route with OpenAPI-style documentation
+  - Documents all Pages endpoints (leaderboard, bots, matches, playlists, blog)
+  - Documents R2 endpoints (live evolution, replays, thumbnails, cards)
+  - Documents B2 endpoints (cold archive for all data)
+  - Includes JSON Schema for replay format
+  - Recommended fetching pattern with R2-then-B2 fallback
+  - Cache behavior documentation for each endpoint type
+  - Added link from Getting Started page to API Reference
 - **Phase 10 Live Evolution Observatory** (`cmd/acb-evolver/internal/live/r2.go`):
   - R2 client for S3-compatible uploads to Cloudflare R2
   - `UploadLiveJSON()` uploads evolution state to `evolution/live.json`
@@ -436,7 +445,12 @@
   - Cache-Control: max-age=10 for near-real-time updates
   - Tests for R2 config validation and credential handling
 - [ ] Narrative engine (weekly story arc detection + LLM chronicles)
-- [ ] Public match data documentation (OpenAPI-style)
+- [x] Public match data documentation (OpenAPI-style)
+  - New `/docs/api` route with comprehensive endpoint documentation
+  - Documents Pages, R2, and B2 static JSON endpoints
+  - Includes JSON Schema for replay format
+  - Fetching pattern with R2-then-B2 fallback
+  - Cache behavior documentation
 
 ### Phase 4 Completed
 
