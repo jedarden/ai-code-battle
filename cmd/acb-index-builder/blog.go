@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ type BlogEntry struct {
 }
 
 // generateBlog creates blog posts and the blog index
-func generateBlog(data *IndexData, outputDir string) error {
+func generateBlog(data *IndexData, outputDir string, llmClient *LLMClient) error {
 	blogDir := filepath.Join(outputDir, "data", "blog")
 	postsDir := filepath.Join(blogDir, "posts")
 
@@ -51,8 +52,8 @@ func generateBlog(data *IndexData, outputDir string) error {
 		posts = append(posts, metaReport)
 	}
 
-	// Generate story arc chronicles
-	chronicles := generateChronicles(data)
+	// Generate story arc chronicles using narrative engine
+	chronicles := generateLLMChronicles(context.Background(), data, llmClient)
 	posts = append(posts, chronicles...)
 
 	// Write individual post files
@@ -161,7 +162,7 @@ The meta continues to evolve as bots adapt their strategies. Key trends to watch
 	}
 }
 
-// generateChronicles creates story arc chronicles from match data
+// generateChronicles creates story arc chronicles from match data (template-based fallback)
 func generateChronicles(data *IndexData) []BlogPost {
 	chronicles := make([]BlogPost, 0)
 
@@ -186,6 +187,165 @@ func generateChronicles(data *IndexData) []BlogPost {
 	}
 
 	return chronicles
+}
+
+// generateLLMChronicles creates chronicles using the narrative engine and LLM
+func generateLLMChronicles(ctx context.Context, data *IndexData, llmClient *LLMClient) []BlogPost {
+	chronicles := make([]BlogPost, 0)
+
+	// Detect story arcs from data
+	arcs := detectStoryArcs(data)
+
+	// Limit to 3-5 chronicles per week
+	maxChronicles := 5
+	if len(arcs) < maxChronicles {
+		maxChronicles = len(arcs)
+	}
+
+	for i := 0; i < maxChronicles; i++ {
+		arc := arcs[i]
+
+		var post BlogPost
+		var err error
+
+		// Try to generate LLM narrative
+		if llmClient != nil && llmClient.baseURL != "" {
+			post, err = generateLLMChronicle(ctx, arc, data, llmClient)
+			if err != nil {
+				// Fall back to template-based chronicle
+				post = generateTemplateChronicle(arc, data)
+			}
+		} else {
+			// No LLM client, use template
+			post = generateTemplateChronicle(arc, data)
+		}
+
+		chronicles = append(chronicles, post)
+	}
+
+	return chronicles
+}
+
+// generateLLMChronicle creates a chronicle using LLM narrative generation
+func generateLLMChronicle(ctx context.Context, arc StoryArc, data *IndexData, llmClient *LLMClient) (BlogPost, error) {
+	seasonName := getCurrentSeasonName(data)
+
+	req := NarrativeRequest{
+		ArcType:     arc.Type,
+		BotName:     arc.BotName,
+		SeasonName:  seasonName,
+		RatingStart: arc.RatingStart,
+		RatingEnd:   arc.RatingEnd,
+		KeyMatches:  arc.KeyMatches,
+		Archetype:   arc.Archetype,
+		Origin:      arc.Origin,
+		ParentIDs:   arc.ParentIDs,
+		Generation:  arc.Generation,
+		BotBName:    arc.BotBName,
+	}
+
+	// Get rivalry-specific data
+	if arc.Type == ArcRivalry {
+		req.BotAWins = arc.BotAWins
+		req.BotBWins = arc.BotBWins
+		req.TotalMatches = arc.TotalMatches
+	}
+
+	headline, narrative, err := llmClient.GenerateNarrative(ctx, req)
+	if err != nil {
+		return BlogPost{}, err
+	}
+
+	slug := fmt.Sprintf("%s-%s-%s", arc.Type, arc.BotID, formatSlugDate(data.GeneratedAt))
+	if arc.Type == ArcRivalry {
+		slug = fmt.Sprintf("rivalry-%s-%s", arc.BotID[:8], arc.BotBID[:8])
+	} else if arc.Type == ArcUpset {
+		slug = fmt.Sprintf("upset-%s-%s", arc.MatchID[:8], formatSlugDate(data.GeneratedAt))
+	}
+
+	tags := []string{string(arc.Type)}
+	if arc.BotID != "" {
+		tags = append(tags, arc.BotID)
+	}
+	if arc.BotBID != "" {
+		tags = append(tags, arc.BotBID)
+	}
+
+	return BlogPost{
+		Slug:      slug,
+		Title:     headline,
+		Date:      data.GeneratedAt.Format("2006-01-02"),
+		Type:      "chronicle",
+		ContentMd: "# " + headline + "\n\n" + narrative,
+		Summary:   truncateSummary(narrative, 150),
+		Tags:      tags,
+	}, nil
+}
+
+// generateTemplateChronicle creates a chronicle using templates (fallback)
+func generateTemplateChronicle(arc StoryArc, data *IndexData) BlogPost {
+	switch arc.Type {
+	case ArcRise:
+		bot := findBotByID(arc.BotID, data)
+		if bot != nil {
+			return generateRiseChronicle(*bot, data)
+		}
+	case ArcUpset:
+		upset := UpsetData{
+			MatchID:     arc.MatchID,
+			WinnerID:    arc.BotID,
+			LoserID:     arc.BotBID,
+			WinnerScore: arc.RatingStart,
+			LoserScore:  arc.RatingEnd,
+		}
+		return generateUpsetChronicle(upset, data)
+	case ArcRivalry:
+		rivalry := RivalryData{
+			BotAID:       arc.BotID,
+			BotBID:       arc.BotBID,
+			BotAWins:     arc.BotAWins,
+			BotBWins:     arc.BotBWins,
+			TotalMatches: arc.TotalMatches,
+		}
+		return generateRivalryChronicle(rivalry, data)
+	}
+
+	// Generic fallback
+	return BlogPost{
+		Slug:      fmt.Sprintf("%s-%s-%s", arc.Type, arc.BotID, formatSlugDate(data.GeneratedAt)),
+		Title:     fmt.Sprintf("%s: %s", arc.Type, arc.BotName),
+		Date:      data.GeneratedAt.Format("2006-01-02"),
+		Type:      "chronicle",
+		ContentMd: fmt.Sprintf("# %s: %s\n\nDetails pending.", arc.Type, arc.BotName),
+		Summary:   fmt.Sprintf("Story arc: %s involving %s", arc.Type, arc.BotName),
+		Tags:      []string{string(arc.Type), arc.BotID},
+	}
+}
+
+// truncateSummary truncates a string to maxLen characters
+func truncateSummary(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// Find last space before maxLen
+	lastSpace := maxLen
+	for i := maxLen - 1; i >= 0; i-- {
+		if s[i] == ' ' {
+			lastSpace = i
+			break
+		}
+	}
+	return s[:lastSpace] + "..."
+}
+
+// findBotByID finds a bot by ID in the data
+func findBotByID(id string, data *IndexData) *BotData {
+	for i := range data.Bots {
+		if data.Bots[i].ID == id {
+			return &data.Bots[i]
+		}
+	}
+	return nil
 }
 
 // generateRiseChronicle creates a "rising star" story

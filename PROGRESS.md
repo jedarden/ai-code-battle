@@ -4,9 +4,20 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-29** (Public API documentation)
+**Last Updated: 2026-03-29** (Narrative Engine)
 
 ### Recent Changes (2026-03-29)
+- **Phase 10 Narrative Engine** (`cmd/acb-index-builder/narrative.go`, `narrative_test.go`):
+  - LLM-powered chronicle generation per plan §15.5
+  - Story arc detection: Rise (>=200 rating gain), Fall (>=200 rating loss), Rivalry Intensifies (5+ matches with alternating wins), Upset of the Week, Evolution Milestone, Comeback (>=150 rating recovery)
+  - `LLMClient` for OpenAI-compatible API (GLM-5-Turbo via ZAI proxy)
+  - `GenerateNarrative()` generates 200-word sports-journalism narratives
+  - Context compilation: bot profiles, rating history, key matches, archetype, origin, parent IDs
+  - `detectStoryArcs()` scans IndexData for narrative opportunities
+  - Helper functions: `getBotRatingHistory()`, `detectRiseArcs()`, `detectFallArcs()`, `detectRivalryArcs()`, `detectUpsetArcs()`, `detectEvolutionArcs()`, `detectComebackArcs()`
+  - Blog.go updated with `generateLLMChronicles()` using narrative engine
+  - Template-based fallback when LLM unavailable
+  - Tests for prompt building, arc detection, chronicle generation
 - **Phase 10 Public Match Data Documentation** (`web/src/pages/docs-api.ts`):
   - New `/docs/api` route with OpenAPI-style documentation
   - Documents all Pages endpoints (leaderboard, bots, matches, playlists, blog)

@@ -22,28 +22,33 @@ type BotData struct {
 	Evolved          bool      `json:"evolved"`
 	Island           string    `json:"island,omitempty"`
 	Generation       int       `json:"generation,omitempty"`
+	Archetype        string    `json:"archetype,omitempty"`
+	ParentIDs        []string  `json:"parent_ids,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // MatchData represents a match for the index
 type MatchData struct {
-	ID           string               `json:"id"`
-	MapID        string               `json:"map_id"`
-	WinnerID     string               `json:"winner_id,omitempty"`
-	TurnCount    int                  `json:"turn_count"`
-	EndCondition string               `json:"end_condition"`
-	Participants []MatchParticipant   `json:"participants"`
-	CreatedAt    time.Time            `json:"created_at"`
-	CompletedAt  time.Time            `json:"completed_at"`
+	ID           string             `json:"id"`
+	MapID        string             `json:"map_id"`
+	MapName      string             `json:"map_name,omitempty"`
+	WinnerID     string             `json:"winner_id,omitempty"`
+	TurnCount    int                `json:"turn_count"`
+	EndCondition string             `json:"end_condition"`
+	Participants []ParticipantData  `json:"participants"`
+	CreatedAt    time.Time          `json:"created_at"`
+	CompletedAt  time.Time          `json:"completed_at"`
+	PlayedAt     time.Time          `json:"played_at"`
 }
 
-// MatchParticipant represents a bot in a match
-type MatchParticipant struct {
-	BotID      string `json:"bot_id"`
-	PlayerSlot int    `json:"player_slot"`
-	Score      int    `json:"score"`
-	Won        bool   `json:"won"`
+// ParticipantData represents a bot in a match with pre-match rating
+type ParticipantData struct {
+	BotID          string  `json:"bot_id"`
+	PlayerSlot     int     `json:"player_slot"`
+	Score          int     `json:"score"`
+	Won            bool    `json:"won"`
+	PreMatchRating float64 `json:"pre_match_rating,omitempty"`
 }
 
 // RatingHistoryEntry represents a rating history point
@@ -171,6 +176,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		       rating_mu, rating_phi, rating_sigma,
 		       0, 0, status,
 		       evolved, island, generation,
+		       COALESCE(archetype, ''), COALESCE(parent_ids, '[]'::json),
 		       created_at, COALESCE(last_active, created_at)
 		FROM bots
 		WHERE status != 'retired'
@@ -188,12 +194,14 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		var b BotData
 		var desc, island sql.NullString
 		var gen sql.NullInt64
+		var parentIDsJSON []byte
 
 		err := rows.Scan(
 			&b.ID, &b.Name, &b.OwnerID, &desc,
 			&b.Rating, &b.RatingDeviation, &b.RatingVolatility,
 			&b.MatchesPlayed, &b.MatchesWon, &b.HealthStatus,
 			&b.Evolved, &island, &gen,
+			&b.Archetype, &parentIDsJSON,
 			&b.CreatedAt, &b.UpdatedAt,
 		)
 		if err != nil {
@@ -208,6 +216,9 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		}
 		if gen.Valid {
 			b.Generation = int(gen.Int64)
+		}
+		if len(parentIDsJSON) > 0 {
+			json.Unmarshal(parentIDsJSON, &b.ParentIDs)
 		}
 
 		bots = append(bots, b)

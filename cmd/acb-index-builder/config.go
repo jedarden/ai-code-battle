@@ -40,6 +40,10 @@ type Config struct {
 
 	// Output directory for generated files
 	OutputDir string
+
+	// LLM configuration for narrative generation
+	LLMBaseURL string
+	LLMAPIKey  string
 }
 
 // LoadConfig reads configuration from environment variables
