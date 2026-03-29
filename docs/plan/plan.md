@@ -16,80 +16,96 @@ implementations for the HTTP protocol.
 
 ## 2. System Architecture
 
-The platform uses a **hybrid Cloudflare + Kubernetes** architecture. The web
-tier lives on Cloudflare (Pages for the static SPA, R2 for replay files and
-large data), while all compute runs in the **apexalgo-iad** Kubernetes cluster
-inside a dedicated `ai-code-battle` namespace. The cluster provides PostgreSQL
-(CNPG), Valkey (Redis-compatible), Traefik ingress, cert-manager TLS,
-ArgoCD for GitOps, Argo Workflows for CI, and SATA (Cinder CSI) block storage.
+The platform uses a **static-first** architecture. The public-facing product
+is a **Cloudflare Pages** static site — all data visitors see (leaderboards,
+match history, bot profiles, replays) is pre-computed JSON served from the CDN.
+All compute runs in the **apexalgo-iad** Kubernetes cluster (Rackspace Spot),
+which acts as a **match factory**: it runs battles, generates replays, and
+periodically publishes the updated site to Pages.
 
-### Cloudflare (Web Tier)
+Replay files use **tiered storage**: Backblaze B2 is the permanent cold
+archive (all replays, forever), and Cloudflare R2 is a warm cache for recent
+replays (free tier, ≤10 GB). The browser fetches replays from R2; old replays
+that have aged out of R2 fall back to B2 (free egress via Cloudflare Bandwidth
+Alliance).
 
-- **Cloudflare Pages**: Hosts the static SPA shell and pre-computed JSON data
-  files (`data/leaderboard.json`, `data/bots/*.json`, etc.). Updated every
-  ~90 minutes by the K8s index builder via `wrangler pages deploy`. Global
-  CDN, zero-config TLS, instant cache invalidation on deploy.
-- **Cloudflare R2**: Stores replay files (potentially hundreds of thousands —
-  well beyond Pages' 20K file limit), per-match metadata JSON, evolution
-  `live.json`, thumbnails, and bot card images. Also serves as the data bus
-  between K8s components (workers upload, browser downloads). Accessed via
-  S3-compatible API from K8s, served to browsers via public R2 bucket URL or
-  custom domain (`r2.aicodebattle.com`).
+### Cloudflare (Static Tier)
+
+- **Cloudflare Pages** (`ai-code-battle.pages.dev`): Hosts the static SPA
+  shell and **all** pre-computed JSON data — leaderboards, bot profiles, match
+  indexes, series, seasons, evolution data, blog posts. Updated every ~90
+  minutes by the K8s index builder via `wrangler pages deploy`. Global CDN,
+  zero-config TLS, instant cache invalidation on deploy.
+- **Cloudflare R2** (warm replay cache): Stores recent replay files and
+  per-match metadata — the subset of data too numerous for Pages' 20K file
+  limit and too hot for B2-only serving. Capped at ≤10 GB to stay within
+  the free tier. The index builder manages the R2 lifecycle: promotes recent
+  replays from B2, prunes old ones when approaching the cap.
+
+### Backblaze B2 (Cold Archive)
+
+- **B2 bucket**: Permanent archive for **all** replay files and match
+  metadata. Match workers upload directly to B2 after each match. B2 is the
+  source of truth for replay data — R2 is just a CDN cache in front of it.
+  Free egress to browsers via Cloudflare Bandwidth Alliance (B2 + Cloudflare
+  = zero egress fees). S3-compatible API.
 
 ### apexalgo-iad (Compute Tier)
 
 All backend compute runs in the `ai-code-battle` namespace:
 
-- **Go API Deployment**: Registration, job coordination, matchmaking, health
-  checks, stale job reaping. Exposed publicly at `api.aicodebattle.com` via
-  Traefik IngressRoute. Connects to PostgreSQL and Valkey.
+- **Matchmaker Deployment**: Internal scheduler. Queries active bots from
+  PostgreSQL, computes pairings, enqueues job IDs into Valkey. Also handles
+  health checking and stale job reaping. No external exposure.
 - **PostgreSQL (CNPG)**: Source of truth for all structured data — bots,
   matches, jobs, ratings, predictions, series, seasons.
-- **Valkey**: Job queue for match jobs, ephemeral caching, pub/sub.
-- **Match Worker Deployment**: Dequeues jobs from Valkey, runs matches,
-  uploads replay JSON to R2 (via S3-compatible API), records results in
-  PostgreSQL via the Go API.
+- **Valkey**: Job queue for match jobs, ephemeral caching.
+- **Match Worker Deployment**: Dequeues jobs from Valkey (BRPOP), runs
+  matches, uploads replay JSON to B2 (cold archive), writes results to
+  PostgreSQL.
 - **Strategy Bot Deployments** (x6): Built-in bots as HTTP servers on
   cluster-internal Services.
 - **Evolved Bot Deployments** (0-50): LLM-generated bots, same pattern.
 - **Evolver Deployment**: LLM evolution pipeline. Reads match data from
   PostgreSQL, generates candidates, tests them, deploys successful bots as
-  new K8s Deployments. Writes `evolution/live.json` to R2. Self-restarts
+  new K8s Deployments. Writes evolution metadata to PostgreSQL. Self-restarts
   every 4h.
 - **Index Builder Deployment**: Sleep-loop (15 min cycle). Reads PostgreSQL,
   generates all JSON index files, deploys them to Cloudflare Pages via
-  `wrangler pages deploy`. Also writes per-match data to R2. Handles weekly
-  replay pruning on R2. Self-restarts every 4h.
+  `wrangler pages deploy`. Manages R2 warm cache (copies recent replays
+  from B2, prunes old replays to stay within free tier). Self-restarts
+  every 4h.
+
+### Go API (deferred)
+
+A public Go API at `api.aicodebattle.com` is planned for social features
+(predictions, commenting, voting) and third-party bot registration. This is
+**not required for the core match loop** — the v1 system is fully static.
+The API will be added when interactive features are needed.
 
 ### Data Architecture
 
-Data is split between Cloudflare and K8s by access pattern:
+Data is split across three tiers by access pattern and volume:
 
 **Cloudflare Pages** (SPA + pre-computed indexes, deployed by index builder):
 ```
-Pages project (aicodebattle.com):
-├── index.html, leaderboard.html, matches.html, ...  (SPA routes)
-├── js/                    (bundled TypeScript application)
-│   ├── app.js             (SPA router, data fetching)
-│   ├── replay-viewer.js   (Canvas replay renderer)
-│   ├── sandbox.js         (WASM sandbox orchestrator)
-│   └── charts.js          (win probability, meta charts)
-├── css/                   (stylesheets)
-├── wasm/                  (game engine + built-in bot WASMs)
-│   ├── engine.wasm
-│   ├── gatherer.wasm
-│   ├── rusher.wasm
-│   └── ...
-├── docs/                  (protocol spec, replay format, data paths, guides)
-├── img/                   (logos, icons, UI assets)
-├── embed.html             (lightweight embeddable replay player)
-├── data/                  (pre-computed JSON indexes, rebuilt every ~15 min)
+Pages project (ai-code-battle.pages.dev):
+├── index.html, app.html, ...          (SPA shell)
+├── js/                                 (bundled TypeScript application)
+│   ├── app.js                          (SPA router, data fetching)
+│   ├── replay-viewer.js                (Canvas replay renderer)
+│   └── charts.js                       (win probability, meta charts)
+├── css/                                (stylesheets)
+├── docs/                               (protocol spec, replay format, guides)
+├── img/                                (logos, icons, UI assets)
+├── embed.html                          (lightweight embeddable replay player)
+├── data/                               (pre-computed JSON indexes, rebuilt every ~15 min)
 │   ├── leaderboard.json
 │   ├── bots/
 │   │   ├── index.json
 │   │   └── {bot_id}.json
 │   ├── matches/
-│   │   └── index.json               (recent matches, paginated)
+│   │   └── index.json                  (recent matches, paginated)
 │   ├── series/
 │   │   ├── index.json
 │   │   └── {series_id}.json
@@ -98,9 +114,6 @@ Pages project (aicodebattle.com):
 │   │   └── {season_id}.json
 │   ├── playlists/
 │   │   └── {slug}.json
-│   ├── predictions/
-│   │   ├── leaderboard.json
-│   │   └── open.json
 │   ├── meta/
 │   │   ├── archetypes.json
 │   │   └── rivalries.json
@@ -115,48 +128,55 @@ Pages project (aicodebattle.com):
     └── {map_id}.json
 ```
 
-**Cloudflare R2** (replays + large/dynamic data, too many files for Pages):
+**Cloudflare R2** (warm replay cache, free tier ≤10 GB):
 ```
-R2 bucket (r2.aicodebattle.com):
+R2 bucket:
 ├── replays/
-│   └── {match_id}.json.gz            (full replay files)
+│   └── {match_id}.json.gz             (recent replay files, promoted from B2)
 ├── matches/
-│   └── {match_id}.json               (individual match metadata)
-├── evolution/
-│   └── live.json                      (real-time observatory feed, updated by evolver)
+│   └── {match_id}.json                (recent per-match metadata)
 ├── thumbnails/
-│   └── {match_id}.png                (auto-generated match thumbnails)
+│   └── {match_id}.png                 (auto-generated match thumbnails)
 └── cards/
-    └── {bot_id}.png                   (bot profile card images)
+    └── {bot_id}.png                    (bot profile card images)
+```
+
+**Backblaze B2** (cold archive, permanent):
+```
+B2 bucket:
+├── replays/
+│   └── {match_id}.json.gz             (ALL replay files, forever)
+├── matches/
+│   └── {match_id}.json                (ALL per-match metadata)
+├── thumbnails/
+│   └── {match_id}.png                 (ALL thumbnails)
+└── cards/
+    └── {bot_id}.png                    (ALL bot card images)
 ```
 
 **Data loading pattern in the SPA:**
 
 ```js
 // SPA shell + index data from Cloudflare Pages (same origin)
-const PAGES = 'https://aicodebattle.com'
-// Replays + per-match data from R2
-const R2 = 'https://r2.aicodebattle.com'
-// Dynamic API from K8s (registration, predictions)
-const API = 'https://api.aicodebattle.com'
+const PAGES = ''  // relative — same origin as the SPA
+// Replays from R2 warm cache (recent), B2 cold archive (old)
+const R2 = 'https://r2.aicodebattle.com'     // or R2 public URL
+const B2 = 'https://b2.aicodebattle.com'     // B2 via Cloudflare CDN
 
-// Leaderboard page loads (pre-computed JSON on Pages, rebuilt every ~15 min):
+// Leaderboard, bot profiles, match indexes — all from Pages (same origin):
 const lb = await fetch(`${PAGES}/data/leaderboard.json`).then(r => r.json())
 
-// Replay viewer loads (uploaded to R2 by match workers):
-const replay = await fetch(`${R2}/replays/${matchId}.json.gz`)
+// Replay viewer — try R2 warm cache first, fall back to B2 cold archive:
+async function fetchReplay(matchId) {
+  const r2 = await fetch(`${R2}/replays/${matchId}.json.gz`)
+  if (r2.ok) return r2
+  return fetch(`${B2}/replays/${matchId}.json.gz`)  // cold fallback
+}
 
-// Match metadata (uploaded to R2 by match workers):
-const meta = await fetch(`${R2}/matches/${matchId}.json`).then(r => r.json())
-
-// Evolution observatory live feed (updated by evolver, on R2):
-const live = await fetch(`${R2}/evolution/live.json`).then(r => r.json())
-
-// Evolution lineage (rebuilt by index builder, on Pages):
-const lineage = await fetch(`${PAGES}/data/evolution/lineage.json`).then(r => r.json())
-
-// Registration (dynamic API on K8s):
-const result = await fetch(`${API}/api/register`, { method: 'POST', body: ... })
+// Match metadata — same R2-then-B2 pattern:
+const meta = await fetch(`${R2}/matches/${matchId}.json`)
+  .then(r => r.ok ? r : fetch(`${B2}/matches/${matchId}.json`))
+  .then(r => r.json())
 ```
 
 **Cache behavior:**
@@ -164,100 +184,133 @@ const result = await fetch(`${API}/api/register`, { method: 'POST', body: ... })
 - **Pages assets**: Cloudflare Pages handles caching automatically. Deploys
   via `wrangler pages deploy` invalidate the cache globally. Index data is
   at most ~90 minutes stale (the index builder's cycle time).
-- **R2 objects**: Served with appropriate `Cache-Control` headers set at
-  upload time:
+- **R2 objects** (warm cache): Served with appropriate `Cache-Control` headers:
   - `replays/*.json.gz`: `immutable, max-age=31536000` (content-addressed)
   - `matches/*.json`: `immutable, max-age=31536000` (content-addressed)
-  - `evolution/live.json`: `max-age=10` (updated frequently by evolver)
   - `thumbnails/`, `cards/`: `max-age=86400` (regenerated rarely)
+- **B2 objects** (cold archive): Same cache headers. B2 egress through
+  Cloudflare Bandwidth Alliance = zero egress fees. Cloudflare CDN caches
+  B2 responses, so frequently accessed cold replays still perform well.
+
+**Tiered storage lifecycle:**
+
+1. Match worker completes a match → uploads `replays/{match_id}.json.gz`
+   and `matches/{match_id}.json` to **B2** (cold archive, permanent)
+2. Worker writes match result to **PostgreSQL** (scores, ratings, metadata)
+3. Index builder (every ~15 min) reads new results from PostgreSQL, rebuilds
+   all JSON index files, deploys to **Pages** via `wrangler pages deploy`
+4. Index builder promotes recent replays from B2 to **R2** (warm cache)
+5. Index builder prunes oldest replays from R2 when approaching 10 GB cap
+6. Browser loads SPA + indexes from Pages, fetches replays from R2 (warm)
+   with B2 fallback (cold)
+
+**Storage budget:**
+
+- **R2 (warm cache)**: ≤10 GB free tier. At ~50 KB/replay (gzipped), holds
+  ~200K replays. At 60 matches/hour, that's ~139 days of warm replays.
+  Class A writes: index builder promotes ~1,440 replays/day = ~43K/month
+  (well within 1M/month free tier).
+- **B2 (cold archive)**: First 10 GB free, $0.006/GB/month after. At 60
+  matches/hour, ~2.2 GB/month. Year one: ~26 GB = ~$0.10/month.
+  Free egress via Cloudflare Bandwidth Alliance.
+- **Pages**: 20K file limit per deployment. Only SPA + JSON indexes — well
+  within limits (replays are on R2/B2, not Pages).
 
 ```
-┌────────── Cloudflare (web tier) ──────────────────────┐
-│                                                         │
-│  ┌─────────────────────┐   ┌────────────────────────┐  │
-│  │  Cloudflare Pages    │   │  Cloudflare R2          │  │
-│  │  aicodebattle.com    │   │  r2.aicodebattle.com    │  │
-│  │                      │   │                          │  │
-│  │  SPA shell (HTML/    │   │  replays/*.json.gz      │  │
-│  │  JS/CSS/WASM)        │   │  matches/*.json          │  │
-│  │  data/*.json indexes │   │  evolution/live.json     │  │
-│  │  maps/*.json         │   │  thumbnails/*.png        │  │
-│  │  docs/, img/         │   │  cards/*.png             │  │
-│  └─────────────────────┘   └────────────────────────┘  │
-│        ▲ wrangler deploy         ▲ S3-compatible PUT    │
-└────────┼─────────────────────────┼──────────────────────┘
+┌────────── Cloudflare ──────────────────────────────────┐
+│                                                          │
+│  ┌─────────────────────┐   ┌─────────────────────────┐  │
+│  │  Cloudflare Pages    │   │  Cloudflare R2           │  │
+│  │  (static site)       │   │  (warm replay cache)     │  │
+│  │                      │   │                           │  │
+│  │  SPA shell (HTML/    │   │  replays/*.json.gz       │  │
+│  │  JS/CSS)             │   │  matches/*.json           │  │
+│  │  data/*.json indexes │   │  thumbnails/*.png         │  │
+│  │  maps/*.json         │   │  cards/*.png              │  │
+│  │  docs/, img/         │   │  ≤10 GB free tier         │  │
+│  └─────────────────────┘   └─────────────────────────┘  │
+│        ▲ wrangler deploy         ▲ S3 PUT (promote)      │
+└────────┼─────────────────────────┼───────────────────────┘
          │                         │
-┌────────┼─────────────────────────┼──────────────────────┐
-│        │  apexalgo-iad cluster — ai-code-battle ns       │
-│        │                         │                        │
-│  ┌─────┴──────────────────┐      │                        │
-│  │  Index Builder Dep.     │      │                        │
-│  │  Reads PostgreSQL,      │      │                        │
-│  │  generates JSON indexes,│      │                        │
-│  │  deploys to Pages       │──────┘ (also writes to R2)   │
-│  └─────────────────────────┘                              │
-│                                                           │
-│  ┌─────────────────────┐   ┌──────────────────────────┐  │
-│  │  Traefik Ingress     │   │  cert-manager             │  │
-│  │  api.aicodebattle.com│   │  TLS certificates         │  │
-│  └────────┬────────────┘   └──────────────────────────┘  │
-│           │                                               │
-│  ┌────────▼────────────┐                                  │
-│  │  Go API Deployment   │                                  │
-│  │  Registration, job   │                                  │
-│  │  coord, matchmaking, │                                  │
-│  │  health, reaper      │                                  │
-│  └────────┬────────────┘                                  │
-│           │                                               │
-│  ┌────────▼───────────────────────────────────────────┐  │
-│  │  CNPG PostgreSQL (cnpg-apexalgo)                    │  │
-│  │  bots, matches, jobs, ratings, etc.                 │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                           │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  Valkey (Redis-compatible)                          │  │
-│  │  Job queue, caching, pub/sub                        │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                           │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  Match Workers (Deployment, 1-10 pods)              │  │
-│  │  Run matches, upload replays to R2, POST to API     │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                           │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  Bot Containers (Deployments)                       │  │
-│  │  Strategy (×6) + Evolved (0–50)                     │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                           │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  Evolver (Deployment)                               │  │
-│  │  LLM pipeline, writes live.json to R2               │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                           │
-│  ┌─────────────────────────────────────────────────┐     │
-│  │  ArgoCD — syncs K8s manifests from git            │     │
-│  │  Argo Workflows — CI builds, image pushes         │     │
-│  │  Argo Events — GitHub webhook triggers            │     │
-│  └─────────────────────────────────────────────────┘     │
-└───────────────────────────────────────────────────────────┘
+┌────────┼─────────────────────────┼───────────────────────┐
+│        │  apexalgo-iad cluster — ai-code-battle ns        │
+│        │                         │                         │
+│  ┌─────┴──────────────────┐      │                         │
+│  │  Index Builder Dep.     │      │                         │
+│  │  Reads PostgreSQL,      │──────┘                         │
+│  │  generates JSON indexes,│                                │
+│  │  deploys to Pages,      │                                │
+│  │  promotes replays to R2,│                                │
+│  │  prunes R2 warm cache   │                                │
+│  └─────────────────────────┘                                │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Matchmaker Dep.   (internal only — no ingress)       │   │
+│  │  Pairings, job enqueue, health check, stale reaper    │   │
+│  └────────┬─────────────────────────────────────────────┘   │
+│           │                                                  │
+│  ┌────────▼──────────────────────────────────────────────┐  │
+│  │  CNPG PostgreSQL (cnpg-apexalgo)                       │  │
+│  │  bots, matches, jobs, ratings, etc.                    │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Valkey (Redis-compatible)                              │  │
+│  │  Job queue (acb:jobs:pending)                           │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Match Workers (Deployment, 1-10 pods)                  │  │
+│  │  BRPOP from Valkey, run matches, upload replays to B2,  │  │
+│  │  write results to PostgreSQL                            │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                   │          │
+│  ┌────────────────────────────────────────────────┼───────┐  │
+│  │  Bot Containers (Deployments)                  │       │  │
+│  │  Strategy (×6) + Evolved (0–50)                │       │  │
+│  └────────────────────────────────────────────────┼───────┘  │
+│                                                   │          │
+│  ┌────────────────────────────────────────────────┼───────┐  │
+│  │  Evolver (Deployment)                          │       │  │
+│  │  LLM pipeline, writes evolution data to PG     │       │  │
+│  └────────────────────────────────────────────────┼───────┘  │
+│                                                   │          │
+│  ┌─────────────────────────────────────────────┐  │          │
+│  │  ArgoCD — syncs K8s manifests from git       │  │          │
+│  │  Argo Workflows — CI builds, image pushes    │  │          │
+│  └─────────────────────────────────────────────┘  │          │
+│                                                   ▼          │
+└───────────────────────────────────────────────────┼──────────┘
+                                                    │
+                                      ┌─────────────▼──────────┐
+                                      │  Backblaze B2           │
+                                      │  (cold replay archive)  │
+                                      │                         │
+                                      │  replays/*.json.gz      │
+                                      │  matches/*.json         │
+                                      │  thumbnails/*.png       │
+                                      │  cards/*.png            │
+                                      │  ALL data, forever      │
+                                      └─────────────────────────┘
 ```
 
 ### Component Summary
 
 | Component | Where | Role |
 |-----------|-------|------|
-| **Cloudflare Pages** | Cloudflare | Hosts the static SPA (HTML/JS/CSS/WASM) and pre-computed JSON index files. Updated every ~90 min by the index builder via `wrangler pages deploy`. Global CDN with automatic cache invalidation. |
-| **Cloudflare R2** | Cloudflare | Stores replay files, per-match metadata, evolution live feed, thumbnails, and bot cards. Accessed via S3-compatible API from K8s, served to browsers via public bucket URL. |
-| **Go API** | Deployment (ai-code-battle ns) | Registration, job coordination, matchmaking, health checks, stale job reaping. Exposed at `api.aicodebattle.com` via Traefik IngressRoute. |
-| **PostgreSQL** | CNPG cluster (cnpg ns, `cnpg-apexalgo`) | Relational database — bot registry, match queue, ratings, results, predictions, series, seasons. Source of truth. |
-| **Valkey** | StatefulSet (valkey ns) | Job queue (match jobs, evolution tasks), ephemeral caching, pub/sub for live status updates. |
-| **Match Workers** | Deployment (ai-code-battle ns) | Stateless match execution — dequeue job from Valkey, run simulation, upload replay to R2, record result in PostgreSQL. |
+| **Cloudflare Pages** | Cloudflare | Static site: SPA (HTML/JS/CSS) and pre-computed JSON index files. Updated every ~90 min by the index builder via `wrangler pages deploy`. Global CDN with automatic cache invalidation. |
+| **Cloudflare R2** | Cloudflare | Warm replay cache: recent replays, match metadata, thumbnails, bot cards. Free tier ≤10 GB. Managed by the index builder (promote from B2, prune when approaching cap). |
+| **Backblaze B2** | Backblaze | Cold archive: ALL replays and match data, permanently. Workers upload directly after each match. Free egress via Cloudflare Bandwidth Alliance. |
+| **Matchmaker** | Deployment (ai-code-battle ns) | Internal scheduler: computes pairings, enqueues jobs to Valkey, health checks bots, reaps stale jobs. No external exposure. |
+| **PostgreSQL** | CNPG cluster (cnpg ns, `cnpg-apexalgo`) | Relational database — bot registry, match queue, ratings, results, series, seasons. Source of truth for structured data. |
+| **Valkey** | Cluster service | Job queue (`acb:jobs:pending`), ephemeral caching. |
+| **Match Workers** | Deployment (ai-code-battle ns) | Stateless match execution — BRPOP from Valkey, run simulation, upload replay to B2, write result to PostgreSQL. |
 | **Bot Containers** | Deployments + Services (ai-code-battle ns) | Strategy bots (x6) + evolved bots (0-50) — HTTP servers called by workers during matches via cluster-internal Service DNS. |
-| **Evolver** | Deployment (ai-code-battle ns) | Evolution pipeline — reads lineage/meta from PostgreSQL, generates candidates, writes `evolution/live.json` to R2. |
-| **Index Builder** | Deployment (ai-code-battle ns) | Sleep-loop (15 min cycle). Reads PostgreSQL, generates JSON indexes, deploys to Pages via `wrangler pages deploy`. Writes data to R2. Weekly replay pruning on R2. Self-restarts every 4h. |
-| **Traefik** | Cluster ingress controller | Routes `api.aicodebattle.com` to the Go API via IngressRoute CRD. TLS via cert-manager. |
+| **Evolver** | Deployment (ai-code-battle ns) | Evolution pipeline — reads lineage/meta from PostgreSQL, generates candidates, writes evolution data to PostgreSQL. |
+| **Index Builder** | Deployment (ai-code-battle ns) | Sleep-loop (15 min cycle). Reads PostgreSQL, generates JSON indexes, deploys to Pages. Promotes recent replays from B2 to R2 warm cache. Prunes R2 to stay within free tier. Self-restarts every 4h. |
+| **Go API** | Deferred | Social features (predictions, comments, voting) and third-party bot registration. Not required for v1. |
 | **ArgoCD** | Cluster (argocd ns) | GitOps: syncs all K8s manifests from git. All deployments are declarative. |
-| **Argo Workflows** | Cluster (argo ns) | CI pipelines: builds container images, pushes to Forgejo registry, builds static site for Pages deployment. |
+| **Argo Workflows** | Cluster (argo ns) | CI pipelines: builds container images, pushes to Forgejo registry, builds static site. |
 
 ---
 
@@ -1067,20 +1120,29 @@ encoding — only recording events that changed from the previous turn.
 
 ### 7.2 Storage
 
-Replays and per-match data are stored in **Cloudflare R2**. Pre-computed JSON
-index files are deployed to **Cloudflare Pages** by the index builder. No
-PersistentVolumes are used for web-facing data.
+Replays use **tiered storage**: Backblaze B2 is the permanent cold archive
+(all replays, forever), and Cloudflare R2 is a warm cache for recent replays
+(free tier, ≤10 GB). Pre-computed JSON index files are deployed to
+**Cloudflare Pages** by the index builder. No PersistentVolumes are used for
+web-facing data.
 
-**R2 data layout** (served at `r2.aicodebattle.com`):
+**B2 data layout** (cold archive — all data, permanently):
 ```
-replays/{match_id}.json.gz           # individual replay files
-matches/{match_id}.json              # per-match metadata (participants, scores)
-evolution/live.json                  # real-time evolution observatory feed
-thumbnails/{match_id}.png            # auto-generated match thumbnails
+replays/{match_id}.json.gz           # ALL replay files
+matches/{match_id}.json              # ALL per-match metadata
+thumbnails/{match_id}.png            # ALL match thumbnails
+cards/{bot_id}.png                   # ALL bot profile card images
+```
+
+**R2 data layout** (warm cache — recent subset, ≤10 GB):
+```
+replays/{match_id}.json.gz           # recent replay files (promoted from B2)
+matches/{match_id}.json              # recent per-match metadata
+thumbnails/{match_id}.png            # recent match thumbnails
 cards/{bot_id}.png                   # bot profile card images
 ```
 
-**Pages data layout** (served at `aicodebattle.com`):
+**Pages data layout** (static site):
 ```
 data/leaderboard.json                # current leaderboard snapshot
 data/bots/index.json                 # bot directory
@@ -1098,41 +1160,40 @@ maps/{map_id}.json                   # map definitions
 ```
 
 **How data flows:**
-1. Match worker completes a match -> uploads `replays/{match_id}.json.gz`
-   and `matches/{match_id}.json` to R2 (via S3-compatible API)
-2. Worker POSTs small result metadata to the Go API
-   (`POST api.aicodebattle.com/api/jobs/{id}/result`)
-3. Go API writes match result to PostgreSQL, updates ratings
-4. Index builder Deployment (every ~15 min) reads new results from PostgreSQL,
-   rebuilds all JSON index files (`data/leaderboard.json`,
-   `data/bots/*.json`, `data/matches/index.json`, playlists, series,
-   seasons, blog), and deploys them to Cloudflare Pages via
-   `wrangler pages deploy`
-5. Browser loads SPA from Pages, fetches replays from R2, calls Go API for
-   dynamic operations (registration, predictions)
+1. Match worker completes a match → uploads `replays/{match_id}.json.gz`
+   and `matches/{match_id}.json` to **B2** (cold archive, via S3-compatible
+   API)
+2. Worker writes match result to **PostgreSQL** (scores, ratings, metadata)
+3. Index builder (every ~15 min) reads new results from PostgreSQL, rebuilds
+   all JSON index files, deploys to **Pages** via `wrangler pages deploy`
+4. Index builder promotes recent replays from **B2 to R2** (warm cache)
+5. Index builder prunes oldest replays from **R2** when approaching 10 GB
+6. Browser loads SPA + indexes from Pages, fetches replays from R2 (warm)
+   with B2 fallback (cold)
 
-**Retention and pruning:**
-- Match metadata in PostgreSQL is retained indefinitely (rows are small)
-- Replays on R2 are pruned on an age basis: replays older than 90 days
-  are deleted by the index builder's weekly pruning cycle
-- **Exemptions from pruning:** replays referenced by playlists ("Closest
+**Tiered retention:**
+- **B2 (cold)**: All replays retained permanently. No pruning. The canonical
+  archive.
+- **R2 (warm)**: Recent replays, capped at ≤10 GB. The index builder prunes
+  by age when approaching the cap — oldest replays are removed from R2
+  (they remain in B2).
+- **Exemptions from R2 pruning**: Replays referenced by playlists ("Closest
   Finishes", "Biggest Upsets", etc.), rivalry pages, series, or season
-  archives are exempt. The pruning job checks the exemption list from
-  PostgreSQL before deleting.
-- At 60 matches/hour x 24h x 90 days = ~130,000 replay files at steady
-  state. At ~50 KB average per gzipped replay, that's ~6.5 GB.
-- The pruning cycle runs weekly within the index builder: lists objects in
-  R2's `replays/` prefix older than 90 days, queries PostgreSQL for exempt
-  match IDs, deletes non-exempt objects via S3 DeleteObjects API
+  archives are kept warm longer. The pruning job checks the exemption list
+  from PostgreSQL before removing from R2.
+- **PostgreSQL**: Match metadata retained indefinitely (rows are small).
 - Index files are append-with-rotation: `index.json` holds the last 1000;
-  older pages at `index-{page}.json`
+  older pages at `index-{page}.json`.
 
-**Storage costs (Cloudflare R2):**
-- Replays: ~6.5 GB at steady state (90 days retention)
-- Per-match metadata, thumbnails, cards: ~500 MB
-- R2 free tier: 10 GB storage, 10M reads/month, 1M writes/month —
-  comfortably within limits at launch. Class A operations (writes) are the
-  binding constraint; 60 matches/hour x 2 objects = ~87K writes/month.
+**Storage costs:**
+- **R2 (warm cache)**: ≤10 GB free tier. At ~50 KB/replay, holds ~200K warm
+  replays (~139 days at 60 matches/hour). Class A writes: ~43K/month
+  (index builder promoting replays). Well within free tier limits.
+- **B2 (cold archive)**: First 10 GB free, $0.006/GB/month after. At 60
+  matches/hour, ~2.2 GB/month. Year one: ~26 GB ≈ $0.10/month. Free
+  egress via Cloudflare Bandwidth Alliance.
+- **Pages**: No per-file storage costs. 20K file limit per deployment — only
+  SPA + JSON indexes, well within limits.
 
 ### 7.3 Browser Replay Viewer
 
@@ -1140,14 +1201,14 @@ The replay viewer is a client-side TypeScript application rendered on
 HTML5 Canvas.
 
 **Rendering pipeline:**
-1. Fetch `replay.json.gz` from R2 (`r2.aicodebattle.com`; browser handles
-   gzip decompression via `Accept-Encoding`)
+1. Fetch `replay.json.gz` from R2 warm cache (falling back to B2 cold
+   archive); browser handles gzip decompression via `Accept-Encoding`
 2. Parse and index: build per-turn game state by replaying events from turn 0
 3. Render the current turn to canvas
 4. User controls advance/rewind the turn index
 
-No API invocations -- the viewer is a static page (served from Pages) loading
-a replay file directly from R2.
+No API invocations — the viewer is a static page (served from Pages) loading
+a replay file from R2 (warm cache) or B2 (cold archive).
 
 **Visual design:**
 
@@ -1583,19 +1644,23 @@ time range, human-only vs all). Auto-refresh every 60 seconds. Public
 
 ### 9.1 Design Principles
 
-Compute runs in the **apexalgo-iad** Kubernetes cluster in a dedicated
-`ai-code-battle` namespace. The web tier lives on **Cloudflare Pages** (SPA +
-data indexes) and **Cloudflare R2** (replays + large data). The cluster is
-existing infrastructure shared with other workloads — it already provides
-PostgreSQL (CNPG), Valkey, Traefik ingress, cert-manager, ArgoCD, Argo
-Workflows, Argo Events, Forgejo (git + container registry), SATA (Cinder CSI)
-storage, and Sealed Secrets.
+Compute runs in the **apexalgo-iad** Kubernetes cluster (Rackspace Spot) in
+a dedicated `ai-code-battle` namespace. The public-facing product is a
+**Cloudflare Pages** static site. Replay files use tiered storage:
+**Cloudflare R2** (warm cache, free tier ≤10 GB) and **Backblaze B2** (cold
+archive, permanent). The cluster is existing infrastructure shared with other
+workloads — it already provides PostgreSQL (CNPG), Valkey, Traefik ingress,
+cert-manager, ArgoCD, Argo Workflows, Argo Events, Forgejo (git + container
+registry), SATA (Cinder CSI) storage, and Sealed Secrets.
 
 Key principles:
 
-- **Hybrid architecture** — Cloudflare for the web tier (Pages + R2), K8s
-  for compute (API, workers, bots, evolver, index builder). No Nginx pod,
-  no PersistentVolumes for web data.
+- **Static-first architecture** — the public product is a static site on
+  Pages. All data visitors see is pre-computed JSON. K8s is the factory
+  that generates data and publishes it to Pages.
+- **Tiered storage** — B2 is the permanent archive for all replays. R2 is
+  a warm CDN cache for recent replays, capped at the free tier. The index
+  builder manages the R2 lifecycle.
 - **GitOps via ArgoCD** — all K8s manifests are committed to git and synced
   by ArgoCD. Never apply manifests directly with `kubectl`.
 - **Argo Workflows for CI** — container image builds and static site builds
@@ -1603,10 +1668,8 @@ Key principles:
 - **Shared infrastructure** — PostgreSQL, Valkey, Traefik, and cert-manager
   are cluster-level services. The ai-code-battle namespace consumes them
   but does not manage them.
-- **Cloudflare for web serving** — Pages serves the SPA globally with
-  automatic CDN. R2 stores replays and large data, served via public bucket
-  URL. The Go API is the only K8s service exposed externally (via Traefik
-  at `api.aicodebattle.com`).
+- **No public API initially** — the Go API for social features and third-
+  party registration is deferred. The v1 system is fully static.
 
 ### 9.2 Kubernetes Namespace Layout
 
@@ -1624,57 +1687,50 @@ Cross-namespace dependencies:
 
 **Cloudflare infrastructure requirements:**
 
-- **Cloudflare Pages project**: `aicodebattle` — hosts the static SPA and
-  data indexes. Deployed by the index builder via `wrangler pages deploy`.
-- **Cloudflare R2 bucket**: `acb-data` — stores replays, per-match metadata,
-  evolution live feed, thumbnails, bot cards. Public read access via custom
-  domain `r2.aicodebattle.com`. Write access via S3-compatible API from K8s.
-- **DNS**: `aicodebattle.com` CNAME to Pages project,
-  `api.aicodebattle.com` proxied to Traefik ingress IP,
-  `r2.aicodebattle.com` CNAME to R2 bucket public hostname.
+- **Cloudflare Pages project**: `ai-code-battle` (`ai-code-battle.pages.dev`)
+  — hosts the static SPA and data indexes. Deployed by the index builder
+  via `wrangler pages deploy`.
+- **Cloudflare R2 bucket**: Warm cache for recent replays, thumbnails, bot
+  cards. Free tier (≤10 GB). Managed by the index builder.
+- **DNS** (when custom domain is desired): `aicodebattle.com` CNAME to Pages.
 
-**K8s manifests directory structure:**
+**Backblaze B2 infrastructure requirements:**
+
+- **B2 bucket**: Cold archive for ALL replays and match data, permanently.
+  Match workers upload directly via S3-compatible API. Free egress via
+  Cloudflare Bandwidth Alliance.
+
+**K8s manifests directory structure** (flat — per cluster CLAUDE.md norms):
 
 ```
-cluster-configuration/apexalgo-iad/ai-code-battle/
-├── namespace.yaml
-├── argocd-application.yaml
-├── sealed-secrets/
-│   ├── postgres-credentials.yaml
-│   ├── valkey-credentials.yaml
-│   ├── api-key.yaml
-│   ├── cloudflare-api-token.yaml    (for wrangler pages deploy)
-│   └── r2-credentials.yaml          (S3-compatible access key for R2)
-├── pvcs/
-│   └── evolver-sandbox.yaml         (SATA (Cinder CSI) RWO PVC for nsjail workspace)
-├── deployments/
-│   ├── acb-api.yaml
-│   ├── acb-worker.yaml
-│   ├── acb-evolver.yaml
-│   ├── acb-index-builder.yaml
-│   ├── acb-strategy-random.yaml
-│   ├── acb-strategy-gatherer.yaml
-│   ├── acb-strategy-rusher.yaml
-│   ├── acb-strategy-guardian.yaml
-│   ├── acb-strategy-swarm.yaml
-│   └── acb-strategy-hunter.yaml
-├── services/
-│   ├── acb-api.yaml
-│   ├── acb-strategy-random.yaml
-│   ├── acb-strategy-gatherer.yaml
-│   ├── acb-strategy-rusher.yaml
-│   ├── acb-strategy-guardian.yaml
-│   ├── acb-strategy-swarm.yaml
-│   └── acb-strategy-hunter.yaml
-├── ingress/
-│   └── ingressroute-api.yaml        (api.aicodebattle.com -> acb-api Service)
-├── certificates/
-│   └── api-aicodebattle-com.yaml    (cert-manager Certificate for api subdomain)
-└── workflows/
-    ├── build-site.yaml               (Argo Workflow template: npm build -> artifact)
-    ├── build-images.yaml             (Argo Workflow template: docker build -> Forgejo)
-    └── sensor-github-push.yaml       (Argo Events sensor: git push -> workflows)
+declarative-config/k8s/apexalgo-iad/ai-code-battle/
+├── namespace.yml
+├── acb-database.yml                    (ext-postgres-operator Postgres + PostgresUser)
+├── acb-schema-init.yml                 (ConfigMap + Deployment for schema migration)
+├── acb-matchmaker-deployment.yml       (matchmaker: pairings, job enqueue, health, reaper)
+├── acb-worker-deployment.yml           (match workers: run matches, upload to B2)
+├── acb-index-builder-deployment.yml    (index builder: generate JSON, deploy to Pages, manage R2)
+├── acb-evolver-deployment.yml          (LLM evolution pipeline)
+├── acb-strategy-random-deployment.yml  (RandomBot — Python)
+├── acb-strategy-random-service.yml
+├── acb-strategy-gatherer-deployment.yml (GathererBot — Go)
+├── acb-strategy-gatherer-service.yml
+├── acb-strategy-rusher-deployment.yml  (RusherBot — Rust)
+├── acb-strategy-rusher-service.yml
+├── acb-strategy-guardian-deployment.yml (GuardianBot — PHP)
+├── acb-strategy-guardian-service.yml
+├── acb-strategy-swarm-deployment.yml   (SwarmBot — TypeScript)
+├── acb-strategy-swarm-service.yml
+├── acb-strategy-hunter-deployment.yml  (HunterBot — Java)
+├── acb-strategy-hunter-service.yml
+├── acb-secret.yml.template             (template: B2/R2/Cloudflare/bot secrets)
+└── acb-sealedsecret.yml                (sealed version of above)
 ```
+
+Secrets already provisioned in the namespace: `acb-app-credentials-acb-app`
+(PostgreSQL), `keydb-secret` (Valkey), `backblaze-secret` (B2),
+`cloudflare-pages-secret` (wrangler), `docker-hub-registry` (image pulls),
+`openai-secret` (evolver LLM).
 
 ### 9.3 Container Images
 
@@ -1683,10 +1739,10 @@ container registry (`forgejo.ardenone.com/ai-code-battle/<image>`).
 
 | Image | Base | Purpose | K8s Resource |
 |-------|------|---------|--------------|
-| `acb-api` | Go binary on Alpine | API + scheduling | Deployment (1 replica) |
-| `acb-worker` | Go binary on Alpine | Match execution | Deployment (2-10 replicas) |
+| `acb-matchmaker` | Go binary on Alpine | Matchmaking, health checks, stale job reaping | Deployment (1 replica) |
+| `acb-worker` | Go binary on Alpine | Match execution, B2 upload | Deployment (2-10 replicas) |
 | `acb-evolver` | Go binary on Alpine | Evolution pipeline | Deployment (1 replica) |
-| `acb-index-builder` | Go binary on Alpine (includes `wrangler` CLI) | Reads PostgreSQL, generates JSON indexes, deploys to Cloudflare Pages, prunes old replays on R2 weekly | Deployment (sleep-loop, 15 min cycle, Pages deploy every ~90 min, self-restarts every 4h) |
+| `acb-index-builder` | Go binary on Alpine (includes `wrangler` CLI) | Reads PostgreSQL, generates JSON indexes, deploys to Pages, manages R2 warm cache (promote from B2, prune) | Deployment (sleep-loop, 15 min cycle, Pages deploy every ~90 min, self-restarts every 4h) |
 | `acb-strategy-random` | Python 3.13 slim | RandomBot | Deployment (1 replica) |
 | `acb-strategy-gatherer` | Go on Alpine | GathererBot | Deployment (1 replica) |
 | `acb-strategy-rusher` | Rust on Alpine | RusherBot | Deployment (1 replica) |
@@ -1698,31 +1754,30 @@ container registry (`forgejo.ardenone.com/ai-code-battle/<image>`).
 ### 9.4 Match Job Coordination
 
 Match workers coordinate via **Valkey** (job queue) and **PostgreSQL**
-(persistent state). The Go API is the single point of coordination.
+(persistent state). The matchmaker Deployment is the coordination point.
 
 **Job flow:**
-1. Matchmaker ticker (in Go API) queries active bots from PostgreSQL,
-   computes pairings, inserts match + job rows in PostgreSQL, enqueues
-   job IDs into a Valkey list (`acb:jobs:pending`)
+1. Matchmaker Deployment queries active bots from PostgreSQL, computes
+   pairings, inserts match + job rows in PostgreSQL, enqueues job IDs
+   into a Valkey list (`acb:jobs:pending`)
 2. Match worker pod BRPOPs from the Valkey list (blocking dequeue)
 3. Worker fetches full job config from PostgreSQL (map data, bot
    endpoints + shared secrets for HMAC signing, match config)
 4. Worker executes the full match (500 turns, HTTP calls to bot Services
    via cluster DNS, e.g. `acb-strategy-rusher.ai-code-battle.svc:8080`)
-5. Worker uploads replay file to R2 via S3-compatible API
+5. Worker uploads replay file to **B2** via S3-compatible API
    (`replays/{match_id}.json.gz`)
-6. Worker uploads match metadata to R2
+6. Worker uploads match metadata to **B2**
    (`matches/{match_id}.json`)
-7. Worker submits result to Go API:
-   `POST acb-api.ai-code-battle.svc:8080/api/jobs/{id}/result`
-   - Small JSON body: scores, winner, turn count, condition
-8. Go API writes result to PostgreSQL, updates ratings (Glicko-2)
-9. Index builder Deployment (next ~15-min cycle) reads new results from
-   PostgreSQL, rebuilds all index JSON files, deploys to Pages
+7. Worker writes result directly to **PostgreSQL** (scores, winner, turn
+   count, condition) and updates ratings (Glicko-2)
+8. Index builder (next ~15-min cycle) reads new results from PostgreSQL,
+   rebuilds all index JSON files, deploys to Pages, promotes recent
+   replays from B2 to R2 warm cache
 
 **Stale job recovery:**
-- Reaper ticker (in Go API) checks PostgreSQL every 5 minutes for jobs
-  `running` >15 minutes
+- Reaper ticker (in matchmaker) checks PostgreSQL every 5 minutes for
+  jobs `running` >15 minutes
 - Assumed abandoned (worker pod crashed or was evicted)
 - Re-enqueues the job ID in Valkey for retry
 
@@ -1742,64 +1797,64 @@ Match workers coordinate via **Valkey** (job queue) and **PostgreSQL**
 - Matches in progress where a bot disappeared: that bot times out on each
   turn, its units hold position, it effectively loses.
 
-**If the Go API pod restarts:**
+**If the matchmaker pod restarts:**
 - Matchmaker and health checker tickers restart with the pod.
 - No state lost — all state is in PostgreSQL and Valkey.
 - Workers continue BRPOPing from Valkey (the queue persists).
 - Brief gap in matchmaking (~1 min) while the pod starts.
 
 **If PostgreSQL or Valkey is temporarily unavailable:**
-- The Go API returns 503 for API requests. Workers block on BRPOP.
+- Workers block on BRPOP. Matchmaker retries on its next tick.
 - CNPG handles PostgreSQL failover automatically (3-node cluster).
 - When service resumes, everything recovers without intervention.
 
 ### 9.6 Networking & Security
 
 **External traffic:**
-- `aicodebattle.com` -> Cloudflare Pages (static SPA + data indexes)
-- `r2.aicodebattle.com` -> Cloudflare R2 (replays, per-match data, thumbnails)
-- `api.aicodebattle.com` -> Cloudflare (CDN/DDoS) -> Traefik ingress ->
-  Go API Service
-- TLS: Pages and R2 handle TLS automatically. cert-manager issues Let's
-  Encrypt certificates for `api.aicodebattle.com` via Traefik.
+- `ai-code-battle.pages.dev` (or custom domain) → Cloudflare Pages
+  (static SPA + data indexes)
+- R2 public URL → Cloudflare R2 (warm replay cache)
+- B2 public URL (via Cloudflare CDN) → Backblaze B2 (cold replay archive)
+- No K8s services are exposed externally in v1. The Go API IngressRoute
+  at `api.aicodebattle.com` is planned for when social features are added.
+- TLS: Pages and R2 handle TLS automatically. B2 via Cloudflare gets TLS
+  from the CDN layer.
 
 **Cluster-internal traffic:**
-- Go API -> PostgreSQL: `cnpg-apexalgo-rw.cnpg.svc.cluster.local:5432`
-- Go API -> Valkey: `valkey-master.valkey.svc.cluster.local:6379`
+- Matchmaker -> PostgreSQL: `cnpg-apexalgo-rw.cnpg.svc.cluster.local:5432`
+- Matchmaker -> Valkey: `valkey-master.valkey.svc.cluster.local:6379`
 - Workers -> Valkey: same
+- Workers -> PostgreSQL: same
 - Workers -> Bot Services: `acb-strategy-*.ai-code-battle.svc:8080`
 - Workers -> External bots: outbound HTTPS to registered URLs
-- Index Builder -> PostgreSQL: same as Go API
+- Workers -> B2: HTTPS (S3-compatible API, for replay upload)
+- Index Builder -> PostgreSQL: same
 - Index Builder -> Cloudflare Pages: HTTPS (wrangler CLI)
-- Index Builder -> R2: HTTPS (S3-compatible API, for pruning)
-- Workers -> R2: HTTPS (S3-compatible API, for replay upload)
-- Evolver -> R2: HTTPS (S3-compatible API, for live.json upload)
+- Index Builder -> R2: HTTPS (S3-compatible API, for warm cache management)
+- Index Builder -> B2: HTTPS (S3-compatible API, for promoting replays to R2)
+- Evolver -> PostgreSQL: same
 - All cluster-internal traffic is plaintext (trusted network)
 
 **Security boundaries:**
 - The game engine (workers) never executes bot code — HTTP only
 - All bot responses are schema-validated before processing
 - HMAC authentication prevents request/response forgery
-- Go API authentication for job result submission (shared API key from
-  SealedSecret)
-- Registration endpoint validates bot URLs (no internal IPs, no
-  private ranges, no cluster DNS)
 - PostgreSQL credentials in SealedSecrets (encrypted in git, decrypted
   in-cluster)
 - Valkey access is cluster-internal only (no external exposure)
-- Pages and R2 serve public-read data only — no secrets stored there
-- R2 write credentials (SealedSecret) are scoped to the `acb-data` bucket
-- Cloudflare API token (SealedSecret) is scoped to Pages deploy only
+- Pages, R2, and B2 serve public-read data only — no secrets stored there
+- B2 write credentials (SealedSecret) are scoped to the acb bucket
+- Cloudflare API token (SealedSecret) is scoped to Pages deploy + R2 only
 - NetworkPolicy can restrict egress from bot pods to prevent data
   exfiltration (future hardening)
 
 ### 9.7 ArgoCD & GitOps
 
 All K8s manifests for the `ai-code-battle` namespace are stored in the
-cluster-configuration git repo:
+declarative-config repo (ardenone-cluster):
 
 ```
-cluster-configuration/apexalgo-iad/ai-code-battle/
+declarative-config/k8s/apexalgo-iad/ai-code-battle/
 ```
 
 An ArgoCD Application watches this directory and syncs changes
@@ -1814,8 +1869,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://forgejo.ardenone.com/infra/cluster-configuration.git
-    path: apexalgo-iad/ai-code-battle
+    repoURL: https://forgejo.ardenone.com/infra/ardenone-cluster.git
+    path: declarative-config/k8s/apexalgo-iad/ai-code-battle
     targetRevision: main
   destination:
     server: https://kubernetes.default.svc
@@ -1827,7 +1882,7 @@ spec:
 ```
 
 **Workflow for infrastructure changes:**
-1. Edit manifests in `cluster-configuration/` repo
+1. Edit manifests in `declarative-config/k8s/` (ardenone-cluster repo)
 2. `git push` to origin
 3. ArgoCD detects the change and syncs within ~3 minutes
 4. Verify via: `kubectl --server=http://kubectl-apexalgo-iad:8001 get pods -n ai-code-battle`
@@ -1862,7 +1917,7 @@ appropriate Argo Workflow(s).
 3. Builds a container image (Kaniko)
 4. Pushes to Forgejo registry
 5. Creates a Deployment + Service manifest
-6. Commits the manifest to the cluster-configuration repo
+6. Commits the manifest to the declarative-config repo
 7. ArgoCD syncs the new bot into the cluster
 
 ### 9.9 Monitoring
@@ -1871,17 +1926,17 @@ appropriate Argo Workflow(s).
 |--------|--------|-------|
 | Pod health | Kubernetes liveness/readiness probes | Auto-restart |
 | Pages up | Cloudflare Pages analytics + synthetic checks | Cloudflare handles failover |
-| API errors | Go API metrics (Prometheus endpoint) | Error rate >5% |
 | PostgreSQL health | CNPG operator monitoring | Auto-failover |
 | Valkey health | Kubernetes probes | Auto-restart |
 | Match throughput | PostgreSQL query: completions per hour | <10/hour for >1 hour |
 | Worker queue depth | Valkey LLEN on `acb:jobs:pending` | >50 pending for >30 min |
-| Bot health failures | Go API health checker ticker | >50% failing |
-| Stale jobs | Go API reaper ticker count | >10 stale in a cycle |
-| R2 usage | Cloudflare R2 dashboard / API metrics | >8 GB (approaching free tier limit) |
+| Bot health failures | Matchmaker health checker ticker | >50% failing |
+| Stale jobs | Matchmaker reaper ticker count | >10 stale in a cycle |
+| R2 usage | Index builder tracks warm cache size | >8 GB (approaching 10 GB free tier cap) |
+| B2 usage | B2 dashboard / API metrics | Informational only (no cap) |
 
-Alerts via Go API -> webhook to Discord/Slack. Cluster-level monitoring
-(Prometheus, if deployed) can scrape the Go API's `/metrics` endpoint.
+Alerts via matchmaker -> webhook to Discord/Slack. Cluster-level monitoring
+(Prometheus, if deployed) can scrape the matchmaker's `/metrics` endpoint.
 
 ---
 
@@ -2540,8 +2595,8 @@ ai-code-battle/
 
 | Resource | Source | Namespace |
 |----------|--------|-----------|
-| All Deployments, Services, Deployments, PVCs, IngressRoutes, SealedSecrets | `cluster-configuration/apexalgo-iad/ai-code-battle/` | `ai-code-battle` |
-| ArgoCD Application | `cluster-configuration/apexalgo-iad/ai-code-battle/argocd-application.yaml` | `argocd` |
+| All Deployments, Services, Deployments, PVCs, IngressRoutes, SealedSecrets | `declarative-config/k8s/apexalgo-iad/ai-code-battle/` | `ai-code-battle` |
+| ArgoCD Application | `declarative-config/k8s/apexalgo-iad/ai-code-battle/argocd-application.yaml` | `argocd` |
 | PostgreSQL database `acb` | Created in existing CNPG cluster `cnpg-apexalgo` | `cnpg` |
 
 **WASM artifacts (built at compile time, deployed to Cloudflare Pages):**
@@ -2593,7 +2648,7 @@ Source (git push to main)
     │         ├── WASM builds                   (engine + 6 bots)
     │         └── Push site build artifact to Forgejo registry
     │
-    ├──► ArgoCD (watches cluster-configuration repo)
+    ├──► ArgoCD (watches declarative-config repo)
     │    └── Syncs K8s manifests -> ai-code-battle namespace
     │
     └──► PostgreSQL migrations
@@ -2615,8 +2670,8 @@ Several components share code. The monorepo structure avoids duplication:
 | `engine/` | `acb-worker`, `acb-evolver`, `acb-local`, `acb-mapgen`, WASM engine | Go |
 | `engine/replay.go` | `acb-worker` (write), `acb-index-builder` (read for stats) | Go |
 | `engine/winprob.go` | `acb-worker` (post-match computation) | Go |
-| `cmd/acb-api/lib/hmac.go` | Go API | Go |
-| `cmd/acb-api/lib/glicko2.go` | Go API (rating updates) | Go |
+| `engine/auth.go` | Match workers, matchmaker (HMAC verification) | Go |
+| `engine/glicko2.go` | Match workers (rating updates on result write) | Go |
 | `web/src/components/replay-canvas.ts` | Full viewer, embed, sandbox, homepage | TypeScript |
 | `web/src/lib/data.ts` | All pages (data fetching + caching) | TypeScript |
 
@@ -2677,64 +2732,59 @@ match with all visual elements rendering correctly.
 ### Phase 4: Match Orchestration
 
 **Deliverables:**
-- Go API service (`acb-api`): job coordination endpoint
-  (`POST /api/jobs/{id}/result`), authenticated with API key from SealedSecret
+- Matchmaker Deployment (`acb-matchmaker`): internal tickers for pairing
+  bots (1 min), health checking (15 min), stale job reaping (5 min).
+  Enqueues job IDs into Valkey. No external exposure.
 - PostgreSQL schema (CNPG): `bots`, `matches`, `match_participants`, `jobs`,
   `rating_history` tables in the `acb` database
-- Go API internal tickers: matchmaker (1 min), health checker (15 min),
-  stale job reaper (5 min)
-- Index builder Deployment: reads PostgreSQL directly, generates index JSON
-  files every ~15 min, deploys to Cloudflare Pages every ~90 min
-- Match worker Deployment (`acb-worker`): dequeues jobs from Valkey, runs
-  matches, uploads replays to R2, POSTs results to Go API
-- Glicko-2 rating update logic in the Go API (runs on result submission)
+- Index builder Deployment (`acb-index-builder`): reads PostgreSQL directly,
+  generates index JSON files every ~15 min, deploys to Cloudflare Pages
+  every ~90 min, manages R2 warm cache (promote from B2, prune old)
+- Match worker Deployment (`acb-worker`): BRPOPs jobs from Valkey, runs
+  matches, uploads replays to B2, writes results + Glicko-2 ratings to
+  PostgreSQL
+- Glicko-2 rating update logic in the match worker (runs on result write)
 
-**Exit criteria:** matchmaker ticker creates jobs and enqueues them in Valkey,
-worker pods dequeue and execute them, replays land on R2, results flow
+**Exit criteria:** matchmaker creates jobs and enqueues them in Valkey,
+worker pods dequeue and execute them, replays land on B2, results flow
 into PostgreSQL, ratings update, and leaderboard.json rebuilds automatically.
 System recovers from worker pod failure via the stale job reaper.
 
 ### Phase 5: Web Platform
 
 **Deliverables:**
-- Cloudflare Pages project serving static SPA: leaderboard, match history,
-  bot profiles, replay viewer, registration form, docs/getting-started page
-- Cloudflare R2 bucket serving replays and per-match metadata
-- Go API: registration endpoints (`/api/register`, `/api/rotate-key`,
-  `/api/status/{id}`)
-- Go API internal ticker: health checker (15 min) -- pings bot endpoints
-  via cluster DNS, updates PostgreSQL
-- Traefik IngressRoute for `api.aicodebattle.com` (Go API)
-- cert-manager Certificate for TLS on the API subdomain
-- Index builder Deployment deploying leaderboard, bot profiles, playlists
-  to Pages; match workers uploading replays and per-match metadata to R2
+- Cloudflare Pages static SPA (`ai-code-battle.pages.dev`): leaderboard,
+  match history, bot profiles, replay viewer, docs/getting-started page
+- SPA fetches replay files from R2 warm cache with B2 cold archive fallback
+- Index builder deploying leaderboard, bot profiles, playlists to Pages
+- Match workers uploading replays and per-match metadata to B2
+- Index builder promoting recent replays from B2 to R2 warm cache
 
-**Exit criteria:** a participant can register a bot via the web form, the
-bot appears on the leaderboard after matches complete, and anyone can browse
-matches and watch replays -- SPA from Pages, replays from R2, API from K8s.
+**Exit criteria:** anyone can browse matches, view leaderboards, and watch
+replays — SPA from Pages, recent replays from R2, old replays from B2.
+All data is static and pre-computed.
 
 ### Phase 6: Deployment & Production
 
 **Deliverables:**
-- K8s manifests committed to `cluster-configuration/apexalgo-iad/ai-code-battle/`:
-  namespace, Deployments, Services, IngressRoute, SealedSecrets,
-  cert-manager Certificate
-- Cloudflare Pages project (`aicodebattle`) and R2 bucket (`acb-data`)
-  provisioned with custom domains
+- K8s manifests committed to `declarative-config/k8s/apexalgo-iad/ai-code-battle/`:
+  namespace, Deployments, Services, SealedSecrets (flat directory structure)
+- Cloudflare Pages project (`ai-code-battle`, already exists at
+  `ai-code-battle.pages.dev`)
+- Cloudflare R2 bucket (warm replay cache, free tier)
+- Backblaze B2 bucket (cold replay archive)
 - ArgoCD Application syncing the manifests directory
 - Argo Events sensor: GitHub webhook triggers on push to `ai-code-battle` repo
 - Argo Workflows: image build (Kaniko -> Forgejo registry), site build
   (npm build -> artifact for Pages deploy)
-- Cloudflare DNS: `aicodebattle.com` CNAME to Pages,
-  `api.aicodebattle.com` proxied to Traefik, `r2.aicodebattle.com` to R2
-- SealedSecrets for PostgreSQL credentials, Valkey credentials, API key,
-  Cloudflare API token, R2 credentials
-- Monitoring: Go API metrics endpoint + Discord/Slack alerting webhooks
+- SealedSecrets for PostgreSQL, Valkey, B2, R2, Cloudflare API token
+  (most already provisioned in the namespace)
+- Monitoring: matchmaker metrics endpoint + Discord/Slack alerting webhooks
 
-**Exit criteria:** platform is publicly accessible — SPA from Pages, replays
-from R2, API from K8s via Traefik. All K8s manifests are GitOps-managed by
-ArgoCD, CI pipelines rebuild images and site on git push, and external
-participants can register and play.
+**Exit criteria:** platform is publicly accessible — SPA from Pages, recent
+replays from R2, old replays from B2. All K8s manifests are GitOps-managed
+by ArgoCD, CI pipelines rebuild images and site on git push, matches run
+autonomously, and the leaderboard updates every ~90 minutes.
 
 ### Phase 7: LLM-Driven Evolution
 

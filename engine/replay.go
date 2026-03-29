@@ -9,14 +9,15 @@ import (
 
 // Replay records the complete history of a match for playback.
 type Replay struct {
-	MatchID    string        `json:"match_id"`
-	Config     Config        `json:"config"`
-	StartTime  time.Time     `json:"start_time"`
-	EndTime    time.Time     `json:"end_time"`
-	Result     *MatchResult  `json:"result"`
-	Players    []ReplayPlayer `json:"players"`
-	Map        ReplayMap     `json:"map"`
-	Turns      []ReplayTurn  `json:"turns"`
+	FormatVersion string        `json:"format_version"` // semver, e.g. "1.0"
+	MatchID       string        `json:"match_id"`
+	Config        Config        `json:"config"`
+	StartTime     time.Time     `json:"start_time"`
+	EndTime       time.Time     `json:"end_time"`
+	Result        *MatchResult  `json:"result"`
+	Players       []ReplayPlayer `json:"players"`
+	Map           ReplayMap     `json:"map"`
+	Turns         []ReplayTurn  `json:"turns"`
 }
 
 // ReplayPlayer represents player info in a replay.
@@ -42,13 +43,14 @@ type ReplayCore struct {
 
 // ReplayTurn represents the state at a single turn.
 type ReplayTurn struct {
-	Turn      int           `json:"turn"`
-	Bots      []ReplayBot   `json:"bots"`
-	Cores     []ReplayCoreState `json:"cores"`
-	Energy    []Position    `json:"energy"`
-	Scores    []int         `json:"scores"`
-	EnergyHeld []int        `json:"energy_held"`
-	Events    []Event       `json:"events,omitempty"`
+	Turn       int                 `json:"turn"`
+	Bots       []ReplayBot         `json:"bots"`
+	Cores      []ReplayCoreState   `json:"cores"`
+	Energy     []Position          `json:"energy"`
+	Scores     []int               `json:"scores"`
+	EnergyHeld []int               `json:"energy_held"`
+	Events     []Event             `json:"events,omitempty"`
+	Debug      map[int]*DebugInfo  `json:"debug,omitempty"` // optional bot debug telemetry
 }
 
 // ReplayBot represents a bot in a replay turn.
@@ -77,9 +79,10 @@ type ReplayWriter struct {
 func NewReplayWriter(matchID string, config Config) *ReplayWriter {
 	return &ReplayWriter{
 		replay: &Replay{
-			MatchID:   matchID,
-			Config:    config,
-			StartTime: time.Now().UTC(),
+			FormatVersion: "1.0",
+			MatchID:       matchID,
+			Config:        config,
+			StartTime:     time.Now().UTC(),
 		},
 		turns:     make([]ReplayTurn, 0),
 		startTime: time.Now(),
@@ -123,7 +126,8 @@ func (rw *ReplayWriter) SetMap(gs *GameState) {
 }
 
 // RecordTurn records the state at the end of a turn.
-func (rw *ReplayWriter) RecordTurn(gs *GameState) {
+// debug is an optional map of player ID -> DebugInfo collected from bot responses.
+func (rw *ReplayWriter) RecordTurn(gs *GameState, debug map[int]*DebugInfo) {
 	turn := ReplayTurn{
 		Turn:       gs.Turn,
 		Bots:       make([]ReplayBot, 0),
@@ -132,6 +136,7 @@ func (rw *ReplayWriter) RecordTurn(gs *GameState) {
 		Scores:     make([]int, len(gs.Players)),
 		EnergyHeld: make([]int, len(gs.Players)),
 		Events:     gs.Events,
+		Debug:      debug,
 	}
 
 	// Record all bots (including dead ones for death animation)

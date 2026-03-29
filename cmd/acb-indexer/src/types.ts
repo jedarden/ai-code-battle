@@ -121,3 +121,76 @@ export interface MatchIndex {
   updated_at: string;
   matches: MatchSummary[];
 }
+
+// Blog / Narrative Engine types
+
+export interface BlogPost {
+  slug: string;
+  title: string;
+  published_at: string; // ISO 8601 date
+  week_start: string;   // ISO 8601 date (Monday of the covered week)
+  summary: string;      // one-paragraph plain-text teaser
+  body_html: string;    // full HTML narrative content
+  stats: BlogWeekStats;
+}
+
+export interface BlogWeekStats {
+  matches_played: number;
+  top_bot: string;
+  top_bot_rating: number;
+  biggest_upset: string | null; // "BotA defeated BotB" or null
+  most_active_bot: string;
+  most_active_bot_matches: number;
+  island_leader: string | null; // leading evolution island
+}
+
+export interface BlogIndex {
+  updated_at: string;
+  posts: BlogPost[];
+}
+
+// Evolution dashboard types (written by acb-evolver live-export)
+export interface EvolutionIslandStat {
+  count: number;
+  best_fitness: number;
+  avg_fitness: number;
+  diversity: number;
+  promoted_count: number;
+}
+
+export interface EvolutionGenerationEntry {
+  generation: number;
+  island: string;
+  evaluated_at: string;
+  count: number;
+  promoted: number;
+  best_fitness: number;
+  avg_fitness: number;
+}
+
+export interface EvolutionLineageNode {
+  id: number;
+  parent_ids: number[];
+  generation: number;
+  island: string;
+  fitness: number;
+  promoted: boolean;
+  language: string;
+  created_at: string;
+}
+
+export interface EvolutionMetaSnapshot {
+  generation: number;
+  island_counts: Record<string, number>;
+  island_best_fitness: Record<string, number>;
+}
+
+export interface EvolutionLiveData {
+  updated_at: string;
+  total_programs: number;
+  promoted_count: number;
+  islands: Record<string, EvolutionIslandStat>;
+  generation_log: EvolutionGenerationEntry[];
+  lineage: EvolutionLineageNode[];
+  meta_snapshots: EvolutionMetaSnapshot[];
+}

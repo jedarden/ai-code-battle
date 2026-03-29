@@ -6,6 +6,11 @@ import { renderMatchesPage } from './pages/matches';
 import { renderBotsPage } from './pages/bots';
 import { renderBotProfilePage } from './pages/bot-profile';
 import { renderRegisterPage } from './pages/register';
+import { renderEvolutionPage } from './pages/evolution';
+import { renderSandboxPage } from './pages/sandbox';
+import { renderClipMakerPage } from './pages/clip-maker';
+import { renderRivalriesPage } from './pages/rivalries';
+import { renderFeedbackPage } from './pages/feedback';
 import { ReplayViewer } from './replay-viewer';
 import type { Replay } from './types';
 
@@ -17,6 +22,11 @@ router
   .on('/bots', renderBotsPage)
   .on('/bot/:id', renderBotProfilePage)
   .on('/register', renderRegisterPage)
+  .on('/evolution', renderEvolutionPage)
+  .on('/sandbox', renderSandboxPage)
+  .on('/clip-maker', renderClipMakerPage)
+  .on('/rivalries', renderRivalriesPage)
+  .on('/feedback', renderFeedbackPage)
   .on('/replay', renderReplayPage)
   .on('/docs', renderDocsPage)
   .notFound(renderNotFoundPage);

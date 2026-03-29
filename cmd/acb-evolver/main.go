@@ -9,6 +9,7 @@
 //	validation-stats  Show per-island validation pass-rate metrics
 //	evaluate          Run the 10-match arena tournament and apply the promotion gate
 //	retire            Enforce retirement policy (rating threshold + population cap)
+//	live-export       Export evolution state to live.json for the dashboard
 package main
 
 import (
@@ -24,6 +25,7 @@ import (
 
 	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/arena"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/live"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/mapelites"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/promoter"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/validator"
@@ -43,6 +45,11 @@ func main() {
 	ctx := context.Background()
 
 	switch os.Args[1] {
+	case "live-export":
+		db := mustOpenDB(dbURL)
+		defer db.Close()
+		runLiveExport(ctx, db, os.Args[2:])
+
 	case "evaluate":
 		db := mustOpenDB(dbURL)
 		defer db.Close()
@@ -105,7 +112,7 @@ func main() {
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats|evaluate|retire>")
+		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats|evaluate|retire|live-export>")
 		os.Exit(1)
 	}
 }
@@ -473,6 +480,27 @@ func runValidationStats(ctx context.Context, store *evolverdb.Store) {
 			v.Island, v.Total, v.Passed, v.PassRate*100,
 			v.ByStage["syntax"], v.ByStage["schema"], v.ByStage["sandbox"])
 	}
+}
+
+// runLiveExport exports the current evolution state to live.json.
+//
+//	live-export [-out evolution/live.json]
+func runLiveExport(ctx context.Context, db *sql.DB, args []string) {
+	fs := flag.NewFlagSet("live-export", flag.ExitOnError)
+	out := fs.String("out", envOrDefault("ACB_EVOLUTION_OUT", "evolution/live.json"), "output file path")
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	data, err := live.Export(ctx, db)
+	if err != nil {
+		log.Fatalf("live-export: %v", err)
+	}
+	if err := live.WriteFile(data, *out); err != nil {
+		log.Fatalf("live-export write: %v", err)
+	}
+	log.Printf("live-export: wrote %d programs (%d promoted) to %s",
+		data.TotalPrograms, data.PromotedCount, *out)
 }
 
 func mustOpenDB(url string) *sql.DB {

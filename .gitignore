@@ -2,6 +2,9 @@
 /acb-local
 /acb-mapgen
 /acb-worker
+/acb-api
+/acb-matchmaker
+/acb-evolver
 
 # Node modules
 node_modules/
@@ -30,3 +33,7 @@ replay.json
 
 # Marathon instructions (local only)
 .marathon/
+
+# Development tools
+.beads/
+.needle.yaml

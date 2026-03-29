@@ -93,6 +93,79 @@ export interface RegisterResponse {
   error?: string;
 }
 
+// Evolution dashboard types
+export interface IslandStat {
+  count: number;
+  best_fitness: number;
+  avg_fitness: number;
+  diversity: number;
+  promoted_count: number;
+}
+
+export interface GenerationEntry {
+  generation: number;
+  island: string;
+  evaluated_at: string;
+  count: number;
+  promoted: number;
+  best_fitness: number;
+  avg_fitness: number;
+}
+
+export interface LineageNode {
+  id: number;
+  parent_ids: number[];
+  generation: number;
+  island: string;
+  fitness: number;
+  promoted: boolean;
+  language: string;
+  created_at: string;
+}
+
+export interface MetaSnapshot {
+  generation: number;
+  island_counts: Record<string, number>;
+  island_best_fitness: Record<string, number>;
+}
+
+export interface EvolutionLiveData {
+  updated_at: string;
+  total_programs: number;
+  promoted_count: number;
+  islands: Record<string, IslandStat>;
+  generation_log: GenerationEntry[];
+  lineage: LineageNode[];
+  meta_snapshots: MetaSnapshot[];
+}
+
+// Blog / Narrative Engine types
+
+export interface BlogWeekStats {
+  matches_played: number;
+  top_bot: string;
+  top_bot_rating: number;
+  biggest_upset: string | null;
+  most_active_bot: string;
+  most_active_bot_matches: number;
+  island_leader: string | null;
+}
+
+export interface BlogPost {
+  slug: string;
+  title: string;
+  published_at: string;
+  week_start: string;
+  summary: string;
+  body_html: string;
+  stats: BlogWeekStats;
+}
+
+export interface BlogIndex {
+  updated_at: string;
+  posts: BlogPost[];
+}
+
 // API configuration
 export const API_BASE = '/api';
 
@@ -127,6 +200,24 @@ export async function registerBot(request: RegisterRequest): Promise<RegisterRes
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });
+  return response.json();
+}
+
+export async function fetchEvolutionData(): Promise<EvolutionLiveData> {
+  const response = await fetch('/data/evolution/live.json');
+  if (!response.ok) throw new Error(`Failed to fetch evolution data: ${response.status}`);
+  return response.json();
+}
+
+export async function fetchBlogIndex(): Promise<BlogIndex> {
+  const response = await fetch('/data/blog/index.json');
+  if (!response.ok) throw new Error(`Failed to fetch blog index: ${response.status}`);
+  return response.json();
+}
+
+export async function fetchBlogPost(slug: string): Promise<BlogPost> {
+  const response = await fetch(`/data/blog/${slug}.json`);
+  if (!response.ok) throw new Error(`Failed to fetch blog post: ${response.status}`);
   return response.json();
 }
 

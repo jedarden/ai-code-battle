@@ -72,6 +72,7 @@ export interface ReplayTurn {
 }
 
 export interface Replay {
+  format_version?: string; // semver, e.g. "1.0" — absent in pre-v1 replays
   match_id: string;
   config: Config;
   start_time: string;

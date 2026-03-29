@@ -19,7 +19,8 @@ type HTTPBot struct {
 	matchID   string
 	turn      int
 	crashed   bool
-	failCount int // consecutive failures
+	failCount int       // consecutive failures
+	lastDebug *DebugInfo // debug info from last response
 }
 
 // HTTPOption is a functional option for HTTPBot.
@@ -170,10 +171,18 @@ func (b *HTTPBot) GetMoves(state *VisibleState) ([]Move, error) {
 	// Validate moves (basic validation)
 	moves := b.validateMoves(moveResp.Moves, state)
 
+	// Store debug info for replay
+	b.lastDebug = moveResp.Debug
+
 	// Reset failure count on success
 	b.failCount = 0
 
 	return moves, nil
+}
+
+// LastDebug returns the debug info from the most recent response, or nil.
+func (b *HTTPBot) LastDebug() *DebugInfo {
+	return b.lastDebug
 }
 
 // validateMoves validates and filters moves against the current state.

@@ -11,6 +11,7 @@ import 'dotenv/config';
 import { ApiClient } from './api.js';
 import { IndexGenerator } from './generator.js';
 import { FileWriter } from './writer.js';
+import type { EvolutionLiveData } from './types.js';
 
 const execAsync = promisify(exec);
 
@@ -19,6 +20,7 @@ interface Config {
   apiKey: string;
   outputDir: string;
   deployCommand?: string;
+  evolutionDataPath?: string;
 }
 
 function getConfig(): Config {
@@ -26,6 +28,7 @@ function getConfig(): Config {
   const apiKey = process.env.API_KEY;
   const outputDir = process.env.OUTPUT_DIR || './data';
   const deployCommand = process.env.DEPLOY_COMMAND;
+  const evolutionDataPath = process.env.EVOLUTION_DATA_PATH;
 
   if (!apiUrl) {
     console.error('ERROR: API_URL environment variable is required');
@@ -42,6 +45,7 @@ function getConfig(): Config {
     apiKey,
     outputDir,
     deployCommand,
+    evolutionDataPath,
   };
 }
 

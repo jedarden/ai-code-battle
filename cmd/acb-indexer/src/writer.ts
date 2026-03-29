@@ -3,7 +3,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-import type { LeaderboardIndex, BotDirectory, BotProfile, MatchIndex } from './types.js';
+import type { LeaderboardIndex, BotDirectory, BotProfile, MatchIndex, EvolutionLiveData } from './types.js';
 
 export class FileWriter {
   private outputDir: string;
@@ -20,6 +20,7 @@ export class FileWriter {
       this.outputDir,
       path.join(this.outputDir, 'bots'),
       path.join(this.outputDir, 'matches'),
+      path.join(this.outputDir, 'evolution'),
     ];
 
     for (const dir of dirs) {
@@ -88,6 +89,14 @@ export class FileWriter {
   }
 
   /**
+   * Write evolution/live.json
+   */
+  async writeEvolutionLive(data: EvolutionLiveData): Promise<void> {
+    const filePath = path.join(this.outputDir, 'evolution', 'live.json');
+    await this.writeJson(filePath, data);
+  }
+
+  /**
    * Write all index files
    */
   async writeAll(data: {
@@ -95,6 +104,7 @@ export class FileWriter {
     botDirectory: BotDirectory;
     botProfiles: Map<string, BotProfile>;
     matchIndex: MatchIndex;
+    evolutionLive?: EvolutionLiveData;
   }): Promise<void> {
     await this.ensureDirectories();
 
@@ -103,9 +113,16 @@ export class FileWriter {
     await this.writeBotProfiles(data.botProfiles);
     await this.writeMatchIndex(data.matchIndex);
 
+    if (data.evolutionLive) {
+      await this.writeEvolutionLive(data.evolutionLive);
+    }
+
     console.log(`\nIndex generation complete!`);
     console.log(`  - ${data.leaderboard.entries.length} leaderboard entries`);
     console.log(`  - ${data.botProfiles.size} bot profiles`);
     console.log(`  - ${data.matchIndex.matches.length} matches`);
+    if (data.evolutionLive) {
+      console.log(`  - ${data.evolutionLive.total_programs} evolution programs`);
+    }
   }
 }

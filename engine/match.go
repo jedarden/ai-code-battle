@@ -76,6 +76,11 @@ func (mr *MatchRunner) AddBot(bot BotInterface, name string) {
 	mr.names = append(mr.names, name)
 }
 
+// DebugProvider is an optional interface bots may implement to expose debug telemetry.
+type DebugProvider interface {
+	LastDebug() *DebugInfo
+}
+
 // Run executes the match and returns the result and replay.
 func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 	if len(mr.bots) < 2 {
@@ -106,8 +111,8 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 	// Record initial map state
 	replayWriter.SetMap(gs)
 
-	// Record turn 0 (initial state)
-	replayWriter.RecordTurn(gs)
+	// Record turn 0 (initial state, no debug yet)
+	replayWriter.RecordTurn(gs, nil)
 
 	// Run the match
 	var result *MatchResult
@@ -130,8 +135,21 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 		// Execute the turn
 		result = gs.ExecuteTurn()
 
-		// Record turn state
-		replayWriter.RecordTurn(gs)
+		// Collect debug telemetry from bots that support it
+		var debug map[int]*DebugInfo
+		for i, bot := range mr.bots {
+			if dp, ok := bot.(DebugProvider); ok {
+				if d := dp.LastDebug(); d != nil {
+					if debug == nil {
+						debug = make(map[int]*DebugInfo)
+					}
+					debug[i] = d
+				}
+			}
+		}
+
+		// Record turn state with debug
+		replayWriter.RecordTurn(gs, debug)
 
 		if mr.verbose {
 			mr.logger.Printf("Turn %d: %d living bots", gs.Turn, gs.GetLivingBotCount())
