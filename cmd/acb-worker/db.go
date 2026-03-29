@@ -61,18 +61,6 @@ type DBMatch struct {
 	Winner      *int       `json:"winner"` // player index
 	MapID       string     `json:"map_id"`
 	CreatedAt   time.Time  `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at"`
-}
-
-// DBMatch represents match metadata.
-type DBMatch struct {
-	ID          string     `json:"id"`
-	Status      string     `json:"status"`
-	Winner      *int       `json:"winner"` // player index
-	MapID       string     `json:"map_id"`
-	CreatedAt   time.Time  `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at"`
 }
 
