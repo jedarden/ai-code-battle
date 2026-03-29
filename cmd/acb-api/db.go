@@ -91,6 +91,44 @@ CREATE TABLE IF NOT EXISTS map_scores (
     scored_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Map lifecycle management (§14.6 Map Evolution)
+CREATE TABLE IF NOT EXISTS maps (
+    map_id          VARCHAR(32) PRIMARY KEY,
+    player_count    INTEGER NOT NULL,
+    status          VARCHAR(16) NOT NULL DEFAULT 'active',  -- active, probation, retired, classic
+    engagement      DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    wall_density    DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    energy_count    INTEGER NOT NULL DEFAULT 0,
+    grid_width      INTEGER NOT NULL,
+    grid_height     INTEGER NOT NULL,
+    map_json        JSONB NOT NULL,  -- Full map layout with walls, energy, cores
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    retired_at      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_maps_status ON maps(status, player_count);
+CREATE INDEX IF NOT EXISTS idx_maps_engagement ON maps(player_count, engagement DESC);
+
+-- User voting on maps (§14.6 Map Evolution)
+CREATE TABLE IF NOT EXISTS map_votes (
+    id          BIGSERIAL PRIMARY KEY,
+    map_id      VARCHAR(32) NOT NULL REFERENCES maps(map_id) ON DELETE CASCADE,
+    voter_id    VARCHAR(64) NOT NULL,  -- localStorage UUID
+    vote        SMALLINT NOT NULL,  -- +1 or -1
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(map_id, voter_id)
+);
+CREATE INDEX IF NOT EXISTS idx_map_votes_map ON map_votes(map_id);
+
+-- Positional fairness tracking (§14.6 Map Evolution)
+CREATE TABLE IF NOT EXISTS map_fairness (
+    map_id      VARCHAR(32) NOT NULL REFERENCES maps(map_id) ON DELETE CASCADE,
+    player_slot INTEGER NOT NULL,
+    games       INTEGER NOT NULL DEFAULT 0,
+    wins        INTEGER NOT NULL DEFAULT 0,
+    last_check  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (map_id, player_slot)
+);
+
 CREATE TABLE IF NOT EXISTS bots (
     bot_id        VARCHAR(16) PRIMARY KEY,
     name          VARCHAR(32) UNIQUE NOT NULL,
