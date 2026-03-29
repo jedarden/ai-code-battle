@@ -280,3 +280,110 @@ func (s *Store) GetByBotID(ctx context.Context, botID string) (*Program, error) 
 	}
 	return p, nil
 }
+
+// Delete removes a program by ID. Returns error if deletion fails.
+func (s *Store) Delete(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM programs WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete program %d: %w", id, err)
+	}
+	return nil
+}
+
+// List returns all programs ordered by creation date descending.
+func (s *Store) List(ctx context.Context, limit, offset int) ([]*Program, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, code, language, island, generation, parent_ids,
+		       behavior_vector, fitness, promoted, created_at
+		FROM programs
+		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list programs: %w", err)
+	}
+	defer rows.Close()
+
+	var programs []*Program
+	for rows.Next() {
+		p := &Program{}
+		var parentJSON string
+		if err := rows.Scan(
+			&p.ID, &p.Code, &p.Language, &p.Island, &p.Generation,
+			&parentJSON, pq.Array(&p.BehaviorVector), &p.Fitness, &p.Promoted, &p.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan program: %w", err)
+		}
+		if err := json.Unmarshal([]byte(parentJSON), &p.ParentIDs); err != nil {
+			return nil, fmt.Errorf("unmarshal parent_ids: %w", err)
+		}
+		programs = append(programs, p)
+	}
+	return programs, rows.Err()
+}
+
+// ListTopByIsland returns the top N programs on the given island by fitness.
+func (s *Store) ListTopByIsland(ctx context.Context, island string, limit int) ([]*Program, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, code, language, island, generation, parent_ids,
+		       behavior_vector, fitness, promoted, created_at
+		FROM programs WHERE island = $1
+		ORDER BY fitness DESC
+		LIMIT $2`, island, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list top programs on %s: %w", island, err)
+	}
+	defer rows.Close()
+
+	var programs []*Program
+	for rows.Next() {
+		p := &Program{}
+		var parentJSON string
+		if err := rows.Scan(
+			&p.ID, &p.Code, &p.Language, &p.Island, &p.Generation,
+			&parentJSON, pq.Array(&p.BehaviorVector), &p.Fitness, &p.Promoted, &p.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan program: %w", err)
+		}
+		if err := json.Unmarshal([]byte(parentJSON), &p.ParentIDs); err != nil {
+			return nil, fmt.Errorf("unmarshal parent_ids: %w", err)
+		}
+		programs = append(programs, p)
+	}
+	return programs, rows.Err()
+}
+
+// GetLineage returns all ancestor program IDs for a given program by
+// traversing the parent_ids chain recursively.
+func (s *Store) GetLineage(ctx context.Context, id int64) ([]int64, error) {
+	visited := make(map[int64]bool)
+	var lineage []int64
+
+	var traverse func(programID int64) error
+	traverse = func(programID int64) error {
+		if visited[programID] {
+			return nil
+		}
+		visited[programID] = true
+
+		p, err := s.Get(ctx, programID)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			return nil
+		}
+
+		for _, parentID := range p.ParentIDs {
+			if err := traverse(parentID); err != nil {
+				return err
+			}
+		}
+		lineage = append(lineage, programID)
+		return nil
+	}
+
+	if err := traverse(id); err != nil {
+		return nil, fmt.Errorf("get lineage for %d: %w", id, err)
+	}
+	return lineage, nil
+}

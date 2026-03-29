@@ -264,3 +264,132 @@ func TestParentIDs_Roundtrip(t *testing.T) {
 		t.Errorf("Generation: got %d, want 1", child.Generation)
 	}
 }
+
+func TestDelete(t *testing.T) {
+	db := openTestDB(t)
+	setupTestSchema(t, db)
+	s := NewStore(db)
+	ctx := context.Background()
+
+	id, err := s.Create(ctx, &Program{
+		Code: "to-delete", Language: "go", Island: IslandDelta,
+		BehaviorVector: []float64{0.5, 0.5}, ParentIDs: []int64{},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Verify it exists
+	got, _ := s.Get(ctx, id)
+	if got == nil {
+		t.Fatal("program should exist before deletion")
+	}
+
+	// Delete it
+	if err := s.Delete(ctx, id); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// Verify it's gone
+	got, _ = s.Get(ctx, id)
+	if got != nil {
+		t.Error("program should not exist after deletion")
+	}
+}
+
+func TestList(t *testing.T) {
+	db := openTestDB(t)
+	setupTestSchema(t, db)
+	s := NewStore(db)
+	ctx := context.Background()
+
+	// Create 3 programs
+	for i := 0; i < 3; i++ {
+		if _, err := s.Create(ctx, &Program{
+			Code:           string(rune('a' + i)),
+			Language:       "go",
+			Island:         IslandAlpha,
+			BehaviorVector: []float64{0.5, 0.5},
+			ParentIDs:      []int64{},
+		}); err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+	}
+
+	// List with limit 2
+	list, err := s.List(ctx, 2, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("expected 2 programs with limit=2, got %d", len(list))
+	}
+
+	// List with offset
+	list2, err := s.List(ctx, 2, 2)
+	if err != nil {
+		t.Fatalf("List with offset: %v", err)
+	}
+	if len(list2) != 1 {
+		t.Errorf("expected 1 program with limit=2 offset=2, got %d", len(list2))
+	}
+}
+
+func TestListTopByIsland(t *testing.T) {
+	db := openTestDB(t)
+	setupTestSchema(t, db)
+	s := NewStore(db)
+	ctx := context.Background()
+
+	// Create programs with different fitness values
+	for _, p := range []*Program{
+		{Code: "a", Language: "go", Island: IslandAlpha, BehaviorVector: []float64{0.9, 0.1}, Fitness: 100.0, ParentIDs: []int64{}},
+		{Code: "b", Language: "go", Island: IslandAlpha, BehaviorVector: []float64{0.8, 0.2}, Fitness: 50.0, ParentIDs: []int64{}},
+		{Code: "c", Language: "go", Island: IslandAlpha, BehaviorVector: []float64{0.7, 0.3}, Fitness: 75.0, ParentIDs: []int64{}},
+	} {
+		if _, err := s.Create(ctx, p); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	top, err := s.ListTopByIsland(ctx, IslandAlpha, 2)
+	if err != nil {
+		t.Fatalf("ListTopByIsland: %v", err)
+	}
+	if len(top) != 2 {
+		t.Fatalf("expected 2 top programs, got %d", len(top))
+	}
+	// Should be ordered by fitness DESC
+	if top[0].Fitness != 100.0 || top[1].Fitness != 75.0 {
+		t.Errorf("expected fitness order [100, 75], got [%f, %f]", top[0].Fitness, top[1].Fitness)
+	}
+}
+
+func TestGetLineage(t *testing.T) {
+	db := openTestDB(t)
+	setupTestSchema(t, db)
+	s := NewStore(db)
+	ctx := context.Background()
+
+	// Create grandparent -> parent -> child lineage
+	grandparent, _ := s.Create(ctx, &Program{
+		Code: "grandparent", Language: "go", Island: IslandAlpha,
+		BehaviorVector: []float64{0.9, 0.1}, ParentIDs: []int64{},
+	})
+	parent, _ := s.Create(ctx, &Program{
+		Code: "parent", Language: "go", Island: IslandAlpha,
+		BehaviorVector: []float64{0.8, 0.2}, ParentIDs: []int64{grandparent},
+	})
+	child, _ := s.Create(ctx, &Program{
+		Code: "child", Language: "go", Island: IslandAlpha,
+		BehaviorVector: []float64{0.7, 0.3}, ParentIDs: []int64{parent},
+	})
+
+	lineage, err := s.GetLineage(ctx, child)
+	if err != nil {
+		t.Fatalf("GetLineage: %v", err)
+	}
+	if len(lineage) != 3 {
+		t.Errorf("expected 3 ancestors in lineage, got %d: %v", len(lineage), lineage)
+	}
+}
