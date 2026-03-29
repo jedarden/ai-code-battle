@@ -4,9 +4,18 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-29** (Narrative Engine)
+**Last Updated: 2026-03-29** (Accessibility Focus Indicators)
 
 ### Recent Changes (2026-03-29)
+- **Phase 10 Accessibility Focus Indicators** (`web/app.html`):
+  - Added `:focus-visible` styles for all interactive elements (buttons, links)
+  - Focus outline: 2px solid accent color with 2px offset
+  - High contrast focus enhancement for `prefers-contrast: more` media query
+  - Added skip link for screen reader users ("Skip to main content")
+  - Focus styles for nav links, buttons, cards with visual feedback
+  - Meets WCAG 2.1 focus visible requirements
+
+### Previous Changes (2026-03-29)
 - **Phase 10 Narrative Engine** (`cmd/acb-index-builder/narrative.go`, `narrative_test.go`):
   - LLM-powered chronicle generation per plan §15.5
   - Story arc detection: Rise (>=200 rating gain), Fall (>=200 rating loss), Rivalry Intensifies (5+ matches with alternating wins), Upset of the Week, Evolution Milestone, Comeback (>=150 rating recovery)
@@ -435,12 +444,17 @@
 
 ### Phase 10 In Progress 🔄
 
-- [x] Accessibility suite (`web/src/replay-viewer.ts`, `web/src/app.ts`)
+- [x] Accessibility suite (`web/src/replay-viewer.ts`, `web/src/app.ts`, `web/app.html`)
   - Paul Tol color-blind safe palette (8 distinct colors)
   - Shapes per player (circle, square, triangle, diamond, pentagon, hexagon)
   - High contrast mode (brighter colors, darker walls)
   - Reduced motion support (auto-detect prefers-reduced-motion)
   - Accessibility controls UI in replay page
+  - Keyboard shortcuts: Space (play/pause), ArrowLeft/Right (step), Home/End (start/end)
+  - Screen reader region for turn announcements
+  - Focus indicators (`:focus-visible` styles) for all interactive elements
+  - Skip link for screen reader navigation
+  - High contrast focus enhancement (`prefers-contrast: more` media query)
 - [x] Weekly meta report blog infrastructure
   - Blog generation module in Go index builder (`cmd/acb-index-builder/blog.go`)
   - Meta report content generation (leaderboard, strategies, rising/falling bots, rivalries)

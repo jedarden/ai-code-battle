@@ -600,6 +600,53 @@
       border-color: var(--accent);
     }
 
+    /* Accessibility: Focus indicators for keyboard navigation */
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .nav-link:focus-visible {
+      outline-offset: -2px;
+      background-color: var(--bg-tertiary);
+    }
+
+    .btn:focus-visible {
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+    }
+
+    .bot-card:focus-visible,
+    .link-card:focus-visible {
+      outline-offset: 4px;
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+    }
+
+    /* Skip link for screen reader users */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--accent);
+      color: white;
+      padding: 8px 16px;
+      text-decoration: none;
+      z-index: 1000;
+      transition: top 0.2s;
+    }
+
+    .skip-link:focus {
+      top: 0;
+    }
+
+    /* High contrast focus for accessibility mode */
+    @media (prefers-contrast: more) {
+      :focus-visible {
+        outline-width: 3px;
+        outline-style: solid;
+      }
+    }
+
     .form-group .hint {
       display: block;
       color: var(--text-muted);
@@ -685,6 +732,7 @@
   </style>
 </head>
 <body>
+  <a href="#app" class="skip-link">Skip to main content</a>
   <nav>
     <div class="nav-container">
       <a href="#/" class="nav-brand">AI Code Battle</a>
