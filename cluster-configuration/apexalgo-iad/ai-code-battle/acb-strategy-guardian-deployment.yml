@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: acb-strategy-swarm
+  name: acb-strategy-guardian
   namespace: ai-code-battle
   labels:
-    app.kubernetes.io/name: acb-strategy-swarm
+    app.kubernetes.io/name: acb-strategy-guardian
     app.kubernetes.io/part-of: ai-code-battle
     app.kubernetes.io/component: strategy-bot
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: acb-strategy-swarm
+      app.kubernetes.io/name: acb-strategy-guardian
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: acb-strategy-swarm
+        app.kubernetes.io/name: acb-strategy-guardian
         app.kubernetes.io/part-of: ai-code-battle
         app.kubernetes.io/component: strategy-bot
     spec:
       containers:
-        - name: swarm
-          image: forgejo.ardenone.com/ai-code-battle/acb-strategy-swarm:latest
+        - name: guardian
+          image: forgejo.ardenone.com/ai-code-battle/acb-strategy-guardian:latest
           env:
             - name: BOT_PORT
               value: "8080"
@@ -29,7 +29,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: acb-bot-secrets
-                  key: swarm
+                  key: guardian
           ports:
             - name: http
               containerPort: 8080
@@ -49,7 +49,7 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 64Mi
             limits:
-              memory: 256Mi
+              memory: 128Mi
       restartPolicy: Always

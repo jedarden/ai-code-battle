@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: ai-code-battle
   labels:
-    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/name: ai-code-battle

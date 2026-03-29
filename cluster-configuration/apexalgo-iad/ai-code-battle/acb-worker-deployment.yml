@@ -42,8 +42,6 @@ spec:
                 secretKeyRef:
                   name: acb-r2-credentials
                   key: endpoint
-            - name: ACB_R2_BUCKET
-              value: "acb-data"
             - name: ACB_R2_ACCESS_KEY
               valueFrom:
                 secretKeyRef:

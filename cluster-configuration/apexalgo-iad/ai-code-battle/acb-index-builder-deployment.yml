@@ -25,20 +25,33 @@ spec:
         - name: index-builder
           image: forgejo.ardenone.com/ai-code-battle/acb-index-builder:latest
           env:
-            - name: API_URL
+            - name: ACB_DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: acb-api-key
-                  key: api-endpoint
-            - name: API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: acb-api-key
-                  key: api-key
-            - name: OUTPUT_DIR
+                  name: acb-postgres-credentials
+                  key: database-url
+            - name: ACB_OUTPUT_DIR
               value: "/app/data"
-            - name: DEPLOY_COMMAND
-              value: ""
+            - name: ACB_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: endpoint
+            - name: ACB_R2_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: access-key
+            - name: ACB_R2_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: secret-key
+            - name: ACB_CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: acb-cloudflare-api-token
+                  key: token
           resources:
             requests:
               cpu: 50m

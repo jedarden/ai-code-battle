@@ -8,9 +8,9 @@ spec:
   source:
     repoURL: https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git
     targetRevision: master
-    path: deploy/k8s
+    path: cluster-configuration/apexalgo-iad/ai-code-battle
     directory:
-      recurse: true
+      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-code-battle
@@ -19,5 +19,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
-      - PruneLast=true
+      - CreateNamespace=false

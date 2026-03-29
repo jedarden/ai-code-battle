@@ -4,9 +4,26 @@
 
 **Status: 🔄 In Progress**
 
-**Last Updated: 2026-03-26**
+**Last Updated: 2026-03-28**
 
-### Recent Changes (2026-03-26)
+### Recent Changes (2026-03-28)
+- **Architecture Conformance Fix**: Migrated K8s manifests from `deploy/k8s/` to
+  `cluster-configuration/apexalgo-iad/ai-code-battle/` per plan specification:
+  - Plan §9.3 and §9.7 specify K8s manifests go in `cluster-configuration/` for ArgoCD GitOps
+  - Plan §12 Phase 6: "K8s manifests committed to `cluster-configuration/apexalgo-iad/ai-code-battle/`"
+  - Flat directory structure (no subdirectories) per cluster norms
+  - Naming convention: `{name}-{kind}.yml` (e.g., `acb-worker-deployment.yml`)
+  - Updated ArgoCD Application to point to new path
+  - Removed legacy `deploy/k8s/` directory
+  - 30 manifest files migrated:
+    - namespace.yml, argocd-application.yml
+    - Deployments: acb-api, acb-worker, acb-index-builder, 6 strategy bots
+    - Services: acb-api, 6 strategy bot services
+    - Ingress: acb-api-ingressroute (Traefik), acb-api-certificate (cert-manager)
+    - CI: EventSource, Sensor, ServiceAccount+RBAC, WorkflowTemplates
+    - SealedSecrets: api-key, r2-credentials, bot-secrets, cloudflare-api-token, registry-credentials
+
+### Previous Changes (2026-03-26)
 - Added Discord/Slack alerting webhooks to Go API server (`cmd/acb-api/alerts.go`):
   - `Alerter` module sends notifications to Discord and/or Slack incoming webhook URLs
   - Discord embeds with color-coded severity (blue=info, yellow=warning, red=error) + timestamps
@@ -366,15 +383,20 @@ ai-code-battle/
 │   ├── guardian/       # PHP - GuardianBot
 │   ├── swarm/          # TypeScript - SwarmBot
 │   └── hunter/         # Java - HunterBot
-├── deploy/
-│   └── k8s/               # Kubernetes manifests (ArgoCD GitOps)
-│       ├── namespace.yaml
-│       ├── argocd-application.yaml
-│       ├── deployments/   # Worker, index builder, 6 strategy bots
-│       ├── services/      # ClusterIP services for bots
-│       ├── ingress/       # Traefik IngressRoute + cert-manager Certificate
-│       ├── ci/            # Argo Events + Workflows CI/CD pipeline
-│       └── sealed-secrets/ # Secret templates
+├── cluster-configuration/
+│   └── apexalgo-iad/
+│       └── ai-code-battle/   # K8s manifests (ArgoCD GitOps, flat structure)
+│           ├── namespace.yml
+│           ├── argocd-application.yml
+│           ├── acb-worker-deployment.yml
+│           ├── acb-api-deployment.yml + service.yml
+│           ├── acb-index-builder-deployment.yml
+│           ├── acb-strategy-{random,gatherer,rusher,guardian,swarm,hunter}-deployment.yml + service.yml
+│           ├── acb-api-ingressroute.yml (Traefik + Middlewares)
+│           ├── acb-api-certificate.yml
+│           ├── acb-ci-{eventsource,sensor,serviceaccount}.yml
+│           ├── acb-build-{image,site}-workflowtemplate.yml
+│           └── acb-*-sealedsecret.yml (5 SealedSecret templates)
 └── docs/
     └── plan/
         └── plan.md     # Full implementation plan

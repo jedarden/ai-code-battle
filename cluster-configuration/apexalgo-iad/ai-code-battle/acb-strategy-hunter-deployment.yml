@@ -48,8 +48,8 @@ spec:
             periodSeconds: 10
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 50m
+              memory: 64Mi
             limits:
-              memory: 256Mi
+              memory: 128Mi
       restartPolicy: Always
