@@ -455,7 +455,7 @@
   - Frontend fetches from R2 (`https://r2.aicodebattle.com/evolution/live.json`)
   - Cache-Control: max-age=10 for near-real-time updates
   - Tests for R2 config validation and credential handling
-- [ ] Narrative engine (weekly story arc detection + LLM chronicles)
+- [x] Narrative engine (weekly story arc detection + LLM chronicles)
 - [x] Public match data documentation (OpenAPI-style)
   - New `/docs/api` route with comprehensive endpoint documentation
   - Documents Pages, R2, and B2 static JSON endpoints

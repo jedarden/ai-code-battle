@@ -41,6 +41,11 @@ type StoryArc struct {
 	ParentIDs    []string   `json:"parent_ids,omitempty"`
 	Generation   int        `json:"generation,omitempty"`
 	CommunityHint string    `json:"community_hint,omitempty"`
+
+	// Rivalry-specific fields
+	BotAWins     int `json:"bot_a_wins,omitempty"`
+	BotBWins     int `json:"bot_b_wins,omitempty"`
+	TotalMatches int `json:"total_matches,omitempty"`
 }
 
 // KeyMatch represents a key match for narrative context
@@ -430,17 +435,13 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 		}
 		botAID, botBID := parts[0], parts[1]
 
-		// Count wins for each bot and check alternation
+		// Count wins for each bot
 		botAWins := 0
 		botBWins := 0
-		alternating := true
-		lastWinner := ""
 
 		for _, m := range matches {
-			var winnerID string
 			for _, p := range m.Participants {
 				if p.Won {
-					winnerID = p.BotID
 					if p.BotID == botAID {
 						botAWins++
 					} else if p.BotID == botBID {
@@ -449,10 +450,6 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 					break
 				}
 			}
-			if lastWinner != "" && winnerID == lastWinner {
-				alternating = false
-			}
-			lastWinner = winnerID
 		}
 
 		// Only include if wins are reasonably close (not one-sided)
@@ -500,7 +497,7 @@ func detectUpsetArcs(data *IndexData) []StoryArc {
 		}
 
 		// Check if underdog won (winner had lower rating)
-		gap := loser.PreMatchRating - winner.PreMatchRating
+		gap := int(loser.PreMatchRating - winner.PreMatchRating)
 		if gap > biggestGap {
 			biggestGap = gap
 			biggestUpset = &StoryArc{

@@ -147,7 +147,11 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	}
 
 	// Generate blog posts (weekly meta reports and chronicles)
-	if err := generateBlog(data, cfg.OutputDir); err != nil {
+	var llmClient *LLMClient
+	if cfg.LLMBaseURL != "" {
+		llmClient = NewLLMClient(cfg.LLMBaseURL, cfg.LLMAPIKey)
+	}
+	if err := generateBlog(data, cfg.OutputDir, llmClient); err != nil {
 		slog.Error("Failed to generate blog", "error", err)
 		// Non-fatal - continue with rest of build
 	}

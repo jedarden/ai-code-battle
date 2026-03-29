@@ -75,6 +75,9 @@ func LoadConfig() *Config {
 		B2BucketName: os.Getenv("ACB_B2_BUCKET"),
 
 		OutputDir: getEnv("ACB_OUTPUT_DIR", "/tmp/acb-index"),
+
+		LLMBaseURL: getEnv("ACB_LLM_BASE_URL", ""),
+		LLMAPIKey:  os.Getenv("ACB_LLM_API_KEY"),
 	}
 }
 

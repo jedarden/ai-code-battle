@@ -191,7 +191,7 @@ func TestGenerateMatchIndex(t *testing.T) {
 				TurnCount:    200,
 				EndCondition: "elimination",
 				CompletedAt:  now,
-				Participants: []MatchParticipant{
+				Participants: []ParticipantData{
 					{BotID: "bot1", Score: 5, Won: true},
 					{BotID: "bot2", Score: 2, Won: false},
 				},
@@ -246,7 +246,7 @@ func TestGeneratePlaylists(t *testing.T) {
 				TurnCount:    200,
 				EndCondition: "elimination",
 				CompletedAt:  now,
-				Participants: []MatchParticipant{
+				Participants: []ParticipantData{
 					{BotID: "bot1", Score: 3, Won: true},
 					{BotID: "bot2", Score: 2, Won: false}, // Close finish (diff = 1)
 				},
@@ -257,7 +257,7 @@ func TestGeneratePlaylists(t *testing.T) {
 				TurnCount:    150,
 				EndCondition: "dominance",
 				CompletedAt:  now.Add(-time.Hour),
-				Participants: []MatchParticipant{
+				Participants: []ParticipantData{
 					{BotID: "bot1", Score: 0, Won: false},
 					{BotID: "bot2", Score: 10, Won: true}, // Not close (diff = 10)
 				},
