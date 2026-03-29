@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"image"
+	"image/color"
 	"os"
 	"path/filepath"
 	"testing"
@@ -370,4 +372,282 @@ func TestWriteJSON(t *testing.T) {
 	if len(content) < 20 {
 		t.Errorf("JSON seems unformatted: %q", string(content))
 	}
+}
+
+func TestGenerateBotCard(t *testing.T) {
+	cfg := DefaultCardConfig
+
+	bot := BotCard{
+		BotID:         "bot_test123",
+		Name:          "TestBot",
+		Rating:        1650,
+		WinRate:       75.5,
+		MatchesPlayed: 100,
+		Wins:          75,
+		Losses:        25,
+		Rank:          1,
+		Evolved:       false,
+		HealthStatus:  "ACTIVE",
+	}
+
+	img, err := generateBotCard(bot, cfg)
+	if err != nil {
+		t.Fatalf("generateBotCard failed: %v", err)
+	}
+
+	// Verify image dimensions
+	bounds := img.Bounds()
+	if bounds.Dx() != cfg.Width {
+		t.Errorf("Image width: got %d, want %d", bounds.Dx(), cfg.Width)
+	}
+	if bounds.Dy() != cfg.Height {
+		t.Errorf("Image height: got %d, want %d", bounds.Dy(), cfg.Height)
+	}
+
+	// Verify the image is not blank (should have some non-zero pixels)
+	hasContent := false
+	for y := 0; y < bounds.Dy(); y++ {
+		for x := 0; x < bounds.Dx(); x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if r > 0 || g > 0 || b > 0 || a > 0 {
+				hasContent = true
+				break
+			}
+		}
+		if hasContent {
+			break
+		}
+	}
+
+	if !hasContent {
+		t.Error("Generated image appears to be blank")
+	}
+}
+
+func TestGenerateBotCardEvolved(t *testing.T) {
+	cfg := DefaultCardConfig
+
+	bot := BotCard{
+		BotID:         "evolved_bot456",
+		Name:          "EvolvedBot",
+		Rating:        1820,
+		WinRate:       82.0,
+		MatchesPlayed: 50,
+		Wins:          41,
+		Losses:        9,
+		Rank:          5,
+		Evolved:       true,
+		Island:        "python",
+		Generation:    10,
+		HealthStatus:  "ACTIVE",
+	}
+
+	img, err := generateBotCard(bot, cfg)
+	if err != nil {
+		t.Fatalf("generateBotCard failed: %v", err)
+	}
+
+	// Verify image dimensions
+	bounds := img.Bounds()
+	if bounds.Dx() != cfg.Width {
+		t.Errorf("Image width: got %d, want %d", bounds.Dx(), cfg.Width)
+	}
+	if bounds.Dy() != cfg.Height {
+		t.Errorf("Image height: got %d, want %d", bounds.Dy(), cfg.Height)
+	}
+}
+
+func TestGenerateAllBotCards(t *testing.T) {
+	data := &IndexData{
+		GeneratedAt: time.Now(),
+		Bots: []BotData{
+			{
+				ID:            "bot1",
+				Name:          "TestBot1",
+				Rating:        1650.0,
+				MatchesPlayed: 100,
+				MatchesWon:    75,
+				HealthStatus:  "ACTIVE",
+				Evolved:       false,
+			},
+			{
+				ID:            "bot2",
+				Name:          "TestBot2",
+				Rating:        1550.0,
+				MatchesPlayed: 50,
+				MatchesWon:    25,
+				HealthStatus:  "ACTIVE",
+				Evolved:       true,
+				Island:        "python",
+				Generation:    5,
+			},
+		},
+	}
+
+	tmpDir := t.TempDir()
+
+	if err := generateAllBotCards(data, tmpDir); err != nil {
+		t.Fatalf("generateAllBotCards failed: %v", err)
+	}
+
+	// Verify cards directory was created
+	cardsDir := filepath.Join(tmpDir, "cards")
+	if _, err := os.Stat(cardsDir); os.IsNotExist(err) {
+		t.Error("Cards directory was not created")
+	}
+
+	// Verify PNG files were created for each bot
+	for _, bot := range data.Bots {
+		cardPath := filepath.Join(cardsDir, bot.ID+".png")
+		if _, err := os.Stat(cardPath); os.IsNotExist(err) {
+			t.Errorf("Card file not created for bot %s", bot.ID)
+		}
+
+		// Verify the file is a valid PNG by checking its header
+		content, err := os.ReadFile(cardPath)
+		if err != nil {
+			t.Errorf("Failed to read card file for bot %s: %v", bot.ID, err)
+			continue
+		}
+
+		// PNG files start with these bytes
+		pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+		if len(content) < len(pngHeader) {
+			t.Errorf("Card file too small for bot %s: %d bytes", bot.ID, len(content))
+			continue
+		}
+
+		for i, b := range pngHeader {
+			if content[i] != b {
+				t.Errorf("Card file for bot %s is not a valid PNG (header mismatch at byte %d)", bot.ID, i)
+				break
+			}
+		}
+	}
+}
+
+func TestGetColorForRating(t *testing.T) {
+	tests := []struct {
+		rating    int
+		name      string
+		checkR    uint8
+	}{
+		{2100, "gold", 255},
+		{1850, "silver", 192},
+		{1650, "bronze", 205},
+		{1450, "green", 100},
+		{1200, "gray", 200},
+	}
+
+	for _, tt := range tests {
+		col := getColorForRating(tt.rating)
+		if col.R != tt.checkR {
+			t.Errorf("getColorForRating(%d): R = %d, want %d", tt.rating, col.R, tt.checkR)
+		}
+	}
+}
+
+func TestGetWinRateColor(t *testing.T) {
+	tests := []struct {
+		winRate float64
+		name    string
+		checkG  uint8
+	}{
+		{75.0, "green", 197},
+		{60.0, "blue", 130},
+		{40.0, "yellow", 179},
+		{20.0, "red", 68},
+	}
+
+	for _, tt := range tests {
+		col := getWinRateColor(tt.winRate)
+		if col.G != tt.checkG {
+			t.Errorf("getWinRateColor(%f): G = %d, want %d", tt.winRate, col.G, tt.checkG)
+		}
+	}
+}
+
+func TestGetRankBadgeColor(t *testing.T) {
+	tests := []struct {
+		rank    int
+		name    string
+		checkR  uint8
+	}{
+		{1, "gold", 255},
+		{2, "silver", 192},
+		{3, "bronze", 205},
+		{5, "blue", 59},
+		{50, "gray", 100},
+	}
+
+	for _, tt := range tests {
+		col := getRankBadgeColor(tt.rank)
+		if col.R != tt.checkR {
+			t.Errorf("getRankBadgeColor(%d): R = %d, want %d", tt.rank, col.R, tt.checkR)
+		}
+	}
+}
+
+func TestGetAccentColor(t *testing.T) {
+	// Test evolved bot
+	evolvedCol := getAccentColor(true, "ACTIVE")
+	if evolvedCol.R != 138 || evolvedCol.G != 43 || evolvedCol.B != 226 {
+		t.Errorf("Evolved accent color: got R=%d,G=%d,B=%d, want purple (138,43,226)",
+			evolvedCol.R, evolvedCol.G, evolvedCol.B)
+	}
+
+	// Test inactive bot
+	inactiveCol := getAccentColor(false, "INACTIVE")
+	if inactiveCol.R != 128 || inactiveCol.G != 128 || inactiveCol.B != 128 {
+		t.Errorf("Inactive accent color: got R=%d,G=%d,B=%d, want gray (128,128,128)",
+			inactiveCol.R, inactiveCol.G, inactiveCol.B)
+	}
+
+	// Test active bot
+	activeCol := getAccentColor(false, "ACTIVE")
+	if activeCol.R != 59 || activeCol.G != 130 || activeCol.B != 246 {
+		t.Errorf("Active accent color: got R=%d,G=%d,B=%d, want blue (59,130,246)",
+			activeCol.R, activeCol.G, activeCol.B)
+	}
+}
+
+func TestSavePNG(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.png")
+
+	// Create a simple test image
+	img := generateTestImage(100, 100)
+
+	if err := savePNG(path, img); err != nil {
+		t.Fatalf("savePNG failed: %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("PNG file was not created")
+	}
+
+	// Verify file is a valid PNG
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read PNG file: %v", err)
+	}
+
+	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	for i, b := range pngHeader {
+		if content[i] != b {
+			t.Errorf("File is not a valid PNG (header mismatch at byte %d)", i)
+			break
+		}
+	}
+}
+
+func generateTestImage(width, height int) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.Set(x, y, color.RGBA{R: 100, G: 100, B: 100, A: 255})
+		}
+	}
+	return img
 }

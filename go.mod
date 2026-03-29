@@ -1,6 +1,6 @@
 module github.com/aicodebattle/acb
 
-go 1.24.3
+go 1.25.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.4 // indirect
@@ -27,4 +27,5 @@ require (
 	github.com/lib/pq v1.12.0 // indirect
 	github.com/redis/go-redis/v9 v9.18.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	golang.org/x/image v0.38.0 // indirect
 )

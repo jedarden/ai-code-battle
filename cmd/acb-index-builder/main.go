@@ -127,6 +127,7 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		cfg.OutputDir + "/data/meta",
 		cfg.OutputDir + "/data/evolution",
 		cfg.OutputDir + "/data/blog",
+		cfg.OutputDir + "/cards",
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -143,6 +144,24 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	// Generate all index files
 	if err := generateAllIndexes(data, cfg.OutputDir); err != nil {
 		return fmt.Errorf("generate indexes: %w", err)
+	}
+
+	// Generate bot profile cards (PNG images for social sharing)
+	if err := generateAllBotCards(data, cfg.OutputDir); err != nil {
+		slog.Error("Failed to generate bot cards", "error", err)
+		// Non-fatal - continue with rest of build
+	}
+
+	// Upload cards to R2 warm cache
+	if err := uploadCardsToR2(ctx, cfg, cfg.OutputDir); err != nil {
+		slog.Error("Failed to upload cards to R2", "error", err)
+		// Non-fatal
+	}
+
+	// Upload cards to B2 cold archive
+	if err := uploadCardsToB2(ctx, cfg, cfg.OutputDir); err != nil {
+		slog.Error("Failed to upload cards to B2", "error", err)
+		// Non-fatal
 	}
 
 	return nil

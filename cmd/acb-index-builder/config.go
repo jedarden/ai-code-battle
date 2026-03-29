@@ -54,6 +54,7 @@ func LoadConfig() *Config {
 		BuildInterval:  getEnvDuration("ACB_BUILD_INTERVAL", 15*time.Minute),
 		DeployInterval: getEnvInt("ACB_DEPLOY_INTERVAL", 6),
 		MaxLifetime:    getEnvDuration("ACB_MAX_LIFETIME", 4*time.Hour),
+		BuildTimeout:   getEnvDuration("ACB_BUILD_TIMEOUT", 10*time.Minute),
 
 		CloudflareAPIToken:  os.Getenv("ACB_CLOUDFLARE_API_TOKEN"),
 		CloudflareAccountID: os.Getenv("ACB_CLOUDFLARE_ACCOUNT_ID"),

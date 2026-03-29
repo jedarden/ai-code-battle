@@ -1,6 +1,7 @@
 // Bot profile page - displays individual bot details
 
 import { fetchBotProfile, type BotProfile } from '../api-types';
+import { updateOGTags, getBotProfileOGTags, resetOGTags } from '../og-tags';
 
 export async function renderBotProfilePage(params: Record<string, string>): Promise<void> {
   const app = document.getElementById('app');
@@ -24,8 +25,22 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
   try {
     const profile = await fetchBotProfile(botId);
     if (breadcrumbName) breadcrumbName.textContent = profile.name;
+
+    // Update Open Graph tags for social sharing
+    updateOGTags(getBotProfileOGTags({
+      id: profile.id,
+      name: profile.name,
+      rating: profile.rating,
+      matches_played: profile.matches_played,
+      win_rate: profile.win_rate,
+      evolved: profile.evolved,
+    }));
+
     renderProfile(content, profile);
   } catch (error) {
+    // Reset OG tags on error
+    resetOGTags();
+
     content.innerHTML = `
       <div class="error">
         <p>Failed to load bot profile: ${error}</p>
