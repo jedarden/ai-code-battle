@@ -115,14 +115,19 @@ Configure custom domain in Cloudflare dashboard:
 
 ### R2 Bucket
 
-Create the bucket:
+Create the bucket and configure custom domain:
 ```bash
-wrangler r2 bucket create acb-data
-```
+# Automated setup (bucket + custom domain via API)
+./scripts/setup-r2.sh
 
-Configure custom domain in Cloudflare dashboard:
-1. Go to R2 > acb-data > Settings > Custom Domains
-2. Add domain: `r2.aicodebattle.com`
+# Or manual setup:
+# 1. Create bucket
+wrangler r2 bucket create acb-data
+
+# 2. Configure custom domain in Cloudflare dashboard:
+#    - Go to R2 > acb-data > Settings > Custom Domains
+#    - Add domain: r2.aicodebattle.com
+```
 
 ### DNS Configuration
 
