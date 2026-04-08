@@ -301,3 +301,34 @@ export async function fetchPlaylist(slug: string): Promise<Playlist> {
   if (!response.ok) throw new Error(`Failed to fetch playlist: ${response.status}`);
   return response.json();
 }
+
+// Prediction types
+
+export interface PredictionData {
+  id: number;
+  match_id: string;
+  predictor_id: string;
+  predicted_bot: string;
+  correct?: boolean;
+  created_at: string;
+  resolved_at?: string;
+}
+
+export interface PredictorStats {
+  predictor_id: string;
+  correct: number;
+  incorrect: number;
+  streak: number;
+  best_streak: number;
+}
+
+export interface PredictionsLeaderboard {
+  updated_at: string;
+  entries: PredictorStats[];
+}
+
+export async function fetchPredictionsLeaderboard(): Promise<PredictionsLeaderboard> {
+  const response = await fetch('/data/predictions/leaderboard.json');
+  if (!response.ok) throw new Error(`Failed to fetch predictions leaderboard: ${response.status}`);
+  return response.json();
+}

@@ -228,58 +228,49 @@ func (mr *MatchRunner) findBotAtPosition(gs *GameState, pos Position, playerID i
 
 // generateMap generates a symmetric map for the given number of players.
 func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
-	// For 2 players: 180° rotational symmetry
-	// Place cores at opposite corners
 	centerRow := gs.Config.Rows / 2
 	centerCol := gs.Config.Cols / 2
+	coresPerPlayer := gs.Config.CoresPerPlayer
+	if coresPerPlayer < 1 {
+		coresPerPlayer = 1
+	}
 
-	switch numPlayers {
-	case 2:
-		// Place cores at opposite positions (rotational symmetry through center)
-		core0 := Position{Row: centerRow / 2, Col: centerCol / 2}
-		core1 := Position{Row: centerRow + centerRow/2, Col: centerCol + centerCol/2}
-		gs.AddCore(0, core0)
-		gs.AddCore(1, core1)
+	// Place cores for each player using rotational symmetry.
+	// Primary core at radius ~70% from center, additional cores at ~40% radius
+	// offset angularly from the primary.
+	primaryRadius := 0.7
+	secondaryRadius := 0.4
+	halfRows := float64(centerRow)
+	halfCols := float64(centerCol)
 
-		// Place bots at cores
-		gs.SpawnBot(0, core0)
-		gs.SpawnBot(1, core1)
+	for i := 0; i < numPlayers; i++ {
+		baseAngle := float64(i) * 2.0 * math.Pi / float64(numPlayers)
 
-	case 3:
-		// 120° rotational symmetry (equilateral triangle)
-		// Simplified: place at roughly equal angles
-		for i := 0; i < 3; i++ {
-			angle := float64(i) * 2.0 * math.Pi / 3.0
-			row := centerRow + int(float64(centerRow/2)*0.8*(1.0+0.5*math.Cos(angle)))
-			col := centerCol + int(float64(centerCol/2)*0.8*(1.0+0.5*math.Sin(angle)))
+		for c := 0; c < coresPerPlayer; c++ {
+			var row, col int
+			if c == 0 {
+				// Primary core: far from center
+				row = centerRow + int(halfRows*primaryRadius*math.Cos(baseAngle))
+				col = centerCol + int(halfCols*primaryRadius*math.Sin(baseAngle))
+			} else {
+				// Additional cores: closer to center, offset angularly
+				angleOffset := (float64(c) * 0.3) / float64(numPlayers)
+				angle := baseAngle + angleOffset
+				row = centerRow + int(halfRows*secondaryRadius*math.Cos(angle))
+				col = centerCol + int(halfCols*secondaryRadius*math.Sin(angle))
+			}
+
+			// Wrap to grid bounds
+			row = ((row % gs.Config.Rows) + gs.Config.Rows) % gs.Config.Rows
+			col = ((col % gs.Config.Cols) + gs.Config.Cols) % gs.Config.Cols
+
 			pos := Position{Row: row, Col: col}
 			gs.AddCore(i, pos)
-			gs.SpawnBot(i, pos)
-		}
 
-	case 4:
-		// 90° rotational symmetry (four corners of a square)
-		offset := centerRow / 2
-		positions := []Position{
-			{Row: centerRow - offset, Col: centerCol - offset},
-			{Row: centerRow - offset, Col: centerCol + offset},
-			{Row: centerRow + offset, Col: centerCol + offset},
-			{Row: centerRow + offset, Col: centerCol - offset},
-		}
-		for i, pos := range positions {
-			gs.AddCore(i, pos)
-			gs.SpawnBot(i, pos)
-		}
-
-	default:
-		// Fallback: place cores in a circle
-		for i := 0; i < numPlayers; i++ {
-			angle := float64(i) * 2.0 * math.Pi / float64(numPlayers)
-			row := centerRow + int(float64(centerRow/2)*0.7*math.Cos(angle))
-			col := centerCol + int(float64(centerCol/2)*0.7*math.Sin(angle))
-			pos := Position{Row: row, Col: col}
-			gs.AddCore(i, pos)
-			gs.SpawnBot(i, pos)
+			// Spawn initial bot only at the primary core
+			if c == 0 {
+				gs.SpawnBot(i, pos)
+			}
 		}
 	}
 
@@ -295,8 +286,13 @@ func (mr *MatchRunner) placeEnergyNodes(gs *GameState, numPlayers int) {
 	centerRow := gs.Config.Rows / 2
 	centerCol := gs.Config.Cols / 2
 
-	// Place energy nodes in a ring around the center
-	numNodes := mr.config.EnergyInterval * 2 // e.g., 20 nodes for interval 10
+	// Scale energy nodes with map area: ~1 node per 150 tiles, minimum 4 per player
+	totalArea := gs.Config.Rows * gs.Config.Cols
+	numNodes := totalArea / 150
+	minNodes := numPlayers * 4
+	if numNodes < minNodes {
+		numNodes = minNodes
+	}
 	nodesPerSector := numNodes / numPlayers
 
 	for i := 0; i < nodesPerSector; i++ {
@@ -319,9 +315,9 @@ func (mr *MatchRunner) placeWalls(gs *GameState, numPlayers int) {
 	centerRow := gs.Config.Rows / 2
 	centerCol := gs.Config.Cols / 2
 
-	// Calculate target number of walls
+	// Calculate target number of walls: 5% density (20 passable : 1 wall)
 	totalTiles := gs.Config.Rows * gs.Config.Cols
-	targetWalls := int(float64(totalTiles) * 0.15) // 15% wall density
+	targetWalls := totalTiles / 20
 	wallsPerSector := targetWalls / numPlayers
 
 	for i := 0; i < wallsPerSector; i++ {

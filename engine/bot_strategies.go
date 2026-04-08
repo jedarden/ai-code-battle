@@ -213,11 +213,13 @@ func (b *GathererBot) getExploreMove(
 	enemyPositions, wallPositions map[Position]bool,
 	config Config,
 ) *Move {
-	directions := []Direction{DirN, DirE, DirS, DirW}
-	bestDir := DirN
-	bestScore := -999999
+	// Explore toward map center — that's where energy and enemies are
+	center := Position{Row: config.Rows / 2, Col: config.Cols / 2}
 
-	for _, dir := range directions {
+	bestDir := DirNone
+	bestScore := -999999.0
+
+	for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
 		newPos := simulateMove(pos, dir, config.Rows, config.Cols)
 
 		if wallPositions[newPos] {
@@ -228,14 +230,23 @@ func (b *GathererBot) getExploreMove(
 			continue
 		}
 
-		// Score based on distance from other bots (spread out)
-		score := 0
+		score := 0.0
+
+		// Move toward center
+		distToCenter := float64(distance2(newPos, center, config.Rows, config.Cols))
+		currentDist := float64(distance2(pos, center, config.Rows, config.Cols))
+		score += (currentDist - distToCenter) * 5
+
+		// Spread out from other bots
 		for _, other := range myBots {
 			if other.Position != pos {
-				dist := distance2(newPos, other.Position, config.Rows, config.Cols)
-				score += int(dist)
+				dist := float64(distance2(newPos, other.Position, config.Rows, config.Cols))
+				score += dist * 0.5
 			}
 		}
+
+		// Add slight randomness to avoid getting stuck
+		score += b.rng.Float64() * 2
 
 		if score > bestScore {
 			bestScore = score
@@ -243,10 +254,10 @@ func (b *GathererBot) getExploreMove(
 		}
 	}
 
-	return &Move{
-		Position:  pos,
-		Direction: bestDir,
+	if bestDir != DirNone {
+		return &Move{Position: pos, Direction: bestDir}
 	}
+	return nil
 }
 
 // RusherBot aggressively rushes toward enemy cores.
@@ -301,18 +312,36 @@ func (b *RusherBot) GetMoves(state *VisibleState) ([]Move, error) {
 		wallPositions[w] = true
 	}
 
+	energyPositions := make(map[Position]bool)
+	for _, e := range state.Energy {
+		energyPositions[e] = true
+	}
+
 	// Find targets to rush
 	targets := b.getRushTargets(state, myID)
 
 	moves := make([]Move, 0, len(myBots))
 
 	for _, bot := range myBots {
+		// Opportunistic: grab adjacent energy while rushing
+		if len(myBots) <= 2 {
+			for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
+				adj := simulateMove(bot.Position, dir, config.Rows, config.Cols)
+				if energyPositions[adj] && !wallPositions[adj] {
+					moves = append(moves, Move{Position: bot.Position, Direction: dir})
+					delete(energyPositions, adj)
+					goto nextBot
+				}
+			}
+		}
+
 		if dir := b.findBestMove(bot.Position, targets, enemyPositions, wallPositions, config); dir != DirNone {
 			moves = append(moves, Move{
 				Position:  bot.Position,
 				Direction: dir,
 			})
 		}
+	nextBot:
 	}
 
 	return moves, nil
@@ -630,6 +659,11 @@ func (b *SwarmBot) GetMoves(state *VisibleState) ([]Move, error) {
 		myBotPositions[bot.Position] = true
 	}
 
+	energyPositions := make(map[Position]bool)
+	for _, e := range state.Energy {
+		energyPositions[e] = true
+	}
+
 	// Calculate swarm center
 	swarmCenter := b.calculateCenter(myBots, config)
 
@@ -641,11 +675,17 @@ func (b *SwarmBot) GetMoves(state *VisibleState) ([]Move, error) {
 	}
 
 	moves := make([]Move, 0, len(myBots))
+	claimed := make(map[Position]bool) // destinations already claimed by a friendly bot this turn
 
 	for _, bot := range myBots {
-		move := b.computeBotMove(bot, myBotPositions, enemyPositions, swarmCenter, enemyCenter, wallPositions, config)
+		move := b.computeBotMove(bot, myBotPositions, enemyPositions, energyPositions, swarmCenter, enemyCenter, wallPositions, claimed, config, len(myBots))
 		if move != nil {
+			dest := simulateMove(bot.Position, move.Direction, config.Rows, config.Cols)
+			claimed[dest] = true
 			moves = append(moves, *move)
+		} else {
+			// Bot holds position — claim its current tile
+			claimed[bot.Position] = true
 		}
 	}
 
@@ -685,13 +725,19 @@ func (b *SwarmBot) calculateCenter(bots []VisibleBot, config Config) Position {
 
 func (b *SwarmBot) computeBotMove(
 	bot VisibleBot,
-	myBotPositions, enemyPositions map[Position]bool,
+	myBotPositions, enemyPositions, energyPositions map[Position]bool,
 	swarmCenter Position,
 	enemyCenter *Position,
-	wallPositions map[Position]bool,
+	wallPositions, claimed map[Position]bool,
 	config Config,
+	friendlyCount int,
 ) *Move {
-	// Target is enemy center if visible
+	// Solo mode: when alone or with very few units, gather energy to build the swarm
+	if friendlyCount <= 2 {
+		return b.soloMove(bot, energyPositions, enemyPositions, wallPositions, config)
+	}
+
+	// Target is enemy center if visible, otherwise map center
 	target := Position{Row: config.Rows / 2, Col: config.Cols / 2}
 	if enemyCenter != nil {
 		target = *enemyCenter
@@ -705,6 +751,16 @@ func (b *SwarmBot) computeBotMove(
 
 		// Can't move into walls or enemies
 		if wallPositions[newPos] || enemyPositions[newPos] {
+			continue
+		}
+
+		// CRITICAL: avoid tiles claimed by another friendly bot this turn (prevents self-collision)
+		if claimed[newPos] {
+			continue
+		}
+
+		// Also avoid moving onto a tile occupied by a friendly bot (they might not move)
+		if myBotPositions[newPos] && newPos != bot.Position {
 			continue
 		}
 
@@ -734,6 +790,11 @@ func (b *SwarmBot) computeBotMove(
 			}
 		}
 
+		// Small bonus for energy on the way
+		if energyPositions[newPos] {
+			score += 15
+		}
+
 		if score > bestScore {
 			bestScore = score
 			bestDir = dir
@@ -744,6 +805,58 @@ func (b *SwarmBot) computeBotMove(
 		return &Move{Position: bot.Position, Direction: bestDir}
 	}
 
+	return nil
+}
+
+// soloMove handles movement when the swarm is too small for formation tactics.
+// Gathers energy to spawn more units, avoids enemies.
+func (b *SwarmBot) soloMove(
+	bot VisibleBot,
+	energyPositions, enemyPositions, wallPositions map[Position]bool,
+	config Config,
+) *Move {
+	bestDir := DirNone
+	bestScore := -math.MaxFloat64
+
+	for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
+		newPos := simulateMove(bot.Position, dir, config.Rows, config.Cols)
+		if wallPositions[newPos] || enemyPositions[newPos] {
+			continue
+		}
+
+		score := 0.0
+
+		// Strong bonus for energy
+		if energyPositions[newPos] {
+			score += 100
+		}
+
+		// Move toward nearest energy
+		for ePos := range energyPositions {
+			dist := float64(distance2(newPos, ePos, config.Rows, config.Cols))
+			currentDist := float64(distance2(bot.Position, ePos, config.Rows, config.Cols))
+			if dist < currentDist {
+				score += 20.0 / (dist + 1)
+			}
+		}
+
+		// Avoid enemies
+		for ePos := range enemyPositions {
+			dist := distance2(newPos, ePos, config.Rows, config.Cols)
+			if dist <= config.AttackRadius2+4 {
+				score -= 200
+			}
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestDir = dir
+		}
+	}
+
+	if bestDir != DirNone {
+		return &Move{Position: bot.Position, Direction: bestDir}
+	}
 	return nil
 }
 

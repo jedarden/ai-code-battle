@@ -375,7 +375,25 @@ func (gs *GameState) checkWinConditions() *MatchResult {
 		}
 	}
 
-	// Condition 4: Turn Limit
+	// Condition 4: Stalemate - no progress for 50 consecutive turns
+	currentEnergy := 0
+	for _, p := range gs.Players {
+		currentEnergy += p.Energy
+	}
+	currentBots := gs.GetLivingBotCount()
+	if currentEnergy != gs.LastTotalEnergy || currentBots != gs.LastTotalBots || len(gs.DeadBots) > 0 {
+		gs.StalemateTurns = 0
+		gs.LastTotalEnergy = currentEnergy
+		gs.LastTotalBots = currentBots
+	} else {
+		gs.StalemateTurns++
+	}
+	if gs.StalemateTurns >= 50 {
+		winner := gs.findWinnerByScore()
+		return gs.createResult(winner, "stalemate")
+	}
+
+	// Condition 5: Turn Limit
 	if gs.Turn >= gs.Config.MaxTurns {
 		// Highest score wins, ties broken by energy collected, then bots alive
 		winner := gs.findWinnerByScore()

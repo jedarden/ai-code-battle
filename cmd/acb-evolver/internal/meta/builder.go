@@ -8,6 +8,7 @@ package meta
 
 import (
 	"context"
+	"math"
 	"sort"
 	"strings"
 
@@ -156,7 +157,7 @@ func behaviorDistance(a, b []float64) float64 {
 	}
 	dx := a[0] - b[0]
 	dy := a[1] - b[1]
-	return dx*dx + dy*dy // Squared distance is sufficient for diversity
+	return math.Sqrt(dx*dx + dy*dy)
 }
 
 // inferDominantStrategy analyzes the top bots and describes the meta.
@@ -215,34 +216,37 @@ func BuildSimple(totalBots int, topBots []BotInfo, islandStats map[string]Island
 	}
 
 	// Infer dominant strategy
-	if len(topBots) > 0 {
-		islandCounts := make(map[string]int)
-		for _, bot := range topBots {
-			islandCounts[bot.Island]++
-		}
+	if len(topBots) == 0 {
+		desc.DominantStrategy = "unknown (no promoted bots)"
+		return desc
+	}
 
-		// Find most common island
-		maxCount := 0
-		dominantIsland := ""
-		for island, count := range islandCounts {
-			if count > maxCount {
-				maxCount = count
-				dominantIsland = island
-			}
-		}
+	islandCounts := make(map[string]int)
+	for _, bot := range topBots {
+		islandCounts[bot.Island]++
+	}
 
-		strategyMap := map[string]string{
-			evolverdb.IslandAlpha: "aggressive core-rushing",
-			evolverdb.IslandBeta:  "energy-focused economy",
-			evolverdb.IslandGamma: "defensive adaptation",
-			evolverdb.IslandDelta: "experimental mixed",
+	// Find most common island
+	maxCount := 0
+	dominantIsland := ""
+	for island, count := range islandCounts {
+		if count > maxCount {
+			maxCount = count
+			dominantIsland = island
 		}
+	}
 
-		if s, ok := strategyMap[dominantIsland]; ok {
-			desc.DominantStrategy = s
-		} else {
-			desc.DominantStrategy = "diverse meta"
-		}
+	strategyMap := map[string]string{
+		evolverdb.IslandAlpha: "aggressive core-rushing",
+		evolverdb.IslandBeta:  "energy-focused economy",
+		evolverdb.IslandGamma: "defensive adaptation",
+		evolverdb.IslandDelta: "experimental mixed",
+	}
+
+	if s, ok := strategyMap[dominantIsland]; ok {
+		desc.DominantStrategy = s
+	} else {
+		desc.DominantStrategy = "diverse meta"
 	}
 
 	return desc

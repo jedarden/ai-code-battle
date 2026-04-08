@@ -80,6 +80,8 @@ type Request struct {
 	TargetLang string
 	// Generation is the current evolution generation number.
 	Generation int
+	// TaskOverride replaces the default task section when set (used for retry prompts).
+	TaskOverride string
 }
 
 // Assemble builds the full LLM prompt from a Request.
@@ -92,7 +94,12 @@ func Assemble(r Request) string {
 	writeMetaSection(&sb, r.Meta)
 	writeReplaySection(&sb, r.Replays)
 	writeParentSection(&sb, r.Parents)
-	writeTaskSection(&sb, r.TargetLang)
+	if r.TaskOverride != "" {
+		sb.WriteString("## Task\n")
+		sb.WriteString(r.TaskOverride)
+	} else {
+		writeTaskSection(&sb, r.TargetLang)
+	}
 
 	return sb.String()
 }

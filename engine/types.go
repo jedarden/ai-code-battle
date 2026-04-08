@@ -1,6 +1,8 @@
 // Package engine implements the AI Code Battle game simulation.
 package engine
 
+import "math"
+
 // Position represents a coordinate on the toroidal grid.
 type Position struct {
 	Row int `json:"row"`
@@ -131,13 +133,14 @@ type Move struct {
 
 // Config holds game configuration parameters.
 type Config struct {
-	Rows           int `json:"rows"`
-	Cols           int `json:"cols"`
-	MaxTurns       int `json:"max_turns"`
-	VisionRadius2  int `json:"vision_radius2"`  // squared vision distance
-	AttackRadius2  int `json:"attack_radius2"`  // squared attack distance
-	SpawnCost      int `json:"spawn_cost"`      // energy cost to spawn a bot
-	EnergyInterval int `json:"energy_interval"` // turns between energy spawns
+	Rows            int `json:"rows"`
+	Cols            int `json:"cols"`
+	MaxTurns        int `json:"max_turns"`
+	VisionRadius2   int `json:"vision_radius2"`   // squared vision distance
+	AttackRadius2   int `json:"attack_radius2"`   // squared attack distance
+	SpawnCost       int `json:"spawn_cost"`        // energy cost to spawn a bot
+	EnergyInterval  int `json:"energy_interval"`   // turns between energy spawns
+	CoresPerPlayer  int `json:"cores_per_player"`  // starting cores per player
 }
 
 // DefaultConfig returns the default game configuration.
@@ -150,7 +153,42 @@ func DefaultConfig() Config {
 		AttackRadius2:  5,  // ~2.24 tiles
 		SpawnCost:      3,
 		EnergyInterval: 10,
+		CoresPerPlayer: 1,
 	}
+}
+
+// ConfigForPlayers returns a config scaled for the given player count and cores per player.
+// Uses ~1800-2000 tiles per player (following aichallenge Ants sizing).
+func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
+	cfg := DefaultConfig()
+	cfg.CoresPerPlayer = coresPerPlayer
+	if coresPerPlayer < 1 {
+		cfg.CoresPerPlayer = 1
+	}
+
+	// Scale grid: ~2000 tiles per player, square grid
+	areaPerPlayer := 2000
+	totalArea := areaPerPlayer * numPlayers
+	side := int(math.Sqrt(float64(totalArea)))
+
+	// Clamp to valid range
+	if side < 40 {
+		side = 40
+	}
+	if side > 200 {
+		side = 200
+	}
+
+	cfg.Rows = side
+	cfg.Cols = side
+
+	// Scale max turns with map size
+	cfg.MaxTurns = side * 8 // larger maps get more turns
+
+	// Scale energy nodes with player count
+	cfg.EnergyInterval = 10
+
+	return cfg
 }
 
 // MatchResult represents the outcome of a match.

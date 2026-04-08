@@ -24,6 +24,11 @@ type GameState struct {
 	DeadBots    []*Bot             // bots that died this turn (for fog display)
 	Events      []Event            // events that occurred this turn
 	Dominance   map[int]int        // player -> consecutive turns with 80%+ bots
+
+	// Stalemate detection
+	StalemateTurns  int // consecutive turns with no progress
+	LastTotalEnergy int // total energy held by all players at last progress
+	LastTotalBots   int // total living bots at last progress
 }
 
 // Event represents something that happened during a turn.

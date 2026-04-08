@@ -27,7 +27,7 @@ const infoTurns = document.getElementById('info-turns') as HTMLElement;
 const infoReason = document.getElementById('info-reason') as HTMLElement;
 
 // Initialize viewer
-let viewer = new ReplayViewer(canvas, { cellSize: 10 });
+let viewer = new ReplayViewer(canvas, { cellSize: 16 });
 
 // Enable controls when replay is loaded
 function enableControls(): void {
@@ -182,6 +182,8 @@ cellSizeSelect.addEventListener('change', () => {
   const replay = viewer.getReplay();
   if (replay) {
     viewer = new ReplayViewer(canvas, { cellSize: size });
+    viewer.onTurnChange = () => { updateUI(); updateEventLog(); };
+    viewer.onPlayStateChange = (playing) => { playBtn.textContent = playing ? 'Pause' : 'Play'; };
     loadReplay(replay);
   }
 });
@@ -233,3 +235,17 @@ document.addEventListener('keydown', (e) => {
 });
 
 console.log('AI Code Battle Replay Viewer initialized');
+
+// Auto-load demo replay
+(async () => {
+  try {
+    const response = await fetch('/data/demo-replay-v2.json');
+    if (response.ok) {
+      const replay = await response.json() as Replay;
+      loadReplay(replay);
+      urlInput.value = '/data/demo-replay-v2.json';
+    }
+  } catch (e) {
+    // silently fail - user can load manually
+  }
+})();

@@ -13,7 +13,9 @@ import { renderRivalriesPage } from './pages/rivalries';
 import { renderFeedbackPage } from './pages/feedback';
 import { renderPlaylistsPage } from './pages/playlists';
 import { renderBlogPage, renderBlogPostPage } from './pages/blog';
-import { renderDocsApiPage } from './pages/docs-api';
+import { renderSeasonsPage } from './pages/seasons';
+import { renderSeriesPage } from './pages/series';
+import { renderPredictionsPage } from './pages/predictions';
 import { ReplayViewer } from './replay-viewer';
 import type { Replay } from './types';
 
@@ -35,7 +37,10 @@ router
   .on('/blog/:slug', renderBlogPostPage)
   .on('/replay', renderReplayPage)
   .on('/docs', renderDocsPage)
-  .on('/docs/api', renderDocsApiPage)
+  .on('/docs/api', renderDocsPage)
+  .on('/seasons', renderSeasonsPage)
+  .on('/series', renderSeriesPage)
+  .on('/predictions', renderPredictionsPage)
   .notFound(renderNotFoundPage);
 
 // Update active nav link on route change

@@ -1,4 +1,4 @@
-// Command acb-local runs a match between two local bots.
+// Command acb-local runs a match between local bots.
 package main
 
 import (
@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aicodebattle/acb/engine"
@@ -27,19 +28,23 @@ var availableBots = map[string]func(int64) engine.BotInterface{
 func main() {
 	// Command-line flags
 	seed := flag.Int64("seed", time.Now().UnixNano(), "Random seed")
-	rows := flag.Int("rows", 60, "Grid rows")
-	cols := flag.Int("cols", 60, "Grid columns")
-	maxTurns := flag.Int("max-turns", 500, "Maximum turns")
+	rows := flag.Int("rows", 0, "Grid rows (0 = auto-scale for player count)")
+	cols := flag.Int("cols", 0, "Grid columns (0 = auto-scale for player count)")
+	maxTurns := flag.Int("max-turns", 0, "Maximum turns (0 = auto-scale)")
+	coresPerPlayer := flag.Int("cores", 1, "Cores (bases) per player")
 	output := flag.String("output", "replay.json", "Output replay file")
 	verbose := flag.Bool("verbose", false, "Verbose output")
-	bot0Name := flag.String("bot0", "gatherer", "Bot 0 strategy (idle, random, gatherer, rusher, guardian, swarm, hunter)")
-	bot1Name := flag.String("bot1", "rusher", "Bot 1 strategy (idle, random, gatherer, rusher, guardian, swarm, hunter)")
+	botsFlag := flag.String("bots", "gatherer,rusher", "Comma-separated bot strategies (2-8 players)")
 	listBots := flag.Bool("list-bots", false, "List available bot strategies")
 	help := flag.Bool("help", false, "Show help")
 
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: acb-local [options]\n\n")
-		fmt.Fprintf(flag.CommandLine.Output(), "Run a match between two local bots.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Run a match between local bots (2-8 players).\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Examples:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  acb-local -bots swarm,hunter                    # 2-player\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  acb-local -bots swarm,hunter,gatherer,rusher     # 4-player\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  acb-local -bots swarm,hunter,gatherer,rusher,guardian,random -cores 2  # 6-player, 2 bases each\n\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(flag.CommandLine.Output(), "\nAvailable bot strategies:\n")
@@ -63,22 +68,43 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Parse bot list
+	botNames := strings.Split(*botsFlag, ",")
+	for i := range botNames {
+		botNames[i] = strings.TrimSpace(botNames[i])
+	}
+
+	if len(botNames) < 2 {
+		log.Fatal("Need at least 2 bots. Use -bots gatherer,rusher")
+	}
+	if len(botNames) > 8 {
+		log.Fatal("Maximum 8 players supported")
+	}
+
 	// Validate bot names
-	bot0Factory, ok := availableBots[*bot0Name]
-	if !ok {
-		log.Fatalf("Unknown bot strategy: %s (use -list-bots to see available strategies)", *bot0Name)
+	factories := make([]func(int64) engine.BotInterface, len(botNames))
+	for i, name := range botNames {
+		f, ok := availableBots[name]
+		if !ok {
+			log.Fatalf("Unknown bot strategy: %s (use -list-bots to see available)", name)
+		}
+		factories[i] = f
 	}
 
-	bot1Factory, ok := availableBots[*bot1Name]
-	if !ok {
-		log.Fatalf("Unknown bot strategy: %s (use -list-bots to see available strategies)", *bot1Name)
-	}
+	// Create config scaled for player count
+	numPlayers := len(botNames)
+	config := engine.ConfigForPlayers(numPlayers, *coresPerPlayer)
 
-	// Create game config
-	config := engine.DefaultConfig()
-	config.Rows = *rows
-	config.Cols = *cols
-	config.MaxTurns = *maxTurns
+	// Override with explicit flags if provided
+	if *rows > 0 {
+		config.Rows = *rows
+	}
+	if *cols > 0 {
+		config.Cols = *cols
+	}
+	if *maxTurns > 0 {
+		config.MaxTurns = *maxTurns
+	}
 
 	// Create random source
 	rng := rand.New(rand.NewSource(*seed))
@@ -94,17 +120,17 @@ func main() {
 
 	mr := engine.NewMatchRunner(config, opts...)
 
-	// Create bots with different seeds
-	bot0 := bot0Factory(rng.Int63())
-	bot1 := bot1Factory(rng.Int63())
-
-	mr.AddBot(bot0, *bot0Name)
-	mr.AddBot(bot1, *bot1Name)
+	// Add bots
+	for i, factory := range factories {
+		bot := factory(rng.Int63())
+		mr.AddBot(bot, botNames[i])
+		_ = i
+	}
 
 	if *verbose {
-		log.Printf("Starting match with seed %d", *seed)
-		log.Printf("Bot 0: %s, Bot 1: %s", *bot0Name, *bot1Name)
-		log.Printf("Config: %dx%d, max %d turns", config.Rows, config.Cols, config.MaxTurns)
+		log.Printf("Starting match: %s", strings.Join(botNames, " vs "))
+		log.Printf("Seed: %d, Grid: %dx%d, MaxTurns: %d, Cores/player: %d",
+			*seed, config.Rows, config.Cols, config.MaxTurns, config.CoresPerPlayer)
 	}
 
 	// Run the match
@@ -129,8 +155,9 @@ func main() {
 
 	// Print result
 	fmt.Printf("Match complete!\n")
-	fmt.Printf("  Players: %s vs %s\n", *bot0Name, *bot1Name)
-	fmt.Printf("  Winner: Player %d\n", result.Winner)
+	fmt.Printf("  Players: %s\n", strings.Join(botNames, " vs "))
+	fmt.Printf("  Grid: %dx%d (%d tiles), Cores: %d/player\n", config.Rows, config.Cols, config.Rows*config.Cols, config.CoresPerPlayer)
+	fmt.Printf("  Winner: Player %d (%s)\n", result.Winner, botNames[result.Winner])
 	fmt.Printf("  Reason: %s\n", result.Reason)
 	fmt.Printf("  Turns: %d\n", result.Turns)
 	fmt.Printf("  Scores: %v\n", result.Scores)

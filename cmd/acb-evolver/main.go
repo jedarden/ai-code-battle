@@ -41,7 +41,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats>")
+		fmt.Fprintln(os.Stderr, "usage: acb-evolver <init-schema|seed|stats|validate|validation-stats|evolve|run|evaluate|retire|live-export>")
 		os.Exit(1)
 	}
 
@@ -53,6 +53,9 @@ func main() {
 	ctx := context.Background()
 
 	switch os.Args[1] {
+	case "run":
+		RunEvolutionLoop(ctx, dbURL, os.Args[2:])
+
 	case "live-export":
 		db := mustOpenDB(dbURL)
 		defer db.Close()

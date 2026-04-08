@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"sort"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -69,7 +68,7 @@ func (c *S3Client) listObjects(ctx context.Context, prefix string) ([]R2Object, 
 
 			objects = append(objects, R2Object{
 				Key:          *obj.Key,
-				Size:         obj.Size,
+				Size:         *obj.Size,
 				LastModified: *obj.LastModified,
 			})
 		}
@@ -82,8 +81,8 @@ func (c *S3Client) listObjects(ctx context.Context, prefix string) ([]R2Object, 
 	}
 
 	// Sort by LastModified (oldest first)
-	sort.Slice(objects, func(i, j R2Object) bool {
-		return i.LastModified.Before(j.LastModified)
+	sort.Slice(objects, func(i, j int) bool {
+		return objects[i].LastModified.Before(objects[j].LastModified)
 	})
 
 	return objects, nil
@@ -114,7 +113,7 @@ func (c *S3Client) objectExists(ctx context.Context, key string) (bool, error) {
 	_, err := c.client.HeadObject(ctx, input)
 	if err != nil {
 		var notFound *types.NotFound
-		if notFound.As(err) {
+		if errors.As(err, &notFound) {
 			return false, nil
 		}
 		return false, fmt.Errorf("head object %s: %w", key, err)
