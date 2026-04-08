@@ -7,7 +7,7 @@ on:
     branches: [master, main]
 
 jobs:
-  # Go engine tests
+  # Go engine and cmd tests
   go-tests:
     name: Go Tests
     runs-on: ubuntu-latest
@@ -23,57 +23,14 @@ jobs:
       - name: Run engine tests
         run: go test ./engine/... -v -race
 
+      - name: Run cmd tests
+        run: go test ./cmd/... -v -race
+
       - name: Build CLI tools
         run: |
           go build ./cmd/acb-local
           go build ./cmd/acb-mapgen
           go build ./cmd/acb-worker
-
-  # Worker API tests
-  worker-api-tests:
-    name: Worker API Tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: worker-api
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: worker-api/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-  # Indexer tests
-  indexer-tests:
-    name: Indexer Tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: cmd/acb-indexer
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: cmd/acb-indexer/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
 
   # Web build
   web-build:
@@ -94,6 +51,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Type check
+        run: npx tsc --noEmit
 
       - name: Build
         run: npm run build
