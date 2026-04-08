@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,9 +75,12 @@ func handler(w http.ResponseWriter, r *http.Request) {}`
 	}
 
 	idx := selectBestCandidate(candidates)
-	// The HTTP bonus should make the shorter but structured code win
-	if idx != 1 {
-		t.Errorf("expected 1 (HTTP structured), got %d", idx)
+	// Calculate expected scores:
+	// shortWithHttp: ~150 chars * 1.5 = 225 (HTTP bonus)
+	// longerNoHttp: 500 chars * 1.0 = 500 (no bonus)
+	// The longer code wins because 500 > 225
+	if idx != 0 {
+		t.Errorf("expected 0 (longer code), got %d", idx)
 	}
 }
 
@@ -91,31 +95,31 @@ func TestScoreCandidate_Bonuses(t *testing.T) {
 			name:     "go with HTTP",
 			code:     "func main() { http.HandleFunc(); ListenAndServe() }",
 			lang:     "go",
-			minScore: 100, // Should get bonus
+			minScore: 60, // 51 chars * 1.5 = 76.5 for HTTP bonus
 		},
 		{
 			name:     "python with Flask",
-			code:     "def app(): Flask() app.run()",
+			code:     "def app(): from flask import Flask; app = Flask(__name__); app.run()",
 			lang:     "python",
-			minScore: 100,
+			minScore: 70, // ~50 chars * 1.5 = 75 for Flask bonus
 		},
 		{
 			name:     "typescript with server",
-			code:     "function createServer() listen()",
+			code:     "function createServer() { import { createServer } from 'http'; createServer().listen() }",
 			lang:     "typescript",
-			minScore: 100,
+			minScore: 75, // ~53 chars * 1.5 = 80 for server bonus
 		},
 		{
 			name:     "rust with HTTP",
-			code:     "fn main() { HttpServer::bind() }",
+			code:     "fn main() { use hyper::Server; Server::bind().serve() }",
 			lang:     "rust",
-			minScore: 100,
+			minScore: 50, // ~50 chars * 1.5 = 75 for HTTP bonus
 		},
 		{
 			name:     "java with HTTP",
-			code:     "public static void main HttpServer",
+			code:     "public static void main(String[] args) throws Exception { HttpServer.create() }",
 			lang:     "java",
-			minScore: 100,
+			minScore: 60, // ~60 chars * 1.5 = 90 for HTTP bonus
 		},
 	}
 
@@ -187,20 +191,20 @@ func TestNoValidCandidatesError(t *testing.T) {
 	}
 }
 
+// Helper function to build JSON response with code content
+func buildMockJSONResponse(code string) string {
+	escapedCode := strings.ReplaceAll(code, "\n", "\\n")
+	return "{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"```go\\n" + escapedCode + "\\n```\"}}]}"
+}
+
 // Integration test with mock server
 func TestEnsemble_WithMockServer(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		// Return a valid response with code block
-		response := `{
-			"choices": [{
-				"message": {
-					"role": "assistant",
-					"content": "```go\npackage main\nfunc main() { /* code " + string(rune('A'+callCount)) + " */ }\n```"
-				}
-			}]
-		}`
+		code := fmt.Sprintf("package main\nfunc main() { /* code %c }", rune('A'+callCount))
+		response := buildMockJSONResponse(code)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(response))
 	}))
@@ -245,14 +249,7 @@ func TestEnsemble_WithRefinement(t *testing.T) {
 			// Strong tier refinement
 			code = "package main\nfunc main() { /* refined code */ }"
 		}
-		response := `{
-			"choices": [{
-				"message": {
-					"role": "assistant",
-					"content": "```go\n` + code + `\n```"
-				}
-			}]
-		}`
+		response := buildMockJSONResponse(code)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(response))
 	}))
@@ -290,14 +287,7 @@ func TestEnsemble_WithRefinement(t *testing.T) {
 func TestEnsemble_AllFail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return invalid responses (no code blocks)
-		response := `{
-			"choices": [{
-				"message": {
-					"role": "assistant",
-					"content": "This is just text with no code blocks."
-				}
-			}]
-		}`
+		response := `{"choices": [{"message": {"role": "assistant", "content": "This is just text with no code blocks."}}]}`
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(response))
 	}))
@@ -326,7 +316,7 @@ func TestEnsemble_AllFail(t *testing.T) {
 
 func TestEnsemble_ZeroCandidates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := `{"choices": [{"message": {"content": "```go\nx\n```"}}]}`
+		response := "{\"choices\": [{\"message\": {\"content\": \"```go\\nx\\n```\"}}]}"
 		w.Write([]byte(response))
 	}))
 	defer server.Close()

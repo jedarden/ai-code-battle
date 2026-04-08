@@ -185,7 +185,7 @@ func TestBehaviorDistance(t *testing.T) {
 		{"same point", []float64{0.5, 0.5}, []float64{0.5, 0.5}, 0},
 		{"unit apart x", []float64{0.0, 0.0}, []float64{1.0, 0.0}, 1},
 		{"unit apart y", []float64{0.0, 0.0}, []float64{0.0, 1.0}, 1},
-		{"diagonal", []float64{0.0, 0.0}, []float64{1.0, 1.0}, 2},
+		{"diagonal", []float64{0.0, 0.0}, []float64{1.0, 1.0}, 1.414214},
 		{"nil vector a", nil, []float64{0.5, 0.5}, 0},
 		{"nil vector b", []float64{0.5, 0.5}, nil, 0},
 		{"short vector a", []float64{0.5}, []float64{0.5, 0.5}, 0},
@@ -195,7 +195,13 @@ func TestBehaviorDistance(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := behaviorDistance(tc.a, tc.b)
-			if got != tc.expected {
+			// Use approximate comparison for floating point
+			const epsilon = 0.0001
+			diff := got - tc.expected
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > epsilon {
 				t.Errorf("expected distance %f, got %f", tc.expected, got)
 			}
 		})
