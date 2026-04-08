@@ -1,0 +1,5 @@
+# Cloudflare Pages Configuration
+# For manual deployment use: wrangler pages deploy web/dist --project-name=ai-code-battle
+
+name = "ai-code-battle"
+compatibility_date = "2024-01-01"
