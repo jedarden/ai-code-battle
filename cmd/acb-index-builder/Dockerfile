@@ -41,7 +41,7 @@ ENV ACB_MAX_LIFETIME=4h
 ENV ACB_BUILD_TIMEOUT=10m
 
 # Run as non-root user
-RUN addgroup -g 1000 acb && adduser -u 1000 -G acb -s /bin/sh -D acb
+RUN addgroup -g 1001 acb && adduser -u 1001 -G acb -s /bin/sh -D acb
 RUN chown -R acb:acb /data
 USER acb
 
