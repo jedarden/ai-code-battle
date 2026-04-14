@@ -2,7 +2,7 @@
 # Polls for match jobs from the Worker API, executes matches, uploads replays to R2
 
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
