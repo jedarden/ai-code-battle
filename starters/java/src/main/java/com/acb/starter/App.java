@@ -1,5 +1,6 @@
 package com.acb.starter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -20,6 +21,7 @@ public class App {
 
     private static final String[] DIRECTIONS = {"N", "E", "S", "W"};
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static String secret;
 
@@ -62,10 +64,10 @@ public class App {
         }
 
         try {
-            GameState state = parseGameState(body);
-            List<Map<String, Object>> moves = computeMoves(state);
+            GameState state = MAPPER.readValue(body, GameState.class);
+            List<Move> moves = computeMoves(state);
 
-            String responseBody = toJsonMoves(moves);
+            String responseBody = MAPPER.writeValueAsString(new MoveResponse(moves));
             int turn = Integer.parseInt(turnStr != null ? turnStr : "0");
             String responseSig = signResponse(matchId, turn, responseBody);
 
@@ -78,65 +80,18 @@ public class App {
         }
     }
 
-    static List<Map<String, Object>> computeMoves(GameState state) {
+    static List<Move> computeMoves(GameState state) {
         // Replace this with your strategy!
-        List<Map<String, Object>> moves = new ArrayList<>();
+        List<Move> moves = new ArrayList<>();
 
-        for (Map<String, Object> bot : state.bots) {
-            int owner = ((Number) bot.get("owner")).intValue();
-            if (owner == state.youId && RANDOM.nextDouble() < 0.5) {
+        for (VisibleBot bot : state.bots) {
+            if (bot.owner == state.you.id && RANDOM.nextDouble() < 0.5) {
                 String dir = DIRECTIONS[RANDOM.nextInt(DIRECTIONS.length)];
-                Map<String, Object> move = new LinkedHashMap<>();
-                move.put("position", bot.get("position"));
-                move.put("direction", dir);
-                moves.add(move);
+                moves.add(new Move(bot.row, bot.col, dir));
             }
         }
 
         return moves;
-    }
-
-    // --- JSON helpers ---
-
-    static GameState parseGameState(String json) {
-        // Minimal JSON parser for the game state
-        GameState state = new GameState();
-        Map<String, Object> map = parseJson(json);
-        state.matchId = (String) map.get("match_id");
-        state.turn = ((Number) map.get("turn")).intValue();
-        state.config = (Map<String, Object>) map.get("config");
-
-        Map<String, Object> you = (Map<String, Object>) map.get("you");
-        state.youId = ((Number) you.get("id")).intValue();
-        state.youEnergy = ((Number) you.get("energy")).intValue();
-        state.youScore = ((Number) you.get("score")).intValue();
-
-        state.bots = (List<Map<String, Object>>) map.get("bots");
-        state.energy = (List<Map<String, Object>>) map.get("energy");
-        state.cores = (List<Map<String, Object>>) map.get("cores");
-        state.walls = (List<Map<String, Object>>) map.get("walls");
-        state.dead = (List<Map<String, Object>>) map.get("dead");
-
-        return state;
-    }
-
-    static String toJsonMoves(List<Map<String, Object>> moves) {
-        StringBuilder sb = new StringBuilder("{\"moves\":[");
-        for (int i = 0; i < moves.size(); i++) {
-            if (i > 0) sb.append(",");
-            Map<String, Object> move = moves.get(i);
-            Map<String, Object> pos = (Map<String, Object>) move.get("position");
-            sb.append("{\"position\":{\"row\":")
-              .append(pos.get("row")).append(",\"col\":").append(pos.get("col"))
-              .append("},\"direction\":\"").append(move.get("direction")).append("\"}");
-        }
-        sb.append("]}");
-        return sb.toString();
-    }
-
-    @SuppressWarnings("unchecked")
-    static Map<String, Object> parseJson(String json) {
-        return new io.javalin.json.JavalinJackson().fromJsonString(json, Map.class);
     }
 
     // --- HMAC helpers ---
@@ -147,7 +102,10 @@ public class App {
             String bodyHash = sha256Hex(body.getBytes(StandardCharsets.UTF_8));
             String signingString = matchId + "." + turn + "." + timestamp + "." + bodyHash;
             String expected = hmacSha256(secret, signingString);
-            return expected.equals(signature);
+            return MessageDigest.isEqual(
+                    expected.getBytes(StandardCharsets.UTF_8),
+                    signature.getBytes(StandardCharsets.UTF_8)
+            );
         } catch (Exception e) {
             return false;
         }
@@ -185,17 +143,23 @@ public class App {
 
     // --- Data classes ---
 
-    static class GameState {
-        String matchId;
-        int turn;
-        Map<String, Object> config;
-        int youId;
-        int youEnergy;
-        int youScore;
-        List<Map<String, Object>> bots;
-        List<Map<String, Object>> energy;
-        List<Map<String, Object>> cores;
-        List<Map<String, Object>> walls;
-        List<Map<String, Object>> dead;
-    }
+    public record GameConfig(int rows, int cols, int max_turns, int vision_radius2,
+                             int attack_radius2, int spawn_cost, int energy_interval) {}
+
+    public record You(int id, int energy, int score) {}
+
+    public record VisibleBot(int row, int col, int owner) {}
+
+    public record VisibleCore(int row, int col, int owner, boolean active) {}
+
+    public record Position(int row, int col) {}
+
+    public record GameState(String match_id, int turn, GameConfig config, You you,
+                            List<VisibleBot> bots, List<Position> energy,
+                            List<VisibleCore> cores, List<Position> walls,
+                            List<VisibleBot> dead) {}
+
+    public record Move(int row, int col, String direction) {}
+
+    public record MoveResponse(List<Move> moves) {}
 }
