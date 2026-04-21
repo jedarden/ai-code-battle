@@ -1031,7 +1031,7 @@ export class ReplayViewer {
 
     // Draw threat lines between bots in attack range
     if (!this.accessibility.reducedMotion) {
-      this.drawThreatLines(turnData, colors, visible);
+      this.drawThreatLines(turnData, visible);
     }
   }
 

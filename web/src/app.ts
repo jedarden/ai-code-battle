@@ -29,6 +29,10 @@ const loadEvolutionPage = () => import('./pages/evolution').then(m => m.renderEv
 const loadBlogPages = () => import('./pages/blog').then(m => ({ renderBlogPage: m.renderBlogPage, renderBlogPostPage: m.renderBlogPostPage }));
 const loadSeasonsPage = () => import('./pages/seasons').then(m => m.renderSeasonsPage);
 
+// Feedback & docs (separate chunk - includes replay viewer for feedback page)
+const loadFeedbackPage = () => import('./pages/feedback').then(m => m.renderFeedbackPage);
+const loadDocsApiPage = () => import('./pages/docs-api').then(m => m.renderDocsApiPage);
+
 // ─── Helper: wrap async page loader in sync RouteHandler ────────────────────────
 function lazyRoute(loader: () => Promise<(params: Record<string, string>) => void>): RouteHandler {
   return (params: Record<string, string>) => {

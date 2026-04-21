@@ -12,8 +12,16 @@ import (
 	"time"
 )
 
-// IslandStat holds per-island population statistics.
+// IslandStat holds per-island population statistics (dashboard format).
 type IslandStat struct {
+	Population  int    `json:"population"`
+	BestRating  int    `json:"best_rating"`
+	BestBot     string `json:"best_bot"`
+	LanguageDiv string `json:"language_div,omitempty"` // dominant language
+}
+
+// IslandStatFull holds per-island population statistics (full detail).
+type IslandStatFull struct {
 	Count         int     `json:"count"`
 	BestFitness   float64 `json:"best_fitness"`
 	AvgFitness    float64 `json:"avg_fitness"`
