@@ -14,64 +14,82 @@ export async function renderMatchesPage(): Promise<void> {
     </div>
 
     <style>
-      .playlists-section { margin-bottom: 32px; }
-      .playlists-section h2 { color: var(--text-primary); margin-bottom: 12px; font-size: 1.25rem; }
-      .playlists-row {
-        display: flex;
-        gap: 16px;
-        overflow-x: auto;
-        padding-bottom: 8px;
-        scroll-snap-type: x mandatory;
-      }
-      .playlists-row::-webkit-scrollbar { height: 6px; }
-      .playlists-row::-webkit-scrollbar-thumb { background: var(--border, #333); border-radius: 3px; }
-      .playlist-card {
-        flex: 0 0 240px;
-        scroll-snap-align: start;
+      .curated-playlists { margin-bottom: 40px; }
+      .curated-playlists-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+      .curated-playlists-header h2 { color: var(--text-primary); font-size: 1.25rem; margin: 0; }
+      .curated-playlists-header a { color: var(--accent, #3b82f6); font-size: 0.875rem; text-decoration: none; }
+      .curated-playlists-header a:hover { text-decoration: underline; }
+      .curated-sections { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+      .curated-section {
         background-color: var(--bg-secondary);
-        border-radius: 10px;
-        padding: 16px;
-        cursor: pointer;
-        transition: transform 0.2s, box-shadow 0.2s;
+        border-radius: 12px;
+        padding: 20px;
         text-decoration: none;
         display: flex;
         flex-direction: column;
         gap: 8px;
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: 1px solid transparent;
       }
-      .playlist-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      .curated-section:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+      .curated-section.primary { border-color: rgba(236,72,153,0.25); background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(236,72,153,0.07) 100%); }
+      .curated-section h3 { color: var(--text-primary); font-size: 1rem; margin: 0; }
+      .curated-section.primary h3 { font-size: 1.1rem; }
+      .curated-section p { color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; flex: 1; margin: 0; }
+      .section-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+      .section-browse { color: var(--accent, #3b82f6); }
+      .more-playlists-label { color: var(--text-muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+      .playlists-row {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        scroll-snap-type: x mandatory;
       }
+      .playlists-row::-webkit-scrollbar { height: 4px; }
+      .playlists-row::-webkit-scrollbar-thumb { background: var(--border, #333); border-radius: 2px; }
+      .playlist-card {
+        flex: 0 0 200px;
+        scroll-snap-align: start;
+        background-color: var(--bg-secondary);
+        border-radius: 10px;
+        padding: 14px;
+        text-decoration: none;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        transition: transform 0.2s;
+      }
+      .playlist-card:hover { transform: translateY(-2px); }
       .playlist-card h3 {
         color: var(--text-primary);
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         margin: 0;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
+        flex-wrap: wrap;
       }
       .playlist-card p {
         color: var(--text-muted);
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         margin: 0;
         line-height: 1.4;
         flex: 1;
       }
       .playlist-card .meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         color: var(--text-muted);
       }
       .category-badge {
         display: inline-block;
-        padding: 2px 8px;
+        padding: 2px 6px;
         border-radius: 4px;
-        font-size: 0.65rem;
+        font-size: 0.6rem;
         text-transform: uppercase;
         font-weight: 600;
         letter-spacing: 0.5px;
+        white-space: nowrap;
       }
       .category-badge.featured { background-color: #3b82f6; color: white; }
       .category-badge.upsets { background-color: #ef4444; color: white; }
@@ -84,8 +102,12 @@ export async function renderMatchesPage(): Promise<void> {
       .category-badge.season { background-color: #8b5cf6; color: white; }
       .category-badge.tutorial { background-color: #64748b; color: white; }
       .playlist-empty { color: var(--text-muted); font-size: 0.875rem; }
-      @media (max-width: 640px) {
-        .playlist-card { flex: 0 0 200px; padding: 12px; }
+      @media (max-width: 768px) {
+        .curated-sections { grid-template-columns: 1fr; }
+        .curated-section.primary { grid-column: 1; }
+      }
+      @media (max-width: 480px) {
+        .playlist-card { flex: 0 0 170px; padding: 10px; }
       }
     </style>
   `;
@@ -119,22 +141,50 @@ export async function renderMatchesPage(): Promise<void> {
 }
 
 function renderPlaylistCards(container: HTMLElement, index: PlaylistIndex): void {
+  // Priority slugs for the curated sections at the top
+  const curatedSlugs = ['best-of-week', 'biggest-upsets', 'closest-finishes'];
+  const curatedSections = curatedSlugs
+    .map(slug => index.playlists.find(p => p.slug === slug))
+    .filter((p): p is NonNullable<typeof p> => p !== undefined);
+
+  // Remaining playlists shown as a scrollable row
+  const curatedSlugSet = new Set(curatedSlugs);
+  const rest = index.playlists.filter(p => !curatedSlugSet.has(p.slug));
+
+  const curatedHtml = curatedSections.map((p, i) => `
+    <a href="#/watch/playlists/${p.slug}" class="curated-section ${i === 0 ? 'primary' : ''}">
+      <span class="category-badge ${p.category}">${formatCategory(p.category)}</span>
+      <h3>${escapeHtml(p.title)}</h3>
+      <p>${escapeHtml(p.description)}</p>
+      <div class="section-meta">
+        <span>${p.match_count} matches</span>
+        <span class="section-browse">Browse →</span>
+      </div>
+    </a>
+  `).join('');
+
+  const restHtml = rest.map(p => `
+    <a href="#/watch/playlists/${p.slug}" class="playlist-card">
+      <h3>
+        ${escapeHtml(p.title)}
+        <span class="category-badge ${p.category}">${formatCategory(p.category)}</span>
+      </h3>
+      <p>${escapeHtml(p.description)}</p>
+      <div class="meta">${p.match_count} matches · ${formatRelativeTime(p.updated_at)}</div>
+    </a>
+  `).join('');
+
   container.innerHTML = `
-    <h2>Featured Playlists</h2>
-    <div class="playlists-row">
-      ${index.playlists.map(p => `
-        <a href="#/watch/playlists/${p.slug}" class="playlist-card">
-          <h3>
-            ${escapeHtml(p.title)}
-            <span class="category-badge ${p.category}">${formatCategory(p.category)}</span>
-          </h3>
-          <p>${escapeHtml(p.description)}</p>
-          <div class="meta">
-            <span>${p.match_count} matches</span>
-            <span>${formatRelativeTime(p.updated_at)}</span>
-          </div>
-        </a>
-      `).join('')}
+    <div class="curated-playlists">
+      <div class="curated-playlists-header">
+        <h2>Featured Playlists</h2>
+        <a href="#/watch/playlists">Browse all →</a>
+      </div>
+      ${curatedSections.length > 0 ? `<div class="curated-sections">${curatedHtml}</div>` : ''}
+      ${rest.length > 0 ? `
+        <p class="more-playlists-label">More Collections</p>
+        <div class="playlists-row">${restHtml}</div>
+      ` : ''}
     </div>
   `;
 }
