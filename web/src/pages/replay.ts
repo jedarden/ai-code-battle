@@ -652,14 +652,41 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   // ── Annotation overlay integration (§16.8) ──────────────────────────────────────
 
   let annotationOverlay: AnnotationOverlay | null = null;
+  let eventTimeline: EventTimeline | null = null;
   let allAnnotations: Annotation[] = [];
   let clickedGridPosition: Position | undefined;
   let canvasAnnotationHint: HTMLDivElement | null = null;
+
+  function syncAnnotationsToViewer(): void {
+    // Push annotations to the canvas renderer for marker drawing
+    viewer.setAnnotations(allAnnotations);
+    // Push annotations to the event timeline for badge rendering
+    eventTimeline?.setAnnotations(allAnnotations);
+  }
 
   function initAnnotations(replay: Replay): void {
     const overlayContainer = document.getElementById('annotation-overlay-container');
     const formContainer = document.getElementById('annotation-form-container');
     if (!overlayContainer || !formContainer) return;
+
+    // Initialize EventTimeline (desktop)
+    const timelineContainer = document.getElementById('event-timeline-container');
+    if (timelineContainer) {
+      eventTimeline = new EventTimeline(timelineContainer, {
+        onTurnClick: (turn: number) => {
+          viewer.setTurn(turn);
+          updateUI();
+          updateEventLog();
+        },
+      });
+      // Extract events from replay turns and feed to timeline
+      const timelineTurns = replay.turns.map((t: any, i: number) => ({
+        turn: i,
+        events: t.events ?? [],
+      }));
+      eventTimeline.setEvents(timelineTurns);
+      timelineContainer.style.display = '';
+    }
 
     annotationOverlay = new AnnotationOverlay(overlayContainer, {
       onTurnClick: (turn: number) => {
@@ -675,9 +702,11 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     fetchFeedback(replay.match_id).then(remote => {
       allAnnotations = [...remote, ...local];
       annotationOverlay?.loadAnnotations(replay.match_id, allAnnotations, replay.turns.length);
+      syncAnnotationsToViewer();
     }).catch(() => {
       allAnnotations = local;
       annotationOverlay?.loadAnnotations(replay.match_id, allAnnotations, replay.turns.length);
+      syncAnnotationsToViewer();
     });
 
     // Create the annotation form
@@ -688,6 +717,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       const ann = e.detail as Annotation;
       allAnnotations.push(ann);
       annotationOverlay?.addAnnotation(ann);
+      syncAnnotationsToViewer();
       clickedGridPosition = undefined;
       if (canvasAnnotationHint) canvasAnnotationHint.classList.remove('visible');
     }) as EventListener);
@@ -708,6 +738,9 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   function updateAnnotationOverlay(): void {
     if (annotationOverlay) {
       annotationOverlay.setCurrentTurn(viewer.getTurn());
+    }
+    if (eventTimeline) {
+      eventTimeline.setCurrentTurn(viewer.getTurn());
     }
   }
 
