@@ -108,6 +108,7 @@ func deployToPages(cfg *Config) error {
 
 	cmd := exec.CommandContext(ctx, "wrangler", args...)
 	cmd.Env = env
+	cmd.Dir = "/tmp" // wrangler creates .wrangler/tmp relative to CWD; /app is root-owned
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
