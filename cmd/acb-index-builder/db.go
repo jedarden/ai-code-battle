@@ -239,7 +239,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 
 func getBotMatchStats(ctx context.Context, db *sql.DB, botID string) (played, won int, err error) {
 	query := `
-		SELECT COUNT(*), COUNT(*) FILTER (WHERE mp.bot_id = m.winner)
+		SELECT COUNT(*), COUNT(*) FILTER (WHERE mp.player_slot = m.winner)
 		FROM match_participants mp
 		JOIN matches m ON mp.match_id = m.match_id
 		WHERE mp.bot_id = $1 AND m.status = 'completed'
@@ -258,7 +258,7 @@ func fetchMatches(ctx context.Context, db *sql.DB) ([]MatchData, error) {
 		                   'bot_id', mp.bot_id,
 		                   'player_slot', mp.player_slot,
 		                   'score', mp.score,
-		                   'won', mp.bot_id = m.winner
+		                   'won', mp.player_slot = m.winner
 		           )
 		           ORDER BY mp.player_slot
 		           ) FILTER (WHERE mp.bot_id IS NOT NULL),
