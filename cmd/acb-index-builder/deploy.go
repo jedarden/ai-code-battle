@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -331,7 +332,8 @@ func copyB2ToR2(ctx context.Context, cfg *Config, b2Key, r2Key string) error {
 
 // copyWebAssets copies the built web SPA to the output directory
 func copyWebAssets(cfg *Config, webDistDir string) error {
-	// Copy all files from web/dist to output directory
+	// Copy all files from web/dist to output directory using streaming
+	// to avoid loading large files (e.g. demo replays) fully into memory.
 	err := filepath.Walk(webDistDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -348,14 +350,24 @@ func copyWebAssets(cfg *Config, webDistDir string) error {
 			return os.MkdirAll(destPath, 0755)
 		}
 
-		// Read source file
-		data, err := os.ReadFile(path)
+		src, err := os.Open(path)
 		if err != nil {
 			return err
 		}
+		defer src.Close()
 
-		// Write to destination
-		return os.WriteFile(destPath, data, 0644)
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return err
+		}
+
+		dst, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
+		defer dst.Close()
+
+		_, err = io.Copy(dst, src)
+		return err
 	})
 
 	if err != nil {
