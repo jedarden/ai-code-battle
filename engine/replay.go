@@ -9,15 +9,17 @@ import (
 
 // Replay records the complete history of a match for playback.
 type Replay struct {
-	FormatVersion string        `json:"format_version"` // semver, e.g. "1.0"
-	MatchID       string        `json:"match_id"`
-	Config        Config        `json:"config"`
-	StartTime     time.Time     `json:"start_time"`
-	EndTime       time.Time     `json:"end_time"`
-	Result        *MatchResult  `json:"result"`
-	Players       []ReplayPlayer `json:"players"`
-	Map           ReplayMap     `json:"map"`
-	Turns         []ReplayTurn  `json:"turns"`
+	FormatVersion   string            `json:"format_version"` // semver, e.g. "1.0"
+	MatchID         string            `json:"match_id"`
+	Config          Config            `json:"config"`
+	StartTime       time.Time         `json:"start_time"`
+	EndTime         time.Time         `json:"end_time"`
+	Result          *MatchResult      `json:"result"`
+	Players         []ReplayPlayer    `json:"players"`
+	Map             ReplayMap         `json:"map"`
+	Turns           []ReplayTurn      `json:"turns"`
+	WinProb         []WinProbEntry    `json:"win_prob,omitempty"`
+	CriticalMoments []CriticalMoment  `json:"critical_moments,omitempty"`
 }
 
 // ReplayPlayer represents player info in a replay.
@@ -172,6 +174,12 @@ func (rw *ReplayWriter) RecordTurn(gs *GameState, debug map[int]*DebugInfo) {
 	}
 
 	rw.turns = append(rw.turns, turn)
+}
+
+// SetWinProbability sets the win probability data and critical moments on the replay.
+func (rw *ReplayWriter) SetWinProbability(winProb []WinProbEntry, moments []CriticalMoment) {
+	rw.replay.WinProb = winProb
+	rw.replay.CriticalMoments = moments
 }
 
 // Finalize completes the replay with the match result.

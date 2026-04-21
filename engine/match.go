@@ -111,6 +111,10 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 	// Record initial map state
 	replayWriter.SetMap(gs)
 
+	// Collect state snapshots for win probability computation
+	snapshots := make([]*GameState, 0, mr.config.MaxTurns+1)
+	snapshots = append(snapshots, gs.Clone())
+
 	// Record turn 0 (initial state, no debug yet)
 	replayWriter.RecordTurn(gs, nil)
 
@@ -151,6 +155,9 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 		// Record turn state with debug
 		replayWriter.RecordTurn(gs, debug)
 
+		// Collect state snapshot for win probability
+		snapshots = append(snapshots, gs.Clone())
+
 		if mr.verbose {
 			mr.logger.Printf("Turn %d: %d living bots", gs.Turn, gs.GetLivingBotCount())
 		}
@@ -159,6 +166,10 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 			break
 		}
 	}
+
+	// Compute win probability via Monte Carlo rollout
+	winProbs, criticalMoments := ComputeWinProbability(snapshots, 100, mr.rng)
+	replayWriter.SetWinProbability(winProbs, criticalMoments)
 
 	// Finalize replay
 	replayWriter.Finalize(result)
