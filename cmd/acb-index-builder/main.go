@@ -135,6 +135,15 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		}
 	}
 
+	// Copy web frontend assets into output directory
+	const webDistDir = "/app/web/dist"
+	if _, err := os.Stat(webDistDir); err == nil {
+		if err := copyWebAssets(cfg, webDistDir); err != nil {
+			slog.Error("Failed to copy web assets", "error", err)
+			// Non-fatal - continue
+		}
+	}
+
 	// Fetch all data from PostgreSQL
 	data, err := fetchAllData(ctx, db)
 	if err != nil {

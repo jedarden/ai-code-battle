@@ -1,4 +1,12 @@
-# Build stage
+# Web frontend build stage
+FROM node:22-alpine AS web-builder
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ .
+RUN npm run build
+
+# Go binary build stage
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
@@ -29,6 +37,9 @@ WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /acb-index-builder /usr/local/bin/acb-index-builder
+
+# Copy pre-built web frontend
+COPY --from=web-builder /web/dist /app/web/dist
 
 # Create data directory
 RUN mkdir -p /data
