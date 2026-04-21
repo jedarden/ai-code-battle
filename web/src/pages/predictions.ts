@@ -1,5 +1,5 @@
 // Predictions Page - Prediction leaderboard, open matches, and submission
-import type { BotProfile, PredictorStats, OpenMatch, PredictionHistoryEntry } from '../api-types';
+import type { PredictorStats, OpenMatch, BotProfile } from '../api-types';
 import {
   fetchPredictionsLeaderboard,
   fetchOpenPredictions,
@@ -9,7 +9,6 @@ import {
 } from '../api-types';
 
 const PAGES_BASE = '';
-const API_BASE = '';
 
 let openMatches: OpenMatch[] = [];
 let pollTimer: ReturnType<typeof setInterval> | null = null;
