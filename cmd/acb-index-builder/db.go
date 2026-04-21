@@ -176,7 +176,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		       rating_mu, rating_phi, rating_sigma,
 		       0, 0, status,
 		       evolved, island, generation,
-		       COALESCE(archetype, ''), COALESCE(parent_ids, '[]'::json),
+		       COALESCE(archetype, ''), COALESCE(parent_ids, '[]'::jsonb),
 		       created_at, COALESCE(last_active, created_at)
 		FROM bots
 		WHERE status != 'retired'
