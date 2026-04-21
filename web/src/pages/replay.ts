@@ -1,6 +1,14 @@
 // Standalone replay viewer page - lazy loaded from app.ts
-import type { Replay, GameEvent, DebugInfo } from '../types';
+import type { Replay, GameEvent, DebugInfo, Position } from '../types';
 import { fetchCommentary } from '../api-types';
+import {
+  AnnotationOverlay,
+  createAnnotationForm,
+  fetchFeedback,
+  loadLocalAnnotations,
+  ANNOTATION_OVERLAY_STYLES,
+  type Annotation,
+} from '../components/annotation';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -168,6 +176,12 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <div class="event-log" id="event-log">
               <div class="no-events">No events</div>
             </div>
+          </div>
+
+          <div class="panel annotation-panel" id="annotation-panel">
+            <h2>Annotations</h2>
+            <div id="annotation-overlay-container"></div>
+            <div id="annotation-form-container"></div>
           </div>
 
           <div class="keyboard-shortcuts">
@@ -347,7 +361,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const commentaryToggle = document.getElementById('commentary-toggle') as HTMLButtonElement;
   const debugPanel = document.getElementById('debug-panel') as HTMLDivElement;
   const debugPanelToggleBtn = document.getElementById('debug-panel-toggle-btn') as HTMLDivElement;
-  const debugPanelChevron = document.getElementById('debug-panel-chevron') as HTMLSpanElement;
   const debugPlayerToggles = document.getElementById('debug-player-toggles') as HTMLDivElement;
   const debugInfoDisplay = document.getElementById('debug-info-display') as HTMLDivElement;
 

@@ -93,7 +93,7 @@ export class AnnotationOverlay {
   private annotations: Annotation[] = [];
   private currentTurn: number = 0;
   private totalTurns: number = 0;
-  private _matchId: string = '';
+  private matchId: string = '';
   private options: AnnotationOverlayOptions;
 
   constructor(container: HTMLElement, options: AnnotationOverlayOptions = {}) {
@@ -104,7 +104,7 @@ export class AnnotationOverlay {
   loadAnnotations(matchId: string, annotations: Annotation[], totalTurns: number): void {
     this.matchId = matchId;
     this.totalTurns = totalTurns;
-    this.annotations = annotations.filter(a => a.match_id === matchId);
+    this.annotations = annotations.filter(a => a.match_id === this.matchId);
     this.render();
   }
 

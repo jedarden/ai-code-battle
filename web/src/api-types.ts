@@ -99,23 +99,6 @@ export interface RegisterResponse {
 }
 
 // Evolution dashboard types (re-exported from types.ts for convenience)
-import type {
-  LiveJSON,
-  EvolutionIslandStat,
-  EvolutionParentInfo,
-  EvolutionStageResult,
-  EvolutionValidationStatus,
-  EvaluationMatchResult,
-  EvolutionEvaluationStatus,
-  EvolutionCandidate,
-  EvolutionCycleInfo,
-  EvolutionActivityEntry,
-  EvolutionTotals,
-  EvolutionGenerationEntry,
-  EvolutionLineageNode,
-  EvolutionMetaSnapshot,
-} from './types';
-
 export type {
   LiveJSON,
   EvolutionIslandStat as IslandStat,
@@ -134,6 +117,7 @@ export type {
 } from './types';
 
 // Convenience alias: the full live.json document
+import type { LiveJSON } from './types';
 export type EvolutionLiveData = LiveJSON;
 
 // Full island stat (legacy format, not in live.json schema)

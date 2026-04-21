@@ -1,19 +1,19 @@
 // Community replay feedback: users annotate replay turns with tags.
 // Annotations feed the evolution pipeline by surfacing interesting moments.
+// Types consolidated to match plan §8.3 replay_feedback schema.
 
 import { fetchMatchIndex, API_BASE, type MatchSummary } from '../api-types';
 import { ReplayViewer } from '../replay-viewer';
 import type { Replay } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+// Aligned with plan §8.3: insight, mistake, idea, highlight
 
 export const ANNOTATION_TAGS = [
-  { id: 'turning_point',    label: 'Turning Point',     color: '#ef4444', desc: 'A moment that decisively changed the outcome' },
-  { id: 'tactical_insight', label: 'Tactical Insight',  color: '#3b82f6', desc: 'A clever or instructive strategy in action' },
-  { id: 'impressive',       label: 'Impressive',        color: '#a78bfa', desc: 'Exceptional performance or execution' },
-  { id: 'funny',            label: 'Funny',             color: '#f59e0b', desc: 'An unexpected or humorous sequence' },
-  { id: 'bug',              label: 'Possible Bug',      color: '#f97316', desc: 'Behaviour that looks unintended' },
-  { id: 'evolution_seed',   label: 'Evolution Seed',    color: '#22c55e', desc: 'A sequence worth propagating in the evolution pipeline' },
+  { id: 'insight',   label: 'Tactical Insight', color: '#3b82f6', desc: 'A clever or instructive strategy in action' },
+  { id: 'mistake',   label: 'Mistake Spotted',  color: '#ef4444', desc: 'Behaviour that looks unintended or suboptimal' },
+  { id: 'idea',      label: 'Strategy Idea',     color: '#22c55e', desc: 'A novel approach worth propagating in the evolution pipeline' },
+  { id: 'highlight', label: 'Highlight',         color: '#fbbf24', desc: 'An impressive or noteworthy moment' },
 ];
 
 export interface ReplayAnnotation {
@@ -415,13 +415,13 @@ function initFeedback(): void {
 
 // ─── Local storage for offline annotations ────────────────────────────────────
 
-const LS_KEY = 'acb_annotations';
+const LS_KEY = 'acb_annotations_v2';
 
 function saveLocalAnnotation(ann: ReplayAnnotation): void {
   try {
     const existing: ReplayAnnotation[] = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
     existing.push(ann);
-    localStorage.setItem(LS_KEY, JSON.stringify(existing.slice(-200))); // keep last 200
+    localStorage.setItem(LS_KEY, JSON.stringify(existing.slice(-200)));
   } catch {}
 }
 
