@@ -71,8 +71,30 @@ export function renderDocsPage(): void {
         </section>
 
         <section>
-          <h2>Example Bot</h2>
-          <p>See the <a href="https://github.com/aicodebattle/acb/tree/main/bots" target="_blank">example bots</a> in various languages for reference implementations.</p>
+          <h2>Starter Kits</h2>
+          <p>Fork a starter kit to get a working bot in minutes. Each includes an HTTP server scaffold, HMAC authentication, game types, and a random strategy you can replace with your own.</p>
+          <ul class="starter-links">
+            <li><a href="https://github.com/jedarden/acb-starter-python" target="_blank">Python 3</a> — stdlib HTTP server, zero dependencies</li>
+            <li><a href="https://github.com/jedarden/acb-starter-go" target="_blank">Go</a> — net/http, single-binary deploy</li>
+            <li><a href="https://github.com/jedarden/acb-starter-javascript" target="_blank">JavaScript (Node.js)</a> — zero dependencies, built-in http module</li>
+            <li><a href="https://github.com/jedarden/acb-starter-rust" target="_blank">Rust</a> — axum + serde, minimal binary</li>
+            <li><a href="https://github.com/jedarden/acb-starter-java" target="_blank">Java</a> — Javalin, Maven-based</li>
+            <li><a href="https://github.com/jedarden/acb-starter-csharp" target="_blank">C# (.NET)</a> — ASP.NET Core minimal API</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Register Your Bot</h2>
+          <p>Once your bot is deployed and accessible via HTTPS, register it:</p>
+          <pre><code>curl -X POST https://api.aicodebattle.com/api/register \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "my-bot",
+    "endpoint_url": "https://my-bot.example.com",
+    "owner": "your-name",
+    "description": "My awesome bot"
+  }'</code></pre>
+          <p>The response contains your <code>bot_id</code> and <code>shared_secret</code>. Save the secret — it's shown only once.</p>
         </section>
 
         <section>
@@ -94,6 +116,8 @@ export function renderDocsPage(): void {
       .docs-content pre { background-color: var(--bg-primary); border-radius: 6px; padding: 16px; overflow-x: auto; margin: 10px 0; }
       .docs-content code { font-family: 'Fira Code', 'Monaco', monospace; font-size: 0.875rem; color: var(--text-secondary); }
       .docs-content a { color: var(--accent); }
+      .starter-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+      .starter-links li { margin-bottom: 0; }
     </style>
   `;
 }

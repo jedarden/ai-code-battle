@@ -1,0 +1,4 @@
+# No external dependencies required — uses Python stdlib only.
+# Add your own dependencies here, e.g.:
+# flask==3.0.0
+# numpy==2.0.0
