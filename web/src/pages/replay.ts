@@ -322,7 +322,15 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
         }
         .debug-panel-header { position: relative; padding-top: 20px; }
       }
+      /* Annotation panel */
+      .annotation-panel { padding: 0; overflow: hidden; }
+      .annotation-panel > h2 { padding: 15px 15px 0; }
+      #annotation-overlay-container { padding: 0 15px; }
+      #annotation-form-container { padding: 0 15px 15px; border-top: 1px solid var(--bg-tertiary); margin-top: 8px; padding-top: 10px; }
+      .annotation-canvas-hint { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.7); color: #94a3b8; font-size: 0.65rem; padding: 3px 8px; border-radius: 4px; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+      .annotation-canvas-hint.visible { opacity: 1; }
     </style>
+    <style>${ANNOTATION_OVERLAY_STYLES}</style>
   `;
 
   initReplayViewer(ReplayViewerClass, initialUrl);
@@ -517,6 +525,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     initWinProb(replay);
     loadCommentary(replay.match_id);
     initDebugPanel(replay);
+    initAnnotations(replay);
 
     const hasAnyDebug = replay.turns.some(t => t.debug && Object.keys(t.debug).length > 0);
     if (hasAnyDebug) {
@@ -575,6 +584,93 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
 
     viewer.setShowDebug(true);
   }
+
+  // ── Annotation overlay integration (§16.8) ──────────────────────────────────────
+
+  let annotationOverlay: AnnotationOverlay | null = null;
+  let allAnnotations: Annotation[] = [];
+  let clickedGridPosition: Position | undefined;
+  let canvasAnnotationHint: HTMLDivElement | null = null;
+
+  function initAnnotations(replay: Replay): void {
+    const overlayContainer = document.getElementById('annotation-overlay-container');
+    const formContainer = document.getElementById('annotation-form-container');
+    if (!overlayContainer || !formContainer) return;
+
+    annotationOverlay = new AnnotationOverlay(overlayContainer, {
+      onTurnClick: (turn: number) => {
+        viewer.setTurn(turn);
+        updateUI();
+        updateEventLog();
+        updateAnnotationOverlay();
+      },
+    });
+
+    // Load both server and local annotations
+    const local = loadLocalAnnotations(replay.match_id);
+    fetchFeedback(replay.match_id).then(remote => {
+      allAnnotations = [...remote, ...local];
+      annotationOverlay?.loadAnnotations(replay.match_id, allAnnotations, replay.turns.length);
+    }).catch(() => {
+      allAnnotations = local;
+      annotationOverlay?.loadAnnotations(replay.match_id, allAnnotations, replay.turns.length);
+    });
+
+    // Create the annotation form
+    createAnnotationForm(formContainer, () => viewer.getTurn(), () => replay.match_id, () => clickedGridPosition);
+
+    // Listen for new annotations from the form
+    formContainer.addEventListener('annotation-added', ((e: CustomEvent) => {
+      const ann = e.detail as Annotation;
+      allAnnotations.push(ann);
+      annotationOverlay?.addAnnotation(ann);
+      clickedGridPosition = undefined;
+      if (canvasAnnotationHint) canvasAnnotationHint.classList.remove('visible');
+    }) as EventListener);
+
+    // Add canvas hint overlay
+    const canvasWrapper = canvas.parentElement;
+    if (canvasWrapper && !canvasWrapper.querySelector('.annotation-canvas-hint')) {
+      canvasAnnotationHint = document.createElement('div');
+      canvasAnnotationHint.className = 'annotation-canvas-hint';
+      canvasAnnotationHint.textContent = 'Click canvas to pin annotation position';
+      canvasWrapper.style.position = 'relative';
+      canvasWrapper.appendChild(canvasAnnotationHint);
+    }
+
+    updateAnnotationOverlay();
+  }
+
+  function updateAnnotationOverlay(): void {
+    if (annotationOverlay) {
+      annotationOverlay.setCurrentTurn(viewer.getTurn());
+    }
+  }
+
+  // Handle canvas clicks for spatial annotation position
+  canvas.addEventListener('click', (e: MouseEvent) => {
+    if (!viewer.getReplay()) return;
+    const replay = viewer.getReplay();
+    if (!replay) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const cellSize = viewer.getCellSize();
+    const mapRows = replay.map.rows;
+
+    // Only accept clicks within the map area (not score overlay)
+    const col = Math.floor(x / cellSize);
+    const row = Math.floor(y / cellSize);
+
+    if (row >= 0 && row < mapRows && col >= 0 && col < replay.map.cols) {
+      clickedGridPosition = { row, col };
+      if (canvasAnnotationHint) {
+        canvasAnnotationHint.textContent = `Pinned: (${row}, ${col})`;
+        canvasAnnotationHint.classList.add('visible');
+      }
+    }
+  });
 
   function updateDebugDisplay(debug: Record<number, DebugInfo> | null): void {
     if (!debug || Object.keys(debug).length === 0) {
@@ -821,6 +917,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateMobileUI();
     updateMobileTimeline();
     viewer.refreshWinProbSparkline();
+    updateAnnotationOverlay();
   };
   viewer.onDebugChange = (debug: Record<number, DebugInfo> | null) => {
     updateDebugDisplay(debug);
