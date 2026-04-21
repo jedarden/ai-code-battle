@@ -4,7 +4,16 @@
 
 **Status: ✅ Complete**
 
-**Last Updated: 2026-03-29** (Legacy code cleanup)
+**Last Updated: 2026-04-21** (Series/season scheduler verification)
+
+### Series & Season Scheduler Verification (2026-04-21)
+Verified that series scheduling and seasonal ELO reset (§11) are fully implemented:
+- **Series scheduler** (`cmd/acb-matchmaker/series_season.go`, 970 lines): 5-step pipeline — propagate match results, finalize completed series, schedule next games with map variety and slot alternation, auto-create series for top-20 bots, advance championship bracket
+- **Seasonal ELO reset**: End-of-season detection via `ends_at`, ELO snapshot into `season_snapshots`, decay formula `new_mu = 1500 + (mu-1500)*factor`, championship bracket for top 8, auto-start 28-day seasons with cycling themes
+- **Series bracket display** (`web/src/pages/series.ts`, 807 lines): bracket progress dots with connectors, bracket tree visualization, game-by-game results with map type labels, spoiler toggle, championship round badges
+- **Season leaderboard** (`web/src/pages/seasons.ts`, 819 lines): per-season rankings table with win rate bars, active season progress bar, mini-leaderboard from live data, championship bracket visualization
+- **Tests** (`series_season_test.go`, 628 lines): all 27 tests passing covering decay formula, bracket seeding, format selection, draw handling, all-played finalization, scheduler ordering
+- `go vet ./...` clean, `go test ./...` all pass, `npm run build` succeeds
 
 ### Legacy Code Cleanup (2026-03-29)
 Removed superseded code that no longer matches the architecture:
