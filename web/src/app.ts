@@ -1,5 +1,6 @@
 // Main SPA entry point with routing
 import { router } from './router';
+import { initAgentation } from './agentation-overlay';
 import { renderHomePage } from './pages/home';
 import { renderLeaderboardPage } from './pages/leaderboard';
 import { renderMatchesPage } from './pages/matches';
@@ -781,10 +782,11 @@ function renderNotFoundPage(): void {
   `;
 }
 
-// Start the router
+// Start the router and mount the Agentation feedback overlay
 document.addEventListener('DOMContentLoaded', () => {
   updateActiveNavLink();
   router.start();
+  initAgentation();
 });
 
 // Update nav on initial load
