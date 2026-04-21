@@ -41,7 +41,7 @@ export function renderRegisterPage(): void {
           <li>Your bot must expose an HTTPS endpoint accessible from the internet</li>
           <li>The endpoint must respond to POST requests with game state JSON</li>
           <li>Response time must be under 3 seconds per turn</li>
-          <li>See the <a href="#/docs">Getting Started guide</a> for protocol details</li>
+          <li>See the <a href="#/compete/docs">Getting Started guide</a> for protocol details</li>
         </ul>
       </div>
     </div>

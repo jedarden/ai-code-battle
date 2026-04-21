@@ -12,7 +12,7 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
   app.innerHTML = `
     <div class="bot-profile-page">
       <nav class="breadcrumb">
-        <a href="#/bots">Bots</a> / <span id="bot-breadcrumb-name">Loading...</span>
+        <a href="#/leaderboard">Leaderboard</a> / <span id="bot-breadcrumb-name">Loading...</span>
       </nav>
       <div id="profile-content" class="loading">Loading...</div>
     </div>
@@ -45,7 +45,7 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
       <div class="error">
         <p>Failed to load bot profile: ${error}</p>
         <p class="hint">This bot may not exist or data is not yet available.</p>
-        <a href="#/bots" class="btn secondary">Back to Bot Directory</a>
+        <a href="#/leaderboard" class="btn secondary">Back to Leaderboard</a>
       </div>
     `;
   }
@@ -128,7 +128,7 @@ function renderRecentMatches(matches: BotProfile['recent_matches']): string {
         <span class="match-result">${won ? 'W' : 'L'}</span>
         <span class="match-opponent">${opponent ? escapeHtml(opponent.name) : 'Unknown'}</span>
         <span class="match-score">${match.participants.map(p => p.score).join(' - ')}</span>
-        <a href="#/replay?url=/replays/${match.id}.json" class="btn small">Watch</a>
+        <a href="#/watch/replay?url=/replays/${match.id}.json" class="btn small">Watch</a>
       </div>
     `;
   }).join('');

@@ -39,7 +39,7 @@ function renderLeaderboardTable(
       <div class="empty-state">
         <p>No bots on the leaderboard yet.</p>
         <p>Bots appear here after completing their first match.</p>
-        <a href="#/register" class="btn primary">Register a Bot</a>
+        <a href="#/compete/register" class="btn primary">Register a Bot</a>
       </div>
     `;
     return;

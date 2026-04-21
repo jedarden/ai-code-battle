@@ -94,7 +94,7 @@ export function getReplayOGTags(match: {
 	return {
 		title: `Match: ${match.participants.map(p => p.name).join(' vs ')}`,
 		description: `Winner: ${winnerName} | ${match.turns} turns | ${match.participants.map(p => `${p.name}: ${p.score}`).join(', ')}`,
-		url: `https://aicodebattle.com/#/replay/${match.id}`,
+		url: `https://aicodebattle.com/#/watch/replay/${match.id}`,
 		image: thumbnailUrl,
 		type: 'video.other',
 	};
@@ -112,7 +112,7 @@ export function getPlaylistOGTags(playlist: {
 	return {
 		title: `${playlist.title} - Playlist`,
 		description: `${playlist.description || 'Curated match collection'} | ${playlist.matchCount} matches`,
-		url: `https://aicodebattle.com/#/playlists/${playlist.slug}`,
+		url: `https://aicodebattle.com/#/watch/replays`,
 		type: 'website',
 	};
 }

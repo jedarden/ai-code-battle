@@ -274,7 +274,7 @@ function renderRivalryCards(container: HTMLElement, rivalries: Rivalry[]): void 
             ${r.streak ? `<span class="streak-badge">${escapeHtml(r.streak.bot)} on ${r.streak.count}-win streak</span>` : ''}
             ${r.draws > 0 ? `<span class="draws-tag">${r.draws} draw${r.draws !== 1 ? 's' : ''}</span>` : ''}
             <span class="last-match">Last: ${dateStr(r.lastMatchAt)}</span>
-            <a href="#/matches?bot0=${r.bot0Id}&bot1=${r.bot1Id}" class="btn small secondary">All Matches</a>
+            <a href="#/watch/replays" class="btn small secondary">All Matches</a>
           </div>
         </div>
       `).join('')}

@@ -65,7 +65,7 @@ class Router {
   /**
    * Handle the current route
    */
-  private handleRoute(): void {
+  private async handleRoute(): Promise<void> {
     const path = this.getCurrentPath();
 
     for (const route of this.routes) {
@@ -75,13 +75,13 @@ class Router {
         route.paramNames.forEach((name, idx) => {
           params[name] = decodeURIComponent(match[idx + 1]);
         });
-        route.handler(params);
+        await route.handler(params);
         return;
       }
     }
 
     if (this.notFoundHandler) {
-      this.notFoundHandler({});
+      await this.notFoundHandler({});
     }
   }
 }

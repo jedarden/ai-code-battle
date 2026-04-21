@@ -76,7 +76,7 @@ function renderMatchCard(match: MatchSummary): string {
       <div class="match-footer">
         <span class="match-turns">${match.turns ?? '-'} turns</span>
         <span class="match-reason">${match.end_reason ?? '-'}</span>
-        <a href="#/replay?url=/replays/${match.id}.json" class="btn small">Watch</a>
+        <a href="#/watch/replay?url=/replays/${match.id}.json" class="btn small">Watch</a>
       </div>
     </div>
   `;

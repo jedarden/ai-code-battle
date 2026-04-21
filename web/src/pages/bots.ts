@@ -38,7 +38,7 @@ function renderBotsList(
     container.innerHTML = `
       <div class="empty-state">
         <p>No bots registered yet.</p>
-        <a href="#/register" class="btn primary">Register a Bot</a>
+        <a href="#/compete/register" class="btn primary">Register a Bot</a>
       </div>
     `;
     return;

@@ -464,7 +464,7 @@ export function renderDocsApiPage(): void {
   app.innerHTML = `
     <div class="docs-api-page">
       <nav class="breadcrumb">
-        <a href="#/docs">Docs</a> / <span>API Reference</span>
+        <a href="#/compete/docs">Docs</a> / <span>API Reference</span>
       </nav>
 
       <h1 class="page-title">API Reference</h1>

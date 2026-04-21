@@ -1,5 +1,138 @@
 import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent, DebugInfo, ViewMode } from './types';
 
+// ── Particle System (pooled, 100 objects, zero GC) ──────────────────────────────
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  alpha: number;
+  color: string;
+  lifetime: number;   // ms
+  elapsed: number;    // ms
+  active: boolean;
+}
+
+const PARTICLE_POOL_SIZE = 100;
+const particlePool: Particle[] = Array.from({ length: PARTICLE_POOL_SIZE }, () => ({
+  x: 0, y: 0, vx: 0, vy: 0, alpha: 1, color: '#fff', lifetime: 0, elapsed: 0, active: false,
+}));
+
+function borrowParticle(x: number, y: number, vx: number, vy: number, color: string, lifetime: number): Particle | null {
+  for (const p of particlePool) {
+    if (!p.active) {
+      p.x = x; p.y = y; p.vx = vx; p.vy = vy;
+      p.color = color; p.lifetime = lifetime; p.elapsed = 0;
+      p.alpha = 1; p.active = true;
+      return p;
+    }
+  }
+  return null;
+}
+
+function tickParticles(dt: number): void {
+  for (const p of particlePool) {
+    if (!p.active) continue;
+    p.elapsed += dt;
+    if (p.elapsed >= p.lifetime) { p.active = false; continue; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.alpha = 1 - p.elapsed / p.lifetime;
+  }
+}
+
+function drawParticles(ctx: CanvasRenderingContext2D): void {
+  for (const p of particlePool) {
+    if (!p.active) continue;
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── One-shot effect slots (reusable, max 20 concurrent) ─────────────────────────
+interface FloatText  { x: number; y: number; text: string; color: string; elapsed: number; lifetime: number; active: boolean; }
+interface Shockwave  { x: number; y: number; radius: number; maxRadius: number; color: string; elapsed: number; lifetime: number; active: boolean; }
+interface SpawnGlow  { x: number; y: number; color: string; elapsed: number; lifetime: number; active: boolean; }
+interface Trail      { x: number; y: number; prevX: number; prevY: number; color: string; alpha: number; active: boolean; }
+
+const MAX_EFFECTS = 20;
+const floatTexts: FloatText[]  = Array.from({ length: MAX_EFFECTS }, () => ({ x: 0, y: 0, text: '', color: '', elapsed: 0, lifetime: 0, active: false }));
+const shockwaves: Shockwave[]  = Array.from({ length: MAX_EFFECTS }, () => ({ x: 0, y: 0, radius: 0, maxRadius: 0, color: '', elapsed: 0, lifetime: 0, active: false }));
+const spawnGlows: SpawnGlow[]  = Array.from({ length: MAX_EFFECTS }, () => ({ x: 0, y: 0, color: '', elapsed: 0, lifetime: 0, active: false }));
+const trails: Trail[]          = Array.from({ length: MAX_EFFECTS }, () => ({ x: 0, y: 0, prevX: 0, prevY: 0, color: '', alpha: 0, active: false }));
+
+function borrowSlot<T extends { active: boolean }>(arr: T[]): T | null {
+  for (const item of arr) { if (!item.active) return item; }
+  return null;
+}
+
+function tickEffects(dt: number): void {
+  for (const e of floatTexts)  { if (!e.active) continue; e.elapsed += dt; e.y -= 20 * dt / 1000; if (e.elapsed >= e.lifetime) e.active = false; }
+  for (const e of shockwaves)  { if (!e.active) continue; e.elapsed += dt; if (e.elapsed >= e.lifetime) e.active = false; }
+  for (const e of spawnGlows)  { if (!e.active) continue; e.elapsed += dt; if (e.elapsed >= e.lifetime) e.active = false; }
+  for (const e of trails)      { if (!e.active) continue; e.alpha -= dt / 150; if (e.alpha <= 0) e.active = false; }
+}
+
+function drawEffects(ctx: CanvasRenderingContext2D): void {
+  // Float texts
+  for (const e of floatTexts) {
+    if (!e.active) continue;
+    const t = e.elapsed / e.lifetime;
+    ctx.globalAlpha = 1 - t;
+    ctx.fillStyle = e.color;
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(e.text, e.x, e.y);
+  }
+
+  // Shockwaves
+  for (const e of shockwaves) {
+    if (!e.active) continue;
+    const t = e.elapsed / e.lifetime;
+    const r = e.maxRadius * t;
+    ctx.globalAlpha = 0.6 * (1 - t);
+    ctx.strokeStyle = e.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Spawn glows
+  for (const e of spawnGlows) {
+    if (!e.active) continue;
+    const t = e.elapsed / e.lifetime;
+    const r = 12;
+    const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, r * (1 + t));
+    grad.addColorStop(0, e.color + 'aa');
+    grad.addColorStop(1, e.color + '00');
+    ctx.globalAlpha = 1 - t;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r * (1 + t), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Motion trails
+  for (const e of trails) {
+    if (!e.active) continue;
+    ctx.globalAlpha = e.alpha * 0.4;
+    ctx.strokeStyle = e.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(e.prevX, e.prevY);
+    ctx.lineTo(e.x, e.y);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+}
+
 // Win probability point for sparkline
 export interface WinProbPoint {
   turn: number;
@@ -243,7 +376,6 @@ export class ReplayViewer {
   private currentTurn: number = 0;
   private isPlaying: boolean = false;
   private animationFrame: number | null = null;
-  private lastFrameTime: number = 0;
   private cellSize: number;
   private showGrid: boolean;
   private fogOfWarPlayer: number | null;
@@ -252,6 +384,19 @@ export class ReplayViewer {
   private viewMode: ViewMode;
   private showDebug: boolean;
   private screenReaderRegion: HTMLElement | null = null;
+
+  // Animation state
+  private turnStartTime: number = 0;
+  private lastRenderTime: number = 0;
+  private renderLoopRunning: boolean = false;
+  // Per-bot interpolated positions: map botId -> {renderX, renderY}
+  private botRenderPos: Map<number, { x: number; y: number }> = new Map();
+  // Per-bot previous turn positions (for lerp source)
+  private botPrevPos: Map<number, { x: number; y: number }> = new Map();
+  // Bots that spawned this turn (for spawn animation)
+  private spawnedBotIds: Set<number> = new Set();
+  // Global idle pulse phase (radians)
+  private idlePhase: number = 0;
 
   // Event callbacks
   public onTurnChange?: (turn: number) => void;
@@ -309,12 +454,20 @@ export class ReplayViewer {
   loadReplay(replay: Replay): void {
     this.replay = replay;
     this.currentTurn = 0;
+    this.turnStartTime = performance.now();
+    this.botPrevPos.clear();
+    this.botRenderPos.clear();
+    this.spawnedBotIds.clear();
+    this.idlePhase = 0;
 
     // Resize canvas to fit the grid
     this.resizeCanvas();
 
     // Render initial state
     this.render();
+
+    // Start the continuous render loop
+    this.startRenderLoop();
 
     if (this.onReplayLoad) this.onReplayLoad(replay);
   }
@@ -334,9 +487,12 @@ export class ReplayViewer {
 
   setTurn(turn: number): void {
     if (!this.replay) return;
-    this.currentTurn = Math.max(0, Math.min(turn, this.replay.turns.length - 1));
-    this.render();
-    if (this.onTurnChange) this.onTurnChange(this.currentTurn);
+    const newTurn = Math.max(0, Math.min(turn, this.replay.turns.length - 1));
+    if (newTurn !== this.currentTurn) {
+      this.advanceTurn(newTurn);
+      // Ensure render loop is running
+      this.startRenderLoop();
+    }
   }
 
   getTurn(): number {
@@ -350,17 +506,14 @@ export class ReplayViewer {
   play(): void {
     if (this.isPlaying || !this.replay) return;
     this.isPlaying = true;
-    this.lastFrameTime = performance.now();
-    this.animationFrame = requestAnimationFrame(this.animate.bind(this));
+    this.turnStartTime = performance.now();
+    this.startRenderLoop();
     if (this.onPlayStateChange) this.onPlayStateChange(true);
   }
 
   pause(): void {
     this.isPlaying = false;
-    if (this.animationFrame !== null) {
-      cancelAnimationFrame(this.animationFrame);
-      this.animationFrame = null;
-    }
+    // Keep render loop running for idle animations and particles
     if (this.onPlayStateChange) this.onPlayStateChange(false);
   }
 
@@ -422,6 +575,11 @@ export class ReplayViewer {
 
   getShowDebug(): boolean {
     return this.showDebug;
+  }
+
+  destroy(): void {
+    this.stopRenderLoop();
+    this.isPlaying = false;
   }
 
   // Get the active color palette based on accessibility settings
@@ -571,26 +729,177 @@ export class ReplayViewer {
     ctx.closePath();
   }
 
-  private animate(timestamp: number): void {
-    if (!this.isPlaying || !this.replay) return;
+  // ── Continuous 60fps render loop (decoupled from tick rate) ─────────────────
+  private startRenderLoop(): void {
+    if (this.renderLoopRunning) return;
+    this.renderLoopRunning = true;
+    this.lastRenderTime = performance.now();
+    this.renderLoopTick(this.lastRenderTime);
+  }
 
-    const elapsed = timestamp - this.lastFrameTime;
-    if (elapsed >= this.animationSpeed) {
-      this.lastFrameTime = timestamp;
+  private stopRenderLoop(): void {
+    this.renderLoopRunning = false;
+    if (this.animationFrame !== null) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
+  }
 
-      // Advance to next turn
-      if (this.currentTurn < this.replay.turns.length - 1) {
-        this.currentTurn++;
-        this.render();
-        if (this.onTurnChange) this.onTurnChange(this.currentTurn);
-      } else {
-        // End of replay
-        this.pause();
-        return;
+  private renderLoopTick(timestamp: number): void {
+    if (!this.renderLoopRunning) return;
+
+    const dt = timestamp - this.lastRenderTime;
+    this.lastRenderTime = timestamp;
+
+    // Advance idle pulse phase (2s cycle = π per second)
+    this.idlePhase += (Math.PI * dt) / 1000;
+
+    // Tick particles and effects
+    if (!this.accessibility.reducedMotion) {
+      tickParticles(dt);
+      tickEffects(dt);
+    }
+
+    // If playing, check if we should advance to next turn
+    if (this.isPlaying && this.replay) {
+      const turnElapsed = timestamp - this.turnStartTime;
+      if (turnElapsed >= this.animationSpeed) {
+        if (this.currentTurn < this.replay.turns.length - 1) {
+          this.advanceTurn(this.currentTurn + 1);
+        } else {
+          this.pause();
+          // Render one last frame
+          this.render();
+          return;
+        }
       }
     }
 
-    this.animationFrame = requestAnimationFrame(this.animate.bind(this));
+    // Always render at display refresh rate
+    this.render();
+
+    this.animationFrame = requestAnimationFrame(this.renderLoopTick.bind(this));
+  }
+
+  private advanceTurn(newTurn: number): void {
+    if (!this.replay) return;
+
+    // Store previous bot positions before advancing
+    const prevTurnData = this.replay.turns[this.currentTurn];
+    this.botPrevPos.clear();
+    if (prevTurnData) {
+      for (const bot of prevTurnData.bots) {
+        if (!bot.alive) continue;
+        this.botPrevPos.set(bot.id, {
+          x: bot.position.col * this.cellSize + this.cellSize / 2,
+          y: bot.position.row * this.cellSize + this.cellSize / 2,
+        });
+      }
+    }
+
+    this.currentTurn = newTurn;
+    this.turnStartTime = performance.now();
+
+    // Fire events for the new turn to spawn animations
+    const turnData = this.replay.turns[this.currentTurn];
+    if (turnData && !this.accessibility.reducedMotion) {
+      this.fireTurnAnimations(turnData);
+    }
+
+    if (this.onTurnChange) this.onTurnChange(this.currentTurn);
+  }
+
+  private fireTurnAnimations(turnData: ReplayTurn): void {
+    const colors = this.getPlayerColors();
+    const events = turnData.events ?? [];
+
+    // Track spawned bot IDs for spawn animation
+    this.spawnedBotIds.clear();
+
+    for (const event of events) {
+      const d = event.details as Record<string, unknown>;
+      if (!d) continue;
+
+      switch (event.type) {
+        case 'bot_died': {
+          const pos = d.position as Position | undefined;
+          if (!pos) break;
+          const owner = d.owner as number ?? 0;
+          const cx = pos.col * this.cellSize + this.cellSize / 2;
+          const cy = pos.row * this.cellSize + this.cellSize / 2;
+          // Spawn 6-8 particles in random directions
+          const count = 6 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+            const speed = 40 + Math.random() * 60; // px/s
+            borrowParticle(
+              cx, cy,
+              Math.cos(angle) * speed / 1000,
+              Math.sin(angle) * speed / 1000,
+              colors[owner] ?? '#ef4444',
+              400
+            );
+          }
+          break;
+        }
+        case 'energy_collected': {
+          const pos = d.position as Position | undefined;
+          if (!pos) break;
+          const cx = pos.col * this.cellSize + this.cellSize / 2;
+          const cy = pos.row * this.cellSize + this.cellSize / 2;
+          // 4-line starburst
+          for (let i = 0; i < 4; i++) {
+            const angle = (Math.PI / 2) * i;
+            borrowParticle(cx, cy, Math.cos(angle) * 0.05, Math.sin(angle) * 0.05, ENERGY_COLOR, 200);
+          }
+          // Floating '+1'
+          const ft = borrowSlot(floatTexts);
+          if (ft) {
+            ft.x = cx; ft.y = cy - 8;
+            ft.text = '+1'; ft.color = ENERGY_COLOR;
+            ft.elapsed = 0; ft.lifetime = 200; ft.active = true;
+          }
+          break;
+        }
+        case 'core_captured': {
+          const pos = d.position as Position | undefined;
+          if (!pos) break;
+          const newOwner = d.new_owner as number ?? 0;
+          const cx = pos.col * this.cellSize + this.cellSize / 2;
+          const cy = pos.row * this.cellSize + this.cellSize / 2;
+          const sw = borrowSlot(shockwaves);
+          if (sw) {
+            sw.x = cx; sw.y = cy; sw.radius = 0;
+            sw.maxRadius = this.cellSize * 2;
+            sw.color = colors[newOwner] ?? '#fff';
+            sw.elapsed = 0; sw.lifetime = 500; sw.active = true;
+          }
+          break;
+        }
+        case 'bot_spawned': {
+          const botId = d.bot_id as number | undefined;
+          if (botId !== undefined) this.spawnedBotIds.add(botId);
+          const owner = d.owner as number ?? 0;
+          const pos = d.position as Position | undefined;
+          if (!pos) break;
+          const cx = pos.col * this.cellSize + this.cellSize / 2;
+          const cy = pos.row * this.cellSize + this.cellSize / 2;
+          const sg = borrowSlot(spawnGlows);
+          if (sg) {
+            sg.x = cx; sg.y = cy;
+            sg.color = colors[owner] ?? '#fff';
+            sg.elapsed = 0; sg.lifetime = 200; sg.active = true;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Lerp factor: 0 at turn start → 1 at turn end
+  private getLerpT(): number {
+    const elapsed = performance.now() - this.turnStartTime;
+    return Math.min(1, elapsed / this.animationSpeed);
   }
 
   private render(): void {
@@ -632,6 +941,12 @@ export class ReplayViewer {
       default:
         this.renderStandardView(turnData, visible, colors, neutralColor, energyColor, wallColor, gridColor);
         break;
+    }
+
+    // Draw animated particles and effects (if not reduced motion)
+    if (!this.accessibility.reducedMotion) {
+      drawEffects(ctx);
+      drawParticles(ctx);
     }
 
     // Draw debug telemetry overlay if enabled
@@ -713,6 +1028,11 @@ export class ReplayViewer {
 
     // Draw combat effects from events this turn
     this.drawCombatEffects(turnData, colors, visible);
+
+    // Draw threat lines between bots in attack range
+    if (!this.accessibility.reducedMotion) {
+      this.drawThreatLines(turnData, colors, visible);
+    }
   }
 
   private drawCombatEffects(
@@ -790,6 +1110,48 @@ export class ReplayViewer {
       ctx.lineTo(dx - xSize, dy + xSize);
       ctx.stroke();
       ctx.lineCap = 'butt';
+    }
+  }
+
+  // Draw threat lines between bots of different owners within attack range
+  private drawThreatLines(
+    turnData: ReplayTurn,
+    visible: Set<string> | null
+  ): void {
+    const { ctx, cellSize } = this;
+    const aliveBots = turnData.bots.filter(b => b.alive);
+    const attackRadius2 = this.replay?.config?.attack_radius2 ?? 5;
+    const attackRadius = Math.sqrt(attackRadius2) * cellSize;
+
+    for (let i = 0; i < aliveBots.length; i++) {
+      for (let j = i + 1; j < aliveBots.length; j++) {
+        const a = aliveBots[i];
+        const b = aliveBots[j];
+        if (a.owner === b.owner) continue;
+
+        const ax = a.position.col * cellSize + cellSize / 2;
+        const ay = a.position.row * cellSize + cellSize / 2;
+        const bx = b.position.col * cellSize + cellSize / 2;
+        const by = b.position.row * cellSize + cellSize / 2;
+
+        // Use toroidal distance
+        const dist = Math.hypot(
+          Math.min(Math.abs(ax - bx), this.replay!.map.cols * cellSize - Math.abs(ax - bx)),
+          Math.min(Math.abs(ay - by), this.replay!.map.rows * cellSize - Math.abs(ay - by))
+        );
+
+        if (dist <= attackRadius) {
+          if (visible && (!visible.has(this.posKey(a.position)) || !visible.has(this.posKey(b.position)))) continue;
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.25)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
     }
   }
 
@@ -1174,11 +1536,49 @@ export class ReplayViewer {
 
   private drawBot(bot: ReplayBot, color: string): void {
     const { cellSize } = this;
-    const x = bot.position.col * cellSize + cellSize / 2;
-    const y = bot.position.row * cellSize + cellSize / 2;
-    const radius = (cellSize / 2) - 1;
+    const targetX = bot.position.col * cellSize + cellSize / 2;
+    const targetY = bot.position.row * cellSize + cellSize / 2;
 
-    // Draw bot with player-specific shape for accessibility
+    let x = targetX;
+    let y = targetY;
+    let scale = 1;
+
+    if (!this.accessibility.reducedMotion) {
+      // Lerp from previous position
+      const prev = this.botPrevPos.get(bot.id);
+      const t = this.getLerpT();
+      if (prev && t < 1) {
+        x = prev.x + (targetX - prev.x) * t;
+        y = prev.y + (targetY - prev.y) * t;
+
+        // Motion trail (only if moved meaningfully)
+        const dx = targetX - prev.x;
+        const dy = targetY - prev.y;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+          const tr = borrowSlot(trails);
+          if (tr) {
+            tr.x = targetX; tr.y = targetY;
+            tr.prevX = prev.x; tr.prevY = prev.y;
+            tr.color = color; tr.alpha = 1; tr.active = true;
+          }
+        }
+      }
+
+      // Store interpolated position for this frame
+      this.botRenderPos.set(bot.id, { x, y });
+
+      // Idle pulse: 2% scale, 2s cycle
+      const pulse = 1 + 0.02 * Math.sin(this.idlePhase);
+      scale *= pulse;
+
+      // Spawn animation: scale from 0→1 over 200ms
+      if (this.spawnedBotIds.has(bot.id)) {
+        const spawnT = Math.min(1, (performance.now() - this.turnStartTime) / 200);
+        scale *= spawnT;
+      }
+    }
+
+    const radius = ((cellSize / 2) - 1) * scale;
     this.drawPlayerShape(x, y, radius, bot.owner, color);
   }
 

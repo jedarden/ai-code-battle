@@ -332,3 +332,33 @@ export async function fetchPredictionsLeaderboard(): Promise<PredictionsLeaderbo
   if (!response.ok) throw new Error(`Failed to fetch predictions leaderboard: ${response.status}`);
   return response.json();
 }
+
+// Evolution meta types for homepage
+export interface EvolutionMeta {
+  generation: number;
+  promoted_today: number;
+  top_10_count: number;
+  updated_at: string;
+}
+
+export async function fetchEvolutionMeta(): Promise<EvolutionMeta> {
+  const response = await fetch('/data/evolution/meta.json');
+  if (!response.ok) {
+    // Return default values if file doesn't exist yet
+    return { generation: 0, promoted_today: 0, top_10_count: 0, updated_at: '' };
+  }
+  return response.json();
+}
+
+// Season types (re-export from types.ts for convenience)
+import type { SeasonIndex } from './types';
+export type { Season, SeasonIndex } from './types';
+
+export async function fetchSeasonIndex(): Promise<SeasonIndex> {
+  const response = await fetch('/data/seasons/index.json');
+  if (!response.ok) {
+    // Return empty index if file doesn't exist
+    return { updated_at: '', active_season: null, seasons: [] };
+  }
+  return response.json();
+}

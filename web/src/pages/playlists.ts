@@ -334,7 +334,7 @@ async function showPlaylistDetail(slug: string): Promise<void> {
 }
 
 function watchMatch(matchId: string): void {
-  window.location.hash = `/replay?match=${matchId}`;
+  window.location.hash = `/watch/replay?url=/replays/${matchId}.json`;
 }
 
 function copyEmbedCode(matchId: string): void {
