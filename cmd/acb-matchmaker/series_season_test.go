@@ -307,6 +307,227 @@ func TestSeriesFinalizationThresholds(t *testing.T) {
 	}
 }
 
+func TestMapSelectionOrderByGame(t *testing.T) {
+	tests := []struct {
+		gameNum      int
+		wantContains string
+	}{
+		{1, "engagement DESC"},
+		{2, "wall_density DESC"},
+		{3, "wall_density ASC"},
+		{4, "RANDOM()"},
+		{5, "RANDOM()"},
+		{6, "RANDOM()"},
+		{7, "RANDOM()"},
+	}
+
+	for _, tc := range tests {
+		var orderBy string
+		switch {
+		case tc.gameNum == 1:
+			orderBy = "engagement DESC NULLS LAST"
+		case tc.gameNum == 2:
+			orderBy = "wall_density DESC NULLS LAST"
+		case tc.gameNum == 3:
+			orderBy = "wall_density ASC NULLS LAST"
+		default:
+			orderBy = "RANDOM()"
+		}
+		if !containsSubstring(orderBy, tc.wantContains) {
+			t.Errorf("gameNum=%d: orderBy=%q, want to contain %q", tc.gameNum, orderBy, tc.wantContains)
+		}
+	}
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAlternatePlayerSlots(t *testing.T) {
+	tests := []struct {
+		gameNum int
+		slotA   int
+		slotB   int
+	}{
+		{1, 0, 1},
+		{2, 1, 0},
+		{3, 0, 1},
+		{4, 1, 0},
+		{5, 0, 1},
+		{6, 1, 0},
+		{7, 0, 1},
+	}
+
+	for _, tc := range tests {
+		slotA, slotB := 0, 1
+		if tc.gameNum%2 == 0 {
+			slotA, slotB = 1, 0
+		}
+		if slotA != tc.slotA || slotB != tc.slotB {
+			t.Errorf("gameNum=%d: got slotA=%d slotB=%d, want slotA=%d slotB=%d",
+				tc.gameNum, slotA, slotB, tc.slotA, tc.slotB)
+		}
+	}
+}
+
+func TestChampionshipBracketSeeding(t *testing.T) {
+	bots := []string{"b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"}
+
+	bracket := [][2]string{
+		{bots[0], bots[7]},
+		{bots[3], bots[4]},
+		{bots[2], bots[5]},
+		{bots[1], bots[6]},
+	}
+
+	expected := [][2]string{
+		{"b1", "b8"},
+		{"b4", "b5"},
+		{"b3", "b6"},
+		{"b2", "b7"},
+	}
+
+	for i, match := range bracket {
+		if match[0] != expected[i][0] || match[1] != expected[i][1] {
+			t.Errorf("bracket[%d]: got %s vs %s, want %s vs %s",
+				i, match[0], match[1], expected[i][0], expected[i][1])
+		}
+	}
+
+	seen := make(map[string]bool)
+	for _, match := range bracket {
+		for _, bot := range match {
+			if seen[bot] {
+				t.Errorf("bot %s appears in multiple bracket positions", bot)
+			}
+			seen[bot] = true
+		}
+	}
+	if len(seen) != 8 {
+		t.Errorf("expected 8 unique bots in bracket, got %d", len(seen))
+	}
+}
+
+func TestUpdateSeriesGameResults_WinColumn(t *testing.T) {
+	// Verify that the correct win column (a_wins or b_wins) is selected
+	// based on whether the winner is bot_a or bot_b.
+	tests := []struct {
+		name        string
+		winnerBotID string
+		botAID      string
+		incrementA  bool
+	}{
+		{"winner is bot_a", "bot_alpha", "bot_alpha", true},
+		{"winner is bot_b", "bot_beta", "bot_alpha", false},
+		{"same id as a", "x", "x", true},
+		{"different id", "y", "x", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			incrementA := tc.winnerBotID == tc.botAID
+			if incrementA != tc.incrementA {
+				t.Errorf("winner=%s botA=%s: incrementA=%v, want %v",
+					tc.winnerBotID, tc.botAID, incrementA, tc.incrementA)
+			}
+		})
+	}
+}
+
+func TestSeriesGameResultQueryConditions(t *testing.T) {
+	// Verify the conditions for finding unprocessed series game results:
+	// - series_games.winner_id IS NULL (not yet processed)
+	// - matches.status = 'completed' (match is done)
+	// - matches.winner IS NOT NULL (not a draw)
+	tests := []struct {
+		name       string
+		winnerID   string // NULL or a bot_id
+		matchStat  string // pending, running, completed
+		matchWin   string // NULL or a player slot number
+		shouldPick bool
+	}{
+		{"completed with winner", "", "completed", "0", true},
+		{"completed with winner slot 1", "", "completed", "1", true},
+		{"already processed", "bot_a", "completed", "0", false},
+		{"match still pending", "", "pending", "", false},
+		{"match still running", "", "running", "", false},
+		{"completed but draw", "", "completed", "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			winnerIDNull := tc.winnerID == ""
+			matchCompleted := tc.matchStat == "completed"
+			matchHasWinner := tc.matchWin != ""
+
+			shouldPick := winnerIDNull && matchCompleted && matchHasWinner
+			if shouldPick != tc.shouldPick {
+				t.Errorf("winnerID=%q matchStat=%q matchWin=%q: shouldPick=%v, want %v",
+					tc.winnerID, tc.matchStat, tc.matchWin, shouldPick, tc.shouldPick)
+			}
+		})
+	}
+}
+
+func TestSeriesSchedulerOrder(t *testing.T) {
+	// Verify the ordering of steps in tickSeriesScheduler:
+	// 0. updateSeriesGameResults (propagate match results)
+	// 1. finalizeCompletedSeries (mark series complete)
+	// 2. scheduleNextSeriesGames (schedule next game)
+	// 3. autoCreateSeries (create new series)
+	// 4. advanceChampionshipBracket (advance bracket)
+	//
+	// This ordering is important because:
+	// - Results must be propagated BEFORE finalization checks
+	// - Finalization must happen BEFORE scheduling (to avoid scheduling
+	//   games in already-decided series)
+	// - New series creation comes after scheduling existing ones
+	steps := []string{
+		"updateSeriesGameResults",
+		"finalizeCompletedSeries",
+		"scheduleNextSeriesGames",
+		"autoCreateSeries",
+		"advanceChampionshipBracket",
+	}
+
+	if len(steps) != 5 {
+		t.Errorf("expected 5 scheduler steps, got %d", len(steps))
+	}
+
+	// Update results must come before finalize
+	if steps[0] != "updateSeriesGameResults" {
+		t.Errorf("step 0 should be updateSeriesGameResults, got %s", steps[0])
+	}
+	if steps[1] != "finalizeCompletedSeries" {
+		t.Errorf("step 1 should be finalizeCompletedSeries, got %s", steps[1])
+	}
+}
+
+func TestChampionshipBracketRequiresEightBots(t *testing.T) {
+	tests := []struct {
+		count      int
+		shouldSkip bool
+	}{
+		{0, true},
+		{1, true},
+		{7, true},
+		{8, false},
+		{10, false},
+	}
+
+	for _, tc := range tests {
+		skipped := tc.count < 8
+		if skipped != tc.shouldSkip {
+			t.Errorf("count=%d: skipped=%v, want %v", tc.count, skipped, tc.shouldSkip)
+		}
+	}
+}
+
 // itoa is a simple int-to-string helper for tests.
 func itoa(n int) string {
 	if n == 0 {

@@ -15,6 +15,11 @@ import (
 // in round-robin order, feeding the match into the job queue.
 // It also marks series as completed when a bot reaches the winning threshold.
 func (m *Matchmaker) tickSeriesScheduler(ctx context.Context) {
+	// 0. Propagate match results to series tables (winner_id, a_wins/b_wins)
+	if err := m.updateSeriesGameResults(ctx); err != nil {
+		log.Printf("series-scheduler: update results error: %v", err)
+	}
+
 	// 1. Finalize any completed series (check if winner reached threshold)
 	if err := m.finalizeCompletedSeries(ctx); err != nil {
 		log.Printf("series-scheduler: finalize error: %v", err)
@@ -29,6 +34,90 @@ func (m *Matchmaker) tickSeriesScheduler(ctx context.Context) {
 	if err := m.autoCreateSeries(ctx); err != nil {
 		log.Printf("series-scheduler: auto-create error: %v", err)
 	}
+
+	// 4. Advance championship bracket (semifinals/finals)
+	if err := m.advanceChampionshipBracket(ctx); err != nil {
+		log.Printf("series-scheduler: bracket advance error: %v", err)
+	}
+}
+
+// updateSeriesGameResults finds completed series matches that haven't had their
+// winner recorded yet. It updates series_games.winner_id and increments
+// a_wins or b_wins on the series table.
+func (m *Matchmaker) updateSeriesGameResults(ctx context.Context) error {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT sg.series_id, sg.game_num, sg.match_id, m.winner
+		FROM series_games sg
+		JOIN matches m ON sg.match_id = m.match_id
+		WHERE sg.winner_id IS NULL
+		  AND m.status = 'completed'
+		  AND m.winner IS NOT NULL
+	`)
+	if err != nil {
+		return fmt.Errorf("query completed series games: %w", err)
+	}
+	defer rows.Close()
+
+	type pendingUpdate struct {
+		SeriesID int64
+		GameNum  int
+		MatchID  string
+		Winner   int
+	}
+	var updates []pendingUpdate
+
+	for rows.Next() {
+		var u pendingUpdate
+		if err := rows.Scan(&u.SeriesID, &u.GameNum, &u.MatchID, &u.Winner); err != nil {
+			return fmt.Errorf("scan series game: %w", err)
+		}
+		updates = append(updates, u)
+	}
+
+	for _, u := range updates {
+		var winnerBotID string
+		err := m.db.QueryRowContext(ctx, `
+			SELECT bot_id FROM match_participants
+			WHERE match_id = $1 AND player_slot = $2
+		`, u.MatchID, u.Winner).Scan(&winnerBotID)
+		if err != nil {
+			log.Printf("series-scheduler: could not find winner bot for match %s slot %d: %v", u.MatchID, u.Winner, err)
+			continue
+		}
+
+		var botAID string
+		err = m.db.QueryRowContext(ctx, `SELECT bot_a_id FROM series WHERE id = $1`, u.SeriesID).Scan(&botAID)
+		if err != nil {
+			continue
+		}
+
+		_, err = m.db.ExecContext(ctx, `
+			UPDATE series_games SET winner_id = $1
+			WHERE series_id = $2 AND game_num = $3
+		`, winnerBotID, u.SeriesID, u.GameNum)
+		if err != nil {
+			log.Printf("series-scheduler: failed to update series_game winner: %v", err)
+			continue
+		}
+
+		if winnerBotID == botAID {
+			_, err = m.db.ExecContext(ctx, `
+				UPDATE series SET a_wins = a_wins + 1, updated_at = NOW() WHERE id = $1
+			`, u.SeriesID)
+		} else {
+			_, err = m.db.ExecContext(ctx, `
+				UPDATE series SET b_wins = b_wins + 1, updated_at = NOW() WHERE id = $1
+			`, u.SeriesID)
+		}
+		if err != nil {
+			log.Printf("series-scheduler: failed to increment wins for series %d: %v", u.SeriesID, err)
+			continue
+		}
+
+		log.Printf("series-scheduler: series %d game %d result recorded — winner=%s", u.SeriesID, u.GameNum, winnerBotID)
+	}
+
+	return nil
 }
 
 // finalizeCompletedSeries checks active series where one bot has already won enough games.
@@ -626,6 +715,130 @@ func (m *Matchmaker) autoStartSeason(ctx context.Context) {
 	log.Printf("season-reset: auto-started %s (%s) — ends in 28 days", seasonName, theme)
 }
 
+// advanceChampionshipBracket checks if any quarterfinal or semifinal series
+// have completed and creates the next round of series.
+func (m *Matchmaker) advanceChampionshipBracket(ctx context.Context) error {
+	// Find completed quarterfinal series whose winners haven't been placed into semifinals yet
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT s.id, s.season_id, s.bot_a_id, s.bot_b_id, s.winner_id, s.bracket_position
+		FROM series s
+		WHERE s.bracket_round = 'quarterfinal'
+		  AND s.status = 'completed'
+		  AND s.winner_id IS NOT NULL
+		  AND s.season_id IS NOT NULL
+		  AND NOT EXISTS (
+		    SELECT 1 FROM series sf
+		    WHERE sf.season_id = s.season_id
+		      AND sf.bracket_round = 'semifinal'
+		      AND sf.bracket_position = FLOOR(s.bracket_position / 2)
+		  )
+		ORDER BY s.bracket_position
+	`)
+	if err != nil {
+		return fmt.Errorf("query completed quarterfinals: %w", err)
+	}
+	defer rows.Close()
+
+	type completedQF struct {
+		SeriesID int64
+		SeasonID int64
+		WinnerID string
+		Position int
+	}
+	var completed []completedQF
+
+	for rows.Next() {
+		var qf completedQF
+		var botAID, botBID, winnerID string
+		var position int
+		if err := rows.Scan(&qf.SeriesID, &qf.SeasonID, &botAID, &botBID, &winnerID, &position); err != nil {
+			return fmt.Errorf("scan quarterfinal: %w", err)
+		}
+		qf.WinnerID = winnerID
+		qf.Position = position
+		completed = append(completed, qf)
+	}
+
+	// Group by season and create semifinal matchups
+	type semifinalPair struct {
+		seasonID  int64
+		position  int
+		winners   []string
+	}
+	pairs := make(map[string]*semifinalPair)
+	for _, qf := range completed {
+		sfPos := qf.Position / 2 // QF 0,1 → SF 0; QF 2,3 → SF 1
+		key := fmt.Sprintf("%d-%d", qf.SeasonID, sfPos)
+		if pairs[key] == nil {
+			pairs[key] = &semifinalPair{seasonID: qf.SeasonID, position: sfPos}
+		}
+		pairs[key].winners = append(pairs[key].winners, qf.WinnerID)
+	}
+
+	for _, pair := range pairs {
+		if len(pair.winners) < 2 {
+			continue
+		}
+		_, err := m.db.ExecContext(ctx, `
+			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, bracket_round, bracket_position, updated_at)
+			VALUES ($1, $2, 7, 'active', 0, 0, $3, 'semifinal', $4, NOW())
+		`, pair.winners[0], pair.winners[1], pair.seasonID, pair.position)
+		if err != nil {
+			log.Printf("series-scheduler: failed to create semifinal (%s vs %s): %v", pair.winners[0], pair.winners[1], err)
+			continue
+		}
+		log.Printf("series-scheduler: created championship semifinal: %s vs %s", pair.winners[0], pair.winners[1])
+	}
+
+	// Check for completed semifinals → create final
+	sfRows, err := m.db.QueryContext(ctx, `
+		SELECT s.id, s.season_id, s.winner_id, s.bracket_position
+		FROM series s
+		WHERE s.bracket_round = 'semifinal'
+		  AND s.status = 'completed'
+		  AND s.winner_id IS NOT NULL
+		  AND s.season_id IS NOT NULL
+		  AND NOT EXISTS (
+		    SELECT 1 FROM series f
+		    WHERE f.season_id = s.season_id AND f.bracket_round = 'final'
+		  )
+		ORDER BY s.bracket_position
+	`)
+	if err != nil {
+		return fmt.Errorf("query completed semifinals: %w", err)
+	}
+	defer sfRows.Close()
+
+	type completedSF struct {
+		SeasonID int64
+		WinnerID string
+	}
+	var sfWinners []completedSF
+	for sfRows.Next() {
+		var sf completedSF
+		var id int64
+		var pos int
+		if err := sfRows.Scan(&id, &sf.SeasonID, &sf.WinnerID, &pos); err != nil {
+			return fmt.Errorf("scan semifinal: %w", err)
+		}
+		sfWinners = append(sfWinners, sf)
+	}
+
+	if len(sfWinners) >= 2 && sfWinners[0].SeasonID == sfWinners[1].SeasonID {
+		_, err := m.db.ExecContext(ctx, `
+			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, bracket_round, bracket_position, updated_at)
+			VALUES ($1, $2, 7, 'active', 0, 0, $3, 'final', 0, NOW())
+		`, sfWinners[0].WinnerID, sfWinners[1].WinnerID, sfWinners[0].SeasonID)
+		if err != nil {
+			log.Printf("series-scheduler: failed to create championship final: %v", err)
+		} else {
+			log.Printf("series-scheduler: created championship final: %s vs %s", sfWinners[0].WinnerID, sfWinners[1].WinnerID)
+		}
+	}
+
+	return nil
+}
+
 // createChampionshipBracket creates best-of-7 series for the top 8 bots
 // in a single-elimination bracket at season end (§14.9).
 // Bracket seeding: #1 vs #8, #4 vs #5, #3 vs #6, #2 vs #7
@@ -667,26 +880,28 @@ func (m *Matchmaker) createChampionshipBracket(ctx context.Context, seasonID int
 
 	// Standard bracket seeding: #1v8, #4v5, #3v6, #2v7
 	// This ensures top seeds face weakest opponents and #1/#2 can only meet in finals
-	bracket := [][2]string{
-		{botIDs[0], botIDs[7]}, // #1 vs #8
-		{botIDs[3], botIDs[4]}, // #4 vs #5
-		{botIDs[2], botIDs[5]}, // #3 vs #6
-		{botIDs[1], botIDs[6]}, // #2 vs #7
+	bracket := []struct {
+		a, b     string
+		position int
+	}{
+		{botIDs[0], botIDs[7], 0}, // #1 vs #8
+		{botIDs[3], botIDs[4], 1}, // #4 vs #5
+		{botIDs[2], botIDs[5], 2}, // #3 vs #6
+		{botIDs[1], botIDs[6], 3}, // #2 vs #7
 	}
 
-	round := [4]string{"Quarterfinals", "Quarterfinals", "Quarterfinals", "Quarterfinals"}
-	for i, matchup := range bracket {
+	for _, matchup := range bracket {
 		_, err := m.db.ExecContext(ctx, `
-			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, updated_at)
-			VALUES ($1, $2, 7, 'active', 0, 0, $3, NOW())
-		`, matchup[0], matchup[1], seasonID)
+			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, bracket_round, bracket_position, updated_at)
+			VALUES ($1, $2, 7, 'active', 0, 0, $3, 'quarterfinal', $4, NOW())
+		`, matchup.a, matchup.b, seasonID, matchup.position)
 		if err != nil {
-			log.Printf("season-reset: failed to create championship %s series (%s vs %s): %v",
-				round[i], matchup[0], matchup[1], err)
+			log.Printf("season-reset: failed to create championship quarterfinal series (%s vs %s): %v",
+				matchup.a, matchup.b, err)
 			continue
 		}
-		log.Printf("season-reset: created championship %s series: %s vs %s (bo7)",
-			round[i], matchup[0], matchup[1])
+		log.Printf("season-reset: created championship quarterfinal series: %s vs %s (bo7)",
+			matchup.a, matchup.b)
 	}
 
 	return nil
