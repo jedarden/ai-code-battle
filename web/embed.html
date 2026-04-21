@@ -251,6 +251,35 @@
       color: rgba(255, 255, 255, 0.3);
       text-decoration: none;
     }
+
+    /* Commentary subtitle bar */
+    .commentary-bar {
+      display: none;
+      padding: 6px 14px;
+      background-color: rgba(30, 41, 59, 0.95);
+      border-top: 1px solid #334155;
+      min-height: 32px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .commentary-bar.visible {
+      display: flex;
+    }
+
+    .commentary-bar .commentary-text {
+      color: #e2e8f0;
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.4;
+      max-width: 100%;
+    }
+
+    .commentary-bar .commentary-text.type-setup { color: #94a3b8; }
+    .commentary-bar .commentary-text.type-action { color: #e2e8f0; }
+    .commentary-bar .commentary-text.type-reaction { color: #fbbf24; }
+    .commentary-bar .commentary-text.type-climax { color: #f97316; font-weight: 600; }
+    .commentary-bar .commentary-text.type-denouement { color: #94a3b8; font-style: italic; }
   </style>
 </head>
 <body>
@@ -276,6 +305,10 @@
           <option value="25">4x</option>
         </select>
       </div>
+    </div>
+
+    <div class="commentary-bar" id="commentary-bar">
+      <span class="commentary-text" id="commentary-text"></span>
     </div>
 
     <div class="loading-overlay" id="loading-overlay">

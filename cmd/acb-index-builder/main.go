@@ -127,6 +127,7 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		cfg.OutputDir + "/data/meta",
 		cfg.OutputDir + "/data/evolution",
 		cfg.OutputDir + "/data/blog",
+		cfg.OutputDir + "/data/commentary",
 		cfg.OutputDir + "/cards",
 	}
 	for _, dir := range dirs {
@@ -151,7 +152,7 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	}
 
 	// Generate all index files
-	if err := generateAllIndexes(data, cfg.OutputDir); err != nil {
+	if err := generateAllIndexes(data, cfg.OutputDir, db); err != nil {
 		return fmt.Errorf("generate indexes: %w", err)
 	}
 
@@ -160,7 +161,7 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	if cfg.LLMBaseURL != "" {
 		llmClient = NewLLMClient(cfg.LLMBaseURL, cfg.LLMAPIKey)
 	}
-	if err := generateBlog(data, cfg.OutputDir, llmClient); err != nil {
+	if err := generateBlog(data, cfg.OutputDir, llmClient, cfg); err != nil {
 		slog.Error("Failed to generate blog", "error", err)
 		// Non-fatal - continue with rest of build
 	}
@@ -189,6 +190,18 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		// Non-fatal
 	}
 
+	// Enrich featured replays with AI commentary (§13.3)
+	if err := enrichReplays(ctx, data, cfg, llmClient); err != nil {
+		slog.Error("Failed to enrich replays", "error", err)
+		// Non-fatal - unenriched replays are still valid
+	}
+
+	// Generate enriched commentary index (list of matches with AI commentary)
+	if err := generateEnrichedIndex(ctx, data, cfg, cfg.OutputDir); err != nil {
+		slog.Error("Failed to generate enriched index", "error", err)
+		// Non-fatal
+	}
+
 	return nil
 }
 
@@ -206,7 +219,7 @@ func promoteRecentReplaysForCycle(ctx context.Context, db *sql.DB, cfg *Config) 
 	}
 
 	// Get exempt match IDs (playlists, series, seasons)
-	exemptMatchIDs, err := fetchExemptMatchIDs(ctx, db)
+	exemptMatchIDs, err := fetchExemptMatchIDs(ctx, db, cfg.OutputDir)
 	if err != nil {
 		slog.Warn("Failed to fetch exempt match IDs, promoting all", "error", err)
 		exemptMatchIDs = make(map[string]bool)

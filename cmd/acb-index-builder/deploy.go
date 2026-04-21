@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,66 +15,52 @@ import (
 )
 
 // fetchExemptMatchIDs retrieves match IDs that should never be pruned (from series, seasons, playlists)
-func fetchExemptMatchIDs(ctx context.Context, db *sql.DB) (map[string]bool, error) {
-	if db == nil {
-		return make(map[string]bool), nil
-	}
-
+func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map[string]bool, error) {
 	exempt := make(map[string]bool)
 
-	// Matches in active series
-	seriesQuery := `
-		SELECT DISTINCT sm.match_id
-		FROM series_matches sm
-		JOIN series s ON sm.series_id = s.id
-		WHERE s.status IN ('active', 'pending')
-	`
-	rows, err := db.QueryContext(ctx, seriesQuery)
-	if err == nil {
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err == nil {
-				exempt[id] = true
+	if db != nil {
+		// Matches in active series
+		seriesQuery := `
+			SELECT DISTINCT sm.match_id
+			FROM series_matches sm
+			JOIN series s ON sm.series_id = s.id
+			WHERE s.status IN ('active', 'pending')
+		`
+		rows, err := db.QueryContext(ctx, seriesQuery)
+		if err == nil {
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					exempt[id] = true
+				}
 			}
+			rows.Close()
 		}
-		rows.Close()
+
+		// Matches in active seasons
+		seasonQuery := `
+			SELECT DISTINCT match_id
+			FROM season_matches
+			WHERE season_id IN (
+				SELECT id FROM seasons WHERE ends_at IS NULL OR ends_at > NOW()
+			)
+		`
+		rows, err = db.QueryContext(ctx, seasonQuery)
+		if err == nil {
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					exempt[id] = true
+				}
+			}
+			rows.Close()
+		}
 	}
 
-	// Matches in active seasons
-	seasonQuery := `
-		SELECT DISTINCT match_id
-		FROM season_matches
-		WHERE season_id IN (
-			SELECT id FROM seasons WHERE ends_at IS NULL OR ends_at > NOW()
-		)
-	`
-	rows, err = db.QueryContext(ctx, seasonQuery)
-	if err == nil {
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err == nil {
-				exempt[id] = true
-			}
-		}
-		rows.Close()
-	}
-
-	// Matches in featured playlists
-	playlistQuery := `
-		SELECT DISTINCT pm.match_id
-		FROM playlist_matches pm
-		JOIN playlists p ON pm.playlist_id = p.id
-		WHERE p.featured = true
-	`
-	rows, err = db.QueryContext(ctx, playlistQuery)
-	if err == nil {
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err == nil {
-				exempt[id] = true
-			}
-		}
-		rows.Close()
+	// Matches in generated playlist files (file-based playlists from index builder)
+	playlistMatchIDs := fetchPlaylistMatchIDsFromFiles(outputDir)
+	for id := range playlistMatchIDs {
+		exempt[id] = true
 	}
 
 	slog.Debug("Fetched exempt match IDs for pruning", "count", len(exempt))
@@ -164,7 +151,7 @@ func pruneR2CacheWithDB(ctx context.Context, cfg *Config, db *sql.DB) error {
 	// Get exempt match IDs if db is provided
 	exemptMatchIDs := make(map[string]bool)
 	if db != nil {
-		exemptMatchIDs, err = fetchExemptMatchIDs(ctx, db)
+		exemptMatchIDs, err = fetchExemptMatchIDs(ctx, db, cfg.OutputDir)
 		if err != nil {
 			slog.Warn("Failed to fetch exempt match IDs, will proceed without exemptions", "error", err)
 		}
@@ -395,6 +382,48 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return val
 	}
 	return defaultValue
+}
+
+// fetchPlaylistMatchIDsFromFiles reads generated playlist JSON files from the
+// output directory and returns all match IDs referenced in them. This replaces
+// the old approach of querying non-existent playlist_matches DB tables.
+func fetchPlaylistMatchIDsFromFiles(outputDir string) map[string]bool {
+	ids := make(map[string]bool)
+
+	playlistsDir := filepath.Join(outputDir, "data", "playlists")
+	entries, err := os.ReadDir(playlistsDir)
+	if err != nil {
+		return ids
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		// Skip index.json — only individual playlist files have match lists
+		if entry.Name() == "index.json" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(playlistsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		var pl struct {
+			Matches []struct {
+				MatchID string `json:"match_id"`
+			} `json:"matches"`
+		}
+		if err := json.Unmarshal(data, &pl); err != nil {
+			continue
+		}
+		for _, m := range pl.Matches {
+			ids[m.MatchID] = true
+		}
+	}
+
+	return ids
 }
 
 // ensure valid function references

@@ -33,7 +33,7 @@ GOOS=js GOARCH=wasm go build \
   ./cmd/acb-wasm/
 
 echo "Copying wasm_exec.js…"
-cp "$(go env GOROOT)/misc/wasm/wasm_exec.js" "$OUT/"
+cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" "$OUT/"
 
 echo "Building bot WASM modules…"
 for bot in random gatherer rusher guardian swarm hunter; do

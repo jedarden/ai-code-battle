@@ -14,6 +14,7 @@ const loadLeaderboardPage = () => import('./pages/leaderboard').then(m => m.rend
 
 // Watch section - replay viewer and related pages
 const loadMatchesPage = () => import('./pages/matches').then(m => m.renderMatchesPage);
+const loadPlaylistsPage = () => import('./pages/playlists').then(m => m.renderPlaylistsPage);
 const loadSeriesPage = () => import('./pages/series').then(m => m.renderSeriesPage);
 const loadPredictionsPage = () => import('./pages/predictions').then(m => m.renderPredictionsPage);
 const loadReplayPage = () => import('./pages/replay').then(m => m.renderReplayPage);
@@ -127,6 +128,8 @@ router
   .on('/', lazyRoute(loadHomePage))
   .on('/watch', lazyRoute(loadWatchHubPage))
   .on('/watch/replays', lazyRoute(loadMatchesPage))
+  .on('/watch/playlists', lazyRoute(loadPlaylistsPage))
+  .on('/watch/playlists/:slug', lazyRoute(loadPlaylistsPage))
   .on('/watch/replay/:id', lazyRoute(loadReplayPage))
   .on('/watch/series/:id', lazyRoute(loadSeriesPage))
   .on('/watch/predictions', lazyRoute(loadPredictionsPage))
@@ -145,7 +148,7 @@ router
   .on('/bot/:id', lazyRoute(loadBotProfilePage))
   // Backwards compatibility redirects
   .on('/matches', redirect('/watch/replays'))
-  .on('/playlists', redirect('/watch/replays'))
+  .on('/playlists', redirect('/watch/playlists'))
   .on('/replay', redirect('/watch/replay'))
   .on('/predictions', redirect('/watch/predictions'))
   .on('/series', redirect('/watch/series'))

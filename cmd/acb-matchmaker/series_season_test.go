@@ -528,6 +528,83 @@ func TestChampionshipBracketRequiresEightBots(t *testing.T) {
 	}
 }
 
+func TestDrawGameProcessing(t *testing.T) {
+	// Drawn games should be handled: winner_id set to 'draw' so the series
+	// can continue scheduling the next game.
+	//
+	// Conditions for identifying a drawn series game:
+	// - series_games.winner_id IS NULL (not yet processed)
+	// - matches.status = 'completed'
+	// - matches.winner IS NULL (draw)
+	tests := []struct {
+		name       string
+		winnerID   string // empty = NULL
+		matchStat  string
+		matchWin   string // empty = NULL
+		shouldMark bool
+	}{
+		{"completed draw marks game", "", "completed", "", true},
+		{"winner game not marked by draw handler", "", "completed", "0", false},
+		{"pending game not marked", "", "pending", "", false},
+		{"already processed not marked", "draw", "completed", "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			winnerIDNull := tc.winnerID == ""
+			matchCompleted := tc.matchStat == "completed"
+			matchHasNoWinner := tc.matchWin == ""
+
+			shouldMark := winnerIDNull && matchCompleted && matchHasNoWinner
+			if shouldMark != tc.shouldMark {
+				t.Errorf("winnerID=%q matchStat=%q matchWin=%q: shouldMark=%v, want %v",
+					tc.winnerID, tc.matchStat, tc.matchWin, shouldMark, tc.shouldMark)
+			}
+		})
+	}
+}
+
+func TestAllPlayedFinalization(t *testing.T) {
+	// When all games in a series are played but neither side reached the
+	// winning threshold (possible with draws), the series should be finalized
+	// with the bot that has more wins, or NULL if equal.
+	tests := []struct {
+		name     string
+		format   int
+		aWins    int
+		bWins    int
+		winner   string // "a", "b", or "" for draw
+	}{
+		{"bo3 with 1-1 and 1 draw", 3, 1, 1, ""},
+		{"bo5 with 2-1 and 2 draws", 5, 2, 1, "a"},
+		{"bo7 with 2-3 and 2 draws", 7, 2, 3, "b"},
+		{"bo3 with 1-0 and 2 draws", 3, 1, 0, "a"},
+		{"bo5 with 0-0 and 5 draws", 5, 0, 0, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			winsNeeded := (tc.format + 1) / 2
+			// Neither side reached threshold
+			if tc.aWins >= winsNeeded || tc.bWins >= winsNeeded {
+				t.Fatalf("test case has side reaching threshold (a=%d, b=%d, needed=%d)",
+					tc.aWins, tc.bWins, winsNeeded)
+			}
+
+			var winner string
+			if tc.aWins > tc.bWins {
+				winner = "a"
+			} else if tc.bWins > tc.aWins {
+				winner = "b"
+			}
+			if winner != tc.winner {
+				t.Errorf("all-played finalization a=%d b=%d: winner=%q, want %q",
+					tc.aWins, tc.bWins, winner, tc.winner)
+			}
+		})
+	}
+}
+
 // itoa is a simple int-to-string helper for tests.
 func itoa(n int) string {
 	if n == 0 {

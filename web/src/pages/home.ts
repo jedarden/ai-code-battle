@@ -176,7 +176,7 @@ export async function renderHomePage(): Promise<void> {
             ${latestStories.length > 0 ? latestStories.map((post: any) => `
               <a href="#/blog/${post.slug}" class="story-link">
                 <div class="story-title">${escapeHtml(post.title)}</div>
-                <div class="story-meta">${post.date}</div>
+                <div class="story-meta">${post.published_at || post.date || ''}</div>
               </a>
             `).join('') : '<p class="empty">No stories yet</p>'}
           </div>
@@ -190,7 +190,7 @@ export async function renderHomePage(): Promise<void> {
         <h2>Playlists</h2>
         <div class="playlists-carousel">
           ${featuredPlaylists.map((playlist: any) => `
-            <a href="#/watch/replays" class="playlist-card">
+            <a href="#/watch/playlists/${playlist.slug}" class="playlist-card">
               <div class="playlist-thumbnail">
                 ${playlist.thumbnail_match_id
                   ? `<img src="/replays/${playlist.thumbnail_match_id}.jpg" alt="${escapeHtml(playlist.title)}" loading="lazy">`

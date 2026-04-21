@@ -4,14 +4,14 @@ import { router } from '../router';
 interface BlogEntry {
   slug: string;
   title: string;
-  date: string;
+  published_at: string;
   type: 'meta-report' | 'chronicle';
   summary: string;
   tags: string[];
 }
 
 interface BlogPost extends BlogEntry {
-  content_md: string;
+  body_markdown: string;
 }
 
 interface BlogIndex {
@@ -310,7 +310,7 @@ function renderBlogList(posts: BlogEntry[], filter: string = 'all'): void {
     <div class="blog-card" data-slug="${post.slug}">
       <div class="blog-card-meta">
         <span class="blog-card-type ${post.type}">${formatPostType(post.type)}</span>
-        <span class="blog-card-date">${formatDate(post.date)}</span>
+        <span class="blog-card-date">${formatDate(post.published_at)}</span>
       </div>
       <h3 class="blog-card-title">${escapeHtml(post.title)}</h3>
       <p class="blog-card-summary">${escapeHtml(post.summary)}</p>
@@ -581,10 +581,10 @@ function renderPost(post: BlogPost): void {
     <div class="post-header">
       <span class="post-type-badge ${post.type}">${formatPostType(post.type)}</span>
       <h1 class="post-title">${escapeHtml(post.title)}</h1>
-      <div class="post-date">${formatDate(post.date)}</div>
+      <div class="post-date">${formatDate(post.published_at)}</div>
     </div>
     <div class="post-body">
-      ${markdownToHtml(post.content_md)}
+      ${markdownToHtml(post.body_markdown)}
     </div>
     <div class="post-tags">
       ${post.tags.map(tag => `<span class="post-tag">${escapeHtml(tag)}</span>`).join('')}

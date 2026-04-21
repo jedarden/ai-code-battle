@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -89,7 +92,7 @@ type MatchIndex struct {
 }
 
 // generateAllIndexes creates all JSON index files
-func generateAllIndexes(data *IndexData, outputDir string) error {
+func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB) error {
 	botNameMap := make(map[string]string)
 	for _, bot := range data.Bots {
 		botNameMap[bot.ID] = bot.Name
@@ -133,6 +136,14 @@ func generateAllIndexes(data *IndexData, outputDir string) error {
 	// Generate playlists
 	if err := generatePlaylists(data, outputDir, botNameMap); err != nil {
 		return fmt.Errorf("playlists: %w", err)
+	}
+
+	// Persist playlists to DB for incremental queries and R2 pruning exemptions
+	if db != nil {
+		if err := persistGeneratedPlaylists(context.Background(), db, outputDir); err != nil {
+			// Non-fatal: playlists are still written as JSON files
+			fmt.Fprintf(os.Stderr, "persist playlists to DB: %v\n", err)
+		}
 	}
 
 	return nil
@@ -301,6 +312,14 @@ func matchToSummary(m MatchData, data *IndexData) MatchSummary {
 }
 
 func generateSeriesIndex(data *IndexData, outputDir string) error {
+	seriesDir := filepath.Join(outputDir, "data", "series")
+
+	for _, s := range data.Series {
+		if err := writeJSON(filepath.Join(seriesDir, fmt.Sprintf("%d.json", s.ID)), s); err != nil {
+			return err
+		}
+	}
+
 	type SeriesIndex struct {
 		UpdatedAt string       `json:"updated_at"`
 		Series    []SeriesData `json:"series"`
@@ -311,21 +330,39 @@ func generateSeriesIndex(data *IndexData, outputDir string) error {
 		Series:    data.Series,
 	}
 
-	return writeJSON(filepath.Join(outputDir, "data", "series", "index.json"), index)
+	return writeJSON(filepath.Join(seriesDir, "index.json"), index)
 }
 
 func generateSeasonsIndex(data *IndexData, outputDir string) error {
+	seasonsDir := filepath.Join(outputDir, "data", "seasons")
+
+	for _, s := range data.Seasons {
+		if err := writeJSON(filepath.Join(seasonsDir, fmt.Sprintf("%d.json", s.ID)), s); err != nil {
+			return err
+		}
+	}
+
+	var activeSeason *SeasonData
+	for i := range data.Seasons {
+		if data.Seasons[i].Status == "active" {
+			activeSeason = &data.Seasons[i]
+			break
+		}
+	}
+
 	type SeasonsIndex struct {
-		UpdatedAt string       `json:"updated_at"`
-		Seasons   []SeasonData `json:"seasons"`
+		UpdatedAt    string       `json:"updated_at"`
+		ActiveSeason *SeasonData  `json:"active_season"`
+		Seasons      []SeasonData `json:"seasons"`
 	}
 
 	index := SeasonsIndex{
-		UpdatedAt: data.GeneratedAt.Format(time.RFC3339),
-		Seasons:   data.Seasons,
+		UpdatedAt:    data.GeneratedAt.Format(time.RFC3339),
+		ActiveSeason: activeSeason,
+		Seasons:      data.Seasons,
 	}
 
-	return writeJSON(filepath.Join(outputDir, "data", "seasons", "index.json"), index)
+	return writeJSON(filepath.Join(seasonsDir, "index.json"), index)
 }
 
 func generatePredictionsIndex(data *IndexData, outputDir string) error {
@@ -345,12 +382,524 @@ func generatePredictionsIndex(data *IndexData, outputDir string) error {
 func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]string) error {
 	playlistsDir := filepath.Join(outputDir, "data", "playlists")
 
-	// Closest finishes: matches with smallest score differential
-	closest := filterMatches(data.Matches, func(m MatchData) bool {
-		if len(m.Participants) < 2 {
-			return false
+	type playlistDef struct {
+		slug        string
+		title       string
+		description string
+		category    string
+		filter      func(MatchData) bool
+		sort        func([]MatchData)
+	}
+
+	defs := []playlistDef{
+		{
+			slug:        "closest-finishes",
+			title:       "Closest Finishes",
+			description: "Matches decided by the thinnest margins — nail-biters to the very end",
+			category:    "close_games",
+			filter: func(m MatchData) bool {
+				if len(m.Participants) < 2 || m.WinnerID == "" {
+					return false
+				}
+				return minScoreDiff(m) <= 2
+			},
+			sort: func(matches []MatchData) {
+				sortByScoreDiff(matches)
+			},
+		},
+		{
+			slug:        "biggest-upsets",
+			title:       "Biggest Upsets",
+			description: "Lower-rated bots triumph against higher-rated opponents",
+			category:    "upsets",
+			filter: func(m MatchData) bool {
+				if m.WinnerID == "" || len(m.Participants) < 2 {
+					return false
+				}
+				return ratingUpsetMagnitude(m) >= 100
+			},
+			sort: func(matches []MatchData) {
+				sortByUpsetMagnitude(matches)
+			},
+		},
+		{
+			slug:        "best-comebacks",
+			title:       "Best Comebacks",
+			description: "Bots that were down but never out — dramatic turnarounds and improbable victories",
+			category:    "comebacks",
+			filter: func(m MatchData) bool {
+				return isComeback(m)
+			},
+			sort: func(matches []MatchData) {
+				sortSlice(matches, func(i, j int) bool {
+					return turnaroundMagnitude(matches[i]) > turnaroundMagnitude(matches[j])
+				})
+			},
+		},
+		{
+			slug:        "marathon-matches",
+			title:       "Marathon Matches",
+			description: "The longest, most grueling matches — endurance-tested battles",
+			category:    "long_games",
+			filter: func(m MatchData) bool {
+				return m.TurnCount >= 300
+			},
+			sort: func(matches []MatchData) {
+				sortByTurnCount(matches)
+			},
+		},
+		{
+			slug:        "highest-rated",
+			title:       "Clash of Titans",
+			description: "Matches between the highest-rated opponents on the ladder",
+			category:    "featured",
+			filter: func(m MatchData) bool {
+				if len(m.Participants) < 2 {
+					return false
+				}
+				return combinedRating(m) >= 3200
+			},
+			sort: func(matches []MatchData) {
+				sortByCombinedRating(matches)
+			},
+		},
+		{
+			slug:        "evolution-breakthroughs",
+			title:       "Evolution Breakthroughs",
+			description: "Evolved bots defeating top-rated opponents — AI strategy milestones",
+			category:    "featured",
+			filter: func(m MatchData) bool {
+				return isEvolutionBreakthrough(m, data)
+			},
+			sort: func(matches []MatchData) {
+				sortByUpsetMagnitude(matches)
+			},
+		},
+		{
+			slug:        "rivalry-classics",
+			title:       "Rivalry Classics",
+			description: "The most closely contested matchups between frequent opponents",
+			category:    "rivalry",
+			filter: func(m MatchData) bool {
+				return isRivalryMatch(m, data)
+			},
+			sort: func(matches []MatchData) {
+				sortSlice(matches, func(i, j int) bool {
+					return minScoreDiff(matches[i]) < minScoreDiff(matches[j])
+				})
+			},
+		},
+		{
+			slug:        "domination",
+			title:       "Total Domination",
+			description: "One-sided victories where the winner crushed all opposition",
+			category:    "domination",
+			filter: func(m MatchData) bool {
+				if m.WinnerID == "" || len(m.Participants) < 2 {
+					return false
+				}
+				return maxScoreDiff(m) >= 5
+			},
+			sort: func(matches []MatchData) {
+				sortSlice(matches, func(i, j int) bool {
+					return maxScoreDiff(matches[i]) > maxScoreDiff(matches[j])
+				})
+			},
+		},
+		{
+			slug:        "new-bot-debuts",
+			title:       "New Bot Debuts",
+			description: "First matches of newly registered bots — watch their opening games",
+			category:    "tutorial",
+			filter: func(m MatchData) bool {
+				return isNewBotDebut(m, data)
+			},
+			sort: func(matches []MatchData) {
+				// Newest debuts first
+				sortSlice(matches, func(i, j int) bool {
+					return matches[i].CompletedAt.After(matches[j].CompletedAt)
+				})
+			},
+		},
+		{
+			slug:        "season-highlights",
+			title:       "Season Highlights",
+			description: "Top matches from the current season ranked by excitement",
+			category:    "season",
+			filter: func(m MatchData) bool {
+				return isCurrentSeasonMatch(m, data)
+			},
+			sort: func(matches []MatchData) {
+				sortByInterestScore(matches)
+			},
+		},
+		{
+			slug:        "featured",
+			title:       "Featured Matches",
+			description: "Recent highlights from the ladder",
+			category:    "featured",
+			filter: func(m MatchData) bool {
+				return m.WinnerID != ""
+			},
+			sort: func(matches []MatchData) {
+				// Most recent first (already sorted by completed_at DESC from DB)
+			},
+		},
+		{
+			slug:        "best-of-week",
+			title:       "Best of the Week",
+			description: "This week's top matches ranked by excitement: close finishes, upsets, marathon battles, and elite clashes",
+			category:    "weekly",
+			filter: func(m MatchData) bool {
+				weekAgo := data.GeneratedAt.AddDate(0, 0, -7)
+				return m.CompletedAt.After(weekAgo) && m.WinnerID != ""
+			},
+			sort: func(matches []MatchData) {
+				sortByInterestScore(matches)
+			},
+		},
+	}
+
+	var summaries []PlaylistSummary
+
+	for _, def := range defs {
+		// Special handling for best-of-week: use curated selection with tags
+		if def.slug == "best-of-week" {
+			weekAgo := data.GeneratedAt.AddDate(0, 0, -7)
+			curated := curateWeeklyHighlights(data.Matches, weekAgo)
+			curatedMatches := make([]MatchData, 0, len(curated))
+			tags := make(map[string]string, len(curated))
+			for _, c := range curated {
+				curatedMatches = append(curatedMatches, c.Match)
+				tags[c.Match.ID] = c.Tag
+			}
+
+			if err := writePlaylistWithTags(playlistsDir, def.slug+".json", def.title, def.description, def.category, curatedMatches, tags, data); err != nil {
+				return err
+			}
+
+			var thumbMatchID string
+			if len(curatedMatches) > 0 {
+				thumbMatchID = curatedMatches[0].ID
+			}
+			summaries = append(summaries, PlaylistSummary{
+				Slug:            def.slug,
+				Title:           def.title,
+				Description:     def.description,
+				Category:        def.category,
+				MatchCount:      len(curatedMatches),
+				UpdatedAt:       data.GeneratedAt.Format(time.RFC3339),
+				ThumbnailMatchID: thumbMatchID,
+			})
+			continue
 		}
-		// Check if score difference is small (1-2 points)
+
+		filtered := filterMatches(data.Matches, def.filter)
+		if def.sort != nil {
+			def.sort(filtered)
+		}
+		filtered = filtered[:min(20, len(filtered))]
+
+		if err := writePlaylist(playlistsDir, def.slug+".json", def.title, def.description, def.category, filtered, data); err != nil {
+			return err
+		}
+
+		var thumbMatchID string
+		if len(filtered) > 0 {
+			thumbMatchID = filtered[0].ID
+		}
+		summaries = append(summaries, PlaylistSummary{
+			Slug:            def.slug,
+			Title:           def.title,
+			Description:     def.description,
+			Category:        def.category,
+			MatchCount:      len(filtered),
+			UpdatedAt:       data.GeneratedAt.Format(time.RFC3339),
+			ThumbnailMatchID: thumbMatchID,
+		})
+	}
+
+	index := PlaylistIndex{
+		UpdatedAt: data.GeneratedAt.Format(time.RFC3339),
+		Playlists: summaries,
+	}
+	return writeJSON(filepath.Join(playlistsDir, "index.json"), index)
+}
+
+type PlaylistIndex struct {
+	UpdatedAt string             `json:"updated_at"`
+	Playlists []PlaylistSummary  `json:"playlists"`
+}
+
+type PlaylistSummary struct {
+	Slug             string `json:"slug"`
+	Title            string `json:"title"`
+	Description      string `json:"description"`
+	Category         string `json:"category"`
+	MatchCount       int    `json:"match_count"`
+	UpdatedAt        string `json:"updated_at"`
+	ThumbnailMatchID string `json:"thumbnail_match_id,omitempty"`
+}
+
+type Playlist struct {
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Category    string          `json:"category"`
+	MatchCount  int             `json:"match_count"`
+	CreatedAt   string          `json:"created_at"`
+	UpdatedAt   string          `json:"updated_at"`
+	Matches     []PlaylistMatch `json:"matches"`
+}
+
+type PlaylistMatch struct {
+	MatchID      string                    `json:"match_id"`
+	Order        int                       `json:"order"`
+	Title        string                    `json:"title,omitempty"`
+	ThumbnailURL string                    `json:"thumbnail_url,omitempty"`
+	CurationTag  string                    `json:"curation_tag,omitempty"`
+	Participants []MatchParticipantSummary `json:"participants,omitempty"`
+	Score        string                    `json:"score,omitempty"`
+	Turns        int                       `json:"turns,omitempty"`
+	EndReason    string                    `json:"end_reason,omitempty"`
+	CompletedAt  string                    `json:"completed_at,omitempty"`
+}
+
+// curatedWeeklyMatch is a match selected by the weekly curation algorithm
+// with a tag explaining why it was selected.
+type curatedWeeklyMatch struct {
+	Match MatchData
+	Tag   string
+}
+
+// curateWeeklyHighlights selects the best matches from the past 7 days
+// using explicit criteria: upsets, elite clashes, marathon battles, closest finishes.
+// It processes specific criteria first so distinctive matches aren't consumed
+// by generic tags. It returns deduplicated matches tagged with their selection reason.
+func curateWeeklyHighlights(matches []MatchData, cutoff time.Time) []curatedWeeklyMatch {
+	seen := make(map[string]string) // match_id -> tag (first selection reason)
+	maxPerCriterion := 7
+
+	recent := filterMatches(matches, func(m MatchData) bool {
+		return m.CompletedAt.After(cutoff) && m.WinnerID != "" && len(m.Participants) >= 2
+	})
+
+	// 1. Biggest upsets first (most distinctive — underdog victories)
+	upsetMatches := make([]MatchData, len(recent))
+	copy(upsetMatches, recent)
+	sortByUpsetMagnitude(upsetMatches)
+	for i, m := range upsetMatches {
+		if i >= maxPerCriterion {
+			break
+		}
+		mag := ratingUpsetMagnitude(m)
+		if mag < 50 {
+			continue
+		}
+		if _, exists := seen[m.ID]; !exists {
+			seen[m.ID] = fmt.Sprintf("Upset victory (underdog by %d rating)", mag)
+		}
+	}
+
+	// 2. Highest-rated opponents (elite clashes)
+	ratedMatches := make([]MatchData, len(recent))
+	copy(ratedMatches, recent)
+	sortByCombinedRating(ratedMatches)
+	for i, m := range ratedMatches {
+		if i >= maxPerCriterion {
+			break
+		}
+		cr := int(combinedRating(m))
+		if cr < 3000 {
+			continue
+		}
+		if _, exists := seen[m.ID]; !exists {
+			seen[m.ID] = fmt.Sprintf("Elite clash (combined rating: %d)", cr)
+		}
+	}
+
+	// 3. Most turns (longest endurance battles)
+	longMatches := make([]MatchData, len(recent))
+	copy(longMatches, recent)
+	sortByTurnCount(longMatches)
+	for i, m := range longMatches {
+		if i >= maxPerCriterion {
+			break
+		}
+		if m.TurnCount < 300 {
+			continue
+		}
+		if _, exists := seen[m.ID]; !exists {
+			seen[m.ID] = fmt.Sprintf("Marathon battle (%d turns)", m.TurnCount)
+		}
+	}
+
+	// 4. Closest results last (most generic — fills remaining slots)
+	closeMatches := make([]MatchData, len(recent))
+	copy(closeMatches, recent)
+	sortByScoreDiff(closeMatches)
+	for i, m := range closeMatches {
+		if i >= maxPerCriterion {
+			break
+		}
+		diff := minScoreDiff(m)
+		if _, exists := seen[m.ID]; !exists {
+			seen[m.ID] = fmt.Sprintf("Closest finish (score diff: %d)", diff)
+		}
+	}
+
+	// Build result in criterion order: upsets, elite, marathon, closest
+	var result []curatedWeeklyMatch
+	for _, m := range recent {
+		if tag, ok := seen[m.ID]; ok {
+			result = append(result, curatedWeeklyMatch{Match: m, Tag: tag})
+		}
+	}
+
+	if len(result) > 20 {
+		result = result[:20]
+	}
+
+	return result
+}
+
+func writePlaylist(dir, filename, title, description, category string, matches []MatchData, data *IndexData) error {
+	slug := filename[:len(filename)-5]
+	pm := make([]PlaylistMatch, 0, len(matches))
+	for i, m := range matches {
+		pm = append(pm, buildPlaylistMatch(m, i, data, ""))
+	}
+
+	playlist := Playlist{
+		Slug:        slug,
+		Title:       title,
+		Description: description,
+		Category:    category,
+		MatchCount:  len(pm),
+		CreatedAt:   data.GeneratedAt.Format(time.RFC3339),
+		UpdatedAt:   data.GeneratedAt.Format(time.RFC3339),
+		Matches:     pm,
+	}
+
+	return writeJSON(filepath.Join(dir, filename), playlist)
+}
+
+func writePlaylistWithTags(dir, filename, title, description, category string, matches []MatchData, tags map[string]string, data *IndexData) error {
+	slug := filename[:len(filename)-5]
+	pm := make([]PlaylistMatch, 0, len(matches))
+	for i, m := range matches {
+		pm = append(pm, buildPlaylistMatch(m, i, data, tags[m.ID]))
+	}
+
+	playlist := Playlist{
+		Slug:        slug,
+		Title:       title,
+		Description: description,
+		Category:    category,
+		MatchCount:  len(pm),
+		CreatedAt:   data.GeneratedAt.Format(time.RFC3339),
+		UpdatedAt:   data.GeneratedAt.Format(time.RFC3339),
+		Matches:     pm,
+	}
+
+	return writeJSON(filepath.Join(dir, filename), playlist)
+}
+
+func formatMatchTitle(m MatchData, data *IndexData) string {
+	names := make([]string, 0, len(m.Participants))
+	scores := make([]int, 0, len(m.Participants))
+	for _, p := range m.Participants {
+		name := "Unknown"
+		for _, bot := range data.Bots {
+			if bot.ID == p.BotID {
+				name = bot.Name
+				break
+			}
+		}
+		names = append(names, name)
+		scores = append(scores, p.Score)
+	}
+	if len(names) == 2 {
+		return fmt.Sprintf("%s %d – %d %s", names[0], scores[0], scores[1], names[1])
+	}
+	return fmt.Sprintf("%s (%d players)", m.ID[:min(8, len(m.ID))], len(names))
+}
+
+func buildPlaylistMatch(m MatchData, order int, data *IndexData, curationTag string) PlaylistMatch {
+	participants := make([]MatchParticipantSummary, 0, len(m.Participants))
+	scoreParts := make([]string, 0, len(m.Participants))
+	for _, p := range m.Participants {
+		name := "Unknown"
+		for _, bot := range data.Bots {
+			if bot.ID == p.BotID {
+				name = bot.Name
+				break
+			}
+		}
+		participants = append(participants, MatchParticipantSummary{
+			BotID: p.BotID,
+			Name:  name,
+			Score: p.Score,
+			Won:   p.BotID == m.WinnerID,
+		})
+		scoreParts = append(scoreParts, fmt.Sprintf("%d", p.Score))
+	}
+	title := formatMatchTitle(m, data)
+	completedAt := ""
+	if !m.CompletedAt.IsZero() {
+		completedAt = m.CompletedAt.Format(time.RFC3339)
+	}
+	return PlaylistMatch{
+		MatchID:      m.ID,
+		Order:        order,
+		Title:        title,
+		CurationTag:  curationTag,
+		Participants: participants,
+		Score:        strings.Join(scoreParts, "-"),
+		Turns:        m.TurnCount,
+		EndReason:    m.EndCondition,
+		CompletedAt:  completedAt,
+	}
+}
+
+func ratingUpsetMagnitude(m MatchData) int {
+	if m.WinnerID == "" || len(m.Participants) < 2 {
+		return 0
+	}
+	var winnerRating, bestLoserRating float64
+	found := false
+	for _, p := range m.Participants {
+		if p.BotID == m.WinnerID {
+			winnerRating = p.PreMatchRating
+			found = true
+		}
+	}
+	if !found || winnerRating == 0 {
+		return 0
+	}
+	for _, p := range m.Participants {
+		if p.BotID != m.WinnerID && p.PreMatchRating > bestLoserRating {
+			bestLoserRating = p.PreMatchRating
+		}
+	}
+	if bestLoserRating == 0 {
+		return 0
+	}
+	return int(bestLoserRating - winnerRating)
+}
+
+func combinedRating(m MatchData) float64 {
+	total := 0.0
+	for _, p := range m.Participants {
+		total += p.PreMatchRating
+	}
+	return total
+}
+
+func interestScore(m MatchData) float64 {
+	score := 0.0
+	// Close finishes are interesting
+	if len(m.Participants) >= 2 {
 		minDiff := 999
 		for i, p1 := range m.Participants {
 			for _, p2 := range m.Participants[i+1:] {
@@ -360,66 +909,86 @@ func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]
 				}
 			}
 		}
-		return minDiff <= 2
-	})
-	if err := writePlaylist(playlistsDir, "closest-finishes.json", "Closest Finishes", closest, data); err != nil {
-		return err
-	}
-
-	// Biggest upsets: lower-rated bot won
-	// This would need rating data at match time, simplified here
-	upsets := filterMatches(data.Matches, func(m MatchData) bool {
-		// Simplified: check if winner had fewer wins overall
-		if m.WinnerID == "" {
-			return false
+		if minDiff <= 1 {
+			score += 3.0
+		} else if minDiff <= 2 {
+			score += 2.0
 		}
-		return true // Placeholder - would need actual rating delta
-	})
-	if err := writePlaylist(playlistsDir, "biggest-upsets.json", "Biggest Upsets", upsets[:min(20, len(upsets))], data); err != nil {
-		return err
 	}
-
-	// Best comebacks: winner had low win probability at some point
-	// Would need win probability data - placeholder
-	comebacks := filterMatches(data.Matches, func(m MatchData) bool {
-		return false // Placeholder - needs win_prob data
-	})
-	if err := writePlaylist(playlistsDir, "best-comebacks.json", "Best Comebacks", comebacks, data); err != nil {
-		return err
+	// Upsets are interesting
+	upset := ratingUpsetMagnitude(m)
+	if upset >= 200 {
+		score += 4.0
+	} else if upset >= 100 {
+		score += 2.0
 	}
-
-	// Featured: recent high-profile matches
-	featured := data.Matches[:min(20, len(data.Matches))]
-	if err := writePlaylist(playlistsDir, "featured.json", "Featured Matches", featured, data); err != nil {
-		return err
+	// Long matches are interesting
+	if m.TurnCount >= 400 {
+		score += 2.0
+	} else if m.TurnCount >= 300 {
+		score += 1.0
 	}
-
-	return nil
+	// High-rated opponents
+	cr := combinedRating(m)
+	if cr >= 3400 {
+		score += 2.0
+	} else if cr >= 3200 {
+		score += 1.0
+	}
+	return score
 }
 
-type Playlist struct {
-	Slug        string         `json:"slug"`
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	UpdatedAt   string         `json:"updated_at"`
-	Matches     []MatchSummary `json:"matches"`
+func sortByScoreDiff(matches []MatchData) {
+	sortSlice(matches, func(i, j int) bool {
+		return minScoreDiff(matches[i]) < minScoreDiff(matches[j])
+	})
 }
 
-func writePlaylist(dir, filename, title string, matches []MatchData, data *IndexData) error {
-	summaries := make([]MatchSummary, 0, len(matches))
-	for _, m := range matches {
-		summaries = append(summaries, matchToSummary(m, data))
-	}
+func sortByUpsetMagnitude(matches []MatchData) {
+	sortSlice(matches, func(i, j int) bool {
+		return ratingUpsetMagnitude(matches[i]) > ratingUpsetMagnitude(matches[j])
+	})
+}
 
-	playlist := Playlist{
-		Slug:        filename[:len(filename)-5], // remove .json
-		Title:       title,
-		Description: fmt.Sprintf("Auto-curated playlist: %s", title),
-		UpdatedAt:   data.GeneratedAt.Format(time.RFC3339),
-		Matches:     summaries,
-	}
+func sortByTurnCount(matches []MatchData) {
+	sortSlice(matches, func(i, j int) bool {
+		return matches[i].TurnCount > matches[j].TurnCount
+	})
+}
 
-	return writeJSON(filepath.Join(dir, filename), playlist)
+func sortByCombinedRating(matches []MatchData) {
+	sortSlice(matches, func(i, j int) bool {
+		return combinedRating(matches[i]) > combinedRating(matches[j])
+	})
+}
+
+func sortByInterestScore(matches []MatchData) {
+	sortSlice(matches, func(i, j int) bool {
+		return interestScore(matches[i]) > interestScore(matches[j])
+	})
+}
+
+func minScoreDiff(m MatchData) int {
+	minDiff := 999
+	for i, p1 := range m.Participants {
+		for _, p2 := range m.Participants[i+1:] {
+			diff := abs(p1.Score - p2.Score)
+			if diff < minDiff {
+				minDiff = diff
+			}
+		}
+	}
+	return minDiff
+}
+
+func sortSlice(s []MatchData, less func(i, j int) bool) {
+	for i := 0; i < len(s)-1; i++ {
+		for j := i + 1; j < len(s); j++ {
+			if less(j, i) {
+				s[i], s[j] = s[j], s[i]
+			}
+		}
+	}
 }
 
 func filterMatches(matches []MatchData, pred func(MatchData) bool) []MatchData {
@@ -430,6 +999,148 @@ func filterMatches(matches []MatchData, pred func(MatchData) bool) []MatchData {
 		}
 	}
 	return result
+}
+
+// maxScoreDiff returns the maximum score difference between winner and any loser
+func maxScoreDiff(m MatchData) int {
+	if m.WinnerID == "" || len(m.Participants) < 2 {
+		return 0
+	}
+	var winnerScore int
+	for _, p := range m.Participants {
+		if p.BotID == m.WinnerID {
+			winnerScore = p.Score
+			break
+		}
+	}
+	maxDiff := 0
+	for _, p := range m.Participants {
+		if p.BotID != m.WinnerID {
+			diff := winnerScore - p.Score
+			if diff > maxDiff {
+				maxDiff = diff
+			}
+		}
+	}
+	return maxDiff
+}
+
+// isNewBotDebut detects the first match of each bot by finding the earliest
+// completed match for each bot.
+func isNewBotDebut(m MatchData, data *IndexData) bool {
+	if m.WinnerID == "" {
+		return false
+	}
+	for _, p := range m.Participants {
+		earliest := true
+		for _, other := range data.Matches {
+			if other.ID == m.ID || other.CompletedAt.IsZero() {
+				continue
+			}
+			for _, op := range other.Participants {
+				if op.BotID == p.BotID {
+					if other.CompletedAt.Before(m.CompletedAt) {
+						earliest = false
+					}
+				}
+			}
+		}
+		if earliest {
+			return true
+		}
+	}
+	return false
+}
+
+// isCurrentSeasonMatch checks if a match belongs to the current active season.
+func isCurrentSeasonMatch(m MatchData, data *IndexData) bool {
+	for _, s := range data.Seasons {
+		if s.Status != "active" {
+			continue
+		}
+		// Check if match falls within season date range
+		if m.CompletedAt.After(s.StartsAt) || m.CompletedAt.Equal(s.StartsAt) {
+			if s.EndsAt.IsZero() || m.CompletedAt.Before(s.EndsAt) {
+				return m.WinnerID != ""
+			}
+		}
+	}
+	return false
+}
+
+// isComeback detects matches where the winner was behind on score at some point
+// but rallied to win. Uses a heuristic: winner scored more than loser despite
+// having a lower pre-match rating (unlikely comeback) or the match had many turns
+// (late-game rally) with a close final score.
+func isComeback(m MatchData) bool {
+	if m.WinnerID == "" || len(m.Participants) < 2 {
+		return false
+	}
+	// An upset with a close score is a comeback
+	upset := ratingUpsetMagnitude(m)
+	scoreDiff := minScoreDiff(m)
+	return upset >= 80 && scoreDiff <= 3
+}
+
+// turnaroundMagnitude measures how dramatic a comeback was.
+// Higher = more surprising turnaround.
+func turnaroundMagnitude(m MatchData) float64 {
+	upset := float64(ratingUpsetMagnitude(m))
+	closeFactor := 1.0 / float64(max(minScoreDiff(m), 1))
+	turnFactor := float64(m.TurnCount) / 500.0
+	return upset*closeFactor + turnFactor*50
+}
+
+// isEvolutionBreakthrough detects matches where an evolved bot beat a high-rated opponent.
+func isEvolutionBreakthrough(m MatchData, data *IndexData) bool {
+	if m.WinnerID == "" || len(m.Participants) < 2 {
+		return false
+	}
+	winnerEvolved := false
+	for _, bot := range data.Bots {
+		if bot.ID == m.WinnerID && bot.Evolved {
+			winnerEvolved = true
+		}
+	}
+	if !winnerEvolved {
+		return false
+	}
+	// Winner must have beaten someone rated >= 1600
+	for _, p := range m.Participants {
+		if p.BotID != m.WinnerID && p.PreMatchRating >= 1600 && !p.Won {
+			return true
+		}
+	}
+	return false
+}
+
+// isRivalryMatch detects matches between bots that have played each other frequently.
+// Builds a frequency map from all matches and checks if this pair qualifies.
+func isRivalryMatch(m MatchData, data *IndexData) bool {
+	if len(m.Participants) != 2 || m.WinnerID == "" {
+		return false
+	}
+	a, b := m.Participants[0].BotID, m.Participants[1].BotID
+	if a > b {
+		a, b = b, a
+	}
+	pairKey := a + ":" + b
+
+	// Count occurrences of this pair across all matches
+	count := 0
+	for _, other := range data.Matches {
+		if len(other.Participants) != 2 {
+			continue
+		}
+		oa, ob := other.Participants[0].BotID, other.Participants[1].BotID
+		if oa > ob {
+			oa, ob = ob, oa
+		}
+		if oa+":"+ob == pairKey {
+			count++
+		}
+	}
+	return count >= 3
 }
 
 func writeJSON(path string, data interface{}) error {
@@ -443,6 +1154,52 @@ func writeJSON(path string, data interface{}) error {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	return enc.Encode(data)
+}
+
+// persistGeneratedPlaylists reads the generated playlist JSON files from the output
+// directory and writes them to the playlists and playlist_matches DB tables.
+func persistGeneratedPlaylists(ctx context.Context, db *sql.DB, outputDir string) error {
+	playlistsDir := filepath.Join(outputDir, "data", "playlists")
+
+	indexContent, err := os.ReadFile(filepath.Join(playlistsDir, "index.json"))
+	if err != nil {
+		return fmt.Errorf("read playlist index: %w", err)
+	}
+	var index PlaylistIndex
+	if err := json.Unmarshal(indexContent, &index); err != nil {
+		return fmt.Errorf("parse playlist index: %w", err)
+	}
+
+	var persisted []persistedPlaylist
+	for _, summary := range index.Playlists {
+		plContent, err := os.ReadFile(filepath.Join(playlistsDir, summary.Slug+".json"))
+		if err != nil {
+			continue // skip playlists without files
+		}
+		var pl Playlist
+		if err := json.Unmarshal(plContent, &pl); err != nil {
+			continue
+		}
+
+		matches := make([]persistedPlaylistMatch, 0, len(pl.Matches))
+		for _, m := range pl.Matches {
+			matches = append(matches, persistedPlaylistMatch{
+				MatchID:     m.MatchID,
+				SortOrder:   m.Order,
+				CurationTag: m.CurationTag,
+			})
+		}
+
+		persisted = append(persisted, persistedPlaylist{
+			Slug:        pl.Slug,
+			Title:       pl.Title,
+			Description: pl.Description,
+			Category:    pl.Category,
+			Matches:     matches,
+		})
+	}
+
+	return persistPlaylists(ctx, db, persisted)
 }
 
 func round1(v float64) float64 {

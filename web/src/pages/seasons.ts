@@ -1,5 +1,5 @@
 // Seasons Page - Browse seasonal competitions with per-season rankings
-import type { Season, SeasonIndex, SeasonSnapshot } from '../types';
+import type { Season, SeasonIndex, SeasonSnapshot, ChampionshipBracketSeries } from '../types';
 
 const PAGES_BASE = '';
 
@@ -354,6 +354,99 @@ export async function renderSeasonsPage(): Promise<void> {
         color: var(--text-muted);
         margin-top: 4px;
       }
+
+      /* Championship bracket */
+      .championship-bracket {
+        margin-top: 24px;
+        padding: 16px;
+        background-color: var(--bg-secondary);
+        border-radius: 8px;
+      }
+
+      .championship-bracket h3 {
+        margin-bottom: 16px;
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .bracket-round {
+        margin-bottom: 16px;
+      }
+
+      .bracket-round-title {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+
+      .bracket-series-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background-color: var(--bg-tertiary);
+        border-radius: 6px;
+        margin-bottom: 4px;
+        border-left: 3px solid var(--border);
+        transition: background-color 0.15s;
+      }
+
+      .bracket-series-row:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+
+      .bracket-series-row.completed {
+        border-left-color: #3b82f6;
+      }
+
+      .bracket-series-row.active {
+        border-left-color: #22c55e;
+      }
+
+      .bracket-series-row .seed {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        font-weight: 700;
+        min-width: 20px;
+      }
+
+      .bracket-series-row .team {
+        flex: 1;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+
+      .bracket-series-row .team.winner { color: #22c55e; }
+      .bracket-series-row .team.loser { color: var(--text-muted); text-decoration: line-through; }
+
+      .bracket-series-row .series-score {
+        font-family: monospace;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        min-width: 30px;
+        text-align: center;
+      }
+
+      .bracket-series-row .series-status {
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        padding: 1px 6px;
+        border-radius: 3px;
+      }
+
+      .bracket-series-row .series-status.active { background-color: #22c55e; color: white; }
+      .bracket-series-row .series-status.completed { background-color: #3b82f6; color: white; }
+      .bracket-series-row .series-status.pending { background-color: #6b7280; color: white; }
+
+      .bracket-spacer {
+        height: 8px;
+      }
     </style>
   `;
 
@@ -375,7 +468,35 @@ async function loadSeasons(): Promise<void> {
     // Show active season if present
     if (index.active_season && activeSeasonContainer && activeSeasonContent) {
       activeSeasonContainer.style.display = 'block';
-      activeSeasonContent.innerHTML = renderActiveSeason(index.active_season);
+
+      // For active seasons, also load the live leaderboard to show current standings
+      let liveSnapshot: SeasonSnapshot[] | null = index.active_season.final_snapshot;
+      if (!liveSnapshot || liveSnapshot.length === 0) {
+        try {
+          const lbResponse = await fetch(`${PAGES_BASE}/data/leaderboard.json`);
+          if (lbResponse.ok) {
+            const lb = await lbResponse.json();
+            if (lb.entries && lb.entries.length > 0) {
+              // Convert leaderboard entries to snapshot format for the active season
+              liveSnapshot = lb.entries.slice(0, 20).map((entry: any, idx: number) => ({
+                bot_id: entry.bot_id,
+                bot_name: entry.name,
+                rating: entry.rating,
+                rank: idx + 1,
+                wins: entry.wins || 0,
+                losses: entry.losses || 0,
+              }));
+            }
+          }
+        } catch {
+          // Live leaderboard fetch failed — show season without leaderboard
+        }
+      }
+
+      activeSeasonContent.innerHTML = renderActiveSeason({
+        ...index.active_season,
+        final_snapshot: liveSnapshot,
+      });
 
       activeSeasonContent.querySelector('.season-card')?.addEventListener('click', () => {
         showSeasonDetail(index.active_season!.id);
@@ -480,6 +601,62 @@ function renderActiveSeason(season: Season): string {
   `;
 }
 
+function renderChampionshipBracket(bracket: ChampionshipBracketSeries[]): string {
+  if (!bracket || bracket.length === 0) return '';
+
+  // Group by round
+  const rounds = new Map<string, ChampionshipBracketSeries[]>();
+  const roundOrder = ['quarterfinal', 'semifinal', 'final'];
+  for (const s of bracket) {
+    const round = s.round || 'quarterfinal';
+    if (!rounds.has(round)) rounds.set(round, []);
+    rounds.get(round)!.push(s);
+  }
+
+  // Sort each round by bracket_position
+  for (const [, series] of rounds) {
+    series.sort((a, b) => a.bracket_position - b.bracket_position);
+  }
+
+  const roundLabels: Record<string, string> = {
+    quarterfinal: 'Quarterfinals',
+    semifinal: 'Semifinals',
+    final: 'Final',
+  };
+
+  const html = roundOrder
+    .filter(r => rounds.has(r))
+    .map(round => {
+      const series = rounds.get(round)!;
+      return `
+        <div class="bracket-round">
+          <div class="bracket-round-title">${roundLabels[round] || round}</div>
+          ${series.map(s => {
+            const isCompleted = s.status === 'completed';
+            const isActive = s.status === 'active';
+            const bot1Won = s.winner_id === s.bot1_id;
+            const bot2Won = s.winner_id === s.bot2_id;
+            return `
+              <div class="bracket-series-row ${isCompleted ? 'completed' : isActive ? 'active' : ''}">
+                <span class="team ${bot1Won ? 'winner' : isCompleted && !bot1Won ? 'loser' : ''}">${escapeHtml(s.bot1_name)}</span>
+                <span class="series-score">${s.bot1_wins}-${s.bot2_wins}</span>
+                <span class="team ${bot2Won ? 'winner' : isCompleted && !bot2Won ? 'loser' : ''}">${escapeHtml(s.bot2_name)}</span>
+                <span class="series-status ${s.status}">${s.status}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }).join('<div class="bracket-spacer"></div>');
+
+  return `
+    <div class="championship-bracket">
+      <h3>Championship Bracket</h3>
+      ${html}
+    </div>
+  `;
+}
+
 async function showSeasonDetail(seasonId: string): Promise<void> {
   const listSection = document.querySelector('.seasons-list-section') as HTMLElement;
   const activeSeason = document.getElementById('active-season');
@@ -495,11 +672,37 @@ async function showSeasonDetail(seasonId: string): Promise<void> {
     const season: Season = await response.json();
 
     // Compute max wins/losses for bar scaling
-    const maxGames = season.final_snapshot?.reduce((max: number, e: SeasonSnapshot) => {
+    const snapshotForScale = season.final_snapshot || [];
+    const maxGames = snapshotForScale.reduce((max: number, e: SeasonSnapshot) => {
       return Math.max(max, e.wins, e.losses);
     }, 1) || 1;
 
-    const leaderboardHtml = season.final_snapshot && season.final_snapshot.length > 0
+    // For active seasons without snapshot, load live leaderboard
+    let leaderboardData = season.final_snapshot;
+    let isLiveData = false;
+    if ((!leaderboardData || leaderboardData.length === 0) && season.status === 'active') {
+      try {
+        const lbResponse = await fetch(`${PAGES_BASE}/data/leaderboard.json`);
+        if (lbResponse.ok) {
+          const lb = await lbResponse.json();
+          if (lb.entries && lb.entries.length > 0) {
+            leaderboardData = lb.entries.slice(0, 30).map((entry: any, idx: number) => ({
+              bot_id: entry.bot_id,
+              bot_name: entry.name,
+              rating: entry.rating,
+              rank: idx + 1,
+              wins: entry.wins || 0,
+              losses: entry.losses || 0,
+            }));
+            isLiveData = true;
+          }
+        }
+      } catch {
+        // Live leaderboard fetch failed
+      }
+    }
+
+    const leaderboardHtml = leaderboardData && leaderboardData.length > 0
       ? `
         <table class="leaderboard-table">
           <thead>
@@ -512,7 +715,7 @@ async function showSeasonDetail(seasonId: string): Promise<void> {
             </tr>
           </thead>
           <tbody>
-            ${season.final_snapshot.map((entry: SeasonSnapshot) => {
+            ${leaderboardData.map((entry: SeasonSnapshot) => {
               const total = entry.wins + entry.losses;
               const winRate = total > 0 ? (entry.wins / total * 100).toFixed(0) : '-';
               const winWidth = maxGames > 0 ? (entry.wins / maxGames * 60) : 0;
@@ -534,6 +737,7 @@ async function showSeasonDetail(seasonId: string): Promise<void> {
             `}).join('')}
           </tbody>
         </table>
+        ${isLiveData ? '<p style="color: var(--text-muted); font-size: 0.7rem; text-align: center; margin-top: 8px;">Live ratings from current season</p>' : ''}
       `
       : '<p style="color: var(--text-muted); text-align: center; padding: 24px;">No leaderboard data available yet.</p>';
 
@@ -565,21 +769,25 @@ async function showSeasonDetail(seasonId: string): Promise<void> {
           <div class="stat-value">${season.total_matches}</div>
           <div class="stat-label">Matches Played</div>
         </div>
-        ${season.final_snapshot ? `
+        ${leaderboardData ? `
           <div class="stat-card">
-            <div class="stat-value">${season.final_snapshot.length}</div>
+            <div class="stat-value">${leaderboardData.length}</div>
             <div class="stat-label">Ranked Bots</div>
           </div>
         ` : ''}
-        ${season.final_snapshot && season.final_snapshot.length > 0 ? `
+        ${leaderboardData && leaderboardData.length > 0 ? `
           <div class="stat-card">
-            <div class="stat-value">${Math.round(season.final_snapshot[0].rating)}</div>
+            <div class="stat-value">${Math.round(leaderboardData[0].rating)}</div>
             <div class="stat-label">Highest Rating</div>
           </div>
         ` : ''}
       </div>
 
-      <h3 style="margin-bottom: 16px;">Season Leaderboard</h3>
+      ${season.championship_bracket && season.championship_bracket.length > 0
+        ? renderChampionshipBracket(season.championship_bracket)
+        : ''}
+
+      <h3 style="margin-bottom: 16px;">${isLiveData ? 'Live Standings' : 'Season Leaderboard'}</h3>
       ${leaderboardHtml}
 
       <div class="season-rules">

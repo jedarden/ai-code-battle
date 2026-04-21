@@ -1,4 +1,4 @@
-import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent, DebugInfo, ViewMode } from './types';
+import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent, DebugInfo, ViewMode, EnrichedCommentary } from './types';
 
 // ── Particle System (pooled, 100 objects, zero GC) ──────────────────────────────
 interface Particle {
@@ -402,6 +402,11 @@ export class ReplayViewer {
   public onTurnChange?: (turn: number) => void;
   public onPlayStateChange?: (playing: boolean) => void;
   public onReplayLoad?: (replay: Replay) => void;
+  public onCommentaryChange?: (entry: { turn: number; text: string; type: string } | null) => void;
+
+  // Enriched commentary state (§13.3)
+  private commentary: EnrichedCommentary | null = null;
+  private commentaryEnabled: boolean = true;
 
   constructor(canvas: HTMLCanvasElement, options: ViewerOptions = {}) {
     this.canvas = canvas;
@@ -575,6 +580,47 @@ export class ReplayViewer {
 
   getShowDebug(): boolean {
     return this.showDebug;
+  }
+
+  // ── Enriched Commentary Controls (§13.3) ──────────────────────────────────────
+
+  setCommentary(commentary: EnrichedCommentary | null): void {
+    this.commentary = commentary;
+    this.fireCommentaryForTurn(this.currentTurn);
+  }
+
+  getCommentary(): EnrichedCommentary | null {
+    return this.commentary;
+  }
+
+  setCommentaryEnabled(enabled: boolean): void {
+    this.commentaryEnabled = enabled;
+    this.fireCommentaryForTurn(this.currentTurn);
+  }
+
+  getCommentaryEnabled(): boolean {
+    return this.commentaryEnabled;
+  }
+
+  // Get the active commentary entry for a given turn
+  getCommentaryForTurn(turn: number): { turn: number; text: string; type: string } | null {
+    if (!this.commentary || !this.commentaryEnabled) return null;
+    // Find the most recent entry at or before this turn
+    let best: { turn: number; text: string; type: string } | null = null;
+    for (const entry of this.commentary.entries) {
+      if (entry.turn <= turn) {
+        best = entry;
+      } else {
+        break;
+      }
+    }
+    return best;
+  }
+
+  private fireCommentaryForTurn(turn: number): void {
+    if (this.onCommentaryChange) {
+      this.onCommentaryChange(this.getCommentaryForTurn(turn));
+    }
   }
 
   destroy(): void {
@@ -807,6 +853,7 @@ export class ReplayViewer {
     }
 
     if (this.onTurnChange) this.onTurnChange(this.currentTurn);
+    this.fireCommentaryForTurn(this.currentTurn);
   }
 
   private fireTurnAnimations(turnData: ReplayTurn): void {

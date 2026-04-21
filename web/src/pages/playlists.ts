@@ -1,11 +1,11 @@
 // Playlists Page - Browse curated replay collections
-import type { Playlist, PlaylistIndex } from '../api-types';
+import { fetchPlaylistIndex, fetchPlaylist, type Playlist, type PlaylistIndex } from '../api-types';
 
-const PAGES_BASE = '';
-
-export async function renderPlaylistsPage(): Promise<void> {
+export async function renderPlaylistsPage(params?: Record<string, string>): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
+
+  const slug = params?.slug;
 
   app.innerHTML = `
     <div class="playlists-page">
@@ -224,11 +224,33 @@ export async function renderPlaylistsPage(): Promise<void> {
       .category-badge.close_games { background-color: #22c55e; color: white; }
       .category-badge.long_games { background-color: #06b6d4; color: white; }
       .category-badge.weekly { background-color: #ec4899; color: white; }
+      .category-badge.rivalry { background-color: #f97316; color: white; }
+      .category-badge.season { background-color: #8b5cf6; color: white; }
+      .category-badge.tutorial { background-color: #64748b; color: white; }
+
+      .curation-tag {
+        display: inline-block;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        font-style: italic;
+        margin-top: 2px;
+      }
     </style>
   `;
 
-  // Load playlists
-  await loadPlaylists();
+  if (slug) {
+    await showPlaylistDetail(slug);
+    document.getElementById('playlists-grid')!.style.display = 'none';
+    (document.getElementById('playlist-detail') as HTMLElement).style.display = 'block';
+    const backBtn = document.getElementById('back-btn');
+    if (backBtn) {
+      backBtn.onclick = () => {
+        window.location.hash = '/watch/playlists';
+      };
+    }
+  } else {
+    await loadPlaylists();
+  }
 }
 
 async function loadPlaylists(): Promise<void> {
@@ -236,9 +258,7 @@ async function loadPlaylists(): Promise<void> {
   if (!grid) return;
 
   try {
-    const response = await fetch(`${PAGES_BASE}/data/playlists/index.json`);
-    if (!response.ok) throw new Error('Failed to load playlists');
-    const index: PlaylistIndex = await response.json();
+    const index: PlaylistIndex = await fetchPlaylistIndex();
 
     if (index.playlists.length === 0) {
       grid.innerHTML = '<div class="empty-message">No playlists available yet</div>';
@@ -256,7 +276,6 @@ async function loadPlaylists(): Promise<void> {
       </div>
     `).join('');
 
-    // Wire up click handlers
     grid.querySelectorAll('.playlist-card').forEach(card => {
       card.addEventListener('click', () => {
         const slug = (card as HTMLElement).dataset.slug;
@@ -280,28 +299,33 @@ async function showPlaylistDetail(slug: string): Promise<void> {
   if (!grid || !detail || !titleEl || !descEl || !matchesEl) return;
 
   try {
-    const response = await fetch(`${PAGES_BASE}/data/playlists/${slug}.json`);
-    if (!response.ok) throw new Error('Playlist not found');
-    const playlist: Playlist = await response.json();
+    const playlist: Playlist = await fetchPlaylist(slug);
 
     titleEl.textContent = playlist.title;
     descEl.textContent = playlist.description;
 
-    matchesEl.innerHTML = playlist.matches.map(m => `
-      <div class="playlist-match" data-match-id="${m.match_id}">
-        <span class="match-order">${m.order + 1}</span>
-        <div class="match-info">
-          <div class="match-title">${m.title || `Match ${m.order + 1}`}</div>
-          <div class="match-meta">ID: ${m.match_id}</div>
+    matchesEl.innerHTML = playlist.matches.map(m => {
+      const metaParts: string[] = [];
+      if (m.turns) metaParts.push(`${m.turns} turns`);
+      if (m.end_reason) metaParts.push(m.end_reason);
+      if (m.completed_at) metaParts.push(formatRelativeTime(m.completed_at));
+      const tag = m.curation_tag ? `<span class="curation-tag">${m.curation_tag}</span>` : '';
+      return `
+        <div class="playlist-match" data-match-id="${m.match_id}">
+          <span class="match-order">${m.order + 1}</span>
+          <div class="match-info">
+            <div class="match-title">${m.title || `Match ${m.order + 1}`}</div>
+            ${tag}
+            <div class="match-meta">${metaParts.join(' · ')}</div>
+          </div>
+          <div class="match-actions">
+            <button class="watch-btn" data-match-id="${m.match_id}">Watch</button>
+            <button class="embed-btn" data-match-id="${m.match_id}">Embed</button>
+          </div>
         </div>
-        <div class="match-actions">
-          <button class="watch-btn" data-match-id="${m.match_id}">Watch</button>
-          <button class="embed-btn" data-match-id="${m.match_id}">Embed</button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
-    // Wire up buttons
     matchesEl.querySelectorAll('.watch-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -318,11 +342,9 @@ async function showPlaylistDetail(slug: string): Promise<void> {
       });
     });
 
-    // Show detail, hide grid
     grid.style.display = 'none';
     detail.style.display = 'block';
 
-    // Back button handler
     backBtn!.onclick = () => {
       detail.style.display = 'none';
       grid.style.display = 'grid';

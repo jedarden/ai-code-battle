@@ -105,36 +105,48 @@ const DIRS: Direction[] = ['N', 'E', 'S', 'W'];
 // Map generation (simplified cellular-automata)
 // ────────────────────────────────────────────────────────────────────────────
 
-export function generateMap(cfg: Config, seed?: number): { walls: Set<string>; cores: Core[]; energyNodes: EnergyNode[] } {
+export function generateMap(cfg: Config, seed?: number, numPlayers = 2): { walls: Set<string>; cores: Core[]; energyNodes: EnergyNode[] } {
   // Simple deterministic map using linear congruential generator
   let s = seed ?? 42;
   const lcg = () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0x100000000; };
 
   const walls = new Set<string>();
-  const numPlayers = 2;
   const rows = cfg.rows;
   const cols = cfg.cols;
 
-  // Generate wall clusters avoiding cores & centres
-  const wallProb = 0.15;
+  // Generate wall clusters with rotational symmetry for all players
+  const wallProb = 0.12;
+  const symmetryDiv = numPlayers;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (lcg() < wallProb) {
-        // Rotation symmetry: place wall + 180° mirror
-        walls.add(posKey({ row: r, col: c }));
-        walls.add(posKey(wrap(rows - r - 1, cols - c - 1, cfg)));
+        for (let i = 0; i < symmetryDiv; i++) {
+          const angle = (2 * Math.PI * i) / symmetryDiv;
+          const cr = rows / 2, cc = cols / 2;
+          const dr = r - cr, dc = c - cc;
+          const nr = Math.round(cr + dr * Math.cos(angle) - dc * Math.sin(angle));
+          const nc = Math.round(cc + dr * Math.sin(angle) + dc * Math.cos(angle));
+          const wp = wrap(nr, nc, cfg);
+          walls.add(posKey(wp));
+        }
       }
     }
   }
 
   // Player cores placed symmetrically
   const cores: Core[] = [];
-  const corePositions: Position[] = [
-    { row: Math.floor(rows * 0.25), col: Math.floor(cols * 0.25) },
-    { row: Math.floor(rows * 0.75), col: Math.floor(cols * 0.75) },
-  ];
+  const corePositions: Position[] = [];
+  const cx = rows / 2, cy = cols / 2;
+  const coreRadius = Math.min(rows, cols) * 0.35;
   for (let i = 0; i < numPlayers; i++) {
-    const p = corePositions[i] ?? wrap(i * Math.floor(rows / numPlayers), Math.floor(cols / 2), cfg);
+    const angle = (2 * Math.PI * i) / numPlayers - Math.PI / 2;
+    corePositions.push({
+      row: Math.round(cx + coreRadius * Math.cos(angle)),
+      col: Math.round(cy + coreRadius * Math.sin(angle)),
+    });
+  }
+  for (let i = 0; i < numPlayers; i++) {
+    const p = wrap(corePositions[i].row, corePositions[i].col, cfg);
     walls.delete(posKey(p)); // ensure core tile is clear
     cores.push({ position: p, owner: i, active: true });
   }
@@ -158,13 +170,12 @@ export function generateMap(cfg: Config, seed?: number): { walls: Set<string>; c
 // Game state initialization
 // ────────────────────────────────────────────────────────────────────────────
 
-export function newGame(cfg: Config, seed?: number): GameState {
-  const { walls, cores, energyNodes } = generateMap(cfg, seed);
+export function newGame(cfg: Config, seed?: number, numPlayers = 2): GameState {
+  const { walls, cores, energyNodes } = generateMap(cfg, seed, numPlayers);
 
-  const players: Player[] = [
-    { id: 0, energy: 0, score: 0, botCount: 1 },
-    { id: 1, energy: 0, score: 0, botCount: 1 },
-  ];
+  const players: Player[] = Array.from({ length: numPlayers }, (_, i) => ({
+    id: i, energy: 0, score: 0, botCount: 1,
+  }));
 
   // Initial bots at each core
   const bots: Bot[] = cores.map((c, i) => ({
@@ -610,8 +621,11 @@ export interface ReplayTurn {
 }
 
 export interface Replay {
+  format_version?: string;
   match_id: string;
   config: Config;
+  start_time: string;
+  end_time: string;
   result: MatchResult;
   players: { id: number; name: string }[];
   map: { rows: number; cols: number; walls: Position[]; cores: { position: Position; owner: number }[]; energy_nodes: Position[] };
@@ -626,8 +640,19 @@ export function runMatch(
 ): { replay: Replay; result: MatchResult } {
   const s1 = typeof strategy1 === 'string' ? BUILTIN_STRATEGIES[strategy1] ?? randomStrategy : strategy1;
   const s2 = typeof strategy2 === 'string' ? BUILTIN_STRATEGIES[strategy2] ?? randomStrategy : strategy2;
+  return runMultiMatch(cfg, [s1, s2], seed);
+}
 
-  const gs = newGame(cfg, seed);
+export function runMultiMatch(
+  cfg: Config,
+  strategies: (BotStrategy | string)[],
+  seed?: number,
+): { replay: Replay; result: MatchResult } {
+  const resolved = strategies.map(s =>
+    typeof s === 'string' ? BUILTIN_STRATEGIES[s] ?? randomStrategy : s
+  );
+  const numPlayers = resolved.length;
+  const gs = newGame(cfg, seed, numPlayers);
 
   const wallPositions: Position[] = [];
   for (const k of gs.walls) {
@@ -635,6 +660,7 @@ export function runMatch(
     wallPositions.push({ row: r, col: c });
   }
 
+  const startTime = new Date().toISOString();
   const turns: ReplayTurn[] = [];
 
   function recordTurn(): ReplayTurn {
@@ -656,7 +682,7 @@ export function runMatch(
     const allMoves = new Map<number, Move[]>();
     for (const p of gs.players) {
       const visible = getVisibleState(gs, p.id);
-      const strategy = p.id === 0 ? s1 : s2;
+      const strategy = resolved[p.id];
       try {
         allMoves.set(p.id, strategy(visible));
       } catch {
@@ -667,12 +693,19 @@ export function runMatch(
     turns.push(recordTurn());
   }
 
+  const endTime = new Date().toISOString();
+  const names = strategies.map((s, i) =>
+    typeof s === 'string' ? s : (i === 0 ? 'Your Bot' : `Opponent ${i}`)
+  );
+
   const replay: Replay = {
+    format_version: '1.0',
     match_id: gs.matchId,
     config: cfg,
+    start_time: startTime,
+    end_time: endTime,
     result,
-    players: [{ id: 0, name: typeof strategy1 === 'string' ? strategy1 : 'custom' },
-              { id: 1, name: typeof strategy2 === 'string' ? strategy2 : 'opponent' }],
+    players: names.map((name, i) => ({ id: i, name })),
     map: {
       rows: cfg.rows,
       cols: cfg.cols,

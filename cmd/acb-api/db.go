@@ -32,21 +32,34 @@ CREATE TABLE IF NOT EXISTS predictor_stats (
 );
 
 CREATE TABLE IF NOT EXISTS series (
-    id         BIGSERIAL PRIMARY KEY,
-    bot_a_id   VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
-    bot_b_id   VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
-    format     INTEGER NOT NULL DEFAULT 5,  -- best of N (3, 5, 7...)
-    a_wins     INTEGER NOT NULL DEFAULT 0,
-    b_wins     INTEGER NOT NULL DEFAULT 0,
-    status     VARCHAR(16) NOT NULL DEFAULT 'active',
-    winner_id  VARCHAR(16),
-    season_id  BIGINT REFERENCES seasons(id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id               BIGSERIAL PRIMARY KEY,
+    bot_a_id         VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
+    bot_b_id         VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
+    format           INTEGER NOT NULL DEFAULT 5,  -- best of N (3, 5, 7...)
+    a_wins           INTEGER NOT NULL DEFAULT 0,
+    b_wins           INTEGER NOT NULL DEFAULT 0,
+    status           VARCHAR(16) NOT NULL DEFAULT 'active',
+    winner_id        VARCHAR(16),
+    season_id        BIGINT REFERENCES seasons(id),
+    bracket_round    VARCHAR(32),    -- 'quarterfinal', 'semifinal', 'final' for championship
+    bracket_position INTEGER,        -- position within the bracket round (0-based)
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_series_bots ON series(bot_a_id, bot_b_id);
 CREATE INDEX IF NOT EXISTS idx_series_status ON series(status);
 CREATE INDEX IF NOT EXISTS idx_series_season ON series(season_id);
+CREATE INDEX IF NOT EXISTS idx_series_bracket ON series(season_id, bracket_round) WHERE bracket_round IS NOT NULL;
+
+-- Add bracket columns if they don't exist (idempotent migration)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'series' AND column_name = 'bracket_round') THEN
+        ALTER TABLE series ADD COLUMN bracket_round VARCHAR(32);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'series' AND column_name = 'bracket_position') THEN
+        ALTER TABLE series ADD COLUMN bracket_position INTEGER;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS series_games (
     id        BIGSERIAL PRIMARY KEY,
@@ -210,6 +223,27 @@ CREATE TABLE IF NOT EXISTS programs (
 );
 CREATE INDEX IF NOT EXISTS idx_programs_island ON programs(island);
 CREATE INDEX IF NOT EXISTS idx_programs_island_fitness ON programs(island, fitness DESC);
+
+-- Curated playlist definitions (§14.4 Replay Playlists)
+CREATE TABLE IF NOT EXISTS playlists (
+    slug        VARCHAR(64) PRIMARY KEY,
+    title       VARCHAR(128) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    category    VARCHAR(32) NOT NULL DEFAULT 'featured',
+    is_auto     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS playlist_matches (
+    playlist_slug VARCHAR(64) NOT NULL REFERENCES playlists(slug) ON DELETE CASCADE,
+    match_id      VARCHAR(32) NOT NULL REFERENCES matches(match_id),
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    curation_tag  TEXT NOT NULL DEFAULT '',
+    added_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (playlist_slug, match_id)
+);
+CREATE INDEX IF NOT EXISTS idx_playlist_matches_playlist ON playlist_matches(playlist_slug, sort_order);
 `
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {

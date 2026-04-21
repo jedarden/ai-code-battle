@@ -1,6 +1,14 @@
 // Series Page - Browse multi-game series between bots with bracket visualization
 import type { Series, SeriesIndex, SeriesGame } from '../types';
-import type { BotProfile } from '../api-types';
+
+function bracketRoundLabel(round?: string): string {
+  switch (round) {
+    case 'quarterfinal': return 'Quarterfinals';
+    case 'semifinal': return 'Semifinals';
+    case 'final': return 'Final';
+    default: return '';
+  }
+}
 
 const PAGES_BASE = '';
 
@@ -35,7 +43,7 @@ export async function renderSeriesPage(): Promise<void> {
       </div>
 
       <div class="series-detail" id="series-detail" style="display: none;">
-        <button class="back-btn" id="back-btn">← Back to Series</button>
+        <button class="back-btn" id="back-btn">&larr; Back to Series</button>
         <div id="series-detail-content"></div>
       </div>
     </div>
@@ -119,6 +127,7 @@ export async function renderSeriesPage(): Promise<void> {
         display: flex;
         align-items: center;
         gap: 16px;
+        flex: 1;
       }
 
       .series-bot {
@@ -255,6 +264,116 @@ export async function renderSeriesPage(): Promise<void> {
       .detail-score .score-b { color: #ef4444; }
       .detail-score .score-dash { color: var(--text-muted); }
 
+      /* Bracket tree visualization */
+      .bracket-tree {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 24px;
+        padding: 16px;
+        background-color: var(--bg-secondary);
+        border-radius: 8px;
+      }
+
+      .bracket-tree-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .bracket-tree-header h3 {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin: 0;
+      }
+
+      .bracket-round-label {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        padding: 4px 0 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .bracket-matchup {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        background-color: var(--bg-tertiary);
+        border-radius: 6px;
+        gap: 8px;
+        border-left: 3px solid var(--border);
+      }
+
+      .bracket-matchup.team-a-win { border-left-color: #3b82f6; }
+      .bracket-matchup.team-b-win { border-left-color: #ef4444; }
+
+      .bracket-seed {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        font-weight: 700;
+        min-width: 20px;
+      }
+
+      .bracket-team {
+        flex: 1;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+
+      .bracket-team.winner { color: var(--accent); }
+      .bracket-team.loser { color: var(--text-muted); text-decoration: line-through; }
+
+      .bracket-score {
+        font-family: monospace;
+        font-size: 0.8rem;
+        font-weight: 700;
+        min-width: 16px;
+        text-align: center;
+      }
+
+      .bracket-score.won { color: #22c55e; }
+      .bracket-score.lost { color: #ef4444; }
+
+      .bracket-vs {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+      }
+
+      .map-type-label {
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        opacity: 0.7;
+        min-width: 60px;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      /* Progress bar for series */
+      .series-progress-bar {
+        height: 6px;
+        background-color: var(--bg-tertiary);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 8px;
+      }
+
+      .series-progress-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.3s;
+      }
+
+      .series-progress-fill.bot-a-fill { background-color: #3b82f6; }
+      .series-progress-fill.bot-b-fill { background-color: #ef4444; }
+
       /* Large bracket for detail view */
       .detail-bracket {
         display: flex;
@@ -383,24 +502,15 @@ async function loadSeries(): Promise<void> {
       return;
     }
 
-    // Populate bot filter
+    // Build bot name map from series data (names are already included in the JSON)
+    const botNames = new Map<string, string>();
     const bots = new Set<string>();
     index.series.forEach((s: Series) => {
       bots.add(s.bot1_id);
       bots.add(s.bot2_id);
+      if (s.bot1_name) botNames.set(s.bot1_id, s.bot1_name);
+      if (s.bot2_name) botNames.set(s.bot2_id, s.bot2_name);
     });
-
-    // Fetch bot names
-    const botNames = new Map<string, string>();
-    for (const botId of bots) {
-      try {
-        const botRes = await fetch(`${PAGES_BASE}/data/bots/${botId}.json`);
-        if (botRes.ok) {
-          const bot: BotProfile = await botRes.json();
-          botNames.set(botId, bot.name);
-        }
-      } catch {}
-    }
 
     // Update filter options
     bots.forEach(botId => {
@@ -411,7 +521,7 @@ async function loadSeries(): Promise<void> {
     });
 
     // Render series cards with bracket visualization
-    renderSeriesList(index.series, list, botNames);
+    renderSeriesList(index.series, list);
 
     // Filter handlers
     const applyFilters = () => {
@@ -422,7 +532,7 @@ async function loadSeries(): Promise<void> {
         if (botVal && s.bot1_id !== botVal && s.bot2_id !== botVal) return false;
         return true;
       });
-      renderSeriesList(filtered, list, botNames);
+      renderSeriesList(filtered, list);
     };
 
     statusFilter.addEventListener('change', applyFilters);
@@ -462,8 +572,15 @@ function renderBracketProgress(bot1Name: string, bot2Name: string, games: Series
   `;
 }
 
-function renderSeriesList(series: Series[], container: HTMLElement, _botNames: Map<string, string>): void {
-  container.innerHTML = series.map(s => `
+function renderSeriesList(series: Series[], container: HTMLElement): void {
+  container.innerHTML = series.map(s => {
+    const winsNeeded = Math.ceil(s.best_of / 2);
+    const totalProgress = s.bot1_wins + s.bot2_wins;
+    const aPct = (s.bot1_wins / winsNeeded) * 100;
+    const bPct = (s.bot2_wins / winsNeeded) * 100;
+    const roundLabel = bracketRoundLabel(s.bracket_round);
+
+    return `
     <div class="series-card" data-series-id="${s.id}">
       <div class="series-header">
         <div class="series-matchup">
@@ -475,15 +592,21 @@ function renderSeriesList(series: Series[], container: HTMLElement, _botNames: M
             <span class="series-bot-name">${s.bot2_name}</span>
           </div>
         </div>
+        ${roundLabel ? `<span class="bracket-round-badge">${roundLabel}</span>` : ''}
       </div>
       ${renderBracketProgress(s.bot1_name, s.bot2_name, s.games || [], s.best_of)}
+      <div class="series-progress-bar">
+        <div class="series-progress-fill bot-a-fill" style="width: ${Math.min(aPct, 100)}%; float: left;"></div>
+        <div class="series-progress-fill bot-b-fill" style="width: ${Math.min(bPct, 100)}%; float: right;"></div>
+      </div>
       <div class="series-meta">
         <span class="status-badge ${s.status}">${s.status}</span>
-        <span>Best of ${s.best_of} &middot; ${s.bot1_wins}-${s.bot2_wins}</span>
+        <span>Best of ${s.best_of} &middot; ${s.bot1_wins}-${s.bot2_wins} ${totalProgress < s.best_of ? `(${s.best_of - totalProgress} games left)` : ''}</span>
         <span>${s.completed_at ? new Date(s.completed_at).toLocaleDateString() : 'In progress'}</span>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   // Wire click handlers
   container.querySelectorAll('.series-card').forEach(card => {
@@ -492,6 +615,86 @@ function renderSeriesList(series: Series[], container: HTMLElement, _botNames: M
       if (seriesId) showSeriesDetail(seriesId);
     });
   });
+}
+
+function renderBracketTree(series: Series): string {
+  const games = series.games || [];
+  const winsNeeded = Math.ceil(series.best_of / 2);
+
+  // Map types per §14.7: game 1 = classic, 2 = corridors, 3 = open, 4+ = untested
+  function mapTypeLabel(gameNum: number): string {
+    switch (gameNum) {
+      case 1: return 'Classic';
+      case 2: return 'Corridors';
+      case 3: return 'Open Field';
+      case 4: return 'New Terrain';
+      default: return 'Random';
+    }
+  }
+
+  // Render each game as a matchup row in the bracket tree
+  const gameRows = games.map((g, idx) => {
+    const isAWin = g.winner_slot === 0;
+    const isBWin = g.winner_slot === 1;
+    const isDecider = series.bot1_wins === winsNeeded - 1 && series.bot2_wins === winsNeeded - 1 && !g.winner_id;
+    const rowClass = isAWin ? 'team-a-win' : isBWin ? 'team-b-win' : '';
+    const mapLabel = mapTypeLabel(idx + 1);
+
+    return `
+      <div class="bracket-matchup ${rowClass}">
+        <span class="bracket-seed">${idx + 1}</span>
+        <span class="bracket-team ${isAWin ? 'winner' : isBWin ? 'loser' : ''}">${series.bot1_name}</span>
+        <span class="bracket-score ${isAWin ? 'won' : isBWin ? 'lost' : ''}">${isAWin ? 'W' : isBWin ? '' : '-'}</span>
+        <span class="bracket-vs">vs</span>
+        <span class="bracket-score ${isBWin ? 'won' : isAWin ? 'lost' : ''}">${isBWin ? 'W' : isAWin ? '' : '-'}</span>
+        <span class="bracket-team ${isBWin ? 'winner' : isAWin ? 'loser' : ''}">${series.bot2_name}</span>
+        <span class="map-type-label">${mapLabel}</span>
+        ${g.match_id ? `<button class="watch-btn" data-match-id="${g.match_id}" style="margin-left: auto; font-size: 0.7rem; padding: 2px 8px;">Watch</button>` : ''}
+        ${isDecider ? '<span style="color: gold; font-size: 0.7rem; font-weight: 600; margin-left: 4px;">DECIDER</span>' : ''}
+      </div>
+    `;
+  });
+
+  // Add remaining games if series is still active
+  const remainingGames = series.best_of - games.length;
+  if (remainingGames > 0 && series.status !== 'completed') {
+    for (let i = games.length; i < series.best_of; i++) {
+      const isDecider = series.bot1_wins === winsNeeded - 1 && series.bot2_wins === winsNeeded - 1;
+      const mapLabel = mapTypeLabel(i + 1);
+      gameRows.push(`
+        <div class="bracket-matchup" style="opacity: 0.5;">
+          <span class="bracket-seed">${i + 1}</span>
+          <span class="bracket-team">${series.bot1_name}</span>
+          <span class="bracket-score">-</span>
+          <span class="bracket-vs">vs</span>
+          <span class="bracket-score">-</span>
+          <span class="bracket-team">${series.bot2_name}</span>
+          <span class="map-type-label">${mapLabel}</span>
+          ${isDecider ? '<span style="color: gold; font-size: 0.7rem; font-weight: 600; margin-left: 4px;">DECIDER</span>' : ''}
+        </div>
+      `);
+    }
+  }
+
+  // Group games into rounds for longer series
+  const rounds: string[][] = [];
+  if (series.best_of <= 5) {
+    rounds.push(gameRows);
+  } else {
+    // For bo7: group games 1-4, 5-7
+    rounds.push(gameRows.slice(0, 4));
+    if (gameRows.length > 4) rounds.push(gameRows.slice(4));
+  }
+
+  return rounds.map((round, ri) => {
+    const roundLabel = rounds.length > 1
+      ? (ri === 0 ? 'Games 1-4' : `Games 5-${series.best_of}`)
+      : `Games 1-${series.best_of}`;
+    return `
+      <div class="bracket-round-label">${roundLabel}</div>
+      ${round.join('')}
+    `;
+  }).join('');
 }
 
 async function showSeriesDetail(seriesId: string): Promise<void> {
@@ -547,6 +750,14 @@ async function showSeriesDetail(seriesId: string): Promise<void> {
       </div>
 
       ${renderBracketProgress(series.bot1_name, series.bot2_name, series.games || [], series.best_of)}
+
+      <div class="bracket-tree">
+        <div class="bracket-tree-header">
+          <h3>Bracket</h3>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Best of ${series.best_of}</span>
+        </div>
+        ${renderBracketTree(series)}
+      </div>
 
       <div class="detail-bracket">
         <h3 style="margin-bottom: 12px; font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Game Results</h3>

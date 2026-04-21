@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -248,18 +249,29 @@ func TestGeneratePlaylists(t *testing.T) {
 				CompletedAt:  now,
 				Participants: []ParticipantData{
 					{BotID: "bot1", Score: 3, Won: true},
-					{BotID: "bot2", Score: 2, Won: false}, // Close finish (diff = 1)
+					{BotID: "bot2", Score: 2, Won: false},
 				},
 			},
 			{
 				ID:           "match2",
 				WinnerID:     "bot2",
-				TurnCount:    150,
+				TurnCount:    350,
 				EndCondition: "dominance",
 				CompletedAt:  now.Add(-time.Hour),
 				Participants: []ParticipantData{
-					{BotID: "bot1", Score: 0, Won: false},
-					{BotID: "bot2", Score: 10, Won: true}, // Not close (diff = 10)
+					{BotID: "bot1", Score: 0, Won: false, PreMatchRating: 1800},
+					{BotID: "bot2", Score: 10, Won: true, PreMatchRating: 1500},
+				},
+			},
+			{
+				ID:           "match3",
+				WinnerID:     "bot1",
+				TurnCount:    400,
+				EndCondition: "turn_limit",
+				CompletedAt:  now.Add(-2 * time.Hour),
+				Participants: []ParticipantData{
+					{BotID: "bot1", Score: 5, Won: true, PreMatchRating: 1700},
+					{BotID: "bot2", Score: 3, Won: false, PreMatchRating: 1600},
 				},
 			},
 		},
@@ -276,20 +288,565 @@ func TestGeneratePlaylists(t *testing.T) {
 		t.Fatalf("generatePlaylists failed: %v", err)
 	}
 
-	// Check closest-finishes playlist
+	// Verify index.json was generated
+	indexContent, err := os.ReadFile(filepath.Join(playlistsDir, "index.json"))
+	if err != nil {
+		t.Fatalf("Failed to read playlists/index.json: %v", err)
+	}
+	var index PlaylistIndex
+	if err := json.Unmarshal(indexContent, &index); err != nil {
+		t.Fatalf("Failed to parse playlists/index.json: %v", err)
+	}
+	if len(index.Playlists) == 0 {
+		t.Error("Expected playlists in index.json, got 0")
+	}
+
+	// Verify each playlist has required fields
+	for _, p := range index.Playlists {
+		if p.Slug == "" {
+			t.Error("Playlist summary missing slug")
+		}
+		if p.Title == "" {
+			t.Error("Playlist summary missing title")
+		}
+		if p.Category == "" {
+			t.Error("Playlist summary missing category")
+		}
+	}
+
+	// Verify closest-finishes playlist content
 	content, err := os.ReadFile(filepath.Join(playlistsDir, "closest-finishes.json"))
 	if err != nil {
 		t.Fatalf("Failed to read closest-finishes.json: %v", err)
 	}
-
 	var playlist Playlist
 	if err := json.Unmarshal(content, &playlist); err != nil {
 		t.Fatalf("Failed to parse closest-finishes.json: %v", err)
 	}
+	if playlist.Category != "close_games" {
+		t.Errorf("closest-finishes category: got %q, want %q", playlist.Category, "close_games")
+	}
+	if len(playlist.Matches) != 2 {
+		t.Errorf("closest-finishes: expected 2 matches, got %d", len(playlist.Matches))
+	}
+	if len(playlist.Matches) > 0 && playlist.Matches[0].MatchID != "match1" {
+		t.Errorf("closest-finishes first (closest): got %q, want %q", playlist.Matches[0].MatchID, "match1")
+	}
 
-	// Should only include match1 (close finish)
-	if len(playlist.Matches) != 1 {
-		t.Errorf("closest-finishes: expected 1 match, got %d", len(playlist.Matches))
+	// Verify marathon-matches playlist
+	marathonContent, err := os.ReadFile(filepath.Join(playlistsDir, "marathon-matches.json"))
+	if err != nil {
+		t.Fatalf("Failed to read marathon-matches.json: %v", err)
+	}
+	var marathon Playlist
+	if err := json.Unmarshal(marathonContent, &marathon); err != nil {
+		t.Fatalf("Failed to parse marathon-matches.json: %v", err)
+	}
+	if marathon.Category != "long_games" {
+		t.Errorf("marathon-matches category: got %q, want %q", marathon.Category, "long_games")
+	}
+	// Should include match2 (350) and match3 (400), sorted by turn count desc
+	if len(marathon.Matches) != 2 {
+		t.Errorf("marathon-matches: expected 2 matches, got %d", len(marathon.Matches))
+	}
+	if len(marathon.Matches) > 0 && marathon.Matches[0].MatchID != "match3" {
+		t.Errorf("marathon-matches first: got %q, want %q", marathon.Matches[0].MatchID, "match3")
+	}
+
+	// Verify biggest-upsets playlist
+	upsetContent, err := os.ReadFile(filepath.Join(playlistsDir, "biggest-upsets.json"))
+	if err != nil {
+		t.Fatalf("Failed to read biggest-upsets.json: %v", err)
+	}
+	var upsets Playlist
+	if err := json.Unmarshal(upsetContent, &upsets); err != nil {
+		t.Fatalf("Failed to parse biggest-upsets.json: %v", err)
+	}
+	// match2 has winner rating 1500 vs loser 1800 → upset of 300
+	if len(upsets.Matches) != 1 {
+		t.Errorf("biggest-upsets: expected 1 match, got %d", len(upsets.Matches))
+	}
+}
+
+func TestInterestScore(t *testing.T) {
+	now := time.Now()
+	// Close finish + upset + long game → high score
+	m := MatchData{
+		WinnerID:   "bot2",
+		TurnCount:  450,
+		CompletedAt: now,
+		Participants: []ParticipantData{
+			{BotID: "bot1", Score: 3, Won: false, PreMatchRating: 1800},
+			{BotID: "bot2", Score: 2, Won: true, PreMatchRating: 1400},
+		},
+	}
+	score := interestScore(m)
+	if score < 5.0 {
+		t.Errorf("interestScore for exciting match: got %f, want >= 5.0", score)
+	}
+
+	// Boring match → low score
+	m2 := MatchData{
+		WinnerID:   "bot1",
+		TurnCount:  100,
+		CompletedAt: now,
+		Participants: []ParticipantData{
+			{BotID: "bot1", Score: 10, Won: true, PreMatchRating: 1500},
+			{BotID: "bot2", Score: 0, Won: false, PreMatchRating: 1500},
+		},
+	}
+	score2 := interestScore(m2)
+	if score2 >= 2.0 {
+		t.Errorf("interestScore for boring match: got %f, want < 2.0", score2)
+	}
+}
+
+func TestFormatMatchTitle(t *testing.T) {
+	data := &IndexData{
+		Bots: []BotData{
+			{ID: "bot1", Name: "SwarmBot"},
+			{ID: "bot2", Name: "HunterBot"},
+		},
+	}
+	m := MatchData{
+		ID: "match1",
+		Participants: []ParticipantData{
+			{BotID: "bot1", Score: 3},
+			{BotID: "bot2", Score: 2},
+		},
+	}
+	title := formatMatchTitle(m, data)
+	if title != "SwarmBot 3 – 2 HunterBot" {
+		t.Errorf("formatMatchTitle: got %q, want %q", title, "SwarmBot 3 – 2 HunterBot")
+	}
+}
+
+func TestIsComeback(t *testing.T) {
+	// Close upset (rating diff >= 80, score diff <= 3) = comeback
+	m := MatchData{
+		WinnerID:  "bot2",
+		TurnCount: 300,
+		Participants: []ParticipantData{
+			{BotID: "bot1", Score: 3, Won: false, PreMatchRating: 1800},
+			{BotID: "bot2", Score: 2, Won: true, PreMatchRating: 1600},
+		},
+	}
+	if !isComeback(m) {
+		t.Error("Expected close upset to be a comeback")
+	}
+
+	// Decisive win, no upset = not a comeback
+	m2 := MatchData{
+		WinnerID:  "bot1",
+		TurnCount: 150,
+		Participants: []ParticipantData{
+			{BotID: "bot1", Score: 8, Won: true, PreMatchRating: 1700},
+			{BotID: "bot2", Score: 1, Won: false, PreMatchRating: 1500},
+		},
+	}
+	if isComeback(m2) {
+		t.Error("Expected decisive non-upset to not be a comeback")
+	}
+
+	// No winner = not a comeback
+	m3 := MatchData{
+		WinnerID: "",
+		Participants: []ParticipantData{
+			{BotID: "bot1", Score: 3},
+			{BotID: "bot2", Score: 2},
+		},
+	}
+	if isComeback(m3) {
+		t.Error("Expected no-winner match to not be a comeback")
+	}
+}
+
+func TestTurnaroundMagnitude(t *testing.T) {
+	// Bigger upset + closer score = bigger turnaround
+	big := MatchData{
+		WinnerID:  "underdog",
+		TurnCount: 400,
+		Participants: []ParticipantData{
+			{BotID: "favored", Score: 2, Won: false, PreMatchRating: 1900},
+			{BotID: "underdog", Score: 3, Won: true, PreMatchRating: 1500},
+		},
+	}
+	small := MatchData{
+		WinnerID:  "slight_underdog",
+		TurnCount: 200,
+		Participants: []ParticipantData{
+			{BotID: "favored", Score: 1, Won: false, PreMatchRating: 1600},
+			{BotID: "slight_underdog", Score: 3, Won: true, PreMatchRating: 1500},
+		},
+	}
+	bigMag := turnaroundMagnitude(big)
+	smallMag := turnaroundMagnitude(small)
+	if bigMag <= smallMag {
+		t.Errorf("Expected bigger turnaround (%f) > smaller (%f)", bigMag, smallMag)
+	}
+}
+
+func TestIsEvolutionBreakthrough(t *testing.T) {
+	data := &IndexData{
+		Bots: []BotData{
+			{ID: "evo1", Name: "EvolvedBot", Evolved: true},
+			{ID: "human1", Name: "HumanBot", Evolved: false},
+		},
+	}
+
+	// Evolved bot beats high-rated opponent
+	m := MatchData{
+		WinnerID: "evo1",
+		Participants: []ParticipantData{
+			{BotID: "evo1", Score: 4, Won: true, PreMatchRating: 1400},
+			{BotID: "human1", Score: 2, Won: false, PreMatchRating: 1650},
+		},
+	}
+	if !isEvolutionBreakthrough(m, data) {
+		t.Error("Expected evolved bot beating rated opponent to be a breakthrough")
+	}
+
+	// Human bot wins = not a breakthrough
+	m2 := MatchData{
+		WinnerID: "human1",
+		Participants: []ParticipantData{
+			{BotID: "evo1", Score: 1, Won: false, PreMatchRating: 1400},
+			{BotID: "human1", Score: 5, Won: true, PreMatchRating: 1650},
+		},
+	}
+	if isEvolutionBreakthrough(m2, data) {
+		t.Error("Expected human bot winning to not be a breakthrough")
+	}
+
+	// Evolved bot beats low-rated opponent = not a breakthrough
+	m3 := MatchData{
+		WinnerID: "evo1",
+		Participants: []ParticipantData{
+			{BotID: "evo1", Score: 5, Won: true, PreMatchRating: 1400},
+			{BotID: "human1", Score: 1, Won: false, PreMatchRating: 1200},
+		},
+	}
+	if isEvolutionBreakthrough(m3, data) {
+		t.Error("Expected evolved bot beating low-rated opponent to not be a breakthrough")
+	}
+}
+
+func TestIsRivalryMatch(t *testing.T) {
+	_ = time.Now() // ensure time import used
+	matches := []MatchData{
+		{ID: "m1", WinnerID: "bot1", Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+		{ID: "m2", WinnerID: "bot2", Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+		{ID: "m3", WinnerID: "bot1", Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+		{ID: "m4", WinnerID: "bot3", Participants: []ParticipantData{{BotID: "bot3"}, {BotID: "bot4"}}},
+	}
+	data := &IndexData{Matches: matches}
+
+	// bot1 vs bot2 has 3 matches = rivalry
+	m := MatchData{
+		WinnerID:     "bot1",
+		Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}},
+	}
+	if !isRivalryMatch(m, data) {
+		t.Error("Expected 3-match pair to be a rivalry")
+	}
+
+	// bot3 vs bot4 has only 1 match = not a rivalry
+	m2 := MatchData{
+		WinnerID:     "bot3",
+		Participants: []ParticipantData{{BotID: "bot3"}, {BotID: "bot4"}},
+	}
+	if isRivalryMatch(m2, data) {
+		t.Error("Expected 1-match pair to not be a rivalry")
+	}
+}
+
+func TestCurateWeeklyHighlights(t *testing.T) {
+	now := time.Now()
+
+	matches := []MatchData{
+		// 1. Upset: underdog wins by large rating margin
+		{
+			ID: "upset1", WinnerID: "bot2", TurnCount: 250, CompletedAt: now.Add(-time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 1, Won: false, PreMatchRating: 1800},
+				{BotID: "bot2", Score: 3, Won: true, PreMatchRating: 1400},
+			},
+		},
+		// 2. Elite clash: very high combined rating
+		{
+			ID: "elite1", WinnerID: "bot1", TurnCount: 150, CompletedAt: now.Add(-2 * time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 4, Won: true, PreMatchRating: 1800},
+				{BotID: "bot2", Score: 2, Won: false, PreMatchRating: 1700},
+			},
+		},
+		// 3. Marathon: very long match
+		{
+			ID: "marathon1", WinnerID: "bot1", TurnCount: 450, CompletedAt: now.Add(-3 * time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 5, Won: true, PreMatchRating: 1200},
+				{BotID: "bot2", Score: 1, Won: false, PreMatchRating: 1200},
+			},
+		},
+		// 4. Close finish: score diff of 1
+		{
+			ID: "close1", WinnerID: "bot1", TurnCount: 200, CompletedAt: now.Add(-4 * time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 3, Won: true, PreMatchRating: 1200},
+				{BotID: "bot2", Score: 2, Won: false, PreMatchRating: 1200},
+			},
+		},
+		// Extra filler matches to fill out the criteria
+		{
+			ID: "filler1", WinnerID: "bot1", TurnCount: 100, CompletedAt: now.Add(-5 * time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 5, Won: true, PreMatchRating: 1500},
+				{BotID: "bot2", Score: 0, Won: false, PreMatchRating: 1500},
+			},
+		},
+		{
+			ID: "filler2", WinnerID: "bot2", TurnCount: 150, CompletedAt: now.Add(-6 * time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 1, Won: false, PreMatchRating: 1500},
+				{BotID: "bot2", Score: 4, Won: true, PreMatchRating: 1500},
+			},
+		},
+		// Old match — outside 7 days
+		{
+			ID: "old1", WinnerID: "bot1", TurnCount: 400, CompletedAt: now.Add(-8 * 24 * time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 3, Won: true, PreMatchRating: 1500},
+				{BotID: "bot2", Score: 2, Won: false, PreMatchRating: 1500},
+			},
+		},
+		// No winner
+		{
+			ID: "nowin", WinnerID: "", TurnCount: 300, CompletedAt: now.Add(-time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 2},
+				{BotID: "bot2", Score: 2},
+			},
+		},
+	}
+
+	cutoff := now.AddDate(0, 0, -7)
+	curated := curateWeeklyHighlights(matches, cutoff)
+
+	if len(curated) == 0 {
+		t.Fatal("Expected curated matches, got 0")
+	}
+	if len(curated) > 20 {
+		t.Errorf("Expected at most 20 curated matches, got %d", len(curated))
+	}
+
+	seenIDs := make(map[string]bool)
+	for _, c := range curated {
+		if c.Match.ID == "" {
+			t.Error("Curated match has empty ID")
+		}
+		if c.Tag == "" {
+			t.Errorf("Curated match %s has empty tag", c.Match.ID)
+		}
+		if seenIDs[c.Match.ID] {
+			t.Errorf("Duplicate match ID in curated results: %s", c.Match.ID)
+		}
+		seenIDs[c.Match.ID] = true
+	}
+
+	if seenIDs["old1"] {
+		t.Error("Old match should not appear in weekly highlights")
+	}
+	if seenIDs["nowin"] {
+		t.Error("No-winner match should not appear in weekly highlights")
+	}
+
+	// Verify at least one tag per criteria type
+	tagTypes := make(map[string]bool)
+	for _, c := range curated {
+		if strings.Contains(c.Tag, "Closest finish") {
+			tagTypes["closest"] = true
+		}
+		if strings.Contains(c.Tag, "Marathon battle") {
+			tagTypes["marathon"] = true
+		}
+		if strings.Contains(c.Tag, "Elite clash") {
+			tagTypes["elite"] = true
+		}
+		if strings.Contains(c.Tag, "Upset victory") {
+			tagTypes["upset"] = true
+		}
+	}
+	if !tagTypes["closest"] {
+		t.Error("Expected at least one 'Closest finish' tag")
+	}
+	if !tagTypes["marathon"] {
+		t.Error("Expected at least one 'Marathon battle' tag")
+	}
+	if !tagTypes["elite"] {
+		t.Error("Expected at least one 'Elite clash' tag")
+	}
+	if !tagTypes["upset"] {
+		t.Error("Expected at least one 'Upset victory' tag")
+	}
+}
+
+func TestBestOfWeekPlaylistHasCurationTags(t *testing.T) {
+	now := time.Now()
+	data := &IndexData{
+		GeneratedAt: now,
+		Bots: []BotData{
+			{ID: "bot1", Name: "Bot1"},
+			{ID: "bot2", Name: "Bot2"},
+		},
+		Matches: []MatchData{
+			{
+				ID: "weekly_close", WinnerID: "bot1", TurnCount: 200, CompletedAt: now.Add(-time.Hour),
+				Participants: []ParticipantData{
+					{BotID: "bot1", Score: 3, Won: true, PreMatchRating: 1500},
+					{BotID: "bot2", Score: 2, Won: false, PreMatchRating: 1500},
+				},
+			},
+			{
+				ID: "weekly_marathon", WinnerID: "bot2", TurnCount: 450, CompletedAt: now.Add(-2 * time.Hour),
+				Participants: []ParticipantData{
+					{BotID: "bot1", Score: 2, Won: false, PreMatchRating: 1700},
+					{BotID: "bot2", Score: 4, Won: true, PreMatchRating: 1600},
+				},
+			},
+		},
+	}
+
+	tmpDir := t.TempDir()
+	playlistsDir := filepath.Join(tmpDir, "data", "playlists")
+	if err := os.MkdirAll(playlistsDir, 0755); err != nil {
+		t.Fatalf("Failed to create playlists dir: %v", err)
+	}
+
+	botNameMap := map[string]string{"bot1": "Bot1", "bot2": "Bot2"}
+	if err := generatePlaylists(data, tmpDir, botNameMap); err != nil {
+		t.Fatalf("generatePlaylists failed: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(playlistsDir, "best-of-week.json"))
+	if err != nil {
+		t.Fatalf("Failed to read best-of-week.json: %v", err)
+	}
+	var playlist Playlist
+	if err := json.Unmarshal(content, &playlist); err != nil {
+		t.Fatalf("Failed to parse best-of-week.json: %v", err)
+	}
+
+	if playlist.Category != "weekly" {
+		t.Errorf("best-of-week category: got %q, want %q", playlist.Category, "weekly")
+	}
+
+	tagCount := 0
+	for _, m := range playlist.Matches {
+		if m.CurationTag != "" {
+			tagCount++
+		}
+	}
+	if tagCount == 0 {
+		t.Error("Expected best-of-week matches to have curation tags, got 0")
+	}
+}
+
+func TestGeneratePlaylistsWithNewTypes(t *testing.T) {
+	now := time.Now()
+	data := &IndexData{
+		GeneratedAt: now,
+		Bots: []BotData{
+			{ID: "human1", Name: "HumanBot", Evolved: false},
+			{ID: "evo1", Name: "EvoBot", Evolved: true},
+		},
+		Matches: []MatchData{
+			// Comeback: close upset
+			{
+				ID: "comeback1", WinnerID: "human1", TurnCount: 400, CompletedAt: now,
+				Participants: []ParticipantData{
+					{BotID: "human1", Score: 3, Won: true, PreMatchRating: 1500},
+					{BotID: "evo1", Score: 2, Won: false, PreMatchRating: 1700},
+				},
+			},
+			// Evolution breakthrough: evolved bot beats rated opponent
+			{
+				ID: "evo1", WinnerID: "evo1", TurnCount: 300, CompletedAt: now,
+				Participants: []ParticipantData{
+					{BotID: "evo1", Score: 4, Won: true, PreMatchRating: 1400},
+					{BotID: "human1", Score: 2, Won: false, PreMatchRating: 1650},
+				},
+			},
+		},
+	}
+
+	tmpDir := t.TempDir()
+	playlistsDir := filepath.Join(tmpDir, "data", "playlists")
+	if err := os.MkdirAll(playlistsDir, 0755); err != nil {
+		t.Fatalf("Failed to create playlists dir: %v", err)
+	}
+
+	botNameMap := map[string]string{"human1": "HumanBot", "evo1": "EvoBot"}
+	if err := generatePlaylists(data, tmpDir, botNameMap); err != nil {
+		t.Fatalf("generatePlaylists failed: %v", err)
+	}
+
+	// Verify best-comebacks.json
+	cb, err := os.ReadFile(filepath.Join(playlistsDir, "best-comebacks.json"))
+	if err != nil {
+		t.Fatalf("Failed to read best-comebacks.json: %v", err)
+	}
+	var cbPlaylist Playlist
+	if err := json.Unmarshal(cb, &cbPlaylist); err != nil {
+		t.Fatalf("Failed to parse best-comebacks.json: %v", err)
+	}
+	if cbPlaylist.Category != "comebacks" {
+		t.Errorf("comebacks category: got %q", cbPlaylist.Category)
+	}
+
+	// Verify evolution-breakthroughs.json
+	eb, err := os.ReadFile(filepath.Join(playlistsDir, "evolution-breakthroughs.json"))
+	if err != nil {
+		t.Fatalf("Failed to read evolution-breakthroughs.json: %v", err)
+	}
+	var ebPlaylist Playlist
+	if err := json.Unmarshal(eb, &ebPlaylist); err != nil {
+		t.Fatalf("Failed to parse evolution-breakthroughs.json: %v", err)
+	}
+	if len(ebPlaylist.Matches) < 1 {
+		t.Errorf("Expected at least 1 evolution breakthrough, got %d", len(ebPlaylist.Matches))
+	}
+
+	// Verify index.json includes new playlist types
+	idx, err := os.ReadFile(filepath.Join(playlistsDir, "index.json"))
+	if err != nil {
+		t.Fatalf("Failed to read index.json: %v", err)
+	}
+	var index PlaylistIndex
+	if err := json.Unmarshal(idx, &index); err != nil {
+		t.Fatalf("Failed to parse index.json: %v", err)
+	}
+	slugs := make(map[string]bool)
+	for _, p := range index.Playlists {
+		slugs[p.Slug] = true
+	}
+	for _, required := range []string{"best-comebacks", "evolution-breakthroughs", "rivalry-classics"} {
+		if !slugs[required] {
+			t.Errorf("Missing playlist %q in index", required)
+		}
+	}
+}
+
+func TestSortSlice(t *testing.T) {
+	matches := []MatchData{
+		{ID: "m1", TurnCount: 100},
+		{ID: "m2", TurnCount: 300},
+		{ID: "m3", TurnCount: 200},
+	}
+	sortSlice(matches, func(i, j int) bool {
+		return matches[i].TurnCount > matches[j].TurnCount
+	})
+	if matches[0].ID != "m2" || matches[1].ID != "m3" || matches[2].ID != "m1" {
+		t.Errorf("sortSlice: unexpected order: %v", matches)
 	}
 }
 

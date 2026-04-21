@@ -43,8 +43,23 @@ func (m *Matchmaker) tickSeriesScheduler(ctx context.Context) {
 
 // updateSeriesGameResults finds completed series matches that haven't had their
 // winner recorded yet. It updates series_games.winner_id and increments
-// a_wins or b_wins on the series table.
+// a_wins or b_wins on the series table. Drawn games (m.winner IS NULL) are
+// marked so the series can continue to the next game.
 func (m *Matchmaker) updateSeriesGameResults(ctx context.Context) error {
+	// First, handle draws: completed matches with no winner
+	_, err := m.db.ExecContext(ctx, `
+		UPDATE series_games SET winner_id = 'draw'
+		FROM matches m
+		WHERE series_games.match_id = m.match_id
+		  AND series_games.winner_id IS NULL
+		  AND m.status = 'completed'
+		  AND m.winner IS NULL
+	`)
+	if err != nil {
+		log.Printf("series-scheduler: failed to process drawn games: %v", err)
+	}
+
+	// Then, process games with a winner
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT sg.series_id, sg.game_num, sg.match_id, m.winner
 		FROM series_games sg
@@ -171,6 +186,52 @@ func (m *Matchmaker) finalizeCompletedSeries(ctx context.Context) error {
 			continue
 		}
 		log.Printf("series-scheduler: finalized series %d, winner=%s (%d-%d)", s.ID, winnerID, s.AWins, s.BWins)
+	}
+
+	// Also finalize series where all games are played but neither side reached
+	// the threshold (can happen with draws). Winner is whoever has more wins,
+	// or NULL if equal.
+	allPlayed, err := m.db.QueryContext(ctx, `
+		SELECT s.id, s.bot_a_id, s.bot_b_id, s.a_wins, s.b_wins, s.format
+		FROM series s
+		WHERE s.status = 'active'
+		  AND NOT EXISTS (
+		    SELECT 1 FROM series_games sg
+		    WHERE sg.series_id = s.id AND sg.winner_id IS NULL
+		  )
+		  AND EXISTS (SELECT 1 FROM series_games sg WHERE sg.series_id = s.id)
+	`)
+	if err != nil {
+		return fmt.Errorf("query all-played series: %w", err)
+	}
+	defer allPlayed.Close()
+
+	for allPlayed.Next() {
+		var apID int64
+		var apBotA, apBotB string
+		var apAWins, apBWins, apFormat int
+		if err := allPlayed.Scan(&apID, &apBotA, &apBotB, &apAWins, &apBWins, &apFormat); err != nil {
+			continue
+		}
+		winsNeeded := (apFormat + 1) / 2
+		if apAWins >= winsNeeded || apBWins >= winsNeeded {
+			continue // already handled above
+		}
+		var winnerID *string
+		if apAWins > apBWins {
+			winnerID = &apBotA
+		} else if apBWins > apAWins {
+			winnerID = &apBotB
+		}
+		_, err := m.db.ExecContext(ctx, `
+			UPDATE series SET status = 'completed', winner_id = $1, updated_at = NOW()
+			WHERE id = $2 AND status = 'active'
+		`, winnerID, apID)
+		if err != nil {
+			log.Printf("series-scheduler: failed to finalize all-played series %d: %v", apID, err)
+			continue
+		}
+		log.Printf("series-scheduler: finalized all-played series %d (%d-%d), winner=%v", apID, apAWins, apBWins, winnerID)
 	}
 
 	return nil

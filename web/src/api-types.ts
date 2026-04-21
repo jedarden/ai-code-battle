@@ -253,10 +253,10 @@ export interface BlogPost {
   slug: string;
   title: string;
   published_at: string;
-  week_start: string;
+  type: 'meta-report' | 'chronicle';
   summary: string;
-  body_html: string;
-  stats: BlogWeekStats;
+  body_markdown: string;
+  tags: string[];
 }
 
 export interface BlogIndex {
@@ -395,6 +395,12 @@ export interface PlaylistMatch {
   order: number;
   title?: string;
   thumbnail_url?: string;
+  curation_tag?: string;
+  participants?: { bot_id: string; name: string; score: number; won: boolean }[];
+  score?: string;
+  turns?: number;
+  end_reason?: string;
+  completed_at?: string;
 }
 
 export interface Playlist {
@@ -561,6 +567,51 @@ export async function fetchSeasonIndex(): Promise<SeasonIndex> {
     if (!response.ok) {
       return { updated_at: '', active_season: null, seasons: [] };
     }
+    return response.json();
+  });
+}
+
+// Commentary / Enrichment types (§13.3)
+
+export interface CommentaryEntry {
+  turn: number;
+  text: string;
+  type: 'setup' | 'action' | 'reaction' | 'climax' | 'denouement';
+}
+
+export interface EnrichedCommentary {
+  match_id: string;
+  generated_at: string;
+  criteria: string[];
+  entries: CommentaryEntry[];
+}
+
+export interface EnrichedMatchEntry {
+  match_id: string;
+  criteria: string[];
+}
+
+export interface EnrichedIndex {
+  updated_at: string;
+  entries: EnrichedMatchEntry[];
+}
+
+const R2_COMMENTARY_BASE = 'https://r2.aicodebattle.com';
+
+export async function fetchCommentary(matchId: string): Promise<EnrichedCommentary | null> {
+  try {
+    const response = await fetch(`${R2_COMMENTARY_BASE}/commentary/${matchId}.json`);
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchEnrichedIndex(): Promise<EnrichedIndex> {
+  return swr('enriched-index', async () => {
+    const response = await fetch('/data/commentary/index.json');
+    if (!response.ok) return { updated_at: '', entries: [] };
     return response.json();
   });
 }

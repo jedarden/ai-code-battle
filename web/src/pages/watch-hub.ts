@@ -79,11 +79,11 @@ async function loadFeaturedPlaylists(): Promise<void> {
       return;
     }
 
-    const featured = data.playlists.slice(0, 4);
+    const featured = data.playlists.slice(0, 6);
     container.innerHTML = featured.map((p: any) => `
-      <a href="#/watch/replays" class="playlist-preview-card">
+      <a href="#/watch/playlists/${p.slug}" class="playlist-preview-card">
         <h3>${escapeHtml(p.title)}</h3>
-        <p>${p.match_count} matches</p>
+        <p>${p.match_count} matches · ${escapeHtml(p.description || '').substring(0, 60)}</p>
       </a>
     `).join('');
   } catch {

@@ -5,6 +5,7 @@
 /acb-api
 /acb-matchmaker
 /acb-evolver
+/acb-index-builder
 
 # Node modules
 node_modules/

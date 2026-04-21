@@ -1,5 +1,6 @@
 // Standalone replay viewer page - lazy loaded from app.ts
 import type { Replay, GameEvent } from '../types';
+import { fetchCommentary } from '../api-types';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -50,6 +51,13 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
               <span id="wp-p1-label" class="wp-legend-p1">-- Player 1</span>
             </div>
           </div>
+        </div>
+
+        <div id="commentary-bar" class="commentary-bar" style="display:none">
+          <div class="commentary-content">
+            <span id="commentary-text" class="commentary-text"></span>
+          </div>
+          <button id="commentary-toggle" class="btn small secondary" title="Toggle AI commentary">💬</button>
         </div>
 
         <div class="replay-sidebar">
@@ -198,6 +206,16 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .win-prob-legend { display: flex; gap: 16px; margin-top: 6px; font-size: 0.75rem; }
       .wp-legend-p0 { color: #3b82f6; }
       .wp-legend-p1 { color: #ef4444; }
+      .commentary-bar { background-color: var(--bg-secondary); border-radius: 8px; padding: 8px 12px; margin-top: 10px; display: flex; align-items: center; gap: 10px; min-height: 40px; }
+      .commentary-content { flex: 1; min-width: 0; }
+      .commentary-text { color: var(--text-secondary); font-size: 0.875rem; line-height: 1.4; display: block; }
+      .commentary-text.type-setup { color: #94a3b8; }
+      .commentary-text.type-action { color: #e2e8f0; }
+      .commentary-text.type-reaction { color: #fbbf24; }
+      .commentary-text.type-climax { color: #f97316; font-weight: 600; }
+      .commentary-text.type-denouement { color: #94a3b8; font-style: italic; }
+      .commentary-toggle { flex-shrink: 0; opacity: 0.6; transition: opacity 0.2s; }
+      .commentary-toggle.active { opacity: 1; background-color: var(--accent); color: white; }
       @media (max-width: 900px) {
         .replay-layout { flex-direction: column; }
         .replay-sidebar { width: 100%; }
@@ -237,9 +255,13 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const criticalMomentInfo = document.getElementById('critical-moment-info') as HTMLSpanElement;
   const wpP0Label = document.getElementById('wp-p0-label') as HTMLSpanElement;
   const wpP1Label = document.getElementById('wp-p1-label') as HTMLSpanElement;
+  const commentaryBar = document.getElementById('commentary-bar') as HTMLDivElement;
+  const commentaryText = document.getElementById('commentary-text') as HTMLSpanElement;
+  const commentaryToggle = document.getElementById('commentary-toggle') as HTMLButtonElement;
 
   let viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
+  let commentaryEnabled = true;
 
   function enableControls(): void {
     playBtn.disabled = false;
@@ -302,6 +324,20 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateUI();
     updateEventLog();
     initWinProb(replay);
+    loadCommentary(replay.match_id);
+  }
+
+  async function loadCommentary(matchId: string): Promise<void> {
+    const commentary = await fetchCommentary(matchId);
+    if (commentary && commentary.entries.length > 0) {
+      viewer.setCommentary(commentary);
+      commentaryBar.style.display = 'flex';
+      commentaryToggle.classList.add('active');
+      commentaryEnabled = true;
+    } else {
+      viewer.setCommentary(null);
+      commentaryBar.style.display = 'none';
+    }
   }
 
   function initWinProb(replay: Replay): void {
@@ -469,6 +505,24 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     if (criticalMoments.length > 0) updateCriticalMomentNav();
   };
   viewer.onPlayStateChange = (playing: boolean) => { playBtn.textContent = playing ? 'Pause' : 'Play'; };
+  viewer.onCommentaryChange = (entry: { turn: number; text: string; type: string } | null) => {
+    if (!entry || !commentaryEnabled) {
+      commentaryText.textContent = '';
+      return;
+    }
+    commentaryText.textContent = entry.text;
+    commentaryText.className = `commentary-text type-${entry.type}`;
+  };
+
+  // Commentary toggle
+  commentaryToggle.addEventListener('click', () => {
+    commentaryEnabled = !commentaryEnabled;
+    viewer.setCommentaryEnabled(commentaryEnabled);
+    commentaryToggle.classList.toggle('active', commentaryEnabled);
+    if (!commentaryEnabled) {
+      commentaryText.textContent = '';
+    }
+  });
 
   document.addEventListener('keydown', (e) => {
     if (!viewer.getReplay()) return;

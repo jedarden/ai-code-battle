@@ -1,6 +1,7 @@
 // Embeddable replay viewer - minimal, auto-playing widget
 import { ReplayViewer } from './replay-viewer';
 import type { Replay } from './types';
+import { fetchCommentary } from './api-types';
 
 // Player colors matching replay-viewer.ts
 const PLAYER_COLORS = [
@@ -46,6 +47,8 @@ class EmbedViewer {
   private endTitle: HTMLElement;
   private endSubtitle: HTMLElement;
   private scoreOverlay: HTMLElement;
+  private commentaryBar: HTMLElement;
+  private commentaryText: HTMLElement;
 
   constructor() {
     this.canvas = document.getElementById('replay-canvas') as HTMLCanvasElement;
@@ -63,6 +66,8 @@ class EmbedViewer {
     this.endTitle = document.getElementById('end-title') as HTMLElement;
     this.endSubtitle = document.getElementById('end-subtitle') as HTMLElement;
     this.scoreOverlay = document.getElementById('score-overlay') as HTMLElement;
+    this.commentaryBar = document.getElementById('commentary-bar') as HTMLElement;
+    this.commentaryText = document.getElementById('commentary-text') as HTMLElement;
 
     // Parse config from URL
     this.config = this.parseConfig();
@@ -138,6 +143,10 @@ class EmbedViewer {
       // Wire viewer callbacks
       this.viewer.onTurnChange = (turn) => this.onTurnChange(turn);
       this.viewer.onPlayStateChange = (playing) => this.onPlayStateChange(playing);
+      this.viewer.onCommentaryChange = (entry) => this.onCommentaryChange(entry);
+
+      // Load AI commentary if available (non-blocking)
+      this.loadCommentary(this.config.matchId);
 
       // Hide loading, enable controls
       this.hideLoading();
@@ -368,6 +377,23 @@ class EmbedViewer {
   private hideEndOverlay(): void {
     this.endOverlay.classList.remove('visible');
     this.endOverlay.onclick = null;
+  }
+
+  private async loadCommentary(matchId: string): Promise<void> {
+    const commentary = await fetchCommentary(matchId);
+    if (commentary && commentary.entries.length > 0) {
+      this.viewer?.setCommentary(commentary);
+      this.commentaryBar.classList.add('visible');
+    }
+  }
+
+  private onCommentaryChange(entry: { turn: number; text: string; type: string } | null): void {
+    if (!entry) {
+      this.commentaryText.textContent = '';
+      return;
+    }
+    this.commentaryText.textContent = entry.text;
+    this.commentaryText.className = `commentary-text type-${entry.type}`;
   }
 }
 

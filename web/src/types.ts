@@ -150,6 +150,20 @@ export interface ReplayTurnWithDebug extends ReplayTurn {
 // View mode types for replay viewer
 export type ViewMode = 'standard' | 'dots' | 'voronoi' | 'influence';
 
+// Enriched commentary types (§13.3)
+export interface CommentaryEntry {
+  turn: number;
+  text: string;
+  type: 'setup' | 'action' | 'reaction' | 'climax' | 'denouement';
+}
+
+export interface EnrichedCommentary {
+  match_id: string;
+  generated_at: string;
+  criteria: string[];
+  entries: CommentaryEntry[];
+}
+
 // Series types
 export interface SeriesGame {
   match_id: string;
@@ -171,6 +185,8 @@ export interface Series {
   bot1_wins: number;
   bot2_wins: number;
   winner_id: string | null;
+  bracket_round?: string;
+  bracket_position?: number;
   scheduled_at: string | null;
   completed_at: string | null;
   games: SeriesGame[];
@@ -199,6 +215,22 @@ export interface SeasonSnapshot {
   losses: number;
 }
 
+export interface ChampionshipBracketSeries {
+  id: string;
+  bot1_id: string;
+  bot2_id: string;
+  bot1_name: string;
+  bot2_name: string;
+  best_of: number;
+  bot1_wins: number;
+  bot2_wins: number;
+  status: string;
+  winner_id: string | null;
+  round: string;
+  bracket_position: number;
+  games: SeriesGame[];
+}
+
 export interface Season {
   id: string;
   name: string;
@@ -211,6 +243,7 @@ export interface Season {
   champion_name: string | null;
   total_matches: number;
   final_snapshot: SeasonSnapshot[] | null;
+  championship_bracket?: ChampionshipBracketSeries[];
 }
 
 export interface SeasonIndex {
