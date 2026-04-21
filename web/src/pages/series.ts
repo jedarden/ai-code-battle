@@ -1,5 +1,5 @@
-// Series Page - Browse multi-game series between bots
-import type { Series, SeriesIndex } from '../types';
+// Series Page - Browse multi-game series between bots with bracket visualization
+import type { Series, SeriesIndex, SeriesGame } from '../types';
 import type { BotProfile } from '../api-types';
 
 const PAGES_BASE = '';
@@ -23,6 +23,11 @@ export async function renderSeriesPage(): Promise<void> {
         <select id="bot-filter">
           <option value="">All Bots</option>
         </select>
+      </div>
+
+      <div class="spoiler-toggle">
+        <input type="checkbox" id="spoiler-toggle">
+        <label for="spoiler-toggle">Hide spoilers (scores/results)</label>
       </div>
 
       <div class="series-list" id="series-list">
@@ -63,6 +68,25 @@ export async function renderSeriesPage(): Promise<void> {
         padding: 8px 12px;
         border-radius: 6px;
         font-size: 14px;
+      }
+
+      .spoiler-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .spoiler-toggle input {
+        width: 16px;
+        height: 16px;
+      }
+
+      .spoiler-hidden .bracket-progress,
+      .spoiler-hidden .bracket-dot,
+      .spoiler-hidden .game-result-text {
+        filter: blur(4px);
+        cursor: pointer;
       }
 
       .series-list {
@@ -109,31 +133,84 @@ export async function renderSeriesPage(): Promise<void> {
         color: var(--text-primary);
       }
 
-      .series-bot-rating {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-      }
-
       .series-vs {
         font-size: 0.875rem;
         color: var(--text-muted);
         font-weight: 600;
       }
 
-      .series-score {
+      /* Bracket progress bar: horizontal track with dots */
+      .bracket-container {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+
+      .bracket-labels {
         display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 1.25rem;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+
+      .bracket-label {
+        font-size: 0.75rem;
         font-weight: 600;
       }
 
-      .score-winner {
-        color: #22c55e;
+      .bracket-label.bot-a { color: #3b82f6; }
+      .bracket-label.bot-b { color: #ef4444; }
+
+      .bracket-track {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        justify-content: center;
       }
 
-      .score-loser {
+      .bracket-dot {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        border: 2px solid var(--border);
+        background-color: var(--bg-tertiary);
         color: var(--text-muted);
+        transition: all 0.2s;
+      }
+
+      .bracket-dot.win-a {
+        background-color: #3b82f6;
+        border-color: #3b82f6;
+        color: white;
+      }
+
+      .bracket-dot.win-b {
+        background-color: #ef4444;
+        border-color: #ef4444;
+        color: white;
+      }
+
+      .bracket-dot.draw {
+        background-color: #6b7280;
+        border-color: #6b7280;
+        color: white;
+      }
+
+      .bracket-dot.pending {
+        background-color: var(--bg-tertiary);
+        border-color: var(--border);
+        color: var(--text-muted);
+        border-style: dashed;
+      }
+
+      .bracket-connector {
+        width: 12px;
+        height: 2px;
+        background-color: var(--border);
       }
 
       .series-meta {
@@ -141,6 +218,7 @@ export async function renderSeriesPage(): Promise<void> {
         justify-content: space-between;
         color: var(--text-muted);
         font-size: 0.75rem;
+        margin-top: 8px;
       }
 
       .status-badge {
@@ -155,37 +233,86 @@ export async function renderSeriesPage(): Promise<void> {
       .status-badge.completed { background-color: #3b82f6; color: white; }
       .status-badge.pending { background-color: #6b7280; color: white; }
 
-      .series-games {
+      /* Detail view styles */
+      .detail-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+
+      .detail-score {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 24px;
+        justify-content: center;
+      }
+
+      .detail-score .score-a { color: #3b82f6; }
+      .detail-score .score-b { color: #ef4444; }
+      .detail-score .score-dash { color: var(--text-muted); }
+
+      /* Large bracket for detail view */
+      .detail-bracket {
         display: flex;
         flex-direction: column;
         gap: 8px;
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px solid var(--border);
+        margin-bottom: 24px;
+        padding: 16px;
+        background-color: var(--bg-secondary);
+        border-radius: 8px;
       }
 
       .game-row {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 8px 12px;
+        padding: 10px 12px;
         background-color: var(--bg-tertiary);
         border-radius: 6px;
+        border-left: 3px solid transparent;
+        transition: background-color 0.15s;
       }
+
+      .game-row:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+
+      .game-row.win-a { border-left-color: #3b82f6; }
+      .game-row.win-b { border-left-color: #ef4444; }
+      .game-row.draw { border-left-color: #6b7280; }
+      .game-row.pending { border-left-color: var(--border); }
 
       .game-number {
         font-weight: 600;
         color: var(--text-muted);
-        min-width: 30px;
+        min-width: 60px;
+        font-size: 0.8rem;
       }
 
-      .game-result {
+      .game-result-text {
         flex: 1;
         color: var(--text-primary);
+        font-size: 0.875rem;
       }
 
-      .game-result.winner-1 { color: #3b82f6; }
-      .game-result.winner-2 { color: #ef4444; }
+      .game-result-text.winner-a { color: #3b82f6; }
+      .game-result-text.winner-b { color: #ef4444; }
+
+      .game-badge {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+      }
+
+      .game-badge.win-a { background-color: #3b82f6; }
+      .game-badge.win-b { background-color: #ef4444; }
+      .game-badge.draw { background-color: #6b7280; }
 
       .watch-btn {
         background-color: var(--accent);
@@ -199,24 +326,6 @@ export async function renderSeriesPage(): Promise<void> {
 
       .watch-btn:hover {
         opacity: 0.9;
-      }
-
-      .spoiler-toggle {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 16px;
-      }
-
-      .spoiler-toggle input {
-        width: 16px;
-        height: 16px;
-      }
-
-      .spoiler-hidden .series-score,
-      .spoiler-hidden .game-result {
-        filter: blur(4px);
-        cursor: pointer;
       }
 
       .loading {
@@ -251,15 +360,6 @@ export async function renderSeriesPage(): Promise<void> {
   await loadSeries();
 
   // Setup spoiler toggle
-  const spoilerToggle = document.createElement('div');
-  spoilerToggle.className = 'spoiler-toggle';
-  spoilerToggle.innerHTML = `
-    <input type="checkbox" id="spoiler-toggle">
-    <label for="spoiler-toggle">Hide spoilers (scores/results)</label>
-  `;
-  const seriesList = document.getElementById('series-list');
-  seriesList?.parentElement?.insertBefore(spoilerToggle, seriesList);
-
   document.getElementById('spoiler-toggle')?.addEventListener('change', (e) => {
     const checked = (e.target as HTMLInputElement).checked;
     document.querySelector('.series-list')?.classList.toggle('spoiler-hidden', checked);
@@ -310,7 +410,7 @@ async function loadSeries(): Promise<void> {
       botFilter.appendChild(option);
     });
 
-    // Render series cards
+    // Render series cards with bracket visualization
     renderSeriesList(index.series, list, botNames);
 
     // Filter handlers
@@ -334,6 +434,34 @@ async function loadSeries(): Promise<void> {
   }
 }
 
+function renderBracketProgress(bot1Name: string, bot2Name: string, games: SeriesGame[], format: number): string {
+  const dots: string[] = [];
+  for (let i = 0; i < format; i++) {
+    const game = games[i];
+    if (!game || !game.winner_id) {
+      dots.push(`<div class="bracket-dot pending">${i + 1}</div>`);
+    } else if (game.winner_slot === 0) {
+      dots.push(`<div class="bracket-dot win-a">${i + 1}</div>`);
+    } else if (game.winner_slot === 1) {
+      dots.push(`<div class="bracket-dot win-b">${i + 1}</div>`);
+    } else {
+      dots.push(`<div class="bracket-dot draw">${i + 1}</div>`);
+    }
+  }
+
+  return `
+    <div class="bracket-container">
+      <div class="bracket-labels">
+        <span class="bracket-label bot-a">${bot1Name}</span>
+        <span class="bracket-label bot-b">${bot2Name}</span>
+      </div>
+      <div class="bracket-track">
+        ${dots.join('<div class="bracket-connector"></div>')}
+      </div>
+    </div>
+  `;
+}
+
 function renderSeriesList(series: Series[], container: HTMLElement, _botNames: Map<string, string>): void {
   container.innerHTML = series.map(s => `
     <div class="series-card" data-series-id="${s.id}">
@@ -347,15 +475,11 @@ function renderSeriesList(series: Series[], container: HTMLElement, _botNames: M
             <span class="series-bot-name">${s.bot2_name}</span>
           </div>
         </div>
-        <div class="series-score">
-          <span class="${s.bot1_wins > s.bot2_wins ? 'score-winner' : 'score-loser'}">${s.bot1_wins}</span>
-          <span>-</span>
-          <span class="${s.bot2_wins > s.bot1_wins ? 'score-winner' : 'score-loser'}">${s.bot2_wins}</span>
-        </div>
       </div>
+      ${renderBracketProgress(s.bot1_name, s.bot2_name, s.games || [], s.best_of)}
       <div class="series-meta">
         <span class="status-badge ${s.status}">${s.status}</span>
-        <span>Best of ${s.best_of}</span>
+        <span>Best of ${s.best_of} &middot; ${s.bot1_wins}-${s.bot2_wins}</span>
         <span>${s.completed_at ? new Date(s.completed_at).toLocaleDateString() : 'In progress'}</span>
       </div>
     </div>
@@ -375,6 +499,8 @@ async function showSeriesDetail(seriesId: string): Promise<void> {
   const detail = document.getElementById('series-detail');
   const detailContent = document.getElementById('series-detail-content');
   const backBtn = document.getElementById('back-btn');
+  const spoilerToggle = document.getElementById('spoiler-toggle') as HTMLInputElement;
+  const spoilerActive = spoilerToggle?.checked;
 
   if (!list || !detail || !detailContent) return;
 
@@ -383,34 +509,48 @@ async function showSeriesDetail(seriesId: string): Promise<void> {
     if (!response.ok) throw new Error('Series not found');
     const series: Series = await response.json();
 
+    const gamesHtml = (series.games || []).map(g => {
+      const winnerClass = g.winner_slot === 0 ? 'win-a' : g.winner_slot === 1 ? 'win-b' : 'draw';
+      const resultClass = g.winner_slot === 0 ? 'winner-a' : g.winner_slot === 1 ? 'winner-b' : '';
+      const winnerName = g.winner_slot === 0 ? series.bot1_name : g.winner_slot === 1 ? series.bot2_name : 'Draw';
+      const badgeClass = g.winner_slot === 0 ? 'win-a' : g.winner_slot === 1 ? 'win-b' : 'draw';
+
+      const resultText = spoilerActive
+        ? '***'
+        : (g.completed_at
+          ? (g.winner_id ? `Winner: ${winnerName}` : 'Draw')
+          : 'Not yet played');
+
+      return `
+        <div class="game-row ${winnerClass}">
+          <span class="game-number">Game ${g.game_number}</span>
+          <span class="game-badge ${badgeClass}"></span>
+          <span class="game-result-text ${resultClass}">
+            ${resultText}
+            ${g.turns ? ` (${g.turns} turns)` : ''}
+          </span>
+          ${g.match_id ? `<button class="watch-btn" data-match-id="${g.match_id}">Watch</button>` : ''}
+        </div>
+      `;
+    }).join('');
+
     detailContent.innerHTML = `
-      <div class="series-header" style="margin-bottom: 24px;">
+      <div class="detail-header">
         <h2>${series.bot1_name} vs ${series.bot2_name}</h2>
         <span class="status-badge ${series.status}">${series.status}</span>
       </div>
 
-      <div class="series-score" style="justify-content: center; margin-bottom: 24px; font-size: 2rem;">
-        <span class="${series.bot1_wins > series.bot2_wins ? 'score-winner' : 'score-loser'}">${series.bot1_wins}</span>
-        <span>-</span>
-        <span class="${series.bot2_wins > series.bot1_wins ? 'score-winner' : 'score-loser'}">${series.bot2_wins}</span>
+      <div class="detail-score">
+        <span class="score-a">${series.bot1_wins}</span>
+        <span class="score-dash">-</span>
+        <span class="score-b">${series.bot2_wins}</span>
       </div>
 
-      <h3>Games</h3>
-      <div class="series-games">
-        ${series.games.map(g => {
-          const winnerClass = g.winner_slot === 0 ? 'winner-1' : g.winner_slot === 1 ? 'winner-2' : '';
-          const winnerName = g.winner_slot === 0 ? series.bot1_name : g.winner_slot === 1 ? series.bot2_name : 'Draw';
-          return `
-            <div class="game-row">
-              <span class="game-number">Game ${g.game_number}</span>
-              <span class="game-result ${winnerClass}">
-                ${g.completed_at ? (g.winner_id ? `Winner: ${winnerName}` : 'Draw') : 'Not played'}
-                ${g.turns ? `(${g.turns} turns)` : ''}
-              </span>
-              ${g.match_id ? `<button class="watch-btn" data-match-id="${g.match_id}">Watch</button>` : ''}
-            </div>
-          `;
-        }).join('')}
+      ${renderBracketProgress(series.bot1_name, series.bot2_name, series.games || [], series.best_of)}
+
+      <div class="detail-bracket">
+        <h3 style="margin-bottom: 12px; font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Game Results</h3>
+        ${gamesHtml}
       </div>
     `;
 
@@ -425,12 +565,27 @@ async function showSeriesDetail(seriesId: string): Promise<void> {
       });
     });
 
+    // Hide spoilers in detail view if active
+    if (spoilerActive) {
+      detailContent.querySelectorAll('.game-result-text, .bracket-dot').forEach(el => {
+        el.classList.add('spoiler-blur');
+      });
+    }
+
     list.style.display = 'none';
     detail.style.display = 'block';
+
+    // Also hide the filters and spoiler toggle
+    const filters = document.querySelector('.series-filters') as HTMLElement;
+    const spoilerDiv = document.querySelector('.spoiler-toggle') as HTMLElement;
+    if (filters) filters.style.display = 'none';
+    if (spoilerDiv) spoilerDiv.style.display = 'none';
 
     backBtn!.onclick = () => {
       detail.style.display = 'none';
       list.style.display = 'flex';
+      if (filters) filters.style.display = 'flex';
+      if (spoilerDiv) spoilerDiv.style.display = 'flex';
     };
 
   } catch (err) {

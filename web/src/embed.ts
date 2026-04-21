@@ -22,6 +22,7 @@ interface EmbedConfig {
   autoPlay: boolean;
   speed: number;
   loop: boolean;
+  viewMode: 'standard' | 'dots' | 'voronoi' | 'influence';
 }
 
 class EmbedViewer {
@@ -77,11 +78,19 @@ class EmbedViewer {
     const matchIdMatch = path.match(/\/embed\/([^/]+)/);
     const matchId = matchIdMatch ? matchIdMatch[1] : params.get('match_id') || '';
 
+    // Parse view mode - default to 'influence' (territory view) for homepage embeds
+    const viewModeParam = params.get('view');
+    const viewMode: 'standard' | 'dots' | 'voronoi' | 'influence' =
+      viewModeParam === 'standard' || viewModeParam === 'dots' || viewModeParam === 'voronoi' || viewModeParam === 'influence'
+        ? viewModeParam
+        : 'influence'; // Default to territory view for homepage
+
     return {
       matchId,
       autoPlay: params.get('autoplay') !== 'false',
       speed: parseInt(params.get('speed') || '100', 10),
       loop: params.get('loop') === 'true',
+      viewMode,
     };
   }
 
@@ -121,6 +130,7 @@ class EmbedViewer {
       this.viewer = new ReplayViewer(this.canvas, {
         cellSize: 10,
         animationSpeed: this.config.speed,
+        viewMode: this.config.viewMode,
       });
 
       this.viewer.loadReplay(replay);

@@ -1,17 +1,28 @@
-// Predictions Page - Prediction leaderboard and stats
-import type { BotProfile, PredictorStats } from '../api-types';
-import { fetchPredictionsLeaderboard } from '../api-types';
+// Predictions Page - Prediction leaderboard, open matches, and submission
+import type { BotProfile, PredictorStats, OpenMatch } from '../api-types';
+import {
+  fetchPredictionsLeaderboard,
+  fetchOpenPredictions,
+  submitPrediction,
+  getOrCreatePredictorId,
+} from '../api-types';
 
 const PAGES_BASE = '';
+const API_BASE = '';
+
+let openMatches: OpenMatch[] = [];
+let predictorId = '';
 
 export async function renderPredictionsPage(): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
 
+  predictorId = getOrCreatePredictorId();
+
   app.innerHTML = `
     <div class="predictions-page">
-      <h1 class="page-title">Prediction Leaderboard</h1>
-      <p class="page-subtitle">Top predictors and their accuracy stats</p>
+      <h1 class="page-title">Predictions</h1>
+      <p class="page-subtitle">Predict match outcomes and climb the leaderboard</p>
 
       <div class="how-it-works">
         <h2>How It Works</h2>
@@ -38,6 +49,13 @@ export async function renderPredictionsPage(): Promise<void> {
               <p>Correct predictions increase your streak and ranking</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="open-section">
+        <h2>Open Matches</h2>
+        <div id="open-matches-container">
+          <div class="loading">Loading open matches...</div>
         </div>
       </div>
 
@@ -71,8 +89,7 @@ export async function renderPredictionsPage(): Promise<void> {
           </div>
         </div>
         <div id="stats-login-prompt">
-          <p>Log in to track your predictions</p>
-          <button class="btn primary" id="login-btn">Connect</button>
+          <p>Make your first prediction above to start tracking stats</p>
         </div>
       </div>
     </div>
@@ -145,6 +162,84 @@ export async function renderPredictionsPage(): Promise<void> {
         font-size: 0.75rem;
         color: var(--text-muted);
         margin: 0;
+      }
+
+      .open-section {
+        margin-bottom: 32px;
+      }
+
+      .open-section h2 {
+        margin-bottom: 16px;
+      }
+
+      .open-match-card {
+        background-color: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .open-match-card .vs {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        flex-shrink: 0;
+      }
+
+      .open-match-card .bot-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .open-match-card .bot-option .bot-info {
+        min-width: 0;
+      }
+
+      .open-match-card .bot-option .bot-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .open-match-card .bot-option .bot-rating {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+      }
+
+      .open-match-card .pick-btn {
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: 1px solid var(--accent);
+        background: transparent;
+        color: var(--accent);
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+
+      .open-match-card .pick-btn:hover {
+        background: var(--accent);
+        color: white;
+      }
+
+      .open-match-card .pick-btn.picked {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+      }
+
+      .open-match-card .pick-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
 
       .leaderboard-section {
@@ -301,14 +396,129 @@ export async function renderPredictionsPage(): Promise<void> {
         font-size: 0.75rem;
         margin-top: 16px;
       }
+
+      .prediction-error {
+        color: #ef4444;
+        font-size: 0.8rem;
+        margin-top: 8px;
+      }
+
+      @media (max-width: 640px) {
+        .rules-grid {
+          grid-template-columns: 1fr;
+        }
+        .open-match-card {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .open-match-card .bot-option {
+          justify-content: space-between;
+        }
+      }
     </style>
   `;
 
-  // Load leaderboard
-  await loadLeaderboard();
+  // Load open matches and leaderboard in parallel
+  await Promise.all([loadOpenMatches(), loadLeaderboard()]);
 }
 
-// fetch bot names for leaderboard display
+async function loadOpenMatches(): Promise<void> {
+  const container = document.getElementById('open-matches-container');
+  if (!container) return;
+
+  try {
+    const data = await fetchOpenPredictions(predictorId);
+    openMatches = data.matches || [];
+
+    if (openMatches.length === 0) {
+      container.innerHTML = '<div class="empty-message">No open matches available for prediction right now. Check back soon!</div>';
+      return;
+    }
+
+    container.innerHTML = openMatches.map(m => {
+      const participants = m.participants || [];
+      if (participants.length < 2) return '';
+
+      const botA = participants[0];
+      const botB = participants[1];
+      const pickedA = m.your_pick === botA.bot_id;
+      const pickedB = m.your_pick === botB.bot_id;
+
+      return `
+        <div class="open-match-card" data-match-id="${m.match_id}">
+          <div class="bot-option">
+            <div class="bot-info">
+              <div class="bot-name">${escapeHtml(botA.name)}</div>
+              <div class="bot-rating">Rating: ${Math.round(botA.rating)}</div>
+            </div>
+            <button class="pick-btn ${pickedA ? 'picked' : ''}"
+                    data-match="${m.match_id}" data-bot="${botA.bot_id}"
+                    ${pickedA ? 'disabled' : ''}>
+              ${pickedA ? 'Picked' : 'Pick'}
+            </button>
+          </div>
+          <span class="vs">vs</span>
+          <div class="bot-option">
+            <div class="bot-info">
+              <div class="bot-name">${escapeHtml(botB.name)}</div>
+              <div class="bot-rating">Rating: ${Math.round(botB.rating)}</div>
+            </div>
+            <button class="pick-btn ${pickedB ? 'picked' : ''}"
+                    data-match="${m.match_id}" data-bot="${botB.bot_id}"
+                    ${pickedB ? 'disabled' : ''}>
+              ${pickedB ? 'Picked' : 'Pick'}
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach click handlers
+    container.querySelectorAll('.pick-btn:not(.picked)').forEach(btn => {
+      btn.addEventListener('click', handlePick);
+    });
+  } catch (err) {
+    console.error('Failed to load open matches:', err);
+    container.innerHTML = '<div class="empty-message">Failed to load open matches</div>';
+  }
+}
+
+async function handlePick(e: Event): Promise<void> {
+  const btn = e.target as HTMLButtonElement;
+  const matchId = btn.getAttribute('data-match')!;
+  const botId = btn.getAttribute('data-bot')!;
+  const card = btn.closest('.open-match-card') as HTMLElement;
+
+  // Disable all buttons in this card
+  card.querySelectorAll('.pick-btn').forEach(b => {
+    (b as HTMLButtonElement).disabled = true;
+  });
+  btn.textContent = 'Submitting...';
+
+  try {
+    await submitPrediction(matchId, botId, predictorId);
+
+    // Mark the picked button
+    btn.textContent = 'Picked';
+    btn.classList.add('picked');
+
+    // Update the other button to show it wasn't picked
+    card.querySelectorAll('.pick-btn:not(.picked)').forEach(b => {
+      (b as HTMLButtonElement).textContent = 'Not picked';
+    });
+  } catch (err) {
+    console.error('Failed to submit prediction:', err);
+    btn.textContent = 'Error';
+    card.querySelectorAll('.pick-btn').forEach(b => {
+      (b as HTMLButtonElement).disabled = false;
+    });
+
+    // Show error message
+    const errDiv = card.querySelector('.prediction-error');
+    if (errDiv) errDiv.textContent = (err as Error).message;
+  }
+}
+
 async function loadLeaderboard(): Promise<void> {
   const container = document.getElementById('leaderboard-container');
   if (!container) return;
@@ -319,6 +529,23 @@ async function loadLeaderboard(): Promise<void> {
     if (data.entries.length === 0) {
       container.innerHTML = '<div class="empty-message">No predictions have been made yet</div>';
       return;
+    }
+
+    // Check if current predictor is in the list
+    const myEntry = data.entries.find((e: PredictorStats) => e.predictor_id === predictorId);
+    if (myEntry) {
+      const statsEl = document.getElementById('your-stats');
+      const promptEl = document.getElementById('stats-login-prompt');
+      if (statsEl && promptEl) {
+        statsEl.style.display = 'block';
+        promptEl.style.display = 'none';
+        const total = myEntry.correct + myEntry.incorrect;
+        const accuracy = total > 0 ? Math.round((myEntry.correct / total) * 100) : 0;
+        document.getElementById('stat-total')!.textContent = String(total);
+        document.getElementById('stat-accuracy')!.textContent = `${accuracy}%`;
+        document.getElementById('stat-streak')!.textContent = String(myEntry.streak);
+        document.getElementById('stat-best-streak')!.textContent = String(myEntry.best_streak);
+      }
     }
 
     // Fetch bot names for predictor IDs
@@ -342,11 +569,12 @@ async function loadLeaderboard(): Promise<void> {
             const accuracy = total > 0 ? Math.round((entry.correct / total) * 100) : 0;
             const streakClass = entry.streak > 0 ? 'positive' : entry.streak < 0 ? 'negative' : 'neutral';
             const botName = botNames.get(entry.predictor_id) || entry.predictor_id;
+            const isYou = entry.predictor_id === predictorId;
 
             return `
               <tr class="rank-${idx + 1}">
                 <td class="rank">#${idx + 1}</td>
-                <td class="predictor-name">${botName}</td>
+                <td class="predictor-name">${botName}${isYou ? ' (you)' : ''}</td>
                 <td>${entry.correct}</td>
                 <td>${entry.incorrect}</td>
                 <td>
@@ -374,7 +602,13 @@ async function loadLeaderboard(): Promise<void> {
   }
 }
 
- async function fetchBotNames(botIds: string[]): Promise<Map<string, string>> {
+function escapeHtml(str: string): string {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function fetchBotNames(botIds: string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const uniqueIds = [...new Set(botIds)];
 

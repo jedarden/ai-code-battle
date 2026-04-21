@@ -1,4 +1,4 @@
-// Seasons Page - Browse seasonal competitions
+// Seasons Page - Browse seasonal competitions with per-season rankings
 import type { Season, SeasonIndex, SeasonSnapshot } from '../types';
 
 const PAGES_BASE = '';
@@ -63,6 +63,8 @@ export async function renderSeasonsPage(): Promise<void> {
         justify-content: space-between;
         align-items: flex-start;
         margin-bottom: 16px;
+        flex-wrap: wrap;
+        gap: 12px;
       }
 
       .season-info h3 {
@@ -103,6 +105,57 @@ export async function renderSeasonsPage(): Promise<void> {
         font-size: 0.75rem;
         color: var(--text-muted);
         margin-top: 4px;
+      }
+
+      /* Active season mini-leaderboard */
+      .mini-leaderboard {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+      }
+
+      .mini-leaderboard h4 {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      .mini-leaderboard-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        font-size: 0.8rem;
+      }
+
+      .mini-leaderboard-row .rank {
+        font-weight: 700;
+        width: 24px;
+        text-align: center;
+        color: var(--text-muted);
+      }
+
+      .mini-leaderboard-row .rank-1 { color: gold; }
+      .mini-leaderboard-row .rank-2 { color: silver; }
+      .mini-leaderboard-row .rank-3 { color: #cd7f32; }
+
+      .mini-leaderboard-row .bot-name {
+        flex: 1;
+        color: var(--text-primary);
+      }
+
+      .mini-leaderboard-row .bot-rating {
+        font-family: monospace;
+        color: var(--text-muted);
+      }
+
+      .mini-leaderboard-row .bot-record {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        min-width: 60px;
+        text-align: right;
       }
 
       .seasons-list {
@@ -188,38 +241,59 @@ export async function renderSeasonsPage(): Promise<void> {
         text-decoration: underline;
       }
 
+      /* Detail view leaderboard */
       .leaderboard-table {
         width: 100%;
         border-collapse: collapse;
+        background-color: var(--bg-secondary);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 24px;
       }
 
       .leaderboard-table th,
       .leaderboard-table td {
-        padding: 12px;
+        padding: 12px 16px;
         text-align: left;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--bg-tertiary);
       }
 
       .leaderboard-table th {
+        background-color: var(--bg-tertiary);
         color: var(--text-muted);
-        font-weight: 500;
+        font-weight: 600;
         font-size: 0.75rem;
         text-transform: uppercase;
+        letter-spacing: 0.05em;
       }
 
-      .leaderboard-table .rank-1 {
-        color: gold;
+      .leaderboard-table .rank {
         font-weight: 700;
+        color: var(--text-muted);
       }
 
-      .leaderboard-table .rank-2 {
-        color: silver;
-        font-weight: 600;
+      .leaderboard-table tr.rank-1 .rank { color: #fbbf24; }
+      .leaderboard-table tr.rank-2 .rank { color: #94a3b8; }
+      .leaderboard-table tr.rank-3 .rank { color: #cd7f32; }
+
+      .leaderboard-table .bot-name-cell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
-      .leaderboard-table .rank-3 {
-        color: #cd7f32;
-        font-weight: 500;
+      .leaderboard-table .win-bar {
+        height: 4px;
+        border-radius: 2px;
+        background-color: #22c55e;
+        min-width: 2px;
+      }
+
+      .leaderboard-table .loss-bar {
+        height: 4px;
+        border-radius: 2px;
+        background-color: #ef4444;
+        min-width: 2px;
       }
 
       .empty-message {
@@ -249,10 +323,40 @@ export async function renderSeasonsPage(): Promise<void> {
       .season-rules li {
         margin-bottom: 4px;
       }
+
+      /* Stats summary row */
+      .stats-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+      }
+
+      .stat-card {
+        flex: 1;
+        min-width: 120px;
+        background-color: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 16px;
+        text-align: center;
+      }
+
+      .stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .stat-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
     </style>
   `;
 
-  // Load seasons data
   await loadSeasons();
 }
 
@@ -273,13 +377,11 @@ async function loadSeasons(): Promise<void> {
       activeSeasonContainer.style.display = 'block';
       activeSeasonContent.innerHTML = renderActiveSeason(index.active_season);
 
-      // Wire click handler
       activeSeasonContent.querySelector('.season-card')?.addEventListener('click', () => {
         showSeasonDetail(index.active_season!.id);
       });
     }
 
-    // Render all seasons
     if (index.seasons.length === 0) {
       list.innerHTML = '<div class="empty-message">No seasons available yet</div>';
       return;
@@ -287,11 +389,11 @@ async function loadSeasons(): Promise<void> {
 
     list.innerHTML = index.seasons.map((s: Season) => `
       <div class="season-card" data-season-id="${s.id}">
-        <h3>${s.name}</h3>
+        <h3>${escapeHtml(s.name)}</h3>
         ${s.champion_name ? `
           <div class="champion">
-            <span class="champion-crown">👑</span>
-            <span class="champion-name">${s.champion_name}</span>
+            <span class="champion-crown">&#x1F451;</span>
+            <span class="champion-name">${escapeHtml(s.champion_name)}</span>
           </div>
         ` : ''}
         <div class="meta">
@@ -301,7 +403,6 @@ async function loadSeasons(): Promise<void> {
       </div>
     `).join('');
 
-    // Wire click handlers
     list.querySelectorAll('.season-card').forEach(card => {
       card.addEventListener('click', () => {
         const seasonId = (card as HTMLElement).dataset.seasonId;
@@ -313,6 +414,12 @@ async function loadSeasons(): Promise<void> {
     console.error('Failed to load seasons:', err);
     list.innerHTML = '<div class="empty-message">Failed to load seasons. Please try again later.</div>';
   }
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function renderActiveSeason(season: Season): string {
@@ -327,12 +434,31 @@ function renderActiveSeason(season: Season): string {
     progressPercent = Math.min(100, Math.max(0, (elapsed / total) * 100));
   }
 
+  // Build mini-leaderboard from snapshot if available
+  let miniLeaderboard = '';
+  if (season.final_snapshot && season.final_snapshot.length > 0) {
+    const top5 = season.final_snapshot.slice(0, 5);
+    miniLeaderboard = `
+      <div class="mini-leaderboard">
+        <h4>Top Bots</h4>
+        ${top5.map((entry: SeasonSnapshot) => `
+          <div class="mini-leaderboard-row">
+            <span class="rank rank-${entry.rank}">#${entry.rank}</span>
+            <span class="bot-name">${escapeHtml(entry.bot_name)}</span>
+            <span class="bot-rating">${Math.round(entry.rating)}</span>
+            <span class="bot-record">${entry.wins}W ${entry.losses}L</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
   return `
     <div class="season-card" data-season-id="${season.id}">
       <div class="season-header">
         <div class="season-info">
-          <h3>${season.name}</h3>
-          <p class="season-theme">${season.theme}</p>
+          <h3>${escapeHtml(season.name)}</h3>
+          <p class="season-theme">${escapeHtml(season.theme)}</p>
         </div>
         <div class="season-dates">
           <span class="status-badge ${season.status}">${season.status}</span>
@@ -349,6 +475,7 @@ function renderActiveSeason(season: Season): string {
           <span>${Math.round(progressPercent)}% complete</span>
         </div>
       </div>
+      ${miniLeaderboard}
     </div>
   `;
 }
@@ -367,11 +494,54 @@ async function showSeasonDetail(seasonId: string): Promise<void> {
     if (!response.ok) throw new Error('Season not found');
     const season: Season = await response.json();
 
+    // Compute max wins/losses for bar scaling
+    const maxGames = season.final_snapshot?.reduce((max: number, e: SeasonSnapshot) => {
+      return Math.max(max, e.wins, e.losses);
+    }, 1) || 1;
+
+    const leaderboardHtml = season.final_snapshot && season.final_snapshot.length > 0
+      ? `
+        <table class="leaderboard-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Bot</th>
+              <th>Rating</th>
+              <th>Record</th>
+              <th>Win Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${season.final_snapshot.map((entry: SeasonSnapshot) => {
+              const total = entry.wins + entry.losses;
+              const winRate = total > 0 ? (entry.wins / total * 100).toFixed(0) : '-';
+              const winWidth = maxGames > 0 ? (entry.wins / maxGames * 60) : 0;
+              const lossWidth = maxGames > 0 ? (entry.losses / maxGames * 60) : 0;
+              return `
+              <tr class="rank-${entry.rank}">
+                <td class="rank">#${entry.rank}</td>
+                <td>${escapeHtml(entry.bot_name)}</td>
+                <td style="font-family: monospace">${Math.round(entry.rating)}</td>
+                <td>${entry.wins}W / ${entry.losses}L</td>
+                <td>
+                  <div style="display: flex; gap: 2px; align-items: center;">
+                    <div class="win-bar" style="width: ${winWidth}px;"></div>
+                    <div class="loss-bar" style="width: ${lossWidth}px;"></div>
+                    <span style="margin-left: 6px; font-size: 0.75rem; color: var(--text-muted)">${winRate}%</span>
+                  </div>
+                </td>
+              </tr>
+            `}).join('')}
+          </tbody>
+        </table>
+      `
+      : '<p style="color: var(--text-muted); text-align: center; padding: 24px;">No leaderboard data available yet.</p>';
+
     detailContent.innerHTML = `
       <div class="season-header" style="margin-bottom: 24px;">
         <div class="season-info">
-          <h2>${season.name}</h2>
-          <p class="season-theme">${season.theme}</p>
+          <h2>${escapeHtml(season.name)}</h2>
+          <p class="season-theme">${escapeHtml(season.theme)}</p>
         </div>
         <div class="season-dates">
           <span class="status-badge ${season.status}">${season.status}</span>
@@ -382,40 +552,38 @@ async function showSeasonDetail(seasonId: string): Promise<void> {
 
       ${season.champion_name ? `
         <div class="champion" style="justify-content: center; padding: 20px; margin-bottom: 24px;">
-          <span class="champion-crown" style="font-size: 2rem;">👑</span>
+          <span class="champion-crown" style="font-size: 2rem;">&#x1F451;</span>
           <div>
             <div style="color: var(--text-muted); font-size: 0.75rem;">CHAMPION</div>
-            <span class="champion-name" style="font-size: 1.25rem;">${season.champion_name}</span>
+            <span class="champion-name" style="font-size: 1.25rem;">${escapeHtml(season.champion_name)}</span>
           </div>
         </div>
       ` : ''}
 
-      ${season.final_snapshot && season.final_snapshot.length > 0 ? `
-        <h3>Final Leaderboard</h3>
-        <table class="leaderboard-table">
-          <thead>
-            <tr>
-              <th>Rank</th>
-              <th>Bot</th>
-              <th>Rating</th>
-              <th>W/L</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${season.final_snapshot.map((entry: SeasonSnapshot) => `
-              <tr>
-                <td class="rank-${entry.rank}">#${entry.rank}</td>
-                <td>${entry.bot_name}</td>
-                <td>${Math.round(entry.rating)}</td>
-                <td>${entry.wins}/${entry.losses}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<p>No leaderboard data available yet.</p>'}
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value">${season.total_matches}</div>
+          <div class="stat-label">Matches Played</div>
+        </div>
+        ${season.final_snapshot ? `
+          <div class="stat-card">
+            <div class="stat-value">${season.final_snapshot.length}</div>
+            <div class="stat-label">Ranked Bots</div>
+          </div>
+        ` : ''}
+        ${season.final_snapshot && season.final_snapshot.length > 0 ? `
+          <div class="stat-card">
+            <div class="stat-value">${Math.round(season.final_snapshot[0].rating)}</div>
+            <div class="stat-label">Highest Rating</div>
+          </div>
+        ` : ''}
+      </div>
+
+      <h3 style="margin-bottom: 16px;">Season Leaderboard</h3>
+      ${leaderboardHtml}
 
       <div class="season-rules">
-        <h4>Rules Version: ${season.rules_version}</h4>
+        <h4>Rules Version: ${escapeHtml(season.rules_version)}</h4>
         <ul>
           <li>Standard 60x60 toroidal grid</li>
           <li>500 turn limit</li>

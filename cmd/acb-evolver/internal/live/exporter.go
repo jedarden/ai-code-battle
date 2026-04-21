@@ -59,15 +59,94 @@ type MetaSnapshot struct {
 	IslandBestFitness map[string]float64 `json:"island_best_fitness"`
 }
 
-// LiveData is the full evolution dashboard payload written to live.json.
+// CycleInfo represents the current evolution cycle status.
+type CycleInfo struct {
+	Generation int        `json:"generation"`
+	StartedAt  string     `json:"started_at"`
+	Phase      string     `json:"phase"` // generating, validating, evaluating, promoting, idle
+	Candidate  *Candidate `json:"candidate,omitempty"`
+}
+
+// Candidate represents the current candidate being evaluated.
+type Candidate struct {
+	ID         string              `json:"id"`         // e.g., "go-847-3"
+	Island     string              `json:"island"`
+	Language   string              `json:"language"`
+	Parents    []ParentInfo        `json:"parents"`
+	Validation *ValidationStatus   `json:"validation,omitempty"`
+	Evaluation *EvaluationStatus   `json:"evaluation,omitempty"`
+}
+
+// ParentInfo holds parent bot information.
+type ParentInfo struct {
+	ID     string `json:"id"`     // e.g., "go-831-1"
+	Rating int    `json:"rating"`
+}
+
+// ValidationStatus holds validation stage results.
+type ValidationStatus struct {
+	Syntax *StageResult `json:"syntax,omitempty"`
+	Schema *StageResult `json:"schema,omitempty"`
+	Smoke  *StageResult `json:"smoke,omitempty"`
+}
+
+// StageResult holds result for a single validation stage.
+type StageResult struct {
+	Passed bool   `json:"passed"`
+	TimeMs int    `json:"time_ms"`
+	Error  string `json:"error,omitempty"`
+}
+
+// EvaluationStatus holds arena evaluation results.
+type EvaluationStatus struct {
+	MatchesTotal int           `json:"matches_total"`
+	MatchesPlayed int          `json:"matches_played"`
+	Results      []MatchResult `json:"results"`
+}
+
+// MatchResult is a single evaluation match result.
+type MatchResult struct {
+	Opponent string `json:"opponent"` // opponent bot name
+	Won      bool   `json:"won"`
+	Score    string `json:"score"`    // e.g., "5-1"
+}
+
+// ActivityEntry is a single event in the recent activity feed.
+type ActivityEntry struct {
+	Time      string `json:"time"`
+	Generation int   `json:"generation"`
+	Candidate string `json:"candidate"`
+	Island    string `json:"island"`
+	Result    string `json:"result"` // promoted, rejected
+	Reason    string `json:"reason"`
+	Stage     string `json:"stage"`  // validation, promotion, deployment
+	BotID     string `json:"bot_id,omitempty"`
+	InitialRating int `json:"initial_rating,omitempty"`
+}
+
+// Totals holds overall evolution statistics.
+type Totals struct {
+	GenerationsTotal      int     `json:"generations_total"`
+	CandidatesToday       int     `json:"candidates_today"`
+	PromotedToday         int     `json:"promoted_today"`
+	PromotionRate7d       float64 `json:"promotion_rate_7d"`
+	HighestEvolvedRating  int     `json:"highest_evolved_rating"`
+	EvolvedInTop10        int     `json:"evolved_in_top_10"`
+}
+
+// LiveData is the full evolution dashboard payload written to live.json (plan §14 format).
 type LiveData struct {
-	UpdatedAt     string                `json:"updated_at"`
-	TotalPrograms int                   `json:"total_programs"`
-	PromotedCount int                   `json:"promoted_count"`
-	Islands       map[string]IslandStat `json:"islands"`
-	GenerationLog []GenerationEntry     `json:"generation_log"`
-	Lineage       []LineageNode         `json:"lineage"`
-	MetaSnapshots []MetaSnapshot        `json:"meta_snapshots"`
+	UpdatedAt      string                 `json:"updated_at"`
+	Cycle          *CycleInfo             `json:"cycle,omitempty"`
+	RecentActivity []ActivityEntry        `json:"recent_activity,omitempty"`
+	Islands        map[string]IslandStat  `json:"islands"`
+	Totals         Totals                 `json:"totals"`
+	// Legacy fields for backward compatibility
+	TotalPrograms int                    `json:"total_programs,omitempty"`
+	PromotedCount int                    `json:"promoted_count,omitempty"`
+	GenerationLog []GenerationEntry      `json:"generation_log,omitempty"`
+	Lineage       []LineageNode          `json:"lineage,omitempty"`
+	MetaSnapshots []MetaSnapshot         `json:"meta_snapshots,omitempty"`
 }
 
 // Export queries the programs database and builds the current evolution state.
@@ -75,11 +154,19 @@ func Export(ctx context.Context, db *sql.DB) (*LiveData, error) {
 	data := &LiveData{
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		Islands:   make(map[string]IslandStat),
+		Totals:    Totals{},
 	}
 
 	if err := fillIslandStats(ctx, db, data); err != nil {
 		return nil, err
 	}
+	if err := fillTotals(ctx, db, data); err != nil {
+		return nil, err
+	}
+	if err := fillRecentActivity(ctx, db, data); err != nil {
+		return nil, err
+	}
+	// Legacy fields for backward compatibility
 	if err := fillGenerationLog(ctx, db, data); err != nil {
 		return nil, err
 	}
@@ -94,50 +181,168 @@ func Export(ctx context.Context, db *sql.DB) (*LiveData, error) {
 }
 
 func fillIslandStats(ctx context.Context, db *sql.DB, data *LiveData) error {
+	// Query island stats with bot ratings
 	rows, err := db.QueryContext(ctx, `
-		SELECT island,
-		       COUNT(*) AS cnt,
-		       COALESCE(AVG(fitness), 0) AS avg_fit,
-		       COALESCE(MAX(fitness), 0) AS max_fit,
-		       COUNT(DISTINCT language) AS lang_diversity,
-		       SUM(CASE WHEN promoted AND bot_id IS NOT NULL THEN 1 ELSE 0 END) AS promoted_cnt
-		FROM programs
-		GROUP BY island`)
+		SELECT p.island,
+		       COUNT(*) AS population,
+		       COALESCE(MAX(b.rating_mu - 2*b.rating_phi), 0) AS best_rating,
+		       COALESCE(b.bot_id, '') AS best_bot_id
+		FROM programs p
+		LEFT JOIN bots b ON p.bot_id = b.bot_id
+		GROUP BY p.island`)
 	if err != nil {
 		return fmt.Errorf("island stats: %w", err)
 	}
 	defer rows.Close()
 
 	total := 0
-	promoted := 0
 	for rows.Next() {
 		var island string
-		var cnt, langDiv, promotedCnt int
-		var avgFit, maxFit float64
-		if err := rows.Scan(&island, &cnt, &avgFit, &maxFit, &langDiv, &promotedCnt); err != nil {
+		var population, bestRating int
+		var bestBotID string
+		if err := rows.Scan(&island, &population, &bestRating, &bestBotID); err != nil {
 			return fmt.Errorf("scan island stats: %w", err)
 		}
-		// Diversity: language diversity normalized to [0,1], up to 6 languages
-		const maxLangs = 6.0
-		diversity := float64(langDiv) / maxLangs
-		if diversity > 1.0 {
-			diversity = 1.0
-		}
+
 		data.Islands[island] = IslandStat{
-			Count:         cnt,
-			BestFitness:   round3(maxFit),
-			AvgFitness:    round3(avgFit),
-			Diversity:     round3(diversity),
-			PromotedCount: promotedCnt,
+			Population: population,
+			BestRating: bestRating,
+			BestBot:    bestBotID,
 		}
-		total += cnt
-		promoted += promotedCnt
+		total += population
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	data.TotalPrograms = total
-	data.PromotedCount = promoted
+	return nil
+}
+
+func fillTotals(ctx context.Context, db *sql.DB, data *LiveData) error {
+	// Get max generation
+	var maxGen int
+	err := db.QueryRowContext(ctx, `SELECT COALESCE(MAX(generation), 0) FROM programs`).Scan(&maxGen)
+	if err != nil {
+		return fmt.Errorf("max generation: %w", err)
+	}
+
+	// Count candidates created today
+	var candidatesToday int
+	today := time.Now().UTC().Format("2006-01-02")
+	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM programs WHERE created_at >= $1::date`, today).Scan(&candidatesToday)
+	if err != nil {
+		return fmt.Errorf("candidates today: %w", err)
+	}
+
+	// Count promoted today
+	var promotedToday int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM programs p
+		JOIN bots b ON p.bot_id = b.bot_id
+		WHERE p.promoted = TRUE AND b.created_at >= $1::date`, today).Scan(&promotedToday)
+	if err != nil {
+		return fmt.Errorf("promoted today: %w", err)
+	}
+
+	// Calculate 7-day promotion rate
+	var promoted7d, total7d int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM programs p
+		JOIN bots b ON p.bot_id = b.bot_id
+		WHERE b.created_at >= NOW() - INTERVAL '7 days'`).Scan(&promoted7d)
+	if err != nil {
+		promoted7d = 0
+	}
+	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM programs WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&total7d)
+	if err != nil {
+		total7d = 0
+	}
+	var rate7d float64
+	if total7d > 0 {
+		rate7d = round3(float64(promoted7d) / float64(total7d))
+	}
+
+	// Highest evolved rating
+	var highestRating int
+	err = db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(b.rating_mu - 2*b.rating_phi), 0)
+		FROM bots b
+		WHERE b.owner = 'acb-evolver'`).Scan(&highestRating)
+	if err != nil {
+		highestRating = 0
+	}
+
+	// Count evolved in top 10
+	var top10Count int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM (
+			SELECT b.bot_id, b.rating_mu - 2*b.rating_phi AS display_rating
+			FROM bots b
+			WHERE b.status = 'active'
+			ORDER BY display_rating DESC
+			LIMIT 10
+		) top10
+		JOIN bots b ON top10.bot_id = b.bot_id
+		WHERE b.owner = 'acb-evolver'`).Scan(&top10Count)
+	if err != nil {
+		top10Count = 0
+	}
+
+	data.Totals = Totals{
+		GenerationsTotal:     maxGen,
+		CandidatesToday:      candidatesToday,
+		PromotedToday:        promotedToday,
+		PromotionRate7d:      rate7d,
+		HighestEvolvedRating: highestRating,
+		EvolvedInTop10:       top10Count,
+	}
+
+	return nil
+}
+
+func fillRecentActivity(ctx context.Context, db *sql.DB, data *LiveData) error {
+	// Get recent promoted bots from bots table (with timestamps)
+	rows, err := db.QueryContext(ctx, `
+		SELECT
+			p.bot_id,
+			p.bot_name,
+			p.island,
+			p.generation,
+			p.language,
+			b.created_at
+		FROM programs p
+		JOIN bots b ON p.bot_id = b.bot_id
+		WHERE p.promoted = TRUE AND b.owner = 'acb-evolver'
+		ORDER BY b.created_at DESC
+		LIMIT 10`)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("recent activity: %w", err)
+	}
+	defer rows.Close()
+
+	activities := []ActivityEntry{}
+	for rows.Next() {
+		var botID, botName, island, language string
+		var generation int
+		var createdAt time.Time
+		if err := rows.Scan(&botID, &botName, &island, &generation, &language, &createdAt); err != nil {
+			continue
+		}
+		activities = append(activities, ActivityEntry{
+			Time:      createdAt.UTC().Format(time.RFC3339),
+			Generation: generation,
+			Candidate: botName,
+			Island:    island,
+			Result:    "promoted",
+			Reason:    "Passed promotion gate",
+			Stage:     "deployment",
+			BotID:     botID,
+		})
+	}
+	data.RecentActivity = activities
+	data.PromotedCount = len(activities)
+
 	return nil
 }
 

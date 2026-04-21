@@ -99,7 +99,17 @@ export interface RegisterResponse {
 }
 
 // Evolution dashboard types
+
+// Dashboard island stat (live.json format)
 export interface IslandStat {
+  population: number;
+  best_rating: number;
+  best_bot: string;
+  language_div?: string;
+}
+
+// Full island stat (legacy format)
+export interface IslandStatFull {
   count: number;
   best_fitness: number;
   avg_fitness: number;
@@ -107,6 +117,82 @@ export interface IslandStat {
   promoted_count: number;
 }
 
+// Parent info for candidate
+export interface ParentInfo {
+  id: string;
+  rating: number;
+}
+
+// Validation stage result
+export interface StageResult {
+  passed: boolean;
+  time_ms: number;
+  error?: string;
+}
+
+// Validation status
+export interface ValidationStatus {
+  syntax?: StageResult;
+  schema?: StageResult;
+  smoke?: StageResult;
+}
+
+// Match result in evaluation
+export interface MatchResult {
+  opponent: string;
+  won: boolean;
+  score: string;
+}
+
+// Evaluation status
+export interface EvaluationStatus {
+  matches_total: number;
+  matches_played: number;
+  results: MatchResult[];
+}
+
+// Current candidate being evaluated
+export interface Candidate {
+  id: string;
+  island: string;
+  language: string;
+  parents: ParentInfo[];
+  validation?: ValidationStatus;
+  evaluation?: EvaluationStatus;
+}
+
+// Current cycle info
+export interface CycleInfo {
+  generation: number;
+  started_at: string;
+  phase: string; // generating, validating, evaluating, promoting, idle
+  candidate?: Candidate;
+}
+
+// Activity entry in recent activity feed
+export interface ActivityEntry {
+  time: string;
+  generation: number;
+  candidate: string;
+  island: string;
+  result: string; // promoted, rejected
+  reason: string;
+  stage: string; // validation, promotion, deployment
+  bot_id?: string;
+  initial_rating?: number;
+}
+
+// Overall evolution statistics
+export interface Totals {
+  generations_total: number;
+  candidates_today: number;
+  promoted_today: number;
+  promotion_rate_7d: number;
+  highest_evolved_rating: number;
+  evolved_in_top_10: number;
+}
+
+// Legacy generation entry
 export interface GenerationEntry {
   generation: number;
   island: string;
@@ -117,6 +203,7 @@ export interface GenerationEntry {
   avg_fitness: number;
 }
 
+// Legacy lineage node
 export interface LineageNode {
   id: number;
   parent_ids: number[];
@@ -128,20 +215,26 @@ export interface LineageNode {
   created_at: string;
 }
 
+// Legacy meta snapshot
 export interface MetaSnapshot {
   generation: number;
   island_counts: Record<string, number>;
   island_best_fitness: Record<string, number>;
 }
 
+// Evolution live data (plan §14 format)
 export interface EvolutionLiveData {
   updated_at: string;
-  total_programs: number;
-  promoted_count: number;
+  cycle?: CycleInfo;
+  recent_activity?: ActivityEntry[];
   islands: Record<string, IslandStat>;
-  generation_log: GenerationEntry[];
-  lineage: LineageNode[];
-  meta_snapshots: MetaSnapshot[];
+  totals: Totals;
+  // Legacy fields for backward compatibility
+  total_programs?: number;
+  promoted_count?: number;
+  generation_log?: GenerationEntry[];
+  lineage?: LineageNode[];
+  meta_snapshots?: MetaSnapshot[];
 }
 
 // Blog / Narrative Engine types
@@ -174,29 +267,65 @@ export interface BlogIndex {
 // API configuration
 export const API_BASE = '/api';
 
+// ─── Stale-while-revalidate cache ─────────────────────────────────────────────────
+// Returns cached data instantly (if available) while fetching fresh data in the
+// background.  On the next call the fresh data is already in cache.  This gives
+// sub-ms render times for repeat visits while keeping data reasonably current.
+
+interface CacheEntry<T> { data: T; ts: number }
+
+const swrCache = new Map<string, CacheEntry<unknown>>();
+const SWR_MAX_AGE = 5 * 60 * 1000; // 5 min — data is served from cache without re-fetch
+
+function swr<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const cached = swrCache.get(key) as CacheEntry<T> | undefined;
+
+  if (cached) {
+    // Serve stale immediately, revalidate in background if older than max-age
+    if (Date.now() - cached.ts > SWR_MAX_AGE) {
+      fetcher().then(data => swrCache.set(key, { data, ts: Date.now() })).catch(() => {});
+    }
+    return Promise.resolve(cached.data);
+  }
+
+  // No cache — fetch and cache
+  return fetcher().then(data => {
+    swrCache.set(key, { data, ts: Date.now() });
+    return data;
+  });
+}
+
 // API client functions
 export async function fetchLeaderboard(): Promise<LeaderboardIndex> {
-  const response = await fetch('/data/leaderboard.json');
-  if (!response.ok) throw new Error(`Failed to fetch leaderboard: ${response.status}`);
-  return response.json();
+  return swr('leaderboard', async () => {
+    const response = await fetch('/data/leaderboard.json');
+    if (!response.ok) throw new Error(`Failed to fetch leaderboard: ${response.status}`);
+    return response.json();
+  });
 }
 
 export async function fetchBotDirectory(): Promise<BotDirectory> {
-  const response = await fetch('/data/bots/index.json');
-  if (!response.ok) throw new Error(`Failed to fetch bot directory: ${response.status}`);
-  return response.json();
+  return swr('bot-directory', async () => {
+    const response = await fetch('/data/bots/index.json');
+    if (!response.ok) throw new Error(`Failed to fetch bot directory: ${response.status}`);
+    return response.json();
+  });
 }
 
 export async function fetchBotProfile(botId: string): Promise<BotProfile> {
-  const response = await fetch(`/data/bots/${botId}.json`);
-  if (!response.ok) throw new Error(`Failed to fetch bot profile: ${response.status}`);
-  return response.json();
+  return swr(`bot-${botId}`, async () => {
+    const response = await fetch(`/data/bots/${botId}.json`);
+    if (!response.ok) throw new Error(`Failed to fetch bot profile: ${response.status}`);
+    return response.json();
+  });
 }
 
 export async function fetchMatchIndex(): Promise<MatchIndex> {
-  const response = await fetch('/data/matches/index.json');
-  if (!response.ok) throw new Error(`Failed to fetch match index: ${response.status}`);
-  return response.json();
+  return swr('match-index', async () => {
+    const response = await fetch('/data/matches/index.json');
+    if (!response.ok) throw new Error(`Failed to fetch match index: ${response.status}`);
+    return response.json();
+  });
 }
 
 export async function registerBot(request: RegisterRequest): Promise<RegisterResponse> {
@@ -213,22 +342,26 @@ export async function registerBot(request: RegisterRequest): Promise<RegisterRes
 const R2_BASE_URL = 'https://r2.aicodebattle.com';
 
 export async function fetchEvolutionData(): Promise<EvolutionLiveData> {
-  // Fetch from R2 for real-time updates (not from static Pages)
+  // Evolution data changes every ~10s — bypass SWR, always fetch fresh
   const response = await fetch(`${R2_BASE_URL}/evolution/live.json`);
   if (!response.ok) throw new Error(`Failed to fetch evolution data: ${response.status}`);
   return response.json();
 }
 
 export async function fetchBlogIndex(): Promise<BlogIndex> {
-  const response = await fetch('/data/blog/index.json');
-  if (!response.ok) throw new Error(`Failed to fetch blog index: ${response.status}`);
-  return response.json();
+  return swr('blog-index', async () => {
+    const response = await fetch('/data/blog/index.json');
+    if (!response.ok) throw new Error(`Failed to fetch blog index: ${response.status}`);
+    return response.json();
+  });
 }
 
 export async function fetchBlogPost(slug: string): Promise<BlogPost> {
-  const response = await fetch(`/data/blog/${slug}.json`);
-  if (!response.ok) throw new Error(`Failed to fetch blog post: ${response.status}`);
-  return response.json();
+  return swr(`blog-${slug}`, async () => {
+    const response = await fetch(`/data/blog/${slug}.json`);
+    if (!response.ok) throw new Error(`Failed to fetch blog post: ${response.status}`);
+    return response.json();
+  });
 }
 
 export async function rotateApiKey(botId: string, currentKey: string): Promise<RegisterResponse> {
@@ -291,15 +424,19 @@ export interface PlaylistIndex {
 }
 
 export async function fetchPlaylistIndex(): Promise<PlaylistIndex> {
-  const response = await fetch('/data/playlists/index.json');
-  if (!response.ok) throw new Error(`Failed to fetch playlist index: ${response.status}`);
-  return response.json();
+  return swr('playlist-index', async () => {
+    const response = await fetch('/data/playlists/index.json');
+    if (!response.ok) throw new Error(`Failed to fetch playlist index: ${response.status}`);
+    return response.json();
+  });
 }
 
 export async function fetchPlaylist(slug: string): Promise<Playlist> {
-  const response = await fetch(`/data/playlists/${slug}.json`);
-  if (!response.ok) throw new Error(`Failed to fetch playlist: ${response.status}`);
-  return response.json();
+  return swr(`playlist-${slug}`, async () => {
+    const response = await fetch(`/data/playlists/${slug}.json`);
+    if (!response.ok) throw new Error(`Failed to fetch playlist: ${response.status}`);
+    return response.json();
+  });
 }
 
 // Prediction types
@@ -328,9 +465,51 @@ export interface PredictionsLeaderboard {
 }
 
 export async function fetchPredictionsLeaderboard(): Promise<PredictionsLeaderboard> {
-  const response = await fetch('/data/predictions/leaderboard.json');
-  if (!response.ok) throw new Error(`Failed to fetch predictions leaderboard: ${response.status}`);
+  return swr('predictions-leaderboard', async () => {
+    const response = await fetch('/data/predictions/leaderboard.json');
+    if (!response.ok) throw new Error(`Failed to fetch predictions leaderboard: ${response.status}`);
+    return response.json();
+  });
+}
+
+export interface OpenMatch {
+  match_id: string;
+  created_at: string;
+  participants: { bot_id: string; name: string; rating: number }[];
+  your_pick?: string;
+}
+
+export interface OpenPredictionsResponse {
+  matches: OpenMatch[];
+}
+
+export async function fetchOpenPredictions(predictorId?: string): Promise<OpenPredictionsResponse> {
+  const params = predictorId ? `?predictor_id=${encodeURIComponent(predictorId)}` : '';
+  const response = await fetch(`/api/predictions/open${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch open predictions: ${response.status}`);
   return response.json();
+}
+
+export async function submitPrediction(matchId: string, botId: string, predictorId: string): Promise<{ id: number }> {
+  const response = await fetch('/api/predict', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ match_id: matchId, bot_id: botId, predictor_id: predictorId }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(err.error || `Failed to submit prediction: ${response.status}`);
+  }
+  return response.json();
+}
+
+export function getOrCreatePredictorId(): string {
+  let id = localStorage.getItem('acb_predictor_id');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('acb_predictor_id', id);
+  }
+  return id;
 }
 
 // Evolution meta types for homepage
@@ -342,12 +521,13 @@ export interface EvolutionMeta {
 }
 
 export async function fetchEvolutionMeta(): Promise<EvolutionMeta> {
-  const response = await fetch('/data/evolution/meta.json');
-  if (!response.ok) {
-    // Return default values if file doesn't exist yet
-    return { generation: 0, promoted_today: 0, top_10_count: 0, updated_at: '' };
-  }
-  return response.json();
+  return swr('evolution-meta', async () => {
+    const response = await fetch('/data/evolution/meta.json');
+    if (!response.ok) {
+      return { generation: 0, promoted_today: 0, top_10_count: 0, updated_at: '' };
+    }
+    return response.json();
+  });
 }
 
 // Season types (re-export from types.ts for convenience)
@@ -355,10 +535,11 @@ import type { SeasonIndex } from './types';
 export type { Season, SeasonIndex } from './types';
 
 export async function fetchSeasonIndex(): Promise<SeasonIndex> {
-  const response = await fetch('/data/seasons/index.json');
-  if (!response.ok) {
-    // Return empty index if file doesn't exist
-    return { updated_at: '', active_season: null, seasons: [] };
-  }
-  return response.json();
+  return swr('season-index', async () => {
+    const response = await fetch('/data/seasons/index.json');
+    if (!response.ok) {
+      return { updated_at: '', active_season: null, seasons: [] };
+    }
+    return response.json();
+  });
 }

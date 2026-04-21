@@ -1,6 +1,6 @@
 // Evolution dashboard - shows live evolution pipeline status
 
-import { fetchEvolutionData, type EvolutionLiveData, type IslandStat, type LineageNode, type MetaSnapshot, type GenerationEntry } from '../api-types';
+import { fetchEvolutionData, type EvolutionLiveData, type IslandStat, type LineageNode, type MetaSnapshot, type GenerationEntry, type CycleInfo, type ActivityEntry, type Totals, type Candidate } from '../api-types';
 
 const ISLAND_COLORS: Record<string, string> = {
   alpha: '#ef4444', // red   - core-rushing
@@ -16,6 +16,8 @@ const ISLAND_LABELS: Record<string, string> = {
   delta: 'Delta (Experimental)',
 };
 
+let pollingInterval: number | null = null;
+
 export async function renderEvolutionPage(): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
@@ -30,6 +32,21 @@ export async function renderEvolutionPage(): Promise<void> {
   const content = document.getElementById('evolution-content');
   if (!content) return;
 
+  // Clear any existing poll
+  if (pollingInterval !== null) {
+    clearInterval(pollingInterval);
+  }
+
+  // Initial load
+  await loadEvolutionData(content);
+
+  // Start polling for live updates (every 10 seconds)
+  pollingInterval = window.setInterval(() => {
+    loadEvolutionData(content);
+  }, 10000);
+}
+
+async function loadEvolutionData(content: HTMLElement): Promise<void> {
   try {
     const data = await fetchEvolutionData();
     renderDashboard(content, data);
@@ -44,14 +61,37 @@ export async function renderEvolutionPage(): Promise<void> {
   }
 }
 
+// Stop polling when navigating away
+export function cleanupEvolutionPage(): void {
+  if (pollingInterval !== null) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+}
+
 function renderDashboard(container: HTMLElement, data: EvolutionLiveData): void {
   container.innerHTML = `
     <p class="updated-at">Last updated: ${formatTimestamp(data.updated_at)} &nbsp;·&nbsp;
-       ${data.total_programs} programs &nbsp;·&nbsp; ${data.promoted_count} promoted</p>
+       ${data.total_programs || 0} programs &nbsp;·&nbsp; ${data.promoted_count || 0} promoted</p>
 
     <section class="evo-section">
-      <h2 class="evo-section-title">Island Status</h2>
+      <h2 class="evo-section-title">Live Status</h2>
+      <div id="live-status"></div>
+    </section>
+
+    <section class="evo-section">
+      <h2 class="evo-section-title">Island Overview</h2>
       <div class="island-grid" id="island-grid"></div>
+    </section>
+
+    <section class="evo-section">
+      <h2 class="evo-section-title">Statistics</h2>
+      <div id="statistics"></div>
+    </section>
+
+    <section class="evo-section">
+      <h2 class="evo-section-title">Recent Activity</h2>
+      <div id="activity-feed"></div>
     </section>
 
     <section class="evo-section">
@@ -93,6 +133,218 @@ function renderDashboard(container: HTMLElement, data: EvolutionLiveData): void 
         text-transform: none;
         letter-spacing: 0;
         margin-left: 8px;
+      }
+
+      /* Live status */
+      .live-status-container {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .live-status-main {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: center;
+      }
+
+      .live-status-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .live-status-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .live-status-value {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .live-status-phase {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: white;
+      }
+
+      .candidate-info {
+        background-color: var(--bg-primary);
+        border-radius: 8px;
+        padding: 16px;
+        border-left: 4px solid var(--accent-color, #3b82f6);
+      }
+
+      .candidate-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .candidate-id {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .candidate-island {
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+      }
+
+      .candidate-parents {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+      }
+
+      .parent-tag {
+        background-color: var(--bg-tertiary);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+
+      .candidate-validation {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .validation-stage {
+        font-size: 0.8125rem;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background-color: var(--bg-tertiary);
+        color: var(--text-muted);
+      }
+
+      .validation-stage.passed {
+        background-color: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+      }
+
+      .candidate-evaluation {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .evaluation-progress {
+        flex: 1;
+        height: 6px;
+        background-color: var(--bg-tertiary);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+
+      .evaluation-bar {
+        height: 100%;
+        background-color: var(--accent-color, #3b82f6);
+        transition: width 0.3s;
+      }
+
+      .evaluation-text {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+      }
+
+      /* Statistics grid */
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 16px;
+      }
+
+      .stat-card {
+        background-color: var(--bg-primary);
+        border-radius: 8px;
+        padding: 16px;
+        text-align: center;
+      }
+
+      .stat-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 8px;
+      }
+
+      .stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      /* Activity feed */
+      .activity-feed {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .activity-entry {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 12px;
+        background-color: var(--bg-primary);
+        border-radius: 6px;
+        font-size: 0.875rem;
+      }
+
+      .activity-time {
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+        min-width: 60px;
+      }
+
+      .activity-result {
+        font-weight: 600;
+        min-width: 90px;
+      }
+
+      .activity-result.result-promoted {
+        color: #22c55e;
+      }
+
+      .activity-result.result-rejected {
+        color: #ef4444;
+      }
+
+      .activity-candidate {
+        font-family: monospace;
+        color: var(--text-primary);
+      }
+
+      .activity-island {
+        text-transform: uppercase;
+        font-size: 0.8125rem;
+        min-width: 60px;
+      }
+
+      .activity-reason {
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       /* Island status grid */
@@ -237,10 +489,16 @@ function renderDashboard(container: HTMLElement, data: EvolutionLiveData): void 
         .island-grid {
           grid-template-columns: 1fr 1fr;
         }
+        .stats-grid {
+          grid-template-columns: 1fr 1fr;
+        }
       }
 
       @media (max-width: 480px) {
         .island-grid {
+          grid-template-columns: 1fr;
+        }
+        .stats-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -248,9 +506,12 @@ function renderDashboard(container: HTMLElement, data: EvolutionLiveData): void 
   `;
 
   renderIslandGrid(document.getElementById('island-grid')!, data.islands);
-  renderMetaChart(document.getElementById('meta-chart')!, data.meta_snapshots);
-  renderLineageTree(document.getElementById('lineage-tree')!, data.lineage);
-  renderGenerationLog(document.getElementById('generation-log')!, data.generation_log);
+  renderLiveStatus(document.getElementById('live-status')!, data.cycle);
+  renderStatistics(document.getElementById('statistics')!, data.totals);
+  renderActivityFeed(document.getElementById('activity-feed')!, data.recent_activity || []);
+  renderMetaChart(document.getElementById('meta-chart')!, data.meta_snapshots ?? []);
+  renderLineageTree(document.getElementById('lineage-tree')!, data.lineage ?? []);
+  renderGenerationLog(document.getElementById('generation-log')!, data.generation_log ?? []);
 }
 
 // ── Island Status ──────────────────────────────────────────────────────────────
@@ -262,36 +523,181 @@ function renderIslandGrid(container: HTMLElement, islands: Record<string, Island
     if (!stat) return '';
     const color = ISLAND_COLORS[island] ?? '#94a3b8';
     const label = ISLAND_LABELS[island] ?? island;
-    const diversityPct = Math.round(stat.diversity * 100);
     return `
       <div class="island-card" style="border-left-color: ${color}">
         <div class="island-card-name" style="color: ${color}">${escapeHtml(label)}</div>
         <div class="island-stat-row">
           <span class="island-stat-label">Population</span>
-          <span class="island-stat-value">${stat.count}</span>
+          <span class="island-stat-value">${stat.population}</span>
         </div>
         <div class="island-stat-row">
-          <span class="island-stat-label">Best Fitness</span>
-          <span class="island-stat-value">${(stat.best_fitness * 100).toFixed(1)}%</span>
+          <span class="island-stat-label">Best Rating</span>
+          <span class="island-stat-value">${stat.best_rating}</span>
         </div>
         <div class="island-stat-row">
-          <span class="island-stat-label">Avg Fitness</span>
-          <span class="island-stat-value">${(stat.avg_fitness * 100).toFixed(1)}%</span>
-        </div>
-        <div class="island-stat-row">
-          <span class="island-stat-label">Promoted</span>
-          <span class="island-stat-value">${stat.promoted_count}</span>
-        </div>
-        <div class="island-diversity-bar" title="Language diversity ${diversityPct}%">
-          <div class="island-diversity-fill" style="width: ${diversityPct}%; background-color: ${color}"></div>
-        </div>
-        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">
-          Diversity: ${diversityPct}%
+          <span class="island-stat-label">Best Bot</span>
+          <span class="island-stat-value" style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(stat.best_bot || '—')}</span>
         </div>
       </div>
     `;
   });
   container.innerHTML = cards.join('');
+}
+
+// ── Live Status ─────────────────────────────────────────────────────────────────
+
+function renderLiveStatus(container: HTMLElement, cycle: CycleInfo | undefined): void {
+  if (!cycle) {
+    container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.875rem;">No active cycle. Evolution is idle.</p>';
+    return;
+  }
+
+  const phaseColors: Record<string, string> = {
+    idle: '#94a3b8',
+    generating: '#f59e0b',
+    validating: '#3b82f6',
+    evaluating: '#8b5cf6',
+    promoting: '#22c55e',
+  };
+
+  const phaseLabel = cycle.phase.charAt(0).toUpperCase() + cycle.phase.slice(1);
+
+  container.innerHTML = `
+    <div class="live-status-container">
+      <div class="live-status-main">
+        <div class="live-status-item">
+          <span class="live-status-label">Generation</span>
+          <span class="live-status-value">#${cycle.generation}</span>
+        </div>
+        <div class="live-status-item">
+          <span class="live-status-label">Phase</span>
+          <span class="live-status-phase" style="background-color: ${phaseColors[cycle.phase] || '#94a3b8'}">${phaseLabel}</span>
+        </div>
+        <div class="live-status-item">
+          <span class="live-status-label">Started</span>
+          <span class="live-status-value">${formatTimestamp(cycle.started_at)}</span>
+        </div>
+      </div>
+      ${cycle.candidate ? renderCandidateInfo(cycle.candidate) : ''}
+    </div>
+  `;
+}
+
+function renderCandidateInfo(candidate: Candidate): string {
+  let statusHTML = '';
+
+  if (candidate.validation) {
+    const v = candidate.validation;
+    statusHTML += `
+      <div class="candidate-validation">
+        <div class="validation-stage ${v.syntax?.passed ? 'passed' : 'pending'}">Syntax ${v.syntax?.passed ? '✓' : '⋯'}</div>
+        <div class="validation-stage ${v.schema?.passed ? 'passed' : 'pending'}">Schema ${v.schema?.passed ? '✓' : '⋯'}</div>
+        <div class="validation-stage ${v.smoke?.passed ? 'passed' : 'pending'}">Smoke ${v.smoke?.passed ? '✓' : '⋯'}</div>
+      </div>
+    `;
+  }
+
+  if (candidate.evaluation && candidate.evaluation.matches_total > 0) {
+    const played = candidate.evaluation.matches_played;
+    const total = candidate.evaluation.matches_total;
+    const pct = Math.round((played / total) * 100);
+    statusHTML += `
+      <div class="candidate-evaluation">
+        <div class="evaluation-progress">
+          <div class="evaluation-bar" style="width: ${pct}%"></div>
+        </div>
+        <span class="evaluation-text">Evaluating: ${played}/${total} matches</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="candidate-info">
+      <div class="candidate-header">
+        <span class="candidate-id">${escapeHtml(candidate.id)}</span>
+        <span class="candidate-island" style="color: ${ISLAND_COLORS[candidate.island] || '#94a3b8'}">${escapeHtml(candidate.island)}</span>
+      </div>
+      <div class="candidate-parents">
+        Parents: ${candidate.parents.map(p => `<span class="parent-tag">${escapeHtml(p.id)} (${p.rating})</span>`).join('')}
+      </div>
+      ${statusHTML}
+    </div>
+  `;
+}
+
+// ── Statistics ─────────────────────────────────────────────────────────────────
+
+function renderStatistics(container: HTMLElement, totals: Totals): void {
+  container.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Generations</div>
+        <div class="stat-value">${totals.generations_total}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Candidates Today</div>
+        <div class="stat-value">${totals.candidates_today}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Promoted Today</div>
+        <div class="stat-value">${totals.promoted_today}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Promotion Rate (7d)</div>
+        <div class="stat-value">${(totals.promotion_rate_7d * 100).toFixed(1)}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Highest Evolved Rating</div>
+        <div class="stat-value">${totals.highest_evolved_rating}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Evolved in Top 10</div>
+        <div class="stat-value">${totals.evolved_in_top_10}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ── Activity Feed ───────────────────────────────────────────────────────────────
+
+function renderActivityFeed(container: HTMLElement, activities: ActivityEntry[]): void {
+  if (!activities || activities.length === 0) {
+    container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.875rem;">No recent activity.</p>';
+    return;
+  }
+
+  const rows = activities.map(a => {
+    const resultClass = a.result === 'promoted' ? 'result-promoted' : 'result-rejected';
+    const resultIcon = a.result === 'promoted' ? '🟢' : '🔴';
+    const color = ISLAND_COLORS[a.island] || '#94a3b8';
+
+    return `
+      <div class="activity-entry">
+        <span class="activity-time">${formatTimeAgo(a.time)}</span>
+        <span class="activity-result ${resultClass}">${resultIcon} ${escapeHtml(a.result)}</span>
+        <span class="activity-candidate">${escapeHtml(a.candidate)}</span>
+        <span class="activity-island" style="color: ${color}">${escapeHtml(a.island)}</span>
+        <span class="activity-reason">${escapeHtml(a.reason)}</span>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `<div class="activity-feed">${rows}</div>`;
+}
+
+function formatTimeAgo(iso: string): string {
+  try {
+    const then = new Date(iso).getTime();
+    const now = Date.now();
+    const seconds = Math.floor((now - then) / 1000);
+
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  } catch {
+    return iso;
+  }
 }
 
 // ── Meta Tracker Chart ─────────────────────────────────────────────────────────

@@ -1,0 +1,684 @@
+/* ──────────────────────────────────────────────────────────────────────────────── */
+/* Mobile Responsive Styles                                                              */
+/* ──────────────────────────────────────────────────────────────────────────────── */
+
+/* Mobile-first responsive breakpoints:
+   - <640px: phone — single column, bottom tab bar, touch-optimized
+   - 640–1024px: tablet — two column where useful, top nav
+   - >1024px: desktop — full layout, sidebar where appropriate
+*/
+
+/* ─── Phone (<640px) ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 639px) {
+  /* Typography */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1.125rem; }
+
+  /* Page titles */
+  .page-title {
+    font-size: 1.5rem;
+    margin-bottom: 16px;
+  }
+
+  /* Cards - full width */
+  .card {
+    border-radius: var(--radius-md);
+    padding: var(--space-sm);
+    margin-bottom: var(--space-sm);
+  }
+
+  /* Grid - single column */
+  .grid-2, .grid-3, .grid-4 {
+    grid-template-columns: 1fr;
+  }
+
+  /* Buttons - larger touch targets */
+  .btn {
+    min-height: 48px;
+    min-width: 48px;
+    padding: var(--space-md);
+  }
+
+  .btn.small {
+    min-height: 40px;
+    min-width: 40px;
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  /* Tables - convert to cards on mobile */
+  .table-container {
+    border: none;
+  }
+
+  table {
+    display: none;
+  }
+
+  .mobile-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .mobile-card {
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+  }
+
+  .mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-sm);
+  }
+
+  .mobile-card-title {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .mobile-card-content {
+    display: none;
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border);
+  }
+
+  .mobile-card-content.expanded {
+    display: block;
+  }
+
+  .mobile-card.expanded .mobile-card-content {
+    display: block;
+  }
+
+  /* Leaderboard mobile cards */
+  .leaderboard-mobile-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md);
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-sm);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+  }
+
+  .leaderboard-mobile-card:active {
+    background-color: var(--bg-tertiary);
+  }
+
+  .leaderboard-mobile-rank {
+    font-size: 1.25rem;
+    font-weight: 700;
+    min-width: 40px;
+    text-align: center;
+  }
+
+  .leaderboard-mobile-rank.rank-1 { color: var(--warning); }
+  .leaderboard-mobile-rank.rank-2 { color: #94a3b8; }
+  .leaderboard-mobile-rank.rank-3 { color: #b45309; }
+
+  .leaderboard-mobile-info {
+    flex: 1;
+  }
+
+  .leaderboard-mobile-name {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .leaderboard-mobile-rating {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  .leaderboard-mobile-trend {
+    font-size: 1.25rem;
+  }
+
+  .leaderboard-mobile-details {
+    display: none;
+    padding-top: var(--space-sm);
+    margin-top: var(--space-sm);
+    border-top: 1px solid var(--border);
+  }
+
+  .leaderboard-mobile-details.expanded {
+    display: block;
+  }
+
+  .leaderboard-mobile-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-xs) 0;
+    font-size: 0.875rem;
+  }
+
+  .leaderboard-mobile-stat-label {
+    color: var(--text-muted);
+  }
+
+  .leaderboard-mobile-stat-value {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  /* Replay viewer mobile */
+  .replay-page .page-title {
+    font-size: 1.25rem;
+    margin-bottom: 12px;
+  }
+
+  .replay-layout {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .replay-main {
+    order: 1;
+  }
+
+  .replay-sidebar {
+    order: 2;
+    width: 100%;
+  }
+
+  .canvas-wrapper {
+    padding: var(--space-xs);
+    border-radius: var(--radius-md);
+  }
+
+  /* Mobile replay controls - compact bar below canvas */
+  .mobile-replay-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm);
+  }
+
+  .mobile-playback-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  .mobile-playback-bar .btn {
+    flex: 1;
+    min-height: 44px;
+    font-size: 0.875rem;
+  }
+
+  .mobile-speed-display {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: var(--space-xs);
+  }
+
+  /* Mobile event timeline - horizontal scrollable ribbon */
+  .mobile-event-timeline {
+    display: flex;
+    overflow-x: auto;
+    gap: var(--space-xs);
+    padding: var(--space-sm);
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-event-timeline::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-event-dot {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-tertiary);
+    border-radius: 50%;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .mobile-event-dot.active {
+    background-color: var(--accent);
+    color: white;
+  }
+
+  .mobile-event-dot:active {
+    transform: scale(0.95);
+  }
+
+  /* Mobile view mode toggle - floating button */
+  .mobile-view-mode-toggle {
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+
+  /* Mobile debug telemetry - slide-up sheet */
+  .mobile-debug-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: var(--bg-secondary);
+    border-top-left-radius: var(--radius-xl);
+    border-top-right-radius: var(--radius-xl);
+    padding: var(--space-md);
+    transform: translateY(100%);
+    transition: transform var(--transition-normal);
+    z-index: 200;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .mobile-debug-sheet.expanded {
+    transform: translateY(0);
+  }
+
+  .mobile-debug-handle {
+    width: 40px;
+    height: 4px;
+    background-color: var(--border);
+    border-radius: 2px;
+    margin: 0 auto var(--space-md);
+  }
+
+  /* Sandbox desktop required message */
+  .sandbox-mobile-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-xl);
+    text-align: center;
+    min-height: 60vh;
+  }
+
+  .sandbox-mobile-message h2 {
+    font-size: 1.5rem;
+    margin-bottom: var(--space-md);
+  }
+
+  .sandbox-mobile-message p {
+    margin-bottom: var(--space-lg);
+  }
+
+  .sandbox-mobile-qr {
+    width: 200px;
+    height: 200px;
+    background-color: white;
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+
+  .sandbox-mobile-link {
+    display: inline-block;
+    padding: var(--space-md) var(--space-lg);
+    background-color: var(--accent);
+    color: white;
+    text-decoration: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+  }
+
+  /* Match cards mobile */
+  .match-card {
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+  }
+
+  .match-participants {
+    gap: var(--space-sm);
+  }
+
+  .match-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .match-footer .btn {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  /* Bot profile mobile */
+  .profile-header {
+    flex-direction: column;
+    text-align: center;
+    gap: var(--space-sm);
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Bot cards mobile */
+  .bots-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bot-card {
+    padding: var(--space-md);
+  }
+
+  /* Watch/Compete hub cards */
+  .watch-grid,
+  .compete-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-sm);
+  }
+
+  .watch-card,
+  .compete-card {
+    padding: var(--space-md);
+  }
+
+  .card-icon {
+    font-size: 2rem;
+    margin-bottom: var(--space-sm);
+  }
+
+  .watch-card h2,
+  .compete-card h2 {
+    font-size: 1.125rem;
+  }
+
+  /* Steps section */
+  .steps {
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+  }
+
+  .step-number {
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+  }
+
+  /* Form inputs */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="url"],
+  select,
+  textarea {
+    font-size: 16px; /* Prevent iOS zoom on focus */
+  }
+
+  /* Panel mobile */
+  .panel {
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+  }
+
+  .panel-header {
+    font-size: 0.875rem;
+    margin-bottom: var(--space-sm);
+  }
+
+  /* Loading state */
+  .loading {
+    padding: var(--space-lg);
+  }
+
+  /* Error state */
+  .error {
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+  }
+
+  /* Empty state */
+  .empty-state {
+    padding: var(--space-lg);
+  }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    gap: var(--space-sm);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pagination .btn {
+    flex-shrink: 0;
+  }
+}
+
+/* ─── Tablet (640–1024px) ───────────────────────────────────────────────────────── */
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  /* Two column layout where useful */
+  .grid-2, .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Replay viewer - two column on tablet */
+  .replay-layout {
+    flex-direction: row;
+  }
+
+  .replay-sidebar {
+    width: 280px;
+  }
+
+  /* Leaderboard - show table on tablet */
+  .leaderboard-table {
+    display: table;
+  }
+
+  .mobile-cards {
+    display: none;
+  }
+
+  /* Hub cards */
+  .watch-grid,
+  .compete-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Bot cards */
+  .bots-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Profile grid */
+  .profile-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Hide mobile-specific elements */
+  .mobile-replay-controls,
+  .mobile-event-timeline,
+  .mobile-view-mode-toggle,
+  .mobile-debug-sheet,
+  .sandbox-mobile-message {
+    display: none;
+  }
+}
+
+/* ─── Desktop (>1024px) ────────────────────────────────────────────────────────── */
+
+@media (min-width: 1024px) {
+  /* Full layout with sidebar where appropriate */
+
+  /* Hide mobile-specific elements */
+  .mobile-bottom-nav,
+  .mobile-menu-toggle,
+  .mobile-menu,
+  .mobile-replay-controls,
+  .mobile-event-timeline,
+  .mobile-view-mode-toggle,
+  .mobile-debug-sheet,
+  .sandbox-mobile-message,
+  .leaderboard-mobile-card,
+  .mobile-cards {
+    display: none !important;
+  }
+
+  /* Show desktop nav */
+  .desktop-nav {
+    display: flex;
+  }
+
+  /* Replay viewer sidebar */
+  .replay-sidebar {
+    width: 300px;
+  }
+
+  /* Sandbox layout */
+  .sandbox-layout {
+    flex-direction: row;
+  }
+
+  .sandbox-controls-col {
+    width: 320px;
+  }
+}
+
+/* ─── Touch-specific styles ──────────────────────────────────────────────────────── */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Touch device optimizations */
+
+  /* Larger tap targets */
+  .btn,
+  button,
+  a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Disable hover effects on touch */
+  .btn:hover,
+  .nav-link:hover,
+  .bot-card:hover,
+  .link-card:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Active states for touch feedback */
+  .btn:active {
+    transform: scale(0.98);
+  }
+
+  /* Smooth scrolling */
+  html {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Disable text selection on UI elements */
+  .btn,
+  .nav-link,
+  .mobile-event-dot {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Prevent callout on long press */
+  .btn,
+  .nav-link {
+    -webkit-touch-callout: none;
+  }
+}
+
+/* ─── Orientation-specific styles ───────────────────────────────────────────────── */
+
+@media (orientation: landscape) and (max-height: 600px) {
+  /* Landscape phone - more compact layout */
+
+  .page-title {
+    font-size: 1.25rem;
+    margin-bottom: 8px;
+  }
+
+  .canvas-wrapper {
+    max-height: 50vh;
+    overflow: auto;
+  }
+
+  .mobile-bottom-nav {
+    padding: 4px 0;
+  }
+
+  .mobile-bottom-nav .nav-link {
+    padding: 4px 8px;
+    font-size: 0.625rem;
+  }
+
+  #app {
+    padding-bottom: 50px;
+  }
+}
+
+/* ─── Reduced motion ────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── High contrast mode ─────────────────────────────────────────────────────────── */
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: #64748b;
+    --bg-tertiary: #475569;
+  }
+
+  .btn {
+    border: 2px solid currentColor;
+  }
+
+  .nav-link.active {
+    border: 2px solid var(--accent);
+  }
+}
+
+/* ─── Dark mode system preference ─────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: light) {
+  /* The app uses dark theme by default, but we respect system preference
+     if someone wants to override via custom CSS */
+}

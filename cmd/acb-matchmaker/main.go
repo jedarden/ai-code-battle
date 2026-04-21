@@ -24,12 +24,15 @@ type Config struct {
 	EncryptionKey   string // AES-256-GCM key for shared secret decryption
 	DiscordWebhook  string
 	SlackWebhook    string
-	MatchmakerSecs  int
-	HealthCheckSecs int
-	ReaperSecs      int
-	BotTimeoutSecs  int
-	StaleJobMinutes int
-	MaxConsecFails  int
+	MatchmakerSecs    int
+	HealthCheckSecs   int
+	ReaperSecs        int
+	SeriesSchedSecs   int
+	SeasonResetSecs   int
+	BotTimeoutSecs    int
+	StaleJobMinutes   int
+	MaxConsecFails    int
+	SeasonDecayFactor float64
 }
 
 type Matchmaker struct {
@@ -47,12 +50,15 @@ func loadConfig() Config {
 		EncryptionKey:   os.Getenv("ACB_ENCRYPTION_KEY"),
 		DiscordWebhook:  os.Getenv("ACB_DISCORD_WEBHOOK"),
 		SlackWebhook:    os.Getenv("ACB_SLACK_WEBHOOK"),
-		MatchmakerSecs:  envInt("ACB_MATCHMAKER_INTERVAL", 60),
-		HealthCheckSecs: envInt("ACB_HEALTHCHECK_INTERVAL", 900),
-		ReaperSecs:      envInt("ACB_REAPER_INTERVAL", 300),
-		BotTimeoutSecs:  envInt("ACB_BOT_TIMEOUT", 5),
-		StaleJobMinutes: envInt("ACB_STALE_JOB_MINUTES", 15),
-		MaxConsecFails:  envInt("ACB_MAX_CONSEC_FAILS", 3),
+		MatchmakerSecs:    envInt("ACB_MATCHMAKER_INTERVAL", 60),
+		HealthCheckSecs:   envInt("ACB_HEALTHCHECK_INTERVAL", 900),
+		ReaperSecs:        envInt("ACB_REAPER_INTERVAL", 300),
+		SeriesSchedSecs:   envInt("ACB_SERIES_SCHED_INTERVAL", 120),
+		SeasonResetSecs:   envInt("ACB_SEASON_RESET_INTERVAL", 300),
+		BotTimeoutSecs:    envInt("ACB_BOT_TIMEOUT", 5),
+		StaleJobMinutes:   envInt("ACB_STALE_JOB_MINUTES", 15),
+		MaxConsecFails:    envInt("ACB_MAX_CONSEC_FAILS", 3),
+		SeasonDecayFactor: envFloat("ACB_SEASON_DECAY_FACTOR", 0.7),
 	}
 }
 

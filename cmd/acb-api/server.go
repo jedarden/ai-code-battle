@@ -45,6 +45,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	// UI feedback (Agentation overlay)
 	mux.HandleFunc("POST /api/ui-feedback", s.handleUIFeedback)
+
+	// Predictions
+	mux.HandleFunc("POST /api/predict", s.handlePredict)
+	mux.HandleFunc("GET /api/predictions/open", s.handleOpenPredictions)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -733,6 +737,162 @@ func (s *Server) handleListBots(w http.ResponseWriter, r *http.Request) {
 		"limit":  limit,
 		"offset": offset,
 		"count":  len(bots),
+	})
+}
+
+// handlePredict handles POST /api/predict
+// Accepts {match_id, bot_id, confidence} and writes to predictions table.
+// Rejects if the match has already started (status != 'pending').
+func (s *Server) handlePredict(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		MatchID    string `json:"match_id"`
+		BotID      string `json:"bot_id"`
+		Predictor  string `json:"predictor_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.MatchID == "" || req.BotID == "" || req.Predictor == "" {
+		writeError(w, http.StatusBadRequest, "match_id, bot_id, and predictor_id are required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Verify match exists and hasn't started
+	var matchStatus string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT status FROM matches WHERE match_id = $1
+	`, req.MatchID).Scan(&matchStatus)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "match not found")
+		return
+	} else if err != nil {
+		log.Printf("database error checking match: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	if matchStatus != "pending" {
+		writeError(w, http.StatusConflict, "match has already started")
+		return
+	}
+
+	// Verify bot is a participant in this match
+	var participantExists bool
+	err = s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM match_participants
+			WHERE match_id = $1 AND bot_id = $2
+		)
+	`, req.MatchID, req.BotID).Scan(&participantExists)
+	if err != nil {
+		log.Printf("database error checking participant: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if !participantExists {
+		writeError(w, http.StatusBadRequest, "bot is not a participant in this match")
+		return
+	}
+
+	// Insert prediction (UNIQUE constraint handles duplicates)
+	var predictionID int64
+	err = s.db.QueryRowContext(ctx, `
+		INSERT INTO predictions (match_id, predictor_id, predicted_bot)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (match_id, predictor_id) DO UPDATE SET predicted_bot = $3
+		RETURNING id
+	`, req.MatchID, req.Predictor, req.BotID).Scan(&predictionID)
+	if err != nil {
+		log.Printf("failed to insert prediction: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to submit prediction")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":         predictionID,
+		"match_id":   req.MatchID,
+		"predicted":  req.BotID,
+		"predictor":  req.Predictor,
+	})
+}
+
+// handleOpenPredictions handles GET /api/predictions/open
+// Returns pending matches that are open for predictions, along with
+// any predictions the requesting predictor has made.
+func (s *Server) handleOpenPredictions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	predictorID := r.URL.Query().Get("predictor_id")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Get pending matches with their participants
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.match_id, m.created_at,
+		       COALESCE(json_agg(json_build_object('bot_id', mp.bot_id, 'name', b.name, 'rating', b.rating_mu - 2*b.rating_phi)) FILTER (WHERE mp.bot_id IS NOT NULL), '[]')
+		FROM matches m
+		JOIN match_participants mp ON m.match_id = mp.match_id
+		JOIN bots b ON mp.bot_id = b.bot_id
+		WHERE m.status = 'pending'
+		GROUP BY m.match_id, m.created_at
+		ORDER BY m.created_at ASC
+		LIMIT 20
+	`)
+	if err != nil {
+		log.Printf("database error fetching open matches: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer rows.Close()
+
+	type MatchPrediction struct {
+		MatchID     string          `json:"match_id"`
+		CreatedAt   string          `json:"created_at"`
+		Participants []map[string]interface{} `json:"participants"`
+		YourPick    *string         `json:"your_pick,omitempty"`
+	}
+
+	var matches []MatchPrediction
+	for rows.Next() {
+		var m MatchPrediction
+		var participantsJSON string
+		if err := rows.Scan(&m.MatchID, &m.CreatedAt, &participantsJSON); err != nil {
+			log.Printf("error scanning match: %v", err)
+			continue
+		}
+		json.Unmarshal([]byte(participantsJSON), &m.Participants)
+
+		// If predictor_id given, look up their existing prediction
+		if predictorID != "" {
+			var predictedBot string
+			err := s.db.QueryRowContext(ctx, `
+				SELECT predicted_bot FROM predictions
+				WHERE match_id = $1 AND predictor_id = $2
+			`, m.MatchID, predictorID).Scan(&predictedBot)
+			if err == nil {
+				m.YourPick = &predictedBot
+			}
+		}
+
+		matches = append(matches, m)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"matches": matches,
 	})
 }
 

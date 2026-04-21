@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -381,8 +382,92 @@ func (c *DBClient) SubmitMatchResult(ctx context.Context, jobID string, result *
 		}
 	}
 
+	// Resolve predictions for this match
+	if err := resolvePredictions(ctx, tx, matchID, result.WinnerID); err != nil {
+		// Log but don't fail the match result — predictions are non-critical
+		log.Printf("failed to resolve predictions for match %s: %v", matchID, err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// resolvePredictions marks open predictions as correct/incorrect and updates predictor_stats.
+func resolvePredictions(ctx context.Context, tx *sql.Tx, matchID string, winnerBotID string) error {
+	if winnerBotID == "" {
+		// Draw or no winner — mark all open predictions as incorrect
+		_, err := tx.ExecContext(ctx, `
+			UPDATE predictions
+			SET correct = false, resolved_at = NOW()
+			WHERE match_id = $1 AND correct IS NULL
+		`, matchID)
+		if err != nil {
+			return fmt.Errorf("failed to resolve predictions (draw): %w", err)
+		}
+	} else {
+		// Mark predictions correct where predicted_bot matches winner, incorrect otherwise
+		_, err := tx.ExecContext(ctx, `
+			UPDATE predictions
+			SET correct = (predicted_bot = $1), resolved_at = NOW()
+			WHERE match_id = $2 AND correct IS NULL
+		`, winnerBotID, matchID)
+		if err != nil {
+			return fmt.Errorf("failed to resolve predictions: %w", err)
+		}
+	}
+
+	// Update predictor_stats for each predictor who had a prediction on this match
+	rows, err := tx.QueryContext(ctx, `
+		SELECT predictor_id, correct
+		FROM predictions
+		WHERE match_id = $1 AND resolved_at IS NOT NULL
+	`, matchID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch resolved predictions: %w", err)
+	}
+	defer rows.Close()
+
+	type predResult struct {
+		PredictorID string
+		Correct     bool
+	}
+	var results []predResult
+	for rows.Next() {
+		var r predResult
+		if err := rows.Scan(&r.PredictorID, &r.Correct); err != nil {
+			return fmt.Errorf("failed to scan prediction: %w", err)
+		}
+		results = append(results, r)
+	}
+
+	// Upsert predictor_stats for each predictor
+	for _, r := range results {
+		if r.Correct {
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO predictor_stats (predictor_id, correct, streak, best_streak, updated_at)
+				VALUES ($1, 1, 1, 1, NOW())
+				ON CONFLICT (predictor_id) DO UPDATE SET
+					correct = predictor_stats.correct + 1,
+					streak = predictor_stats.streak + 1,
+					best_streak = GREATEST(predictor_stats.best_streak, predictor_stats.streak + 1),
+					updated_at = NOW()
+			`, r.PredictorID)
+		} else {
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO predictor_stats (predictor_id, incorrect, streak, best_streak, updated_at)
+				VALUES ($1, 1, 0, 0, NOW())
+				ON CONFLICT (predictor_id) DO UPDATE SET
+					incorrect = predictor_stats.incorrect + 1,
+					streak = 0,
+					updated_at = NOW()
+			`, r.PredictorID)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update predictor_stats for %s: %w", r.PredictorID, err)
+		}
 	}
 
 	return nil
