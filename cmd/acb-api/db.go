@@ -146,7 +146,8 @@ CREATE TABLE IF NOT EXISTS bots (
     description   TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_active   TIMESTAMPTZ,
-    consec_fails  INTEGER NOT NULL DEFAULT 0
+    consec_fails  INTEGER NOT NULL DEFAULT 0,
+    archetype     VARCHAR(64)
 );
 
 CREATE TABLE IF NOT EXISTS matches (
@@ -178,7 +179,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     worker_id     VARCHAR(64),
     config_json   JSONB NOT NULL,
     claimed_at    TIMESTAMPTZ,
-    completed_at  TIMESTAMPTZ
+    completed_at  TIMESTAMPTZ,
+    heartbeat_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS rating_history (
