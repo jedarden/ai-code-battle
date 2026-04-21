@@ -8,6 +8,12 @@ export interface WinProbPoint {
   drawProb?: number;
 }
 
+export interface CriticalMomentMarker {
+  turn: number;
+  delta: number;
+  description: string;
+}
+
 // Render win probability sparkline to canvas
 export function renderWinProbSparkline(
   ctx: CanvasRenderingContext2D,
@@ -18,9 +24,10 @@ export function renderWinProbSparkline(
     height: number;
     color0?: string;
     color1?: string;
+    criticalMoments?: CriticalMomentMarker[];
   },
 ): void {
-  const { width, height, color0 = '#3b82f6', color1 = '#ef4444' } = options;
+  const { width, height, color0 = '#3b82f6', color1 = '#ef4444', criticalMoments = [] } = options;
   const padding = { top: 8, bottom: 8, left: 4, right: 4 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
@@ -50,6 +57,40 @@ export function renderWinProbSparkline(
   ctx.lineTo(width - padding.right, midY);
   ctx.stroke();
   ctx.setLineDash([]);
+
+  // Critical moment markers — dashed vertical lines with delta labels
+  for (const moment of criticalMoments) {
+    const mx = x(moment.turn);
+    const markerColor = moment.delta > 0 ? color0 : color1;
+
+    ctx.strokeStyle = markerColor + 'aa';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(mx, padding.top);
+    ctx.lineTo(mx, height - padding.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Small diamond at midpoint
+    const my = height / 2;
+    const s = 3;
+    ctx.fillStyle = markerColor;
+    ctx.beginPath();
+    ctx.moveTo(mx, my - s);
+    ctx.lineTo(mx + s, my);
+    ctx.lineTo(mx, my + s);
+    ctx.lineTo(mx - s, my);
+    ctx.closePath();
+    ctx.fill();
+
+    // Delta label near top
+    const label = `${moment.delta > 0 ? '+' : ''}${(moment.delta * 100).toFixed(0)}%`;
+    ctx.fillStyle = markerColor;
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, Math.max(18, Math.min(width - 18, mx)), padding.top + 7);
+  }
 
   // P0 area fill
   ctx.beginPath();
@@ -605,6 +646,11 @@ export class ReplayViewer {
     if (this.accessibility.reducedMotion) {
       const events = turnData.events ?? [];
       this.announceToScreenReader(this.generateTurnDescription(events));
+    }
+
+    // Keep sparkline current-turn marker in sync
+    if (this.winProbCanvas && this.winProbData) {
+      this.renderWinProbSparkline();
     }
   }
 
@@ -1193,40 +1239,66 @@ export class ReplayViewer {
 
   private winProbData: WinProbPoint[] | null = null;
   private winProbCanvas: HTMLCanvasElement | null = null;
+  private winProbCriticalMoments: CriticalMomentMarker[] = [];
 
-  // Set win probability data for sparkline rendering
   setWinProbabilityData(points: WinProbPoint[]): void {
     this.winProbData = points;
-    if (this.winProbCanvas) {
-      this.renderWinProbSparkline();
-    }
+    if (this.winProbCanvas) this.renderWinProbSparkline();
   }
 
-  // Get the win probability data
   getWinProbabilityData(): WinProbPoint[] | null {
     return this.winProbData;
   }
 
-  // Create and attach a win probability sparkline canvas
-  createWinProbSparkline(container: HTMLElement, width?: number, height = 60): HTMLCanvasElement {
-    this.winProbCanvas = document.createElement('canvas');
-    this.winProbCanvas.width = width ?? container.clientWidth;
-    this.winProbCanvas.height = height;
-    this.winProbCanvas.className = 'win-prob-sparkline-canvas';
-    this.winProbCanvas.style.cssText = 'width:100%;height:' + height + 'px;border-radius:6px;';
-    container.appendChild(this.winProbCanvas);
+  setCriticalMoments(moments: CriticalMomentMarker[]): void {
+    this.winProbCriticalMoments = moments;
+    if (this.winProbCanvas) this.renderWinProbSparkline();
+  }
 
-    if (this.winProbData) {
-      this.renderWinProbSparkline();
+  getCriticalMomentMarkers(): CriticalMomentMarker[] {
+    return this.winProbCriticalMoments;
+  }
+
+  // Create and attach a win probability sparkline canvas below the main viewer.
+  // Pass onTurnClick to enable click-to-scrub: clicking anywhere on the sparkline
+  // calls onTurnClick with the nearest turn number.
+  createWinProbSparkline(
+    container: HTMLElement,
+    width?: number,
+    height = 70,
+    onTurnClick?: (turn: number) => void,
+  ): HTMLCanvasElement {
+    // Replace any existing canvas
+    if (this.winProbCanvas && this.winProbCanvas.parentElement === container) {
+      container.removeChild(this.winProbCanvas);
     }
 
+    this.winProbCanvas = document.createElement('canvas');
+    this.winProbCanvas.width = width ?? Math.max(container.clientWidth, 400);
+    this.winProbCanvas.height = height;
+    this.winProbCanvas.className = 'win-prob-sparkline-canvas';
+    this.winProbCanvas.style.cssText = `width:100%;height:${height}px;border-radius:6px;cursor:pointer;`;
+    container.appendChild(this.winProbCanvas);
+
+    if (onTurnClick) {
+      this.winProbCanvas.addEventListener('click', (e) => {
+        if (!this.winProbData || this.winProbData.length < 2 || !this.winProbCanvas) return;
+        const rect = this.winProbCanvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (this.winProbCanvas.width / rect.width);
+        const padding = 4;
+        const chartW = this.winProbCanvas.width - padding * 2;
+        const maxTurn = this.winProbData[this.winProbData.length - 1].turn;
+        const turn = Math.round(Math.max(0, Math.min(maxTurn, (x - padding) / chartW * maxTurn)));
+        onTurnClick(turn);
+      });
+    }
+
+    if (this.winProbData) this.renderWinProbSparkline();
     return this.winProbCanvas;
   }
 
-  // Render the sparkline
   private renderWinProbSparkline(): void {
     if (!this.winProbCanvas || !this.winProbData || this.winProbData.length < 2) return;
-
     const ctx = this.winProbCanvas.getContext('2d');
     if (!ctx) return;
 
@@ -1235,6 +1307,7 @@ export class ReplayViewer {
       height: this.winProbCanvas.height,
       color0: this.accessibility.highContrast ? '#0000ff' : '#3b82f6',
       color1: this.accessibility.highContrast ? '#ff0000' : '#ef4444',
+      criticalMoments: this.winProbCriticalMoments,
     });
   }
 }

@@ -72,6 +72,12 @@ export interface ReplayTurn {
   debug?: Record<number, DebugInfo>;
 }
 
+export interface ReplayCriticalMoment {
+  turn: number;
+  delta: number;       // change in p0 win probability (positive = p0 improved)
+  description: string;
+}
+
 export interface Replay {
   format_version?: string; // semver, e.g. "1.0" — absent in pre-v1 replays
   match_id: string;
@@ -82,6 +88,8 @@ export interface Replay {
   players: ReplayPlayer[];
   map: ReplayMap;
   turns: ReplayTurn[];
+  win_prob?: number[][];             // [[p0, p1], ...] one entry per turn
+  critical_moments?: ReplayCriticalMoment[];
 }
 
 // Event detail types
