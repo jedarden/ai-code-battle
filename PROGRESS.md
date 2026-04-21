@@ -80,6 +80,21 @@ Removed superseded code that no longer matches the architecture:
 - [x] Replay playlists (`cmd/acb-index-builder/playlists.go`, `web/src/pages/playlists.ts`)
   - Auto-curated collections: featured, upsets, comebacks, domination
 - [x] Embeddable replay widget (`web/embed.html`, `web/src/embed.ts`)
+- [x] Multi-game series scheduler and bracket display (`cmd/acb-matchmaker/series_season.go`, `web/src/pages/series.ts`)
+  - Series scheduler: auto-creates best-of-N series for top-20 bots, schedules games sequentially
+  - Round-robin player slot alternation for fairness
+  - Varied map selection per game (engagement, wall density, random)
+  - Bracket progress dots, bracket tree visualization, game-by-game results
+  - Championship bracket: quarterfinals → semifinals → final for top 8 bots
+  - Spoiler toggle for hiding results in series detail view
+- [x] Seasonal ELO reset and leaderboard (`cmd/acb-matchmaker/series_season.go`, `web/src/pages/seasons.ts`, `web/src/pages/season-detail.ts`)
+  - Season end detection via `ends_at` column
+  - ELO snapshot into `season_snapshots` table before reset
+  - Decay formula: `new_mu = 1500 + (mu - 1500) * decay_factor` (default 0.7)
+  - Auto-starts new 28-day season with cycling themes
+  - Per-season leaderboard with rank, rating, wins, losses, win-rate bars
+  - Active season display with progress bar and mini-leaderboard
+  - Championship bracket visualization on season detail page
 
 ### Phase 8 Completed ✅
 
@@ -194,9 +209,12 @@ ai-code-battle/
 │   ├── acb-matchmaker/ # Internal matchmaker
 │   │   ├── main.go      # Ticker orchestration
 │   │   ├── tickers.go   # Pairing, health, reaping
+│   │   ├── series_season.go # Series scheduling, seasonal ELO reset, championship bracket
+│   │   ├── series_season_test.go # Tests for decay, bracket seeding, finalization
 │   │   ├── config.go    # Configuration
 │   │   ├── crypto.go    # Shared crypto
-│   │   └── alerts.go    # Discord/Slack alerts
+│   │   ├── alerts.go    # Discord/Slack alerts
+│   │   └── Dockerfile   # Container build
 │   └── acb-map-evolver/ # Map evolution pipeline
 │       └── main.go      # CLI entry point
 ├── web/
@@ -237,6 +255,9 @@ ai-code-battle/
 │           ├── feedback.ts
 │           ├── playlists.ts
 │           ├── blog.ts
+│           ├── series.ts
+│           ├── seasons.ts
+│           ├── season-detail.ts
 │           └── docs-api.ts
 ├── bots/
 │   ├── random/         # Python - RandomBot
