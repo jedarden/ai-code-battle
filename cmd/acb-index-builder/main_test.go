@@ -1199,12 +1199,227 @@ func TestSavePNG(t *testing.T) {
 	}
 }
 
-func generateTestImage(width, height int) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			img.Set(x, y, color.RGBA{R: 100, G: 100, B: 100, A: 255})
+// ── Fast playlist helper tests ────────────────────────────────────────────
+
+func TestBuildFirstMatchPerBot(t *testing.T) {
+	now := time.Now()
+	matches := []MatchData{
+		{ID: "m1", WinnerID: "bot1", CompletedAt: now.Add(-3 * time.Hour),
+			Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+		{ID: "m2", WinnerID: "bot2", CompletedAt: now.Add(-2 * time.Hour),
+			Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+		{ID: "m3", WinnerID: "bot3", CompletedAt: now.Add(-time.Hour),
+			Participants: []ParticipantData{{BotID: "bot3"}, {BotID: "bot4"}}},
+	}
+
+	firstMap := buildFirstMatchPerBot(matches)
+
+	if firstMap["bot1"] != "m1" {
+		t.Errorf("bot1 first match: got %q, want m1", firstMap["bot1"])
+	}
+	if firstMap["bot2"] != "m1" {
+		t.Errorf("bot2 first match: got %q, want m1", firstMap["bot2"])
+	}
+	if firstMap["bot3"] != "m3" {
+		t.Errorf("bot3 first match: got %q, want m3", firstMap["bot3"])
+	}
+	if firstMap["bot4"] != "m3" {
+		t.Errorf("bot4 first match: got %q, want m3", firstMap["bot4"])
+	}
+}
+
+func TestBuildFirstMatchPerBot_SkipsIncomplete(t *testing.T) {
+	now := time.Now()
+	matches := []MatchData{
+		{ID: "m_incomplete", WinnerID: "", CompletedAt: now,
+			Participants: []ParticipantData{{BotID: "bot1"}}},
+		{ID: "m_complete", WinnerID: "bot1", CompletedAt: now.Add(time.Hour),
+			Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+	}
+
+	firstMap := buildFirstMatchPerBot(matches)
+
+	if firstMap["bot1"] != "m_complete" {
+		t.Errorf("bot1 should only have m_complete (incomplete skipped), got %q", firstMap["bot1"])
+	}
+}
+
+func TestBuildFirstMatchPerBot_Empty(t *testing.T) {
+	firstMap := buildFirstMatchPerBot(nil)
+	if len(firstMap) != 0 {
+		t.Errorf("expected empty map for nil input, got %d entries", len(firstMap))
+	}
+}
+
+func TestIsNewBotDebutFast(t *testing.T) {
+	firstMap := map[string]string{
+		"bot1": "m1",
+		"bot2": "m2",
+	}
+
+	// bot1's debut is m1
+	m1 := MatchData{ID: "m1", WinnerID: "bot1",
+		Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}}
+	if !isNewBotDebutFast(m1, firstMap) {
+		t.Error("m1 should be a debut (bot1's first match)")
+	}
+
+	// m3 is neither bot's first match
+	m3 := MatchData{ID: "m3", WinnerID: "bot1",
+		Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}}
+	if isNewBotDebutFast(m3, firstMap) {
+		t.Error("m3 should not be a debut")
+	}
+
+	// No winner = not a debut
+	m4 := MatchData{ID: "m1", WinnerID: "",
+		Participants: []ParticipantData{{BotID: "bot1"}}}
+	if isNewBotDebutFast(m4, firstMap) {
+		t.Error("match with no winner should not be a debut")
+	}
+}
+
+func TestBuildPairFrequency(t *testing.T) {
+	matches := []MatchData{
+		{Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+		{Participants: []ParticipantData{{BotID: "bot2"}, {BotID: "bot1"}}},
+		{Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}},
+		{Participants: []ParticipantData{{BotID: "bot3"}, {BotID: "bot4"}}},
+		// 3-player match should be skipped
+		{Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}, {BotID: "bot5"}}},
+	}
+
+	freq := buildPairFrequency(matches)
+
+	if freq["bot1:bot2"] != 3 {
+		t.Errorf("bot1:bot2 frequency: got %d, want 3", freq["bot1:bot2"])
+	}
+	if freq["bot3:bot4"] != 1 {
+		t.Errorf("bot3:bot4 frequency: got %d, want 1", freq["bot3:bot4"])
+	}
+	if _, ok := freq["bot1:bot5"]; ok {
+		t.Error("3-player match should not create a pair entry")
+	}
+}
+
+func TestBuildPairFrequency_Empty(t *testing.T) {
+	freq := buildPairFrequency(nil)
+	if len(freq) != 0 {
+		t.Errorf("expected empty map for nil input, got %d entries", len(freq))
+	}
+}
+
+func TestIsRivalryMatchFast(t *testing.T) {
+	freq := map[string]int{
+		"bot1:bot2": 5,
+		"bot3:bot4": 2,
+	}
+
+	// 5 matches = rivalry
+	m1 := MatchData{WinnerID: "bot1",
+		Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}}
+	if !isRivalryMatchFast(m1, freq) {
+		t.Error("bot1 vs bot2 with 5 matches should be a rivalry")
+	}
+
+	// 2 matches = not a rivalry
+	m2 := MatchData{WinnerID: "bot3",
+		Participants: []ParticipantData{{BotID: "bot3"}, {BotID: "bot4"}}}
+	if isRivalryMatchFast(m2, freq) {
+		t.Error("bot3 vs bot4 with 2 matches should not be a rivalry")
+	}
+
+	// No winner = not a rivalry
+	m3 := MatchData{WinnerID: "",
+		Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}}}
+	if isRivalryMatchFast(m3, freq) {
+		t.Error("match with no winner should not be a rivalry")
+	}
+
+	// 3+ players = not checked
+	m4 := MatchData{WinnerID: "bot1",
+		Participants: []ParticipantData{{BotID: "bot1"}, {BotID: "bot2"}, {BotID: "bot3"}}}
+	if isRivalryMatchFast(m4, freq) {
+		t.Error("3-player match should not be a rivalry")
+	}
+}
+
+func TestGeneratePlaylistsWithFastLookups(t *testing.T) {
+	now := time.Now()
+	data := &IndexData{
+		GeneratedAt: now,
+		Bots: []BotData{
+			{ID: "bot1", Name: "Bot1"},
+			{ID: "bot2", Name: "Bot2"},
+			{ID: "bot3", Name: "Bot3"},
+		},
+		Matches: []MatchData{
+			// New bot debut for bot3
+			{ID: "debut1", WinnerID: "bot3", TurnCount: 200, CompletedAt: now,
+				Participants: []ParticipantData{
+					{BotID: "bot1", Score: 2, Won: false, PreMatchRating: 1500},
+					{BotID: "bot3", Score: 3, Won: true, PreMatchRating: 1400},
+				}},
+			// Rivalry match (bot1 vs bot2, 3rd meeting)
+			{ID: "rival1", WinnerID: "bot1", TurnCount: 300, CompletedAt: now.Add(-time.Hour),
+				Participants: []ParticipantData{
+					{BotID: "bot1", Score: 4, Won: true, PreMatchRating: 1600},
+					{BotID: "bot2", Score: 3, Won: false, PreMatchRating: 1550},
+				}},
+			{ID: "rival2", WinnerID: "bot2", TurnCount: 250, CompletedAt: now.Add(-2 * time.Hour),
+				Participants: []ParticipantData{
+					{BotID: "bot1", Score: 1, Won: false, PreMatchRating: 1580},
+					{BotID: "bot2", Score: 5, Won: true, PreMatchRating: 1560},
+				}},
+			{ID: "rival3", WinnerID: "bot1", TurnCount: 350, CompletedAt: now.Add(-3 * time.Hour),
+				Participants: []ParticipantData{
+					{BotID: "bot1", Score: 3, Won: true, PreMatchRating: 1590},
+					{BotID: "bot2", Score: 2, Won: false, PreMatchRating: 1570},
+				}},
+		},
+	}
+
+	tmpDir := t.TempDir()
+	playlistsDir := filepath.Join(tmpDir, "data", "playlists")
+	if err := os.MkdirAll(playlistsDir, 0755); err != nil {
+		t.Fatalf("Failed to create playlists dir: %v", err)
+	}
+
+	botNameMap := map[string]string{"bot1": "Bot1", "bot2": "Bot2", "bot3": "Bot3"}
+	if err := generatePlaylists(data, tmpDir, botNameMap); err != nil {
+		t.Fatalf("generatePlaylists failed: %v", err)
+	}
+
+	// Verify new-bot-debuts includes bot3's debut
+	debutContent, err := os.ReadFile(filepath.Join(playlistsDir, "new-bot-debuts.json"))
+	if err != nil {
+		t.Fatalf("Failed to read new-bot-debuts.json: %v", err)
+	}
+	var debutPlaylist Playlist
+	if err := json.Unmarshal(debutContent, &debutPlaylist); err != nil {
+		t.Fatalf("Failed to parse new-bot-debuts.json: %v", err)
+	}
+	foundDebut := false
+	for _, m := range debutPlaylist.Matches {
+		if m.MatchID == "debut1" {
+			foundDebut = true
+			break
 		}
 	}
-	return img
+	if !foundDebut {
+		t.Errorf("new-bot-debuts should include debut1 (bot3's first match), got %d matches", len(debutPlaylist.Matches))
+	}
+
+	// Verify rivalry-classics includes bot1 vs bot2 matches
+	rivalryContent, err := os.ReadFile(filepath.Join(playlistsDir, "rivalry-classics.json"))
+	if err != nil {
+		t.Fatalf("Failed to read rivalry-classics.json: %v", err)
+	}
+	var rivalryPlaylist Playlist
+	if err := json.Unmarshal(rivalryContent, &rivalryPlaylist); err != nil {
+		t.Fatalf("Failed to parse rivalry-classics.json: %v", err)
+	}
+	if len(rivalryPlaylist.Matches) < 3 {
+		t.Errorf("rivalry-classics should have 3 matches for bot1:bot2 (count=3), got %d", len(rivalryPlaylist.Matches))
+	}
 }
