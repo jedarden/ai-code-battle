@@ -167,6 +167,33 @@
     font-weight: 500;
   }
 
+  /* Win probability sparkline — full width on mobile */
+  .win-prob-section {
+    margin-top: 8px;
+  }
+
+  .win-prob-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .critical-moment-nav {
+    font-size: 0.75rem;
+  }
+
+  /* Commentary — scrollable on mobile if text is long */
+  .commentary-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .commentary-content {
+    max-height: 60px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   /* Replay viewer mobile */
   .replay-page .page-title {
     font-size: 1.25rem;
@@ -188,8 +215,13 @@
   }
 
   .canvas-wrapper {
-    padding: var(--space-xs);
+    padding: 0 !important;
     border-radius: var(--radius-md);
+    /* Square viewport so canvas fills the full phone width */
+    width: 100%;
+    aspect-ratio: 1;
+    max-height: none !important;
+    overflow: hidden;
   }
 
   /* Mobile replay controls - compact bar below canvas */

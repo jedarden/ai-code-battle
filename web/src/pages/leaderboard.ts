@@ -18,7 +18,7 @@ export async function renderLeaderboardPage(): Promise<void> {
 
   try {
     const data = await fetchLeaderboard();
-    renderLeaderboardTable(content, data.entries, data.updated_at);
+    renderLeaderboard(content, data.entries, data.updated_at);
   } catch (error) {
     content.innerHTML = `
       <div class="error">
@@ -29,7 +29,7 @@ export async function renderLeaderboardPage(): Promise<void> {
   }
 }
 
-function renderLeaderboardTable(
+function renderLeaderboard(
   container: HTMLElement,
   entries: LeaderboardEntry[],
   updatedAt: string
@@ -47,22 +47,29 @@ function renderLeaderboardTable(
 
   container.innerHTML = `
     <p class="updated-at">Last updated: ${formatTimestamp(updatedAt)}</p>
-    <table class="leaderboard-table">
-      <thead>
-        <tr>
-          <th>Rank</th>
-          <th>Bot</th>
-          <th>Rating</th>
-          <th>W/L</th>
-          <th>Win Rate</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${entries.map(entry => renderLeaderboardRow(entry)).join('')}
-      </tbody>
-    </table>
+    <div class="table-container">
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Bot</th>
+            <th>Rating</th>
+            <th>W/L</th>
+            <th>Win Rate</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.map(entry => renderLeaderboardRow(entry)).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="mobile-cards" role="list">
+      ${entries.map(entry => renderMobileCard(entry)).join('')}
+    </div>
   `;
+
+  initMobileCardToggles(container);
 }
 
 function renderLeaderboardRow(entry: LeaderboardEntry): string {
@@ -85,6 +92,54 @@ function renderLeaderboardRow(entry: LeaderboardEntry): string {
       <td class="status ${statusClass}">${entry.health_status}</td>
     </tr>
   `;
+}
+
+function renderMobileCard(entry: LeaderboardEntry): string {
+  const rankClass = entry.rank <= 3 ? `rank-${entry.rank}` : '';
+  const statusClass = entry.health_status === 'healthy' ? 'status-healthy' :
+                      entry.health_status === 'unhealthy' ? 'status-unhealthy' : 'status-unknown';
+  const winRate = entry.win_rate.toFixed(1);
+
+  return `
+    <div class="leaderboard-mobile-card" role="listitem" data-bot-id="${encodeURIComponent(entry.bot_id)}" aria-expanded="false">
+      <div class="leaderboard-mobile-rank ${rankClass}">${entry.rank}</div>
+      <div class="leaderboard-mobile-info">
+        <div class="leaderboard-mobile-name">${escapeHtml(entry.name)}</div>
+        <div class="leaderboard-mobile-rating">${entry.rating} <span style="opacity:.6;font-size:.8em">±${entry.rating_deviation}</span></div>
+      </div>
+      <div class="leaderboard-mobile-trend" aria-hidden="true">—</div>
+      <div class="leaderboard-mobile-details">
+        <div class="leaderboard-mobile-stat">
+          <span class="leaderboard-mobile-stat-label">W / L</span>
+          <span class="leaderboard-mobile-stat-value">${entry.matches_won} / ${entry.matches_played}</span>
+        </div>
+        <div class="leaderboard-mobile-stat">
+          <span class="leaderboard-mobile-stat-label">Win Rate</span>
+          <span class="leaderboard-mobile-stat-value">${winRate}%</span>
+        </div>
+        <div class="leaderboard-mobile-stat">
+          <span class="leaderboard-mobile-stat-label">Status</span>
+          <span class="leaderboard-mobile-stat-value ${statusClass}">${entry.health_status}</span>
+        </div>
+        <a href="#/bot/${encodeURIComponent(entry.bot_id)}"
+           class="btn small"
+           style="margin-top:10px;display:block;text-align:center"
+           aria-label="Full stats for ${escapeHtml(entry.name)}">Full Stats &rarr;</a>
+      </div>
+    </div>
+  `;
+}
+
+function initMobileCardToggles(container: HTMLElement): void {
+  container.querySelectorAll<HTMLElement>('.leaderboard-mobile-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('a')) return;
+      const details = card.querySelector<HTMLElement>('.leaderboard-mobile-details');
+      if (!details) return;
+      const expanded = details.classList.toggle('expanded');
+      card.setAttribute('aria-expanded', String(expanded));
+    });
+  });
 }
 
 function formatTimestamp(iso: string): string {

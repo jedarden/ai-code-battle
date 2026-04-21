@@ -33,9 +33,29 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       <div class="replay-layout">
         <div class="replay-main">
           <div class="canvas-wrapper">
-            <canvas id="replay-canvas"></canvas>
+            <canvas id="replay-canvas" style="touch-action:none"></canvas>
             <div id="no-replay" class="no-replay-message">Load a replay file to view</div>
           </div>
+
+          <!-- Mobile compact controls bar — CSS hides on tablet+ -->
+          <div class="mobile-replay-controls" id="mobile-controls">
+            <div class="mobile-playback-bar">
+              <button id="mobile-reset-btn" class="btn small" aria-label="Reset to start" disabled>&#9612;&#9612;</button>
+              <button id="mobile-prev-btn" class="btn small" aria-label="Previous turn" disabled>&#9664;</button>
+              <button id="mobile-play-btn" class="btn small primary" aria-label="Play or pause" disabled>&#9654;</button>
+              <button id="mobile-next-btn" class="btn small" aria-label="Next turn" disabled>&#9654;&#9654;</button>
+              <span id="mobile-turn-info" class="mobile-speed-display">T: 0/0</span>
+              <button id="mobile-speed-btn" class="btn small secondary" aria-label="Cycle playback speed">100ms</button>
+            </div>
+            <input type="range" id="mobile-turn-slider" min="0" max="0" value="0"
+              style="width:100%;margin-top:4px" disabled aria-label="Turn scrubber">
+          </div>
+
+          <!-- Mobile event timeline ribbon — CSS hides on tablet+ -->
+          <div class="mobile-event-timeline" id="mobile-timeline" aria-label="Event timeline">
+            <span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">Load a replay</span>
+          </div>
+
           <div id="win-prob-section" class="win-prob-section" style="display:none">
             <div class="win-prob-header">
               <span class="win-prob-title">Win Probability</span>
@@ -161,6 +181,10 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
         </div>
       </div>
     </div>
+
+    <!-- Floating view mode toggle — CSS hides on tablet+desktop -->
+    <button id="mobile-view-mode-btn" class="mobile-view-mode-toggle"
+      aria-label="Switch view mode" title="Switch view mode">&#128065;</button>
 
     <!-- Debug telemetry bottom sheet (mobile) / sidebar panel (desktop) -->
     <div id="debug-panel" class="panel debug-panel" style="display:none">
@@ -332,10 +356,34 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const debugPlayerToggles = document.getElementById('debug-player-toggles') as HTMLDivElement;
   const debugInfoDisplay = document.getElementById('debug-info-display') as HTMLDivElement;
 
+  // Mobile controls
+  const mobilePlayBtn = document.getElementById('mobile-play-btn') as HTMLButtonElement;
+  const mobilePrevBtn = document.getElementById('mobile-prev-btn') as HTMLButtonElement;
+  const mobileNextBtn = document.getElementById('mobile-next-btn') as HTMLButtonElement;
+  const mobileResetBtn = document.getElementById('mobile-reset-btn') as HTMLButtonElement;
+  const mobileTurnInfo = document.getElementById('mobile-turn-info') as HTMLSpanElement;
+  const mobileTurnSlider = document.getElementById('mobile-turn-slider') as HTMLInputElement;
+  const mobileSpeedBtn = document.getElementById('mobile-speed-btn') as HTMLButtonElement;
+  const mobileTimeline = document.getElementById('mobile-timeline') as HTMLDivElement;
+  const mobileViewModeBtn = document.getElementById('mobile-view-mode-btn') as HTMLButtonElement;
+
   let viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
   let commentaryEnabled = true;
   let debugPanelExpanded = false;
+
+  // Mobile speed cycling
+  const SPEED_STEPS = [1000, 500, 200, 100, 50, 20];
+  let mobileSpeedIdx = 3; // default 100ms
+
+  // View mode cycling
+  const VIEW_MODES: Array<'standard' | 'dots' | 'voronoi' | 'influence'> = ['standard', 'dots', 'voronoi', 'influence'];
+  const VIEW_MODE_ICONS: Record<string, string> = { standard: '\u{1F5FA}', dots: '··', voronoi: '⬡', influence: '◎' };
+
+  // Pinch-to-zoom pointer state
+  const activePointers = new Map<number, PointerEvent>();
+  let pinchStartDist = 0;
+  let pinchStartCellSize = 10;
 
   function enableControls(): void {
     playBtn.disabled = false;
@@ -344,6 +392,63 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     resetBtn.disabled = false;
     turnSlider.disabled = false;
     noReplayDiv.style.display = 'none';
+  }
+
+  function enableMobileControls(): void {
+    mobilePlayBtn.disabled = false;
+    mobilePrevBtn.disabled = false;
+    mobileNextBtn.disabled = false;
+    mobileResetBtn.disabled = false;
+    mobileTurnSlider.disabled = false;
+  }
+
+  function updateMobileUI(): void {
+    const turn = viewer.getTurn();
+    const total = viewer.getTotalTurns();
+    mobileTurnInfo.textContent = `T: ${turn}/${total - 1}`;
+    mobileTurnSlider.value = String(turn);
+    mobilePlayBtn.textContent = viewer.getIsPlaying() ? '⏸' : '▶';
+  }
+
+  function buildMobileTimeline(replay: Replay): void {
+    const eventTurns: number[] = [];
+    replay.turns.forEach((t: any, i: number) => {
+      if (t.events && t.events.length > 0) eventTurns.push(i);
+    });
+
+    if (eventTurns.length === 0) {
+      mobileTimeline.innerHTML = '<span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">No events</span>';
+      return;
+    }
+
+    const currentTurn = viewer.getTurn();
+    mobileTimeline.innerHTML = eventTurns.map(turn => {
+      const active = turn === currentTurn ? ' active' : '';
+      return `<button class="mobile-event-dot${active}" data-turn="${turn}" aria-label="Turn ${turn}"><span style="font-size:0.65rem">${turn}</span></button>`;
+    }).join('');
+
+    mobileTimeline.querySelectorAll<HTMLElement>('.mobile-event-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        const t = parseInt(dot.dataset.turn!, 10);
+        viewer.setTurn(t);
+        updateUI();
+        updateEventLog();
+        updateMobileUI();
+        updateMobileTimeline();
+      });
+    });
+  }
+
+  function updateMobileTimeline(): void {
+    const currentTurn = viewer.getTurn();
+    mobileTimeline.querySelectorAll<HTMLElement>('.mobile-event-dot').forEach(dot => {
+      const t = parseInt(dot.dataset.turn!, 10);
+      dot.classList.toggle('active', t === currentTurn);
+    });
+    const activeDot = mobileTimeline.querySelector<HTMLElement>('.mobile-event-dot.active');
+    if (activeDot) {
+      activeDot.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
   }
 
   function updateUI(): void {
@@ -393,10 +498,14 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   function loadReplay(replay: Replay): void {
     viewer.loadReplay(replay);
     enableControls();
+    enableMobileControls();
     updateMatchInfo(replay);
     turnSlider.max = String(viewer.getTotalTurns() - 1);
+    mobileTurnSlider.max = String(viewer.getTotalTurns() - 1);
     updateUI();
     updateEventLog();
+    updateMobileUI();
+    buildMobileTimeline(replay);
     initWinProb(replay);
     loadCommentary(replay.match_id);
     initDebugPanel(replay);
@@ -684,11 +793,16 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateUI();
     updateEventLog();
     if (criticalMoments.length > 0) updateCriticalMomentNav();
+    updateMobileUI();
+    updateMobileTimeline();
   };
   viewer.onDebugChange = (debug: Record<number, DebugInfo> | null) => {
     updateDebugDisplay(debug);
   };
-  viewer.onPlayStateChange = (playing: boolean) => { playBtn.textContent = playing ? 'Pause' : 'Play'; };
+  viewer.onPlayStateChange = (playing: boolean) => {
+    playBtn.textContent = playing ? 'Pause' : 'Play';
+    mobilePlayBtn.textContent = playing ? '⏸' : '▶';
+  };
   viewer.onCommentaryChange = (entry: { turn: number; text: string; type: string } | null) => {
     if (!entry || !commentaryEnabled) {
       commentaryText.textContent = '';
@@ -697,6 +811,118 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     commentaryText.textContent = entry.text;
     commentaryText.className = `commentary-text type-${entry.type}`;
   };
+
+  // ── Mobile controls ─────────────────────────────────────────────────────────
+  mobilePlayBtn.addEventListener('click', () => viewer.togglePlay());
+  mobilePrevBtn.addEventListener('click', () => {
+    viewer.setTurn(viewer.getTurn() - 1);
+    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+  });
+  mobileNextBtn.addEventListener('click', () => {
+    viewer.setTurn(viewer.getTurn() + 1);
+    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+  });
+  mobileResetBtn.addEventListener('click', () => {
+    viewer.pause(); viewer.setTurn(0);
+    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+  });
+  mobileTurnSlider.addEventListener('input', () => {
+    viewer.setTurn(parseInt(mobileTurnSlider.value, 10));
+    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+  });
+  mobileSpeedBtn.addEventListener('click', () => {
+    mobileSpeedIdx = (mobileSpeedIdx + 1) % SPEED_STEPS.length;
+    const speed = SPEED_STEPS[mobileSpeedIdx];
+    viewer.setSpeed(speed);
+    speedDisplay.textContent = String(speed);
+    speedSlider.value = String(speed);
+    mobileSpeedBtn.textContent = `${speed}ms`;
+  });
+
+  // Floating view mode toggle
+  mobileViewModeBtn.addEventListener('click', () => {
+    const current = viewer.getViewMode();
+    const idx = VIEW_MODES.indexOf(current as any);
+    const next = VIEW_MODES[(idx + 1) % VIEW_MODES.length];
+    viewer.setViewMode(next);
+    mobileViewModeBtn.textContent = VIEW_MODE_ICONS[next] ?? '👁';
+  });
+
+  // ── Canvas touch gestures ────────────────────────────────────────────────────
+  // Tap = play/pause; horizontal swipe = prev/next turn; two-finger pinch = zoom
+
+  let tapStartX = 0;
+  let tapStartY = 0;
+  let tapStartTime = 0;
+
+  canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+    activePointers.set(e.pointerId, e);
+    canvas.setPointerCapture(e.pointerId);
+
+    if (activePointers.size === 1) {
+      tapStartX = e.clientX;
+      tapStartY = e.clientY;
+      tapStartTime = Date.now();
+    } else if (activePointers.size === 2) {
+      const pts = [...activePointers.values()];
+      const dx = pts[0].clientX - pts[1].clientX;
+      const dy = pts[0].clientY - pts[1].clientY;
+      pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+      pinchStartCellSize = viewer.getCellSize();
+    }
+  });
+
+  canvas.addEventListener('pointermove', (e: PointerEvent) => {
+    activePointers.set(e.pointerId, e);
+
+    if (activePointers.size === 2) {
+      const pts = [...activePointers.values()];
+      const dx = pts[0].clientX - pts[1].clientX;
+      const dy = pts[0].clientY - pts[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (pinchStartDist > 0) {
+        const newSize = Math.round(pinchStartCellSize * (dist / pinchStartDist));
+        viewer.setCellSize(newSize);
+      }
+    }
+  });
+
+  canvas.addEventListener('pointerup', (e: PointerEvent) => {
+    const wasOne = activePointers.size === 1;
+    const endX = e.clientX;
+    const endY = e.clientY;
+    activePointers.delete(e.pointerId);
+
+    if (wasOne) {
+      const dx = endX - tapStartX;
+      const dy = endY - tapStartY;
+      const elapsed = Date.now() - tapStartTime;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (elapsed < 300 && dist < 12) {
+        // Tap: play/pause
+        if (viewer.getReplay()) viewer.togglePlay();
+      } else if (elapsed < 500 && Math.abs(dx) > 40 && Math.abs(dy) < 50) {
+        // Horizontal swipe: scrub turn
+        if (!viewer.getReplay()) return;
+        if (dx < 0) {
+          viewer.setTurn(viewer.getTurn() + 1);
+        } else {
+          viewer.setTurn(viewer.getTurn() - 1);
+        }
+        updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+      }
+    }
+
+    if (activePointers.size < 2) {
+      pinchStartDist = 0;
+    }
+  });
+
+  canvas.addEventListener('pointercancel', (e: PointerEvent) => {
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinchStartDist = 0;
+  });
 
   // Commentary toggle
   commentaryToggle.addEventListener('click', () => {

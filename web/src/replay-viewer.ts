@@ -576,6 +576,18 @@ export class ReplayViewer {
     return this.viewMode;
   }
 
+  setCellSize(size: number): void {
+    this.cellSize = Math.max(4, Math.min(20, Math.round(size)));
+    if (this.replay) {
+      this.resizeCanvas();
+      this.render();
+    }
+  }
+
+  getCellSize(): number {
+    return this.cellSize;
+  }
+
   setShowDebug(show: boolean): void {
     this.showDebug = show;
     this.render();

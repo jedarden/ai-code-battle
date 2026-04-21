@@ -511,11 +511,13 @@ export async function renderHomePage(): Promise<void> {
   padding: 16px 0;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
+/* Responsive — phone (<640px) */
+@media (max-width: 639px) {
   .home-grid { grid-template-columns: 1fr; }
   .home-hero h1 { font-size: 1.75rem; }
   .home-tagline { font-size: 1rem; }
+  .home-hero { padding: 20px 16px; }
+  .home-ctas { flex-wrap: wrap; }
   .home-season {
     flex-direction: column;
     gap: 10px;
@@ -535,6 +537,7 @@ export async function renderHomePage(): Promise<void> {
     gap: 8px;
     align-items: flex-start;
   }
+  .home-pl-card { width: 140px; }
 }
 </style>`;
 }
