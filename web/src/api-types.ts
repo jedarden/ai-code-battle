@@ -98,143 +98,51 @@ export interface RegisterResponse {
   error?: string;
 }
 
-// Evolution dashboard types
+// Evolution dashboard types (re-exported from types.ts for convenience)
+import type {
+  LiveJSON,
+  EvolutionIslandStat,
+  EvolutionParentInfo,
+  EvolutionStageResult,
+  EvolutionValidationStatus,
+  EvaluationMatchResult,
+  EvolutionEvaluationStatus,
+  EvolutionCandidate,
+  EvolutionCycleInfo,
+  EvolutionActivityEntry,
+  EvolutionTotals,
+  EvolutionGenerationEntry,
+  EvolutionLineageNode,
+  EvolutionMetaSnapshot,
+} from './types';
 
-// Dashboard island stat (live.json format)
-export interface IslandStat {
-  population: number;
-  best_rating: number;
-  best_bot: string;
-  language_div?: string;
-}
+export type {
+  LiveJSON,
+  EvolutionIslandStat as IslandStat,
+  EvolutionParentInfo as ParentInfo,
+  EvolutionStageResult as StageResult,
+  EvolutionValidationStatus as ValidationStatus,
+  EvaluationMatchResult as MatchResult,
+  EvolutionEvaluationStatus as EvaluationStatus,
+  EvolutionCandidate as Candidate,
+  EvolutionCycleInfo as CycleInfo,
+  EvolutionActivityEntry as ActivityEntry,
+  EvolutionTotals as Totals,
+  EvolutionGenerationEntry as GenerationEntry,
+  EvolutionLineageNode as LineageNode,
+  EvolutionMetaSnapshot as MetaSnapshot,
+} from './types';
 
-// Full island stat (legacy format)
+// Convenience alias: the full live.json document
+export type EvolutionLiveData = LiveJSON;
+
+// Full island stat (legacy format, not in live.json schema)
 export interface IslandStatFull {
   count: number;
   best_fitness: number;
   avg_fitness: number;
   diversity: number;
   promoted_count: number;
-}
-
-// Parent info for candidate
-export interface ParentInfo {
-  id: string;
-  rating: number;
-}
-
-// Validation stage result
-export interface StageResult {
-  passed: boolean;
-  time_ms: number;
-  error?: string;
-}
-
-// Validation status
-export interface ValidationStatus {
-  syntax?: StageResult;
-  schema?: StageResult;
-  smoke?: StageResult;
-}
-
-// Match result in evaluation
-export interface MatchResult {
-  opponent: string;
-  won: boolean;
-  score: string;
-}
-
-// Evaluation status
-export interface EvaluationStatus {
-  matches_total: number;
-  matches_played: number;
-  results: MatchResult[];
-}
-
-// Current candidate being evaluated
-export interface Candidate {
-  id: string;
-  island: string;
-  language: string;
-  parents: ParentInfo[];
-  validation?: ValidationStatus;
-  evaluation?: EvaluationStatus;
-}
-
-// Current cycle info
-export interface CycleInfo {
-  generation: number;
-  started_at: string;
-  phase: string; // generating, validating, evaluating, promoting, idle
-  candidate?: Candidate;
-}
-
-// Activity entry in recent activity feed
-export interface ActivityEntry {
-  time: string;
-  generation: number;
-  candidate: string;
-  island: string;
-  result: string; // promoted, rejected
-  reason: string;
-  stage: string; // validation, promotion, deployment
-  bot_id?: string;
-  initial_rating?: number;
-}
-
-// Overall evolution statistics
-export interface Totals {
-  generations_total: number;
-  candidates_today: number;
-  promoted_today: number;
-  promotion_rate_7d: number;
-  highest_evolved_rating: number;
-  evolved_in_top_10: number;
-}
-
-// Legacy generation entry
-export interface GenerationEntry {
-  generation: number;
-  island: string;
-  evaluated_at: string;
-  count: number;
-  promoted: number;
-  best_fitness: number;
-  avg_fitness: number;
-}
-
-// Legacy lineage node
-export interface LineageNode {
-  id: number;
-  parent_ids: number[];
-  generation: number;
-  island: string;
-  fitness: number;
-  promoted: boolean;
-  language: string;
-  created_at: string;
-}
-
-// Legacy meta snapshot
-export interface MetaSnapshot {
-  generation: number;
-  island_counts: Record<string, number>;
-  island_best_fitness: Record<string, number>;
-}
-
-// Evolution live data (plan §14 format)
-export interface EvolutionLiveData {
-  updated_at: string;
-  cycle?: CycleInfo;
-  recent_activity?: ActivityEntry[];
-  islands: Record<string, IslandStat>;
-  totals: Totals;
-  // Legacy fields for backward compatibility
-  total_programs?: number;
-  promoted_count?: number;
-  generation_log?: GenerationEntry[];
-  lineage?: LineageNode[];
-  meta_snapshots?: MetaSnapshot[];
 }
 
 // Blog / Narrative Engine types

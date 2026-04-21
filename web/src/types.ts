@@ -279,3 +279,120 @@ export interface PredictionLeaderboard {
   updated_at: string;
   leaders: PredictorStats[];
 }
+
+// Evolution live.json schema (plan §14) — real-time dashboard feed from acb-evolver
+
+export interface EvolutionIslandStat {
+  population: number;
+  best_rating: number;
+  best_bot: string;
+  language_div?: string;
+}
+
+export interface EvolutionParentInfo {
+  id: string;
+  rating: number;
+}
+
+export interface EvolutionStageResult {
+  passed: boolean;
+  time_ms: number;
+  error?: string;
+}
+
+export interface EvolutionValidationStatus {
+  syntax?: EvolutionStageResult;
+  schema?: EvolutionStageResult;
+  smoke?: EvolutionStageResult;
+}
+
+export interface EvaluationMatchResult {
+  opponent: string;
+  won: boolean;
+  score: string;
+}
+
+export interface EvolutionEvaluationStatus {
+  matches_total: number;
+  matches_played: number;
+  results: EvaluationMatchResult[];
+}
+
+export interface EvolutionCandidate {
+  id: string;
+  island: string;
+  language: string;
+  parents: EvolutionParentInfo[];
+  validation?: EvolutionValidationStatus;
+  evaluation?: EvolutionEvaluationStatus;
+}
+
+export interface EvolutionCycleInfo {
+  generation: number;
+  started_at: string;
+  phase: string; // generating, validating, evaluating, promoting, idle
+  candidate?: EvolutionCandidate;
+}
+
+export interface EvolutionActivityEntry {
+  time: string;
+  generation: number;
+  candidate: string;
+  island: string;
+  result: string; // promoted, rejected
+  reason: string;
+  stage: string; // validation, promotion, deployment
+  bot_id?: string;
+  initial_rating?: number;
+}
+
+export interface EvolutionTotals {
+  generations_total: number;
+  candidates_today: number;
+  promoted_today: number;
+  promotion_rate_7d: number;
+  highest_evolved_rating: number;
+  evolved_in_top_10: number;
+  mutations_per_hour: number;
+}
+
+export interface EvolutionGenerationEntry {
+  generation: number;
+  island: string;
+  evaluated_at: string;
+  count: number;
+  promoted: number;
+  best_fitness: number;
+  avg_fitness: number;
+}
+
+export interface EvolutionLineageNode {
+  id: number;
+  parent_ids: number[];
+  generation: number;
+  island: string;
+  fitness: number;
+  promoted: boolean;
+  language: string;
+  created_at: string;
+}
+
+export interface EvolutionMetaSnapshot {
+  generation: number;
+  island_counts: Record<string, number>;
+  island_best_fitness: Record<string, number>;
+}
+
+export interface LiveJSON {
+  updated_at: string;
+  cycle?: EvolutionCycleInfo;
+  recent_activity?: EvolutionActivityEntry[];
+  islands: Record<string, EvolutionIslandStat>;
+  totals: EvolutionTotals;
+  // Legacy fields for backward compatibility
+  total_programs?: number;
+  promoted_count?: number;
+  generation_log?: EvolutionGenerationEntry[];
+  lineage?: EvolutionLineageNode[];
+  meta_snapshots?: EvolutionMetaSnapshot[];
+}

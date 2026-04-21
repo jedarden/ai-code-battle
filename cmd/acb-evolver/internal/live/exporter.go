@@ -132,6 +132,7 @@ type Totals struct {
 	PromotionRate7d       float64 `json:"promotion_rate_7d"`
 	HighestEvolvedRating  int     `json:"highest_evolved_rating"`
 	EvolvedInTop10        int     `json:"evolved_in_top_10"`
+	MutationsPerHour      float64 `json:"mutations_per_hour"`
 }
 
 // LiveData is the full evolution dashboard payload written to live.json (plan §14 format).
@@ -289,6 +290,15 @@ func fillTotals(ctx context.Context, db *sql.DB, data *LiveData) error {
 		top10Count = 0
 	}
 
+	// Mutations per hour (programs created in the last hour)
+	var mutationsLastHour int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM programs
+		WHERE created_at >= NOW() - INTERVAL '1 hour'`).Scan(&mutationsLastHour)
+	if err != nil {
+		mutationsLastHour = 0
+	}
+
 	data.Totals = Totals{
 		GenerationsTotal:     maxGen,
 		CandidatesToday:      candidatesToday,
@@ -296,6 +306,7 @@ func fillTotals(ctx context.Context, db *sql.DB, data *LiveData) error {
 		PromotionRate7d:      rate7d,
 		HighestEvolvedRating: highestRating,
 		EvolvedInTop10:       top10Count,
+		MutationsPerHour:     round3(float64(mutationsLastHour)),
 	}
 
 	return nil

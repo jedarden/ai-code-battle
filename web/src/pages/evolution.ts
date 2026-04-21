@@ -654,6 +654,10 @@ function renderStatistics(container: HTMLElement, totals: Totals): void {
         <div class="stat-label">Evolved in Top 10</div>
         <div class="stat-value">${totals.evolved_in_top_10}</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-label">Mutations / Hour</div>
+        <div class="stat-value">${totals.mutations_per_hour ?? 0}</div>
+      </div>
     </div>
   `;
 }

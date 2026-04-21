@@ -136,9 +136,7 @@ function drawEffects(ctx: CanvasRenderingContext2D): void {
 // Win probability point for sparkline
 export interface WinProbPoint {
   turn: number;
-  p0WinProb: number;
-  p1WinProb: number;
-  drawProb?: number;
+  probs: number[];  // one probability per player (0.0–1.0)
 }
 
 export interface CriticalMomentMarker {
@@ -146,6 +144,18 @@ export interface CriticalMomentMarker {
   delta: number;
   description: string;
 }
+
+// Default player colors for sparkline (matches DEFAULT_PLAYER_COLORS)
+const SPARKLINE_COLORS = [
+  '#3b82f6', // Blue
+  '#ef4444', // Red
+  '#22c55e', // Green
+  '#f59e0b', // Amber
+  '#8b5cf6', // Purple
+  '#06b6d4', // Cyan
+  '#ec4899', // Pink
+  '#f97316', // Orange
+];
 
 // Render win probability sparkline to canvas
 export function renderWinProbSparkline(
@@ -155,12 +165,15 @@ export function renderWinProbSparkline(
   options: {
     width: number;
     height: number;
-    color0?: string;
-    color1?: string;
+    playerColors?: string[];
     criticalMoments?: CriticalMomentMarker[];
   },
 ): void {
-  const { width, height, color0 = '#3b82f6', color1 = '#ef4444', criticalMoments = [] } = options;
+  const {
+    width, height,
+    playerColors = SPARKLINE_COLORS,
+    criticalMoments = [],
+  } = options;
   const padding = { top: 8, bottom: 8, left: 4, right: 4 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
@@ -176,6 +189,7 @@ export function renderWinProbSparkline(
   ctx.fillRect(0, 0, width, height);
 
   const maxTurn = points[points.length - 1].turn;
+  const numPlayers = points[0].probs.length;
 
   const x = (turn: number) => padding.left + (turn / maxTurn) * chartW;
   const y = (prob: number) => padding.top + chartH * (1 - prob);
@@ -191,10 +205,19 @@ export function renderWinProbSparkline(
   ctx.stroke();
   ctx.setLineDash([]);
 
+  // 0% and 100% labels
+  ctx.fillStyle = '#475569';
+  ctx.font = '8px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('100%', padding.left + 28, padding.top + 6);
+  ctx.fillText('0%', padding.left + 22, height - padding.bottom - 1);
+
   // Critical moment markers — dashed vertical lines with delta labels
   for (const moment of criticalMoments) {
     const mx = x(moment.turn);
-    const markerColor = moment.delta > 0 ? color0 : color1;
+    const markerColor = moment.delta > 0
+      ? playerColors[0] ?? SPARKLINE_COLORS[0]
+      : playerColors[1] ?? SPARKLINE_COLORS[1];
 
     ctx.strokeStyle = markerColor + 'aa';
     ctx.lineWidth = 1.5;
@@ -225,44 +248,41 @@ export function renderWinProbSparkline(
     ctx.fillText(label, Math.max(18, Math.min(width - 18, mx)), padding.top + 7);
   }
 
-  // P0 area fill
-  ctx.beginPath();
-  ctx.moveTo(padding.left, y(0.5));
-  for (const pt of points) {
-    ctx.lineTo(x(pt.turn), y(pt.p0WinProb));
+  // Area fill for first two players (creates the visual gradient)
+  if (numPlayers >= 2) {
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y(points[0].probs[0]));
+    for (const pt of points) {
+      ctx.lineTo(x(pt.turn), y(pt.probs[0]));
+    }
+    ctx.lineTo(width - padding.right, y(points[points.length - 1].probs[1]));
+    for (let i = points.length - 1; i >= 0; i--) {
+      ctx.lineTo(x(points[i].turn), y(points[i].probs[1]));
+    }
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+    grad.addColorStop(0, (playerColors[0] ?? SPARKLINE_COLORS[0]) + '33');
+    grad.addColorStop(0.5, 'transparent');
+    grad.addColorStop(1, (playerColors[1] ?? SPARKLINE_COLORS[1]) + '33');
+    ctx.fillStyle = grad;
+    ctx.fill();
   }
-  ctx.lineTo(width - padding.right, y(0.5));
-  ctx.closePath();
-  const grad = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-  grad.addColorStop(0, color0 + '44');
-  grad.addColorStop(0.5, 'transparent');
-  grad.addColorStop(1, color1 + '44');
-  ctx.fillStyle = grad;
-  ctx.fill();
 
-  // P0 line
-  ctx.beginPath();
-  for (let i = 0; i < points.length; i++) {
-    const pt = points[i];
-    if (i === 0) ctx.moveTo(x(pt.turn), y(pt.p0WinProb));
-    else ctx.lineTo(x(pt.turn), y(pt.p0WinProb));
+  // Draw a line per player
+  for (let p = numPlayers - 1; p >= 0; p--) {
+    const color = playerColors[p] ?? SPARKLINE_COLORS[p % SPARKLINE_COLORS.length];
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i++) {
+      const pt = points[i];
+      if (i === 0) ctx.moveTo(x(pt.turn), y(pt.probs[p]));
+      else ctx.lineTo(x(pt.turn), y(pt.probs[p]));
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = p === 0 ? 2 : 1.5;
+    if (p > 1) ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
-  ctx.strokeStyle = color0;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // P1 line (dashed)
-  ctx.beginPath();
-  for (let i = 0; i < points.length; i++) {
-    const pt = points[i];
-    if (i === 0) ctx.moveTo(x(pt.turn), y(pt.p1WinProb));
-    else ctx.lineTo(x(pt.turn), y(pt.p1WinProb));
-  }
-  ctx.strokeStyle = color1;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 3]);
-  ctx.stroke();
-  ctx.setLineDash([]);
 
   // Current turn marker
   const curX = x(currentTurn);
@@ -273,16 +293,19 @@ export function renderWinProbSparkline(
   ctx.lineTo(curX, height - padding.bottom);
   ctx.stroke();
 
-  // Current probability dot
+  // Current probability dots for all players
   const curPt = points.find(p => p.turn >= currentTurn) ?? points[points.length - 1];
   if (curPt) {
-    ctx.beginPath();
-    ctx.arc(curX, y(curPt.p0WinProb), 4, 0, Math.PI * 2);
-    ctx.fillStyle = curPt.p0WinProb > 0.5 ? color0 : color1;
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    for (let p = 0; p < curPt.probs.length; p++) {
+      const color = playerColors[p] ?? SPARKLINE_COLORS[p % SPARKLINE_COLORS.length];
+      ctx.beginPath();
+      ctx.arc(curX, y(curPt.probs[p]), 4, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
   }
 }
 
@@ -1741,6 +1764,7 @@ export class ReplayViewer {
   private winProbData: WinProbPoint[] | null = null;
   private winProbCanvas: HTMLCanvasElement | null = null;
   private winProbCriticalMoments: CriticalMomentMarker[] = [];
+  private winProbPlayerColors: string[] = [];
 
   setWinProbabilityData(points: WinProbPoint[]): void {
     this.winProbData = points;
@@ -1758,6 +1782,18 @@ export class ReplayViewer {
 
   getCriticalMomentMarkers(): CriticalMomentMarker[] {
     return this.winProbCriticalMoments;
+  }
+
+  // Set player colors used in the sparkline (must call before createWinProbSparkline)
+  setWinProbPlayerColors(colors: string[]): void {
+    this.winProbPlayerColors = colors;
+  }
+
+  // Re-render the sparkline at the current turn (call from onTurnChange)
+  refreshWinProbSparkline(): void {
+    if (this.winProbCanvas && this.winProbData) {
+      this.renderWinProbSparkline();
+    }
   }
 
   // Create and attach a win probability sparkline canvas below the main viewer.
@@ -1806,8 +1842,7 @@ export class ReplayViewer {
     renderWinProbSparkline(ctx, this.winProbData, this.currentTurn, {
       width: this.winProbCanvas.width,
       height: this.winProbCanvas.height,
-      color0: this.accessibility.highContrast ? '#0000ff' : '#3b82f6',
-      color1: this.accessibility.highContrast ? '#ff0000' : '#ef4444',
+      playerColors: this.winProbPlayerColors,
       criticalMoments: this.winProbCriticalMoments,
     });
   }

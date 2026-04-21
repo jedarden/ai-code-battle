@@ -60,16 +60,13 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <div class="win-prob-header">
               <span class="win-prob-title">Win Probability</span>
               <div class="critical-moment-nav">
-                <button id="prev-critical-btn" class="btn" title="Previous critical moment" disabled>&#9664; Prev</button>
+                <button id="prev-critical-btn" class="btn" title="Previous critical moment ([)" disabled>&#9664; Prev</button>
                 <span id="critical-moment-info" class="critical-moment-info">&#8212;</span>
-                <button id="next-critical-btn" class="btn" title="Next critical moment" disabled>Next &#9654;</button>
+                <button id="next-critical-btn" class="btn" title="Next critical moment (])" disabled>Next &#9654;</button>
               </div>
             </div>
             <div id="win-prob-container" class="win-prob-container"></div>
-            <div class="win-prob-legend">
-              <span id="wp-p0-label" class="wp-legend-p0">&#8212; Player 0</span>
-              <span id="wp-p1-label" class="wp-legend-p1">-- Player 1</span>
-            </div>
+            <div id="win-prob-legend" class="win-prob-legend"></div>
           </div>
         </div>
 
@@ -176,6 +173,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
           <div class="keyboard-shortcuts">
             <kbd>Space</kbd> Play/Pause
             <kbd>←</kbd><kbd>→</kbd> Step
+            <kbd>[</kbd><kbd>]</kbd> Prev/Next Critical
             <kbd>Home</kbd><kbd>End</kbd> First/Last
           </div>
         </div>
@@ -242,9 +240,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .critical-moment-nav .btn:disabled { opacity: 0.4; cursor: not-allowed; }
       .critical-moment-info { color: var(--text-muted); font-size: 0.8rem; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .win-prob-container { width: 100%; overflow: hidden; border-radius: 4px; }
-      .win-prob-legend { display: flex; gap: 16px; margin-top: 6px; font-size: 0.75rem; }
-      .wp-legend-p0 { color: #3b82f6; }
-      .wp-legend-p1 { color: #ef4444; }
+      .win-prob-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 0.75rem; font-family: monospace; }
       .commentary-bar { background-color: var(--bg-secondary); border-radius: 8px; padding: 8px 12px; margin-top: 10px; display: flex; align-items: center; gap: 10px; min-height: 40px; }
       .commentary-content { flex: 1; min-width: 0; }
       .commentary-text { color: var(--text-secondary); font-size: 0.875rem; line-height: 1.4; display: block; }
@@ -342,11 +338,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const infoReason = document.getElementById('info-reason') as HTMLElement;
   const winProbSection = document.getElementById('win-prob-section') as HTMLDivElement;
   const winProbContainer = document.getElementById('win-prob-container') as HTMLDivElement;
+  const winProbLegend = document.getElementById('win-prob-legend') as HTMLDivElement;
   const prevCriticalBtn = document.getElementById('prev-critical-btn') as HTMLButtonElement;
   const nextCriticalBtn = document.getElementById('next-critical-btn') as HTMLButtonElement;
   const criticalMomentInfo = document.getElementById('critical-moment-info') as HTMLSpanElement;
-  const wpP0Label = document.getElementById('wp-p0-label') as HTMLSpanElement;
-  const wpP1Label = document.getElementById('wp-p1-label') as HTMLSpanElement;
   const commentaryBar = document.getElementById('commentary-bar') as HTMLDivElement;
   const commentaryText = document.getElementById('commentary-text') as HTMLSpanElement;
   const commentaryToggle = document.getElementById('commentary-toggle') as HTMLButtonElement;
@@ -631,28 +626,42 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       return;
     }
 
-    const points = replay.win_prob.map((pair: any, t: number) => ({
+    // Map win_prob: number[][] → WinProbPoint[] (one probs array per turn)
+    const points = replay.win_prob.map((probs: number[], t: number) => ({
       turn: t,
-      p0WinProb: pair[0] ?? 0.5,
-      p1WinProb: pair[1] ?? 0.5,
-      drawProb: Math.max(0, 1 - (pair[0] ?? 0.5) - (pair[1] ?? 0.5)),
+      probs: probs.slice(),  // copy to avoid mutation
     }));
 
     criticalMoments = replay.critical_moments ?? [];
 
+    // Build player colors array matching the viewer's palette
+    const playerColors = replay.players.map((_: any, idx: number) => {
+      const palettes = [
+        '#332288', '#88ccee', '#44aa99', '#117733', '#999933', '#ddcc77',
+        '#882255', '#cc6677',
+      ];
+      return palettes[idx] ?? '#888888';
+    });
+
     viewer.setWinProbabilityData(points);
     viewer.setCriticalMoments(criticalMoments);
+    viewer.setWinProbPlayerColors(playerColors);
 
     winProbSection.style.display = 'block';
 
-    if (replay.players.length >= 1) wpP0Label.textContent = `— ${replay.players[0].name}`;
-    if (replay.players.length >= 2) wpP1Label.textContent = `-- ${replay.players[1].name}`;
+    // Dynamic legend: one entry per player
+    winProbLegend.innerHTML = replay.players.map((player: any, idx: number) => {
+      const color = playerColors[idx];
+      const dash = idx === 0 ? '&#8212;' : '--';
+      return `<span style="color:${color}">${dash} ${player.name}</span>`;
+    }).join(' ');
 
     winProbContainer.innerHTML = '';
     viewer.createWinProbSparkline(winProbContainer, 800, 70, (turn: number) => {
       viewer.setTurn(turn);
       updateUI();
       updateEventLog();
+      updateCriticalMomentNav();
     });
 
     updateCriticalMomentNav();
@@ -676,7 +685,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     }
   }
 
-  prevCriticalBtn.addEventListener('click', () => {
+  function navigateToPrevCriticalMoment(): void {
     const currentTurn = viewer.getTurn();
     const prev = [...criticalMoments].reverse().find((m: any) => m.turn < currentTurn);
     if (prev) {
@@ -685,9 +694,9 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       updateEventLog();
       criticalMomentInfo.textContent = prev.description;
     }
-  });
+  }
 
-  nextCriticalBtn.addEventListener('click', () => {
+  function navigateToNextCriticalMoment(): void {
     const currentTurn = viewer.getTurn();
     const next = criticalMoments.find((m: any) => m.turn > currentTurn);
     if (next) {
@@ -696,7 +705,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       updateEventLog();
       criticalMomentInfo.textContent = next.description;
     }
-  });
+  }
+
+  prevCriticalBtn.addEventListener('click', navigateToPrevCriticalMoment);
+  nextCriticalBtn.addEventListener('click', navigateToNextCriticalMoment);
 
   fileInput.addEventListener('change', async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
@@ -792,9 +804,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   viewer.onTurnChange = () => {
     updateUI();
     updateEventLog();
-    if (criticalMoments.length > 0) updateCriticalMomentNav();
+    updateCriticalMomentNav();
     updateMobileUI();
     updateMobileTimeline();
+    viewer.refreshWinProbSparkline();
   };
   viewer.onDebugChange = (debug: Record<number, DebugInfo> | null) => {
     updateDebugDisplay(debug);
@@ -964,6 +977,14 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
         viewer.setTurn(viewer.getTotalTurns() - 1);
         updateUI();
         updateEventLog();
+        break;
+      case 'BracketLeft':
+        e.preventDefault();
+        navigateToPrevCriticalMoment();
+        break;
+      case 'BracketRight':
+        e.preventDefault();
+        navigateToNextCriticalMoment();
         break;
     }
   });
