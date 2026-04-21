@@ -1,16 +1,18 @@
 // Predictions Page - Prediction leaderboard, open matches, and submission
-import type { BotProfile, PredictorStats, OpenMatch } from '../api-types';
+import type { BotProfile, PredictorStats, OpenMatch, PredictionHistoryEntry } from '../api-types';
 import {
   fetchPredictionsLeaderboard,
   fetchOpenPredictions,
   submitPrediction,
   getOrCreatePredictorId,
+  fetchPredictionHistory,
 } from '../api-types';
 
 const PAGES_BASE = '';
 const API_BASE = '';
 
 let openMatches: OpenMatch[] = [];
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 let predictorId = '';
 
 export async function renderPredictionsPage(): Promise<void> {
@@ -56,6 +58,13 @@ export async function renderPredictionsPage(): Promise<void> {
         <h2>Open Matches</h2>
         <div id="open-matches-container">
           <div class="loading">Loading open matches...</div>
+        </div>
+      </div>
+
+      <div class="history-section">
+        <h2>Your Predictions</h2>
+        <div id="history-container">
+          <div class="loading">Loading your predictions...</div>
         </div>
       </div>
 
@@ -171,6 +180,82 @@ export async function renderPredictionsPage(): Promise<void> {
       .open-section h2 {
         margin-bottom: 16px;
       }
+
+      .history-section {
+        margin-bottom: 32px;
+      }
+
+      .history-section h2 {
+        margin-bottom: 16px;
+      }
+
+      .history-card {
+        background-color: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .history-card .result-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      .history-card .result-icon.correct {
+        background-color: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+      }
+
+      .history-card .result-icon.incorrect {
+        background-color: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+      }
+
+      .history-card .result-icon.pending {
+        background-color: rgba(107, 114, 128, 0.2);
+        color: #94a3b8;
+      }
+
+      .history-card .history-details {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .history-card .history-match {
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .history-card .history-meta {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+
+      .history-card .history-status {
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 4px;
+        flex-shrink: 0;
+      }
+
+      .history-card .history-status.correct { background: rgba(34,197,94,0.15); color: #22c55e; }
+      .history-card .history-status.incorrect { background: rgba(239,68,68,0.15); color: #ef4444; }
+      .history-card .history-status.pending { background: rgba(107,114,128,0.15); color: #94a3b8; }
 
       .open-match-card {
         background-color: var(--bg-secondary);
@@ -418,8 +503,21 @@ export async function renderPredictionsPage(): Promise<void> {
     </style>
   `;
 
-  // Load open matches and leaderboard in parallel
-  await Promise.all([loadOpenMatches(), loadLeaderboard()]);
+  // Load open matches, leaderboard, and history in parallel
+  await Promise.all([loadOpenMatches(), loadLeaderboard(), loadHistory()]);
+
+  // Poll for resolved predictions every 15 seconds
+  pollTimer = setInterval(async () => {
+    await Promise.all([loadOpenMatches(), loadHistory()]);
+  }, 15000);
+}
+
+// Cleanup polling when navigating away (called by SPA router)
+export function cleanupPredictionsPage(): void {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 }
 
 async function loadOpenMatches(): Promise<void> {
@@ -506,6 +604,9 @@ async function handlePick(e: Event): Promise<void> {
     card.querySelectorAll('.pick-btn:not(.picked)').forEach(b => {
       (b as HTMLButtonElement).textContent = 'Not picked';
     });
+
+    // Refresh history to show the new prediction
+    loadHistory();
   } catch (err) {
     console.error('Failed to submit prediction:', err);
     btn.textContent = 'Error';
@@ -517,6 +618,68 @@ async function handlePick(e: Event): Promise<void> {
     const errDiv = card.querySelector('.prediction-error');
     if (errDiv) errDiv.textContent = (err as Error).message;
   }
+}
+
+async function loadHistory(): Promise<void> {
+  const container = document.getElementById('history-container');
+  if (!container) return;
+
+  try {
+    const data = await fetchPredictionHistory(predictorId, 20);
+    const predictions = data.predictions || [];
+
+    if (predictions.length === 0) {
+      container.innerHTML = '<div class="empty-message">You haven\'t made any predictions yet. Pick a bot above!</div>';
+      return;
+    }
+
+    container.innerHTML = predictions.map(p => {
+      let icon: string, iconClass: string, statusText: string, statusClass: string;
+
+      if (p.correct === true) {
+        icon = '✓';
+        iconClass = 'correct';
+        statusText = 'Correct!';
+        statusClass = 'correct';
+      } else if (p.correct === false) {
+        icon = '✗';
+        iconClass = 'incorrect';
+        statusText = p.winner_name ? `Wrong — ${p.winner_name} won` : 'Wrong';
+        statusClass = 'incorrect';
+      } else {
+        icon = '…';
+        iconClass = 'pending';
+        statusText = 'Pending';
+        statusClass = 'pending';
+      }
+
+      return `
+        <div class="history-card">
+          <div class="result-icon ${iconClass}">${icon}</div>
+          <div class="history-details">
+            <div class="history-match">Picked ${escapeHtml(p.predicted_name || p.predicted_bot)}</div>
+            <div class="history-meta">${formatTimeAgo(p.created_at)}</div>
+          </div>
+          <span class="history-status ${statusClass}">${statusText}</span>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Failed to load prediction history:', err);
+    container.innerHTML = '<div class="empty-message">Failed to load prediction history</div>';
+  }
+}
+
+function formatTimeAgo(isoString: string): string {
+  const date = new Date(isoString);
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 async function loadLeaderboard(): Promise<void> {

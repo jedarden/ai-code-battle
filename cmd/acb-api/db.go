@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     match_id      VARCHAR(32) NOT NULL REFERENCES matches(match_id),
     predictor_id  VARCHAR(64) NOT NULL,
     predicted_bot VARCHAR(16) NOT NULL,
+    confidence    SMALLINT CHECK (confidence >= 1 AND confidence <= 100),
     correct       BOOLEAN,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at   TIMESTAMPTZ,
@@ -39,16 +40,18 @@ CREATE TABLE IF NOT EXISTS series (
     b_wins     INTEGER NOT NULL DEFAULT 0,
     status     VARCHAR(16) NOT NULL DEFAULT 'active',
     winner_id  VARCHAR(16),
+    season_id  BIGINT REFERENCES seasons(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_series_bots ON series(bot_a_id, bot_b_id);
 CREATE INDEX IF NOT EXISTS idx_series_status ON series(status);
+CREATE INDEX IF NOT EXISTS idx_series_season ON series(season_id);
 
 CREATE TABLE IF NOT EXISTS series_games (
     id        BIGSERIAL PRIMARY KEY,
     series_id BIGINT NOT NULL REFERENCES series(id),
-    match_id  VARCHAR(32) NOT NULL REFERENCES matches(match_id),
+    match_id  VARCHAR(32) REFERENCES matches(match_id),
     game_num  INTEGER NOT NULL,
     winner_id VARCHAR(16),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

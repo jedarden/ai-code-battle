@@ -49,6 +49,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Predictions
 	mux.HandleFunc("POST /api/predict", s.handlePredict)
 	mux.HandleFunc("GET /api/predictions/open", s.handleOpenPredictions)
+	mux.HandleFunc("GET /api/predictions/history", s.handlePredictionHistory)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -413,6 +414,11 @@ func (s *Server) handleJobResult(w http.ResponseWriter, r *http.Request) {
 	// Note: Rating updates are handled by the worker separately via the rating endpoint
 	// or can be computed here if the ratings are provided in the request
 
+	// Resolve predictions for this match
+	if err := s.resolvePredictions(ctx, tx, matchID, req.WinnerID); err != nil {
+		log.Printf("failed to resolve predictions for match %s: %v", matchID, err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		log.Printf("failed to commit transaction: %v", err)
 		writeError(w, http.StatusInternalServerError, "database error")
@@ -741,7 +747,7 @@ func (s *Server) handleListBots(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePredict handles POST /api/predict
-// Accepts {match_id, bot_id, confidence} and writes to predictions table.
+// Accepts {match_id, bot_id, confidence, predictor_id} and writes to predictions table.
 // Rejects if the match has already started (status != 'pending').
 func (s *Server) handlePredict(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -753,6 +759,7 @@ func (s *Server) handlePredict(w http.ResponseWriter, r *http.Request) {
 		MatchID    string `json:"match_id"`
 		BotID      string `json:"bot_id"`
 		Predictor  string `json:"predictor_id"`
+		Confidence *int   `json:"confidence"` // optional 1-100
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -761,6 +768,11 @@ func (s *Server) handlePredict(w http.ResponseWriter, r *http.Request) {
 
 	if req.MatchID == "" || req.BotID == "" || req.Predictor == "" {
 		writeError(w, http.StatusBadRequest, "match_id, bot_id, and predictor_id are required")
+		return
+	}
+
+	if req.Confidence != nil && (*req.Confidence < 1 || *req.Confidence > 100) {
+		writeError(w, http.StatusBadRequest, "confidence must be between 1 and 100")
 		return
 	}
 
@@ -807,23 +819,28 @@ func (s *Server) handlePredict(w http.ResponseWriter, r *http.Request) {
 	// Insert prediction (UNIQUE constraint handles duplicates)
 	var predictionID int64
 	err = s.db.QueryRowContext(ctx, `
-		INSERT INTO predictions (match_id, predictor_id, predicted_bot)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (match_id, predictor_id) DO UPDATE SET predicted_bot = $3
+		INSERT INTO predictions (match_id, predictor_id, predicted_bot, confidence)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (match_id, predictor_id) DO UPDATE SET predicted_bot = $3, confidence = $4
 		RETURNING id
-	`, req.MatchID, req.Predictor, req.BotID).Scan(&predictionID)
+	`, req.MatchID, req.Predictor, req.BotID, req.Confidence).Scan(&predictionID)
 	if err != nil {
 		log.Printf("failed to insert prediction: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to submit prediction")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	resp := map[string]interface{}{
 		"id":         predictionID,
 		"match_id":   req.MatchID,
 		"predicted":  req.BotID,
 		"predictor":  req.Predictor,
-	})
+	}
+	if req.Confidence != nil {
+		resp["confidence"] = *req.Confidence
+	}
+
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 // handleOpenPredictions handles GET /api/predictions/open
@@ -893,6 +910,165 @@ func (s *Server) handleOpenPredictions(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"matches": matches,
+	})
+}
+
+// resolvePredictions marks open predictions as correct/incorrect and updates predictor_stats.
+func (s *Server) resolvePredictions(ctx context.Context, tx *sql.Tx, matchID string, winnerBotID string) error {
+	var rows *sql.Rows
+	var err error
+
+	if winnerBotID == "" {
+		rows, err = tx.QueryContext(ctx, `
+			UPDATE predictions
+			SET correct = false, resolved_at = NOW()
+			WHERE match_id = $1 AND correct IS NULL
+			RETURNING predictor_id, correct
+		`, matchID)
+	} else {
+		rows, err = tx.QueryContext(ctx, `
+			UPDATE predictions
+			SET correct = (predicted_bot = $1), resolved_at = NOW()
+			WHERE match_id = $2 AND correct IS NULL
+			RETURNING predictor_id, correct
+		`, winnerBotID, matchID)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to resolve predictions: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var predictorID string
+		var correct bool
+		if err := rows.Scan(&predictorID, &correct); err != nil {
+			return fmt.Errorf("failed to scan resolved prediction: %w", err)
+		}
+		if err := s.upsertPredictorStats(ctx, tx, predictorID, correct); err != nil {
+			return fmt.Errorf("failed to update predictor_stats for %s: %w", predictorID, err)
+		}
+	}
+	return nil
+}
+
+// upsertPredictorStats updates the predictor_stats row for a single resolution.
+func (s *Server) upsertPredictorStats(ctx context.Context, tx *sql.Tx, predictorID string, correct bool) error {
+	if correct {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO predictor_stats (predictor_id, correct, streak, best_streak, updated_at)
+			VALUES ($1, 1, 1, 1, NOW())
+			ON CONFLICT (predictor_id) DO UPDATE SET
+				correct = predictor_stats.correct + 1,
+				streak = predictor_stats.streak + 1,
+				best_streak = GREATEST(predictor_stats.best_streak, predictor_stats.streak + 1),
+				updated_at = NOW()
+		`, predictorID)
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO predictor_stats (predictor_id, incorrect, streak, best_streak, updated_at)
+		VALUES ($1, 1, 0, 0, NOW())
+		ON CONFLICT (predictor_id) DO UPDATE SET
+			incorrect = predictor_stats.incorrect + 1,
+			streak = 0,
+			updated_at = NOW()
+	`, predictorID)
+	return err
+}
+
+// handlePredictionHistory handles GET /api/predictions/history
+// Returns resolved predictions for a predictor, used for polling resolution status.
+func (s *Server) handlePredictionHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	predictorID := r.URL.Query().Get("predictor_id")
+	if predictorID == "" {
+		writeError(w, http.StatusBadRequest, "predictor_id is required")
+		return
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 20
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT p.id, p.match_id, p.predicted_bot,
+		       COALESCE(wb.name, p.predicted_bot) AS predicted_name,
+		       p.correct, p.confidence, p.created_at, p.resolved_at,
+		       m.status AS match_status, m.winner,
+		       COALESCE(CASE WHEN m.winner IS NOT NULL THEN
+		           (SELECT b.name FROM match_participants mp2 JOIN bots b ON mp2.bot_id = b.bot_id
+		            WHERE mp2.match_id = m.match_id AND mp2.player_slot = m.winner)
+		       END, '') AS winner_name
+		FROM predictions p
+		JOIN matches m ON p.match_id = m.match_id
+		LEFT JOIN bots wb ON p.predicted_bot = wb.bot_id
+		WHERE p.predictor_id = $1
+		ORDER BY COALESCE(p.resolved_at, p.created_at) DESC
+		LIMIT $2
+	`, predictorID, limit)
+	if err != nil {
+		log.Printf("database error fetching prediction history: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer rows.Close()
+
+	type PredictionEntry struct {
+		ID            int64   `json:"id"`
+		MatchID       string  `json:"match_id"`
+		PredictedBot  string  `json:"predicted_bot"`
+		PredictedName string  `json:"predicted_name"`
+		Correct       *bool   `json:"correct"`
+		Confidence    *int    `json:"confidence,omitempty"`
+		CreatedAt     string  `json:"created_at"`
+		ResolvedAt    *string `json:"resolved_at,omitempty"`
+		MatchStatus   string  `json:"match_status"`
+		WinnerName    string  `json:"winner_name,omitempty"`
+	}
+
+	var predictions []PredictionEntry
+	for rows.Next() {
+		var p PredictionEntry
+		var createdAt time.Time
+		var resolvedAt sql.NullTime
+		var winnerName sql.NullString
+		var winnerSlot sql.NullInt64
+
+		if err := rows.Scan(&p.ID, &p.MatchID, &p.PredictedBot, &p.PredictedName,
+			&p.Correct, &p.Confidence, &createdAt, &resolvedAt,
+			&p.MatchStatus, &winnerSlot, &winnerName); err != nil {
+			log.Printf("error scanning prediction: %v", err)
+			continue
+		}
+
+		p.CreatedAt = createdAt.Format(time.RFC3339)
+		if resolvedAt.Valid {
+			s := resolvedAt.Time.Format(time.RFC3339)
+			p.ResolvedAt = &s
+		}
+		if winnerName.Valid {
+			p.WinnerName = winnerName.String
+		}
+		predictions = append(predictions, p)
+	}
+
+	if predictions == nil {
+		predictions = []PredictionEntry{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"predictions": predictions,
 	})
 }
 

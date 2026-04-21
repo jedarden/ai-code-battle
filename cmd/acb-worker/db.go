@@ -388,6 +388,11 @@ func (c *DBClient) SubmitMatchResult(ctx context.Context, jobID string, result *
 		log.Printf("failed to resolve predictions for match %s: %v", matchID, err)
 	}
 
+	// Update series tables if this match is part of a series
+	if err := updateSeriesResult(ctx, tx, matchID, result.WinnerID); err != nil {
+		log.Printf("failed to update series result for match %s: %v", matchID, err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -396,81 +401,69 @@ func (c *DBClient) SubmitMatchResult(ctx context.Context, jobID string, result *
 }
 
 // resolvePredictions marks open predictions as correct/incorrect and updates predictor_stats.
+// Uses RETURNING to only process predictions that were just resolved, preventing double-counting.
 func resolvePredictions(ctx context.Context, tx *sql.Tx, matchID string, winnerBotID string) error {
+	var rows *sql.Rows
+	var err error
+
 	if winnerBotID == "" {
-		// Draw or no winner — mark all open predictions as incorrect
-		_, err := tx.ExecContext(ctx, `
+		rows, err = tx.QueryContext(ctx, `
 			UPDATE predictions
 			SET correct = false, resolved_at = NOW()
 			WHERE match_id = $1 AND correct IS NULL
+			RETURNING predictor_id, correct
 		`, matchID)
-		if err != nil {
-			return fmt.Errorf("failed to resolve predictions (draw): %w", err)
-		}
 	} else {
-		// Mark predictions correct where predicted_bot matches winner, incorrect otherwise
-		_, err := tx.ExecContext(ctx, `
+		rows, err = tx.QueryContext(ctx, `
 			UPDATE predictions
 			SET correct = (predicted_bot = $1), resolved_at = NOW()
 			WHERE match_id = $2 AND correct IS NULL
+			RETURNING predictor_id, correct
 		`, winnerBotID, matchID)
-		if err != nil {
-			return fmt.Errorf("failed to resolve predictions: %w", err)
-		}
 	}
-
-	// Update predictor_stats for each predictor who had a prediction on this match
-	rows, err := tx.QueryContext(ctx, `
-		SELECT predictor_id, correct
-		FROM predictions
-		WHERE match_id = $1 AND resolved_at IS NOT NULL
-	`, matchID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch resolved predictions: %w", err)
+		return fmt.Errorf("failed to resolve predictions: %w", err)
 	}
 	defer rows.Close()
 
-	type predResult struct {
-		PredictorID string
-		Correct     bool
-	}
-	var results []predResult
 	for rows.Next() {
-		var r predResult
-		if err := rows.Scan(&r.PredictorID, &r.Correct); err != nil {
-			return fmt.Errorf("failed to scan prediction: %w", err)
+		var predictorID string
+		var correct bool
+		if err := rows.Scan(&predictorID, &correct); err != nil {
+			return fmt.Errorf("failed to scan resolved prediction: %w", err)
 		}
-		results = append(results, r)
-	}
 
-	// Upsert predictor_stats for each predictor
-	for _, r := range results {
-		if r.Correct {
-			_, err = tx.ExecContext(ctx, `
-				INSERT INTO predictor_stats (predictor_id, correct, streak, best_streak, updated_at)
-				VALUES ($1, 1, 1, 1, NOW())
-				ON CONFLICT (predictor_id) DO UPDATE SET
-					correct = predictor_stats.correct + 1,
-					streak = predictor_stats.streak + 1,
-					best_streak = GREATEST(predictor_stats.best_streak, predictor_stats.streak + 1),
-					updated_at = NOW()
-			`, r.PredictorID)
-		} else {
-			_, err = tx.ExecContext(ctx, `
-				INSERT INTO predictor_stats (predictor_id, incorrect, streak, best_streak, updated_at)
-				VALUES ($1, 1, 0, 0, NOW())
-				ON CONFLICT (predictor_id) DO UPDATE SET
-					incorrect = predictor_stats.incorrect + 1,
-					streak = 0,
-					updated_at = NOW()
-			`, r.PredictorID)
-		}
-		if err != nil {
-			return fmt.Errorf("failed to update predictor_stats for %s: %w", r.PredictorID, err)
+		if err := upsertPredictorStats(ctx, tx, predictorID, correct); err != nil {
+			return fmt.Errorf("failed to update predictor_stats for %s: %w", predictorID, err)
 		}
 	}
 
 	return nil
+}
+
+// upsertPredictorStats updates the predictor_stats row for a single resolution.
+func upsertPredictorStats(ctx context.Context, tx *sql.Tx, predictorID string, correct bool) error {
+	if correct {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO predictor_stats (predictor_id, correct, streak, best_streak, updated_at)
+			VALUES ($1, 1, 1, 1, NOW())
+			ON CONFLICT (predictor_id) DO UPDATE SET
+				correct = predictor_stats.correct + 1,
+				streak = predictor_stats.streak + 1,
+				best_streak = GREATEST(predictor_stats.best_streak, predictor_stats.streak + 1),
+				updated_at = NOW()
+		`, predictorID)
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO predictor_stats (predictor_id, incorrect, streak, best_streak, updated_at)
+		VALUES ($1, 1, 0, 0, NOW())
+		ON CONFLICT (predictor_id) DO UPDATE SET
+			incorrect = predictor_stats.incorrect + 1,
+			streak = 0,
+			updated_at = NOW()
+	`, predictorID)
+	return err
 }
 
 // FailJob marks a job as failed.
@@ -539,4 +532,58 @@ func (c *DBClient) GetBotRatings(ctx context.Context, botIDs []string) (map[stri
 	}
 
 	return ratings, nil
+}
+
+// updateSeriesResult updates series_games.winner_id and series.a_wins/b_wins
+// when a match that belongs to a series completes.
+func updateSeriesResult(ctx context.Context, tx *sql.Tx, matchID string, winnerBotID string) error {
+	// Find the series_game for this match
+	var seriesID int64
+	var gameNum int
+	err := tx.QueryRowContext(ctx, `
+		SELECT series_id, game_num FROM series_games WHERE match_id = $1
+	`, matchID).Scan(&seriesID, &gameNum)
+	if err == sql.ErrNoRows {
+		return nil // not a series game
+	}
+	if err != nil {
+		return fmt.Errorf("find series game: %w", err)
+	}
+
+	// Update the series_games row with the winner
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE series_games SET winner_id = $1 WHERE match_id = $2
+	`, winnerBotID, matchID); err != nil {
+		return fmt.Errorf("update series game winner: %w", err)
+	}
+
+	// Increment a_wins or b_wins on the series
+	if winnerBotID == "" {
+		return nil // draw — no increment
+	}
+
+	// Determine if the winner is bot_a or bot_b
+	var botAID string
+	err = tx.QueryRowContext(ctx, `
+		SELECT bot_a_id FROM series WHERE id = $1
+	`, seriesID).Scan(&botAID)
+	if err != nil {
+		return fmt.Errorf("find series bot_a: %w", err)
+	}
+
+	if winnerBotID == botAID {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE series SET a_wins = a_wins + 1, updated_at = NOW() WHERE id = $1
+		`, seriesID)
+	} else {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE series SET b_wins = b_wins + 1, updated_at = NOW() WHERE id = $1
+		`, seriesID)
+	}
+	if err != nil {
+		return fmt.Errorf("increment series wins: %w", err)
+	}
+
+	log.Printf("series: game %d result recorded — series %d, winner=%s", gameNum, seriesID, winnerBotID)
+	return nil
 }

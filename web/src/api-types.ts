@@ -451,6 +451,27 @@ export interface PredictionData {
   resolved_at?: string;
 }
 
+export interface PredictionHistoryEntry {
+  id: number;
+  match_id: string;
+  predicted_bot: string;
+  predicted_name: string;
+  correct: boolean | null;
+  confidence?: number;
+  created_at: string;
+  resolved_at?: string;
+  match_status: string;
+  winner_name?: string;
+}
+
+export async function fetchPredictionHistory(predictorId: string, limit?: number): Promise<{ predictions: PredictionHistoryEntry[] }> {
+  const params = new URLSearchParams({ predictor_id: predictorId });
+  if (limit) params.set('limit', String(limit));
+  const response = await fetch(`/api/predictions/history?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch prediction history: ${response.status}`);
+  return response.json();
+}
+
 export interface PredictorStats {
   predictor_id: string;
   correct: number;

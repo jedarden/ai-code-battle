@@ -184,6 +184,8 @@ func (m *Matchmaker) scheduleNextSeriesGames(ctx context.Context) error {
 }
 
 // scheduleSeriesGame creates a match and job for one game in a series.
+// It selects maps with varied characteristics per game number (§14.7) and
+// alternates player slots for fairness.
 func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, botAID, botBID string, gameNum int, rng *rand.Rand) error {
 	// Fetch bot endpoints and secrets
 	var endpointA, secretA, endpointB, secretB string
@@ -217,8 +219,14 @@ func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, bot
 		return err
 	}
 
-	mapSeed := rng.Int63()
-	mapID := fmt.Sprintf("map_%d", mapSeed%100000)
+	// Select a map with varied characteristics per game number (§14.7)
+	mapID, rows, cols, mapSeed := m.selectSeriesMap(ctx, gameNum, rng)
+
+	// Alternate player slots per game for round-robin fairness
+	slotA, slotB := 0, 1
+	if gameNum%2 == 0 {
+		slotA, slotB = 1, 0
+	}
 
 	type botConfig struct {
 		BotID    string `json:"bot_id"`
@@ -243,11 +251,11 @@ func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, bot
 		GameNum:  gameNum,
 		MapSeed:  mapSeed,
 		MaxTurns: 500,
-		Rows:     60,
-		Cols:     60,
+		Rows:     rows,
+		Cols:     cols,
 		Bots: []botConfig{
-			{BotID: botAID, Endpoint: endpointA, Secret: secretA, Slot: 0},
-			{BotID: botBID, Endpoint: endpointB, Secret: secretB, Slot: 1},
+			{BotID: botAID, Endpoint: endpointA, Secret: secretA, Slot: slotA},
+			{BotID: botBID, Endpoint: endpointB, Secret: secretB, Slot: slotB},
 		},
 	}
 	configJSON, _ := json.Marshal(config)
@@ -266,8 +274,8 @@ func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, bot
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO match_participants (match_id, bot_id, player_slot) VALUES ($1, $2, 0), ($1, $3, 1)`,
-		matchID, botAID, botBID)
+		`INSERT INTO match_participants (match_id, bot_id, player_slot) VALUES ($1, $2, $3), ($1, $4, $5)`,
+		matchID, botAID, slotA, botBID, slotB)
 	if err != nil {
 		return fmt.Errorf("insert participants: %w", err)
 	}
@@ -298,6 +306,41 @@ func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, bot
 	}
 
 	return nil
+}
+
+// selectSeriesMap picks a map with varied characteristics per game number.
+// Per §14.7: Game 1 = highest engagement, Game 2 = highest wall density,
+// Game 3 = lowest wall density, Game 4+ = random from pool.
+// Returns (mapID, rows, cols, seed). Falls back to random seed if maps table is empty.
+func (m *Matchmaker) selectSeriesMap(ctx context.Context, gameNum int, rng *rand.Rand) (string, int, int, int64) {
+	var orderBy string
+	switch {
+	case gameNum == 1:
+		orderBy = "engagement DESC NULLS LAST"
+	case gameNum == 2:
+		orderBy = "wall_density DESC NULLS LAST"
+	case gameNum == 3:
+		orderBy = "wall_density ASC NULLS LAST"
+	default:
+		orderBy = "RANDOM()"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT map_id, grid_width, grid_height FROM maps
+		WHERE player_count = 2 AND status = 'active'
+		ORDER BY %s LIMIT 1
+	`, orderBy)
+
+	var mapID string
+	var gridW, gridH int
+	err := m.db.QueryRowContext(ctx, query).Scan(&mapID, &gridW, &gridH)
+	if err != nil {
+		// No maps in table — generate from seed
+		seed := rng.Int63()
+		return fmt.Sprintf("map_%d", seed%100000), 60, 60, seed
+	}
+
+	return mapID, gridH, gridW, rng.Int63()
 }
 
 // autoCreateSeries creates best-of-5 series between top-20 active bots,
@@ -385,7 +428,7 @@ func (m *Matchmaker) autoCreateSeries(ctx context.Context) error {
 		}
 		if ratingGap < 50 {
 			format = 7 // close ratings → best-of-7
-		} else if ratingGap > 200 {
+		} else if ratingGap >= 200 {
 			format = 3 // large gap → best-of-3
 		}
 
@@ -401,14 +444,13 @@ func (m *Matchmaker) autoCreateSeries(ctx context.Context) error {
 			`SELECT id FROM seasons WHERE status = 'active' ORDER BY starts_at DESC LIMIT 1`).Scan(&seasonID)
 
 		_, err = m.db.ExecContext(ctx, `
-			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, updated_at)
-			VALUES ($1, $2, $3, 'active', 0, 0, NOW())
-		`, botAID, botBID, format)
+			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, updated_at)
+			VALUES ($1, $2, $3, 'active', 0, 0, $4, NOW())
+		`, botAID, botBID, format, seasonID)
 		if err != nil {
 			log.Printf("series-scheduler: failed to create series (%s vs %s): %v", botAID, botBID, err)
 			continue
 		}
-		_ = seasonID // use in future season-series linking
 		log.Printf("series-scheduler: created best-of-%d series: %s vs %s", format, botAID, botBID)
 	}
 
@@ -538,6 +580,11 @@ func (m *Matchmaker) processSeasonEnd(ctx context.Context, seasonID int64, seaso
 		return err
 	}
 
+	// 5. Create championship bracket for top 8 (§14.9)
+	if err := m.createChampionshipBracket(ctx, seasonID); err != nil {
+		log.Printf("season-reset: championship bracket creation failed for season %d: %v", seasonID, err)
+	}
+
 	log.Printf("season-reset: season %d (%s) complete — champion=%s, decay=%.0f%%",
 		seasonID, seasonName, championID, decayFactor*100)
 
@@ -577,4 +624,70 @@ func (m *Matchmaker) autoStartSeason(ctx context.Context) {
 	}
 
 	log.Printf("season-reset: auto-started %s (%s) — ends in 28 days", seasonName, theme)
+}
+
+// createChampionshipBracket creates best-of-7 series for the top 8 bots
+// in a single-elimination bracket at season end (§14.9).
+// Bracket seeding: #1 vs #8, #4 vs #5, #3 vs #6, #2 vs #7
+func (m *Matchmaker) createChampionshipBracket(ctx context.Context, seasonID int64) error {
+	// Check if championship series already exist for this season
+	var existing int
+	err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM series WHERE season_id = $1 AND format = 7
+	`, seasonID).Scan(&existing)
+	if err != nil || existing > 0 {
+		return nil // already created
+	}
+
+	// Get top 8 active bots by rating
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT bot_id FROM bots
+		WHERE status = 'active'
+		ORDER BY rating_mu DESC
+		LIMIT 8
+	`)
+	if err != nil {
+		return fmt.Errorf("query top 8: %w", err)
+	}
+	defer rows.Close()
+
+	var botIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		botIDs = append(botIDs, id)
+	}
+
+	if len(botIDs) < 8 {
+		log.Printf("season-reset: not enough active bots (%d) for championship bracket, need 8", len(botIDs))
+		return nil
+	}
+
+	// Standard bracket seeding: #1v8, #4v5, #3v6, #2v7
+	// This ensures top seeds face weakest opponents and #1/#2 can only meet in finals
+	bracket := [][2]string{
+		{botIDs[0], botIDs[7]}, // #1 vs #8
+		{botIDs[3], botIDs[4]}, // #4 vs #5
+		{botIDs[2], botIDs[5]}, // #3 vs #6
+		{botIDs[1], botIDs[6]}, // #2 vs #7
+	}
+
+	round := [4]string{"Quarterfinals", "Quarterfinals", "Quarterfinals", "Quarterfinals"}
+	for i, matchup := range bracket {
+		_, err := m.db.ExecContext(ctx, `
+			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, updated_at)
+			VALUES ($1, $2, 7, 'active', 0, 0, $3, NOW())
+		`, matchup[0], matchup[1], seasonID)
+		if err != nil {
+			log.Printf("season-reset: failed to create championship %s series (%s vs %s): %v",
+				round[i], matchup[0], matchup[1], err)
+			continue
+		}
+		log.Printf("season-reset: created championship %s series: %s vs %s (bo7)",
+			round[i], matchup[0], matchup[1])
+	}
+
+	return nil
 }
