@@ -14,17 +14,19 @@ import (
 	"time"
 )
 
-// fetchExemptMatchIDs retrieves match IDs that should never be pruned (from series, seasons, playlists)
+// fetchExemptMatchIDs retrieves match IDs that should never be pruned (from
+// series, seasons, and playlists).
 func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map[string]bool, error) {
 	exempt := make(map[string]bool)
 
 	if db != nil {
-		// Matches in active series
+		// Matches in active/pending series (series_games, not series_matches)
 		seriesQuery := `
-			SELECT DISTINCT sm.match_id
-			FROM series_matches sm
-			JOIN series s ON sm.series_id = s.id
+			SELECT DISTINCT sg.match_id
+			FROM series_games sg
+			JOIN series s ON sg.series_id = s.id
 			WHERE s.status IN ('active', 'pending')
+			  AND sg.match_id IS NOT NULL
 		`
 		rows, err := db.QueryContext(ctx, seriesQuery)
 		if err == nil {
@@ -37,13 +39,15 @@ func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map
 			rows.Close()
 		}
 
-		// Matches in active seasons
+		// Matches in active seasons (via series → series_games)
 		seasonQuery := `
-			SELECT DISTINCT match_id
-			FROM season_matches
-			WHERE season_id IN (
+			SELECT DISTINCT sg.match_id
+			FROM series_games sg
+			JOIN series s ON sg.series_id = s.id
+			WHERE s.season_id IN (
 				SELECT id FROM seasons WHERE ends_at IS NULL OR ends_at > NOW()
 			)
+			AND sg.match_id IS NOT NULL
 		`
 		rows, err = db.QueryContext(ctx, seasonQuery)
 		if err == nil {
@@ -55,9 +59,22 @@ func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map
 			}
 			rows.Close()
 		}
+
+		// Matches in persisted playlists (playlist_matches table)
+		playlistQuery := `SELECT DISTINCT match_id FROM playlist_matches`
+		rows, err = db.QueryContext(ctx, playlistQuery)
+		if err == nil {
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					exempt[id] = true
+				}
+			}
+			rows.Close()
+		}
 	}
 
-	// Matches in generated playlist files (file-based playlists from index builder)
+	// Also read from generated playlist files (covers cases where DB persist failed)
 	playlistMatchIDs := fetchPlaylistMatchIDsFromFiles(outputDir)
 	for id := range playlistMatchIDs {
 		exempt[id] = true

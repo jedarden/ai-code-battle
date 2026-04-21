@@ -382,6 +382,10 @@ func generatePredictionsIndex(data *IndexData, outputDir string) error {
 func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]string) error {
 	playlistsDir := filepath.Join(outputDir, "data", "playlists")
 
+	// Pre-build lookup maps for O(1) playlist curation instead of O(n^2) per match.
+	firstMatchPerBot := buildFirstMatchPerBot(data.Matches)
+	pairFrequency := buildPairFrequency(data.Matches)
+
 	type playlistDef struct {
 		slug        string
 		title       string
@@ -481,7 +485,7 @@ func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]
 			description: "The most closely contested matchups between frequent opponents",
 			category:    "rivalry",
 			filter: func(m MatchData) bool {
-				return isRivalryMatch(m, data)
+				return isRivalryMatchFast(m, pairFrequency)
 			},
 			sort: func(matches []MatchData) {
 				sortSlice(matches, func(i, j int) bool {
@@ -512,7 +516,7 @@ func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]
 			description: "First matches of newly registered bots — watch their opening games",
 			category:    "tutorial",
 			filter: func(m MatchData) bool {
-				return isNewBotDebut(m, data)
+				return isNewBotDebutFast(m, firstMatchPerBot)
 			},
 			sort: func(matches []MatchData) {
 				// Newest debuts first
@@ -1112,6 +1116,69 @@ func isEvolutionBreakthrough(m MatchData, data *IndexData) bool {
 		}
 	}
 	return false
+}
+
+// buildFirstMatchPerBot returns a map from botID to the matchID of their earliest
+// completed match. O(n*p) where n=matches, p=avg participants.
+func buildFirstMatchPerBot(matches []MatchData) map[string]string {
+	first := make(map[string]string)
+	firstTime := make(map[string]time.Time)
+	for _, m := range matches {
+		if m.CompletedAt.IsZero() || m.WinnerID == "" {
+			continue
+		}
+		for _, p := range m.Participants {
+			if t, ok := firstTime[p.BotID]; !ok || m.CompletedAt.Before(t) {
+				firstTime[p.BotID] = m.CompletedAt
+				first[p.BotID] = m.ID
+			}
+		}
+	}
+	return first
+}
+
+// isNewBotDebutFast checks if any participant's earliest completed match is this one,
+// using a pre-built lookup map.
+func isNewBotDebutFast(m MatchData, firstMatchPerBot map[string]string) bool {
+	if m.WinnerID == "" {
+		return false
+	}
+	for _, p := range m.Participants {
+		if firstMatchPerBot[p.BotID] == m.ID {
+			return true
+		}
+	}
+	return false
+}
+
+// buildPairFrequency returns a map from "botA:botB" (sorted) to the count of
+// 2-player matches between them. O(n) where n=matches.
+func buildPairFrequency(matches []MatchData) map[string]int {
+	freq := make(map[string]int)
+	for _, m := range matches {
+		if len(m.Participants) != 2 {
+			continue
+		}
+		a, b := m.Participants[0].BotID, m.Participants[1].BotID
+		if a > b {
+			a, b = b, a
+		}
+		freq[a+":"+b]++
+	}
+	return freq
+}
+
+// isRivalryMatchFast checks if a 2-player match is between frequent opponents,
+// using a pre-built pair frequency map.
+func isRivalryMatchFast(m MatchData, pairFrequency map[string]int) bool {
+	if len(m.Participants) != 2 || m.WinnerID == "" {
+		return false
+	}
+	a, b := m.Participants[0].BotID, m.Participants[1].BotID
+	if a > b {
+		a, b = b, a
+	}
+	return pairFrequency[a+":"+b] >= 3
 }
 
 // isRivalryMatch detects matches between bots that have played each other frequently.

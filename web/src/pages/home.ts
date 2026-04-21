@@ -6,6 +6,7 @@ import {
   fetchEvolutionMeta,
   fetchSeasonIndex,
   fetchMatchIndex,
+  fetchEnrichedIndex,
   type Season,
   type MatchSummary
 } from '../api-types';
@@ -51,15 +52,29 @@ async function fetchWithCache<T>(
   }
 }
 
-// Find featured replay (highest-viewed recent match)
-function findFeaturedReplay(matches: MatchSummary[]): MatchSummary | null {
-  const completed = matches.filter(m => m.completed_at && m.participants.length === 2);
-  if (completed.length === 0) return null;
-  // For now, just return the most recent completed match
-  // TODO: Add view_count to match index and sort by that
-  return completed.sort((a, b) =>
+// Find featured replay — prefer enriched/AI-commentary matches, then most recent
+async function findFeaturedReplay(matches: MatchSummary[]): Promise<{ match: MatchSummary | null; enriched: boolean }> {
+  const completed = matches.filter(m => m.completed_at && m.participants.length >= 2);
+  if (completed.length === 0) return { match: null, enriched: false };
+
+  // Sort by most recent first
+  const sorted = [...completed].sort((a, b) =>
     new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()
-  )[0] || null;
+  );
+
+  // Try to find an enriched match among recent replays
+  try {
+    const enrichedIndex = await fetchEnrichedIndex();
+    const enrichedIDs = new Set(enrichedIndex.entries.map(e => e.match_id));
+    const enrichedMatch = sorted.find(m => enrichedIDs.has(m.id));
+    if (enrichedMatch) {
+      return { match: enrichedMatch, enriched: true };
+    }
+  } catch {
+    // enriched index not available — fall through
+  }
+
+  return { match: sorted[0], enriched: false };
 }
 
 // Format time remaining
@@ -115,7 +130,7 @@ export async function renderHomePage(): Promise<void> {
   const top5 = leaderboardData.entries.slice(0, 5);
   const latestStories = blogData.posts.slice(0, 3);
   const featuredPlaylists = playlistsData.playlists.slice(0, 6);
-  const featuredReplay = findFeaturedReplay(matchesData.matches);
+  const { match: featuredReplay } = await findFeaturedReplay(matchesData.matches);
   const activeSeason = seasonData.active_season;
   const seasonProgress = getSeasonProgress(activeSeason);
 
