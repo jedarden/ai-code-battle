@@ -383,6 +383,7 @@ export class ReplayViewer {
   private accessibility: AccessibilitySettings;
   private viewMode: ViewMode;
   private showDebug: boolean;
+  private debugPlayerEnabled: Map<number, boolean> = new Map();
   private screenReaderRegion: HTMLElement | null = null;
 
   // Animation state
@@ -403,6 +404,7 @@ export class ReplayViewer {
   public onPlayStateChange?: (playing: boolean) => void;
   public onReplayLoad?: (replay: Replay) => void;
   public onCommentaryChange?: (entry: { turn: number; text: string; type: string } | null) => void;
+  public onDebugChange?: (debug: Record<number, DebugInfo> | null) => void;
 
   // Enriched commentary state (§13.3)
   private commentary: EnrichedCommentary | null = null;
@@ -475,6 +477,7 @@ export class ReplayViewer {
     this.startRenderLoop();
 
     if (this.onReplayLoad) this.onReplayLoad(replay);
+    this.fireDebugForTurn(0);
   }
 
   private resizeCanvas(): void {
@@ -582,6 +585,19 @@ export class ReplayViewer {
     return this.showDebug;
   }
 
+  setDebugPlayerEnabled(player: number, enabled: boolean): void {
+    this.debugPlayerEnabled.set(player, enabled);
+    this.render();
+  }
+
+  getDebugPlayerEnabled(player: number): boolean {
+    return this.debugPlayerEnabled.get(player) ?? true;
+  }
+
+  getDebugForCurrentTurn(): Record<number, DebugInfo> | null {
+    return this.replay?.turns[this.currentTurn]?.debug ?? null;
+  }
+
   // ── Enriched Commentary Controls (§13.3) ──────────────────────────────────────
 
   setCommentary(commentary: EnrichedCommentary | null): void {
@@ -620,6 +636,13 @@ export class ReplayViewer {
   private fireCommentaryForTurn(turn: number): void {
     if (this.onCommentaryChange) {
       this.onCommentaryChange(this.getCommentaryForTurn(turn));
+    }
+  }
+
+  private fireDebugForTurn(turn: number): void {
+    if (this.onDebugChange) {
+      const turnData = this.replay?.turns[turn];
+      this.onDebugChange(turnData?.debug ?? null);
     }
   }
 
@@ -854,6 +877,7 @@ export class ReplayViewer {
 
     if (this.onTurnChange) this.onTurnChange(this.currentTurn);
     this.fireCommentaryForTurn(this.currentTurn);
+    this.fireDebugForTurn(this.currentTurn);
   }
 
   private fireTurnAnimations(turnData: ReplayTurn): void {
@@ -1393,53 +1417,71 @@ export class ReplayViewer {
   // Render debug telemetry overlay
   private renderDebugOverlay(debug: Record<number, DebugInfo>, colors: string[]): void {
     const { ctx, cellSize } = this;
+    let reasoningRow = 0;
 
     for (const [playerId, info] of Object.entries(debug)) {
       const playerIdx = parseInt(playerId, 10);
+
+      // Skip if this player's overlay is explicitly disabled
+      if (this.debugPlayerEnabled.get(playerIdx) === false) continue;
+
       const color = colors[playerIdx] || '#ffffff';
 
-      // Draw debug targets
+      // Draw debug targets with priority-based opacity
       if (info.targets) {
         for (const target of info.targets) {
           const x = target.position.col * cellSize + cellSize / 2;
           const y = target.position.row * cellSize + cellSize / 2;
+          const alpha = target.priority !== undefined ? Math.max(0.1, target.priority) : 1.0;
+          const markerColor = target.color || color;
 
-          // Draw target marker
-          ctx.strokeStyle = target.color || color;
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = markerColor;
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.arc(x, y, cellSize / 2, 0, Math.PI * 2);
           ctx.stroke();
 
-          // Draw label if provided
           if (target.label) {
-            ctx.fillStyle = color;
+            ctx.fillStyle = markerColor;
             ctx.font = '10px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(target.label, x, y - cellSize / 2 - 4);
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(target.label, x, y - cellSize / 2 - 2);
           }
+          ctx.globalAlpha = 1.0;
         }
       }
 
-      // Draw reasoning text
+      // Draw reasoning text — stack boxes from the canvas bottom
       if (info.reasoning) {
         const padding = 10;
         const maxWidth = 200;
         const lineHeight = 14;
+        const boxH = 54;
+        const yTop = this.canvas.height - boxH - padding - reasoningRow * (boxH + 4);
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(padding, this.canvas.height - 60 - padding, maxWidth + padding * 2, 50);
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
+        ctx.fillRect(padding, yTop, maxWidth + padding * 2, boxH);
 
         ctx.fillStyle = color;
         ctx.font = '11px monospace';
         ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
 
         const lines = this.wrapText(info.reasoning, maxWidth);
         lines.forEach((line, i) => {
-          ctx.fillText(line, padding * 2, this.canvas.height - 60 + i * lineHeight);
+          ctx.fillText(line, padding * 2, yTop + padding / 2 + i * lineHeight);
         });
+
+        reasoningRow++;
       }
     }
+
+    // Reset canvas state
+    ctx.globalAlpha = 1.0;
+    ctx.textBaseline = 'alphabetic';
   }
 
   // Wrap text to fit within max width

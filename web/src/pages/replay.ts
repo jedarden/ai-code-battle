@@ -1,5 +1,5 @@
 // Standalone replay viewer page - lazy loaded from app.ts
-import type { Replay, GameEvent } from '../types';
+import type { Replay, GameEvent, DebugInfo } from '../types';
 import { fetchCommentary } from '../api-types';
 
 const loadReplayViewer = () => import('../replay-viewer');
@@ -162,6 +162,21 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       </div>
     </div>
 
+    <!-- Debug telemetry bottom sheet (mobile) / sidebar panel (desktop) -->
+    <div id="debug-panel" class="panel debug-panel" style="display:none">
+      <div class="debug-panel-header" id="debug-panel-toggle-btn" role="button" tabindex="0"
+           aria-expanded="false" aria-controls="debug-panel-body">
+        <h2 style="margin:0">Debug Telemetry</h2>
+        <span id="debug-panel-chevron" class="debug-chevron" aria-hidden="true">▾</span>
+      </div>
+      <div id="debug-panel-body" class="debug-panel-body">
+        <div id="debug-player-toggles" class="debug-player-toggles"></div>
+        <div id="debug-info-display" class="debug-info-display">
+          <div class="no-debug-data">No debug data for this turn</div>
+        </div>
+      </div>
+    </div>
+
     <style>
       .replay-page .page-title { margin-bottom: 20px; }
       .replay-layout { display: flex; gap: 20px; }
@@ -220,6 +235,59 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
         .replay-layout { flex-direction: column; }
         .replay-sidebar { width: 100%; }
       }
+      /* Debug telemetry panel */
+      .debug-panel { padding: 0; overflow: hidden; }
+      .debug-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 15px; cursor: pointer; user-select: none; }
+      .debug-panel-header:hover { background-color: var(--bg-tertiary); }
+      .debug-panel-header h2 { font-size: 1rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .debug-chevron { color: var(--text-muted); font-size: 1rem; transition: transform 0.2s; }
+      .debug-panel.expanded .debug-chevron { transform: rotate(180deg); }
+      .debug-panel-body { display: none; padding: 0 15px 15px; }
+      .debug-panel.expanded .debug-panel-body { display: block; }
+      .debug-player-toggles { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+      .debug-player-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-muted); font-size: 0.875rem; }
+      .debug-player-toggle input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+      .debug-player-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+      .debug-info-display { display: flex; flex-direction: column; gap: 10px; }
+      .debug-player-info { background-color: var(--bg-tertiary); border-radius: 6px; padding: 10px; }
+      .debug-player-name { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+      .debug-reasoning { color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; margin-bottom: 8px; }
+      .debug-targets { display: flex; flex-direction: column; gap: 4px; }
+      .debug-target-item { font-size: 0.75rem; font-family: monospace; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+      .debug-target-priority { opacity: 0.7; }
+      .no-debug-data { color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
+      /* Mobile: bottom sheet */
+      @media (max-width: 900px) {
+        .debug-panel {
+          position: fixed !important;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          z-index: 200;
+          border-radius: 12px 12px 0 0 !important;
+          max-height: 70vh;
+          overflow-y: auto;
+          transform: translateY(calc(100% - 52px));
+          transition: transform 0.3s ease;
+          box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+        }
+        .debug-panel.expanded {
+          transform: translateY(0);
+        }
+        .debug-panel-header::before {
+          content: '';
+          display: block;
+          width: 36px;
+          height: 4px;
+          background: var(--border, #374151);
+          border-radius: 2px;
+          position: absolute;
+          top: 8px;
+          left: 50%;
+          transform: translateX(-50%);
+        }
+        .debug-panel-header { position: relative; padding-top: 20px; }
+      }
     </style>
   `;
 
@@ -258,10 +326,16 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const commentaryBar = document.getElementById('commentary-bar') as HTMLDivElement;
   const commentaryText = document.getElementById('commentary-text') as HTMLSpanElement;
   const commentaryToggle = document.getElementById('commentary-toggle') as HTMLButtonElement;
+  const debugPanel = document.getElementById('debug-panel') as HTMLDivElement;
+  const debugPanelToggleBtn = document.getElementById('debug-panel-toggle-btn') as HTMLDivElement;
+  const debugPanelChevron = document.getElementById('debug-panel-chevron') as HTMLSpanElement;
+  const debugPlayerToggles = document.getElementById('debug-player-toggles') as HTMLDivElement;
+  const debugInfoDisplay = document.getElementById('debug-info-display') as HTMLDivElement;
 
   let viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
   let commentaryEnabled = true;
+  let debugPanelExpanded = false;
 
   function enableControls(): void {
     playBtn.disabled = false;
@@ -325,6 +399,24 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateEventLog();
     initWinProb(replay);
     loadCommentary(replay.match_id);
+    initDebugPanel(replay);
+
+    const hasAnyDebug = replay.turns.some(t => t.debug && Object.keys(t.debug).length > 0);
+    if (hasAnyDebug) {
+      debugPanel.style.display = '';
+      // On mobile, default collapsed; on desktop, default expanded
+      if (window.innerWidth > 900) {
+        debugPanelExpanded = true;
+        debugPanel.classList.add('expanded');
+        debugPanelToggleBtn.setAttribute('aria-expanded', 'true');
+      } else {
+        debugPanelExpanded = false;
+        debugPanel.classList.remove('expanded');
+        debugPanelToggleBtn.setAttribute('aria-expanded', 'false');
+      }
+    } else {
+      debugPanel.style.display = 'none';
+    }
   }
 
   async function loadCommentary(matchId: string): Promise<void> {
@@ -338,6 +430,90 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       viewer.setCommentary(null);
       commentaryBar.style.display = 'none';
     }
+  }
+
+  function initDebugPanel(replay: Replay): void {
+    const playerColors = [
+      '#332288', '#88ccee', '#44aa99', '#117733', '#999933', '#ddcc77',
+    ];
+
+    debugPlayerToggles.innerHTML = '';
+    replay.players.forEach((player, idx) => {
+      const color = playerColors[idx] || '#888';
+      const label = document.createElement('label');
+      label.className = 'debug-player-toggle';
+      label.innerHTML = `
+        <input type="checkbox" id="debug-toggle-p${idx}" checked>
+        <span class="debug-player-dot" style="background:${color}"></span>
+        ${player.name}
+      `;
+      const checkbox = label.querySelector('input') as HTMLInputElement;
+      checkbox.addEventListener('change', () => {
+        viewer.setShowDebug(true);
+        viewer.setDebugPlayerEnabled(idx, checkbox.checked);
+        updateDebugDisplay(viewer.getDebugForCurrentTurn?.() ?? null);
+      });
+      debugPlayerToggles.appendChild(label);
+    });
+
+    viewer.setShowDebug(true);
+  }
+
+  function updateDebugDisplay(debug: Record<number, DebugInfo> | null): void {
+    if (!debug || Object.keys(debug).length === 0) {
+      debugInfoDisplay.innerHTML = '<div class="no-debug-data">No debug data for this turn</div>';
+      return;
+    }
+
+    const playerColors = [
+      '#332288', '#88ccee', '#44aa99', '#117733', '#999933', '#ddcc77',
+    ];
+    const replay = viewer.getReplay() as Replay | null;
+
+    let html = '';
+    for (const [playerId, info] of Object.entries(debug)) {
+      const idx = parseInt(playerId, 10);
+      if (viewer.getDebugPlayerEnabled(idx) === false) continue;
+      const color = playerColors[idx] || '#888';
+      const playerName = replay?.players[idx]?.name ?? `Player ${idx}`;
+      const hasData = !!(info.reasoning || (info.targets && info.targets.length > 0));
+      if (!hasData) continue;
+
+      html += `<div class="debug-player-info">
+        <div class="debug-player-name" style="color:${color}">${playerName}</div>`;
+
+      if (info.reasoning) {
+        html += `<div class="debug-reasoning">${escapeHtml(info.reasoning)}</div>`;
+      }
+
+      if (info.targets && info.targets.length > 0) {
+        html += '<div class="debug-targets">';
+        for (const t of info.targets) {
+          const pct = t.priority !== undefined ? Math.round(t.priority * 100) : 100;
+          const label = t.label ? escapeHtml(t.label) : `(${t.position.row},${t.position.col})`;
+          html += `<div class="debug-target-item">
+            <span style="color:${t.color || color}">●</span>
+            ${label}
+            <span class="debug-target-priority">${pct}%</span>
+          </div>`;
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+    }
+
+    debugInfoDisplay.innerHTML = html || '<div class="no-debug-data">No debug data for this turn</div>';
+  }
+
+  function escapeHtml(str: string): string {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function toggleDebugPanel(): void {
+    debugPanelExpanded = !debugPanelExpanded;
+    debugPanel.classList.toggle('expanded', debugPanelExpanded);
+    debugPanelToggleBtn.setAttribute('aria-expanded', String(debugPanelExpanded));
   }
 
   function initWinProb(replay: Replay): void {
@@ -499,10 +675,18 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateAccessibility();
   }
 
+  debugPanelToggleBtn.addEventListener('click', toggleDebugPanel);
+  debugPanelToggleBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDebugPanel(); }
+  });
+
   viewer.onTurnChange = () => {
     updateUI();
     updateEventLog();
     if (criticalMoments.length > 0) updateCriticalMomentNav();
+  };
+  viewer.onDebugChange = (debug: Record<number, DebugInfo> | null) => {
+    updateDebugDisplay(debug);
   };
   viewer.onPlayStateChange = (playing: boolean) => { playBtn.textContent = playing ? 'Pause' : 'Play'; };
   viewer.onCommentaryChange = (entry: { turn: number; text: string; type: string } | null) => {

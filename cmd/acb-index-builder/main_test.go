@@ -11,6 +11,16 @@ import (
 	"time"
 )
 
+func generateTestImage(w, h int) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: 100, G: 100, B: 100, A: 255})
+		}
+	}
+	return img
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Set test environment variables
 	t.Setenv("ACB_POSTGRES_HOST", "testhost")
