@@ -429,9 +429,16 @@ export class ReplayViewer {
   public onCommentaryChange?: (entry: { turn: number; text: string; type: string } | null) => void;
   public onDebugChange?: (debug: Record<number, DebugInfo> | null) => void;
 
+  // Director mode: external speed override from director controller
+  private directorEnabled: boolean = false;
+  private directorMsPerTurn: number = 500;
+
   // Enriched commentary state (§13.3)
   private commentary: EnrichedCommentary | null = null;
   private commentaryEnabled: boolean = true;
+
+  // Annotation overlay state (§16.8)
+  private annotations: Array<{ turn: number; type: string; position?: Position }> = [];
 
   constructor(canvas: HTMLCanvasElement, options: ViewerOptions = {}) {
     this.canvas = canvas;
@@ -564,6 +571,20 @@ export class ReplayViewer {
     return this.animationSpeed;
   }
 
+  // Director mode: when enabled, tickDirectorSpeed overrides animationSpeed
+  setDirectorMode(enabled: boolean): void {
+    this.directorEnabled = enabled;
+  }
+
+  isDirectorMode(): boolean {
+    return this.directorEnabled;
+  }
+
+  // Called externally by the director controller each tick to set eased speed
+  setDirectorSpeed(msPerTurn: number): void {
+    this.directorMsPerTurn = Math.max(10, Math.min(2000, msPerTurn));
+  }
+
   getIsPlaying(): boolean {
     return this.isPlaying;
   }
@@ -631,6 +652,13 @@ export class ReplayViewer {
 
   getDebugForCurrentTurn(): Record<number, DebugInfo> | null {
     return this.replay?.turns[this.currentTurn]?.debug ?? null;
+  }
+
+  // ── Annotation Overlay (§16.8) ─────────────────────────────────────────────────
+
+  setAnnotations(anns: Array<{ turn: number; type: string; position?: Position }>): void {
+    this.annotations = anns;
+    this.render();
   }
 
   // ── Enriched Commentary Controls (§13.3) ──────────────────────────────────────
@@ -866,8 +894,9 @@ export class ReplayViewer {
 
     // If playing, check if we should advance to next turn
     if (this.isPlaying && this.replay) {
+      const effectiveSpeed = this.directorEnabled ? this.directorMsPerTurn : this.animationSpeed;
       const turnElapsed = timestamp - this.turnStartTime;
-      if (turnElapsed >= this.animationSpeed) {
+      if (turnElapsed >= effectiveSpeed) {
         if (this.currentTurn < this.replay.turns.length - 1) {
           this.advanceTurn(this.currentTurn + 1);
         } else {
@@ -1059,6 +1088,9 @@ export class ReplayViewer {
     if (this.showDebug && turnData.debug) {
       this.renderDebugOverlay(turnData.debug, colors);
     }
+
+    // Draw annotation markers on canvas (§16.8)
+    this.renderAnnotationMarkers(colors);
 
     // Draw score overlay
     this.drawScoreOverlay(turnData, colors);
@@ -1517,6 +1549,44 @@ export class ReplayViewer {
     // Reset canvas state
     ctx.globalAlpha = 1.0;
     ctx.textBaseline = 'alphabetic';
+  }
+
+  private renderAnnotationMarkers(_colors: string[]): void {
+    const currentAnns = this.annotations.filter(a => a.turn === this.currentTurn);
+    if (currentAnns.length === 0) return;
+
+    const { ctx, cellSize } = this;
+    const TYPE_COLORS: Record<string, string> = {
+      insight: '#3b82f6',
+      mistake: '#ef4444',
+      idea: '#22c55e',
+      highlight: '#fbbf24',
+    };
+
+    ctx.save();
+    for (const ann of currentAnns) {
+      const color = TYPE_COLORS[ann.type] ?? '#94a3b8';
+
+      if (ann.position) {
+        const x = ann.position.col * cellSize + cellSize / 2;
+        const y = ann.position.row * cellSize + cellSize / 2;
+        const r = cellSize / 2 + 2;
+
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.15;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
   }
 
   // Wrap text to fit within max width

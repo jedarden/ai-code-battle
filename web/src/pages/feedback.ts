@@ -1,28 +1,20 @@
 // Community replay feedback: users annotate replay turns with tags.
 // Annotations feed the evolution pipeline by surfacing interesting moments.
-// Types consolidated to match plan §8.3 replay_feedback schema.
+// Types consolidated with annotation.ts to use shared Annotation schema from plan §8.3.
 
-import { fetchMatchIndex, API_BASE, type MatchSummary } from '../api-types';
+import { fetchMatchIndex, type MatchSummary } from '../api-types';
 import { ReplayViewer } from '../replay-viewer';
 import type { Replay } from '../types';
+import {
+  type Annotation,
+  type FeedbackType,
+  FEEDBACK_TYPES,
+  loadLocalAnnotations,
+  submitAnnotation,
+} from '../components/annotation';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-// Aligned with plan §8.3: insight, mistake, idea, highlight
-
-export const ANNOTATION_TAGS = [
-  { id: 'insight',   label: 'Tactical Insight', color: '#3b82f6', desc: 'A clever or instructive strategy in action' },
-  { id: 'mistake',   label: 'Mistake Spotted',  color: '#ef4444', desc: 'Behaviour that looks unintended or suboptimal' },
-  { id: 'idea',      label: 'Strategy Idea',     color: '#22c55e', desc: 'A novel approach worth propagating in the evolution pipeline' },
-  { id: 'highlight', label: 'Highlight',         color: '#fbbf24', desc: 'An impressive or noteworthy moment' },
-];
-
-export interface ReplayAnnotation {
-  match_id: string;
-  turn: number;
-  tag: string;
-  comment: string;
-  submitted_at: string;
-}
+// Re-export for any consumers
+export { FEEDBACK_TYPES as ANNOTATION_TAGS };
 
 // ─── Page render ─────────────────────────────────────────────────────────────
 
@@ -35,8 +27,8 @@ export function renderFeedbackPage(_params: Record<string, string>): void {
 }
 
 function buildHTML(): string {
-  const tagButtons = ANNOTATION_TAGS.map(t =>
-    `<button class="tag-btn" data-tag="${t.id}" style="--tag-color:${t.color}" title="${escapeHtml(t.desc)}">${escapeHtml(t.label)}</button>`,
+  const tagButtons = FEEDBACK_TYPES.map(t =>
+    `<button class="tag-btn" data-tag="${t.type}" style="--tag-color:${t.color}" title="${escapeHtml(t.label)}">${t.icon} ${escapeHtml(t.label)}</button>`,
   ).join('');
 
   return `
@@ -145,8 +137,8 @@ function buildHTML(): string {
 function initFeedback(): void {
   let replay: Replay | null = null;
   let viewer: ReplayViewer | null = null;
-  let selectedTag: string | null = null;
-  const localAnnotations: ReplayAnnotation[] = [];
+  let selectedTag: FeedbackType | null = null;
+  const localAnnotations: Annotation[] = [];
 
   const loadStatus = document.getElementById('fb-load-status')!;
   const formPanel  = document.getElementById('annotation-form-panel')!;
@@ -299,7 +291,7 @@ function initFeedback(): void {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tag-btn').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
-      selectedTag = (btn as HTMLElement).dataset.tag!;
+      selectedTag = (btn as HTMLElement).dataset.tag! as FeedbackType;
       updateSubmitButton();
     });
   });
@@ -318,12 +310,15 @@ function initFeedback(): void {
   submitBtn.addEventListener('click', async () => {
     if (!replay || !selectedTag) return;
 
-    const annotation: ReplayAnnotation = {
+    const annotation: Annotation = {
+      id: `ann_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
       match_id: replay.match_id,
       turn: Number(turnSlider.value),
-      tag: selectedTag,
-      comment: commentTa.value.trim(),
-      submitted_at: new Date().toISOString(),
+      type: selectedTag,
+      body: commentTa.value.trim(),
+      author: 'Anonymous',
+      upvotes: 0,
+      created_at: new Date().toISOString(),
     };
 
     submitBtn.disabled = true;
@@ -331,24 +326,12 @@ function initFeedback(): void {
     submitStatus.className = 'fb-status';
 
     try {
-      // POST to API; gracefully handle 404/offline (store locally)
-      const resp = await fetch(`${API_BASE}/feedback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(annotation),
-      }).catch(() => null);
+      await submitAnnotation(annotation);
 
-      if (resp && resp.ok) {
-        submitStatus.textContent = 'Annotation submitted! Thank you.';
-        submitStatus.className = 'fb-status ok';
-      } else {
-        // Store locally if API unavailable
-        submitStatus.textContent = 'Saved locally (API offline).';
-        submitStatus.className = 'fb-status ok';
-      }
+      submitStatus.textContent = 'Annotation submitted! Thank you.';
+      submitStatus.className = 'fb-status ok';
 
       localAnnotations.push(annotation);
-      saveLocalAnnotation(annotation);
 
       // Reset form
       document.querySelectorAll('.tag-btn').forEach(b => b.classList.remove('selected'));
@@ -368,7 +351,7 @@ function initFeedback(): void {
     }
   });
 
-  // Load any previously stored annotations
+  // Load any previously stored annotations for any match
   const stored = loadLocalAnnotations();
   if (stored.length > 0) {
     localAnnotations.push(...stored);
@@ -389,23 +372,23 @@ function initFeedback(): void {
 
     markersEl.innerHTML = relevant.map(a => {
       const pct = (a.turn / Math.max(1, total - 1)) * 100;
-      const tagInfo = ANNOTATION_TAGS.find(t => t.id === a.tag);
+      const tagInfo = FEEDBACK_TYPES.find(t => t.type === a.type);
       const color = tagInfo?.color ?? '#94a3b8';
       return `<div class="ann-marker" style="left:${pct.toFixed(1)}%;background:${color}"
-        title="Turn ${a.turn}: ${escapeHtml(tagInfo?.label ?? a.tag)}${a.comment ? ' — ' + escapeHtml(a.comment) : ''}"></div>`;
+        title="Turn ${a.turn}: ${escapeHtml(tagInfo?.label ?? a.type)}${a.body ? ' — ' + escapeHtml(a.body) : ''}"></div>`;
     }).join('');
   }
 
-  function renderAnnotationsLog(anns: ReplayAnnotation[]): void {
+  function renderAnnotationsLog(anns: Annotation[]): void {
     const logEl = document.getElementById('annotations-log')!;
     const sorted = [...anns].sort((a, b) => a.turn - b.turn);
     logEl.innerHTML = sorted.map(a => {
-      const tagInfo = ANNOTATION_TAGS.find(t => t.id === a.tag);
+      const tagInfo = FEEDBACK_TYPES.find(t => t.type === a.type);
       return `
         <div class="ann-log-row">
-          <span class="ann-tag-pill" style="background:${tagInfo?.color ?? '#94a3b8'}22;color:${tagInfo?.color ?? '#94a3b8'}">${escapeHtml(tagInfo?.label ?? a.tag)}</span>
+          <span class="ann-tag-pill" style="background:${tagInfo?.color ?? '#94a3b8'}22;color:${tagInfo?.color ?? '#94a3b8'}">${tagInfo?.icon ?? ''} ${escapeHtml(tagInfo?.label ?? a.type)}</span>
           <span class="ann-turn">Turn ${a.turn}</span>
-          ${a.comment ? `<span class="ann-comment-text">${escapeHtml(a.comment)}</span>` : ''}
+          ${a.body ? `<span class="ann-comment-text">${escapeHtml(a.body)}</span>` : ''}
           <span class="ann-match-id">${a.match_id.slice(0, 8)}…</span>
         </div>
       `;
@@ -413,25 +396,7 @@ function initFeedback(): void {
   }
 }
 
-// ─── Local storage for offline annotations ────────────────────────────────────
-
-const LS_KEY = 'acb_annotations_v2';
-
-function saveLocalAnnotation(ann: ReplayAnnotation): void {
-  try {
-    const existing: ReplayAnnotation[] = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
-    existing.push(ann);
-    localStorage.setItem(LS_KEY, JSON.stringify(existing.slice(-200)));
-  } catch {}
-}
-
-function loadLocalAnnotations(): ReplayAnnotation[] {
-  try {
-    return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
-  } catch {
-    return [];
-  }
-}
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 

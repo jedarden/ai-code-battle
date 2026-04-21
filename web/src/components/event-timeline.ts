@@ -1,5 +1,6 @@
 // Event Timeline Ribbon - Visual event strip with click-to-jump
 import type { GameEvent } from '../types';
+import type { Annotation } from './annotation';
 
 export interface TimelineEvent {
   turn: number;
@@ -25,6 +26,7 @@ export class EventTimeline {
   private currentTurn: number = 0;
   private totalTurns: number = 0;
   private onTurnClick?: (turn: number) => void;
+  private annotations: Annotation[] = [];
 
   constructor(container: HTMLElement, options?: { onTurnClick?: (turn: number) => void }) {
     this.container = container;
@@ -58,8 +60,16 @@ export class EventTimeline {
     this.updateHighlight();
   }
 
+  setAnnotations(annotations: Annotation[]): void {
+    this.annotations = annotations;
+    this.render();
+  }
+
   private render(): void {
-    if (this.events.length === 0) {
+    const hasEvents = this.events.length > 0;
+    const hasAnnotations = this.annotations.length > 0;
+
+    if (!hasEvents && !hasAnnotations) {
       this.container.innerHTML = '<div class="timeline-empty">No events</div>';
       return;
     }
@@ -77,17 +87,33 @@ export class EventTimeline {
       `;
     }).join('');
 
+    // Annotation badges on timeline
+    const annotationIcons: Record<string, string> = {
+      insight: '\u{1F4A1}',
+      mistake: '⚠️',
+      idea: '\u{1F9EA}',
+      highlight: '⭐',
+    };
+    const annotationColors: Record<string, string> = {
+      insight: '#3b82f6',
+      mistake: '#ef4444',
+      idea: '#22c55e',
+      highlight: '#fbbf24',
+    };
+    const annotationMarkers = hasAnnotations ? this.buildAnnotationMarkers(annotationIcons, annotationColors) : '';
+
     this.container.innerHTML = `
       <div class="timeline-track">
         <div class="timeline-progress" id="timeline-progress"></div>
         ${eventMarkers}
+        ${annotationMarkers}
       </div>
       <div class="timeline-turn-label">
         <span id="timeline-current">0</span> / <span id="timeline-total">${this.totalTurns}</span>
       </div>
     `;
 
-    // Wire click handlers
+    // Wire click handlers (both events and annotation markers)
     this.container.querySelectorAll('.timeline-event').forEach(el => {
       el.addEventListener('click', (e) => {
         const turn = parseInt((e.currentTarget as HTMLElement).dataset.turn || '0', 10);
@@ -114,6 +140,33 @@ export class EventTimeline {
     this.updateHighlight();
   }
 
+  private buildAnnotationMarkers(
+    icons: Record<string, string>,
+    colors: Record<string, string>,
+  ): string {
+    // Group annotations by turn
+    const grouped = new Map<number, Annotation[]>();
+    for (const ann of this.annotations) {
+      const list = grouped.get(ann.turn) ?? [];
+      list.push(ann);
+      grouped.set(ann.turn, list);
+    }
+
+    return [...grouped.entries()].map(([turn, anns]) => {
+      const leftPercent = (turn / Math.max(1, this.totalTurns - 1)) * 100;
+      const primary = anns[0].type;
+      const icon = icons[primary] ?? '\u{1F4CC}';
+      const color = colors[primary] ?? '#94a3b8';
+      const count = anns.length > 1 ? `<span class="ann-marker-count">${anns.length}</span>` : '';
+      return `<div class="timeline-event timeline-annotation"
+                   data-turn="${turn}"
+                   style="left: ${leftPercent}%; color: ${color}"
+                   title="Turn ${turn}: ${anns.length} annotation${anns.length > 1 ? 's' : ''}">
+          ${icon}${count}
+        </div>`;
+    }).join('');
+  }
+
   private updateHighlight(): void {
     const progress = this.container.querySelector('#timeline-progress') as HTMLElement;
     const currentLabel = this.container.querySelector('#timeline-current') as HTMLElement;
@@ -127,14 +180,10 @@ export class EventTimeline {
       currentLabel.textContent = String(this.currentTurn);
     }
 
-    // Highlight events at current turn
-    this.container.querySelectorAll('.timeline-event').forEach(el => {
+    // Highlight events and annotations at current turn
+    this.container.querySelectorAll('.timeline-event, .timeline-annotation').forEach(el => {
       const turn = parseInt((el as HTMLElement).dataset.turn || '0', 10);
-      if (turn === this.currentTurn) {
-        el.classList.add('active');
-      } else {
-        el.classList.remove('active');
-      }
+      el.classList.toggle('active', turn === this.currentTurn);
     });
   }
 }
@@ -201,5 +250,17 @@ export const EVENT_TIMELINE_STYLES = `
     color: var(--text-muted, #94a3b8);
     font-size: 14px;
     padding: 8px;
+  }
+
+  .timeline-annotation {
+    font-size: 10px;
+  }
+
+  .ann-marker-count {
+    position: absolute;
+    top: -8px;
+    font-size: 8px;
+    font-weight: 600;
+    color: var(--text-muted, #94a3b8);
   }
 `;

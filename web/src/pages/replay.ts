@@ -9,6 +9,22 @@ import {
   ANNOTATION_OVERLAY_STYLES,
   type Annotation,
 } from '../components/annotation';
+import {
+  EventTimeline,
+  EVENT_TIMELINE_STYLES,
+} from '../components/event-timeline';
+import {
+  computeAllDensities,
+  computeSpeedSchedule,
+  createDirectorState,
+  tickDirectorSpeed,
+  loadDirectorConfig,
+  saveDirectorConfig,
+  formatDirectorLabel,
+  type DirectorConfig,
+  type DirectorState,
+  type DurationPreset,
+} from '../components/director';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -64,6 +80,9 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">Load a replay</span>
           </div>
 
+          <!-- Desktop event timeline with annotation badges (hidden on mobile) -->
+          <div class="event-timeline-container" id="event-timeline-container" style="display:none"></div>
+
           <div id="win-prob-section" class="win-prob-section" style="display:none">
             <div class="win-prob-header">
               <span class="win-prob-title">Win Probability</span>
@@ -115,6 +134,29 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <div class="slider-group">
               <label>Speed: <span id="speed-display">100</span>ms/turn</label>
               <input type="range" id="speed-slider" min="20" max="1000" value="100">
+            </div>
+            <div class="speed-selector-group">
+              <label for="speed-select">Speed Preset:</label>
+              <select id="speed-select">
+                <option value="500">1x</option>
+                <option value="250">2x</option>
+                <option value="125">4x</option>
+                <option value="62">8x</option>
+                <option value="31">16x</option>
+                <option value="director">Director</option>
+              </select>
+            </div>
+            <div id="director-options" class="director-options" style="display:none">
+              <div class="slider-group">
+                <label>Target Duration:</label>
+                <div class="duration-presets" id="duration-presets">
+                  <button class="btn small secondary duration-btn" data-duration="30">30s</button>
+                  <button class="btn small secondary duration-btn active" data-duration="60">1min</button>
+                  <button class="btn small secondary duration-btn" data-duration="120">2min</button>
+                  <button class="btn small secondary duration-btn" data-duration="300">5min</button>
+                </div>
+              </div>
+              <div class="director-status" id="director-status">Director 16x</div>
             </div>
           </div>
 
@@ -246,6 +288,14 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .no-events { color: var(--text-muted); }
       .keyboard-shortcuts { font-size: 0.75rem; color: var(--text-muted); }
       .keyboard-shortcuts kbd { background-color: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px; font-family: monospace; margin-right: 4px; }
+      .speed-selector-group { margin-bottom: 10px; }
+      .speed-selector-group label { display: block; color: var(--text-muted); font-size: 0.875rem; margin-bottom: 6px; }
+      .speed-selector-group select { width: 100%; background-color: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); padding: 8px; border-radius: 6px; font-size: 14px; }
+      .director-options { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bg-tertiary); }
+      .duration-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+      .duration-presets .btn { flex: 1; min-width: 40px; text-align: center; font-size: 0.75rem; }
+      .duration-presets .btn.active { background-color: var(--accent); color: white; }
+      .director-status { text-align: center; color: var(--accent); font-size: 0.8rem; font-weight: 600; padding: 6px 0; font-family: monospace; }
       .win-prob-section { background-color: var(--bg-secondary); border-radius: 8px; padding: 12px; margin-top: 10px; }
       .win-prob-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
       .win-prob-title { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
@@ -331,6 +381,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .annotation-canvas-hint.visible { opacity: 1; }
     </style>
     <style>${ANNOTATION_OVERLAY_STYLES}</style>
+    <style>${EVENT_TIMELINE_STYLES}</style>
   `;
 
   initReplayViewer(ReplayViewerClass, initialUrl);
@@ -387,6 +438,18 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
   let commentaryEnabled = true;
   let debugPanelExpanded = false;
+
+  // Director mode state
+  let directorState: DirectorState = createDirectorState();
+  let directorConfig: DirectorConfig = loadDirectorConfig();
+  let directorSchedule: ReturnType<typeof computeSpeedSchedule> = [];
+  let directorAnimFrame: number | null = null;
+
+  // Director UI elements
+  const speedSelect = document.getElementById('speed-select') as HTMLSelectElement;
+  const directorOptions = document.getElementById('director-options') as HTMLDivElement;
+  const directorStatus = document.getElementById('director-status') as HTMLDivElement;
+  const durationPresets = document.getElementById('duration-presets') as HTMLDivElement;
 
   // Mobile speed cycling
   const SPEED_STEPS = [1000, 500, 200, 100, 50, 20];
@@ -523,6 +586,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateMobileUI();
     buildMobileTimeline(replay);
     initWinProb(replay);
+    initDirector(replay);
     loadCommentary(replay.match_id);
     initDebugPanel(replay);
     initAnnotations(replay);
@@ -729,6 +793,102 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     debugPanelToggleBtn.setAttribute('aria-expanded', String(debugPanelExpanded));
   }
 
+  // ── Director Mode (§16.10) ──────────────────────────────────────────────────
+
+  function initDirector(replay: Replay): void {
+    const densities = computeAllDensities(replay);
+    directorSchedule = computeSpeedSchedule(densities, directorConfig.targetDuration);
+    directorState = createDirectorState();
+
+    // Apply saved duration preset selection
+    updateDurationPresetUI(directorConfig.targetDuration);
+
+    if (speedSelect.value === 'director') {
+      enableDirector();
+    }
+  }
+
+  function enableDirector(): void {
+    directorState.enabled = true;
+    directorState.pauseReason = 'none';
+    viewer.setDirectorMode(true);
+    directorOptions.style.display = '';
+    updateDirectorSpeed();
+    startDirectorTick();
+  }
+
+  function disableDirector(): void {
+    directorState.enabled = false;
+    viewer.setDirectorMode(false);
+    directorOptions.style.display = 'none';
+    stopDirectorTick();
+  }
+
+  function startDirectorTick(): void {
+    stopDirectorTick();
+    function tick() {
+      if (!directorState.enabled) return;
+      const now = performance.now();
+      const turn = viewer.getTurn();
+      const ms = tickDirectorSpeed(directorState, directorSchedule, turn, now);
+      viewer.setDirectorSpeed(ms);
+      updateDirectorStatusUI();
+      directorAnimFrame = requestAnimationFrame(tick);
+    }
+    directorAnimFrame = requestAnimationFrame(tick);
+  }
+
+  function stopDirectorTick(): void {
+    if (directorAnimFrame !== null) {
+      cancelAnimationFrame(directorAnimFrame);
+      directorAnimFrame = null;
+    }
+  }
+
+  function updateDirectorSpeed(): void {
+    if (!directorState.enabled) return;
+    const now = performance.now();
+    const turn = viewer.getTurn();
+    const ms = tickDirectorSpeed(directorState, directorSchedule, turn, now);
+    viewer.setDirectorSpeed(ms);
+    updateDirectorStatusUI();
+  }
+
+  function updateDirectorStatusUI(): void {
+    if (!directorState.enabled) {
+      directorStatus.textContent = '';
+      return;
+    }
+    const transitioning = directorState.easeStartTime > 0 &&
+      (performance.now() - directorState.easeStartTime) < 500;
+    directorStatus.textContent = formatDirectorLabel(
+      directorState.currentMultiplier,
+      directorState.targetMultiplier,
+      transitioning,
+    );
+  }
+
+  function updateDurationPresetUI(target: DurationPreset): void {
+    durationPresets.querySelectorAll<HTMLElement>('.duration-btn').forEach(btn => {
+      const val = parseInt(btn.dataset.duration!, 10) as DurationPreset;
+      btn.classList.toggle('active', val === target);
+    });
+  }
+
+  function setDurationPreset(target: DurationPreset): void {
+    directorConfig.targetDuration = target;
+    saveDirectorConfig(directorConfig);
+    updateDurationPresetUI(target);
+    // Recompute schedule with new target
+    const replay = viewer.getReplay();
+    if (replay) {
+      const densities = computeAllDensities(replay);
+      directorSchedule = computeSpeedSchedule(densities, directorConfig.targetDuration);
+      directorState = createDirectorState();
+      directorState.enabled = true;
+    }
+  }
+
   function initWinProb(replay: Replay): void {
     if (!replay.win_prob || replay.win_prob.length === 0) {
       winProbSection.style.display = 'none';
@@ -850,15 +1010,47 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   resetBtn.addEventListener('click', () => { viewer.pause(); viewer.setTurn(0); updateUI(); updateEventLog(); });
 
   turnSlider.addEventListener('input', () => {
+    if (directorState.enabled) directorState.pauseReason = 'scrubbing';
     viewer.setTurn(parseInt(turnSlider.value, 10));
     updateUI();
     updateEventLog();
+  });
+  turnSlider.addEventListener('change', () => {
+    if (directorState.enabled) directorState.pauseReason = 'none';
   });
 
   speedSlider.addEventListener('input', () => {
     const speed = parseInt(speedSlider.value, 10);
     viewer.setSpeed(speed);
     speedDisplay.textContent = String(speed);
+    // If user manually drags speed slider, switch off Director mode
+    if (directorState.enabled) {
+      speedSelect.value = String(speed);
+      disableDirector();
+    }
+  });
+
+  speedSelect.addEventListener('change', () => {
+    const val = speedSelect.value;
+    if (val === 'director') {
+      enableDirector();
+      // Update the slider to reflect current director speed
+      speedSlider.value = String(Math.round(directorState.easedMsPerTurn));
+      speedDisplay.textContent = 'Director';
+    } else {
+      disableDirector();
+      const speed = parseInt(val, 10);
+      viewer.setSpeed(speed);
+      speedSlider.value = String(speed);
+      speedDisplay.textContent = String(speed);
+    }
+  });
+
+  durationPresets.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.duration-btn') as HTMLElement | null;
+    if (!btn) return;
+    const duration = parseInt(btn.dataset.duration!, 10) as DurationPreset;
+    setDurationPreset(duration);
   });
 
   fogSelect.addEventListener('change', () => {
@@ -950,8 +1142,12 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
   });
   mobileTurnSlider.addEventListener('input', () => {
+    if (directorState.enabled) directorState.pauseReason = 'scrubbing';
     viewer.setTurn(parseInt(mobileTurnSlider.value, 10));
     updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+  });
+  mobileTurnSlider.addEventListener('change', () => {
+    if (directorState.enabled) directorState.pauseReason = 'none';
   });
   mobileSpeedBtn.addEventListener('click', () => {
     mobileSpeedIdx = (mobileSpeedIdx + 1) % SPEED_STEPS.length;
