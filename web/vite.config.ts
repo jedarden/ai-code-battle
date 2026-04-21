@@ -14,19 +14,25 @@ export default defineConfig({
       },
       output: {
         manualChunks(id) {
-          // Agentation: React + agentation library (lazy-loaded)
+          if (id.includes('node_modules')) return;
+
+          // Agentation: React + agentation library (lazy-loaded only on /feedback)
           if (id.includes('react') || id.includes('agentation')) {
             return 'agentation';
           }
-          // Replay viewer chunk (includes canvas rendering, charts)
+          // Replay viewer chunk (canvas renderer + win probability)
           if (id.includes('replay-viewer') || id.includes('win-probability')) {
             return 'replay-viewer';
           }
-          // Sandbox chunk (includes engine orchestration)
+          // Replay page (uses replay-viewer, separate from the viewer chunk itself)
+          if (id.includes('pages/replay')) {
+            return 'replay-page';
+          }
+          // Sandbox chunk (includes engine orchestration + WASM loader)
           if (id.includes('pages/sandbox')) {
             return 'sandbox';
           }
-          // Evolution page (large, complex visualizations)
+          // Evolution page (live polling, SVG lineage tree, island grid)
           if (id.includes('pages/evolution')) {
             return 'evolution';
           }
@@ -34,7 +40,7 @@ export default defineConfig({
           if (id.includes('pages/blog')) {
             return 'blog';
           }
-          // Clip maker (video processing)
+          // Clip maker (video/GIF export)
           if (id.includes('pages/clip-maker')) {
             return 'clip-maker';
           }
@@ -42,9 +48,17 @@ export default defineConfig({
           if (id.includes('pages/series') || id.includes('pages/predictions')) {
             return 'charts';
           }
-          // Feedback page (includes its own replay viewer)
+          // Feedback page (includes its own replay viewer + triggers agentation load)
           if (id.includes('pages/feedback')) {
             return 'feedback';
+          }
+          // Home page (hero, playlists carousel, season bar, evolution mini)
+          if (id.includes('pages/home')) {
+            return 'home';
+          }
+          // Leaderboard (rating table)
+          if (id.includes('pages/leaderboard')) {
+            return 'leaderboard';
           }
         },
       },
