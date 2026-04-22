@@ -369,7 +369,11 @@ func runEvaluate(ctx context.Context, db *sql.DB, args []string) {
 	if promoted, err := store.ListPromoted(ctx); err == nil {
 		for _, pp := range promoted {
 			if len(pp.BehaviorVector) >= 2 {
-				grid.TryPlace(pp.ProgramID, pp.Fitness, pp.BehaviorVector[0], pp.BehaviorVector[1])
+				expl, form := 0.5, 0.5
+					if len(pp.BehaviorVector) >= 4 {
+						expl, form = pp.BehaviorVector[2], pp.BehaviorVector[3]
+					}
+					grid.TryPlace(pp.ProgramID, pp.Fitness, pp.BehaviorVector[0], pp.BehaviorVector[1], expl, form)
 			}
 		}
 	}

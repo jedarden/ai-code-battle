@@ -132,10 +132,7 @@ func (c *Checker) pollinateIsland(ctx context.Context, sourceIsland string, verb
 	}
 
 	// Copy the program to the target island (same generation, new entry).
-	behaviorVec := top.BehaviorVector
-	if len(behaviorVec) < 2 {
-		behaviorVec = []float64{0.5, 0.5}
-	}
+	behaviorVec := padBehaviorVec(top.BehaviorVector)
 
 	newID, err := c.store.Create(ctx, &evolverdb.Program{
 		Code:           code,
@@ -216,4 +213,17 @@ Source code in %s:
 `+"```"+`
 
 Return ONLY the translated %s code in a single fenced code block:`, fromLang, toLang, toLang, fromLang, code, toLang)
+}
+
+// padBehaviorVec ensures a behavior vector has at least 4 elements,
+// padding with 0.5 for missing dimensions.
+func padBehaviorVec(v []float64) []float64 {
+	out := make([]float64, 4)
+	for i := range out {
+		out[i] = 0.5
+	}
+	for i := 0; i < len(v) && i < 4; i++ {
+		out[i] = v[i]
+	}
+	return out
 }

@@ -54,7 +54,7 @@ type GateResult struct {
 	// (as opposed to simply filling an empty niche).
 	MapElitesImproved bool
 
-	// Placement is the (X, Y) grid cell the candidate occupies.
+	// Placement is the 4-D grid cell the candidate occupies.
 	Placement mapelites.Placement
 
 	// Reason is a human-readable explanation of the promotion decision.
@@ -77,8 +77,8 @@ func NewGate(cfg GateConfig, grid *mapelites.Grid) *Gate {
 // Evaluate applies the two-part promotion gate to the arena result.
 //
 // programID and fitness are the candidate's identifiers in the programs table.
-// behaviorVec is [aggression, economy] ∈ [0,1]²; defaults to [0.5, 0.5] when
-// nil or short.
+// behaviorVec is [aggression, economy, exploration, formation] ∈ [0,1]⁴;
+// defaults to [0.5, 0.5, 0.5, 0.5] when nil or short.
 //
 // Side effect: g.grid.TryPlace is called — the cell is updated when the
 // candidate wins its behavioral niche.
@@ -86,17 +86,19 @@ func (g *Gate) Evaluate(result *Result, programID int64, fitness float64, behavi
 	wr := ComputeFromResult(result)
 	nash := ComputeNash(result.WinRateVec)
 
-	agg, eco := 0.5, 0.5
-	if len(behaviorVec) >= 2 {
-		agg, eco = behaviorVec[0], behaviorVec[1]
+	// Default behavior: all dimensions at 0.5 (center of grid)
+	dims := [4]float64{0.5, 0.5, 0.5, 0.5}
+	for i := 0; i < len(behaviorVec) && i < 4; i++ {
+		dims[i] = behaviorVec[i]
 	}
+	agg, eco, expl, form := dims[0], dims[1], dims[2], dims[3]
 
 	// Sample the cell state before TryPlace so we can distinguish
 	// "fills empty niche" from "beats existing champion".
-	cellX, cellY := g.grid.BehaviorToCell(agg, eco)
-	priorCell := g.grid.Get(cellX, cellY)
+	cellX, cellY, cellZ, cellW := g.grid.BehaviorToCell(agg, eco, expl, form)
+	priorCell := g.grid.Get(cellX, cellY, cellZ, cellW)
 
-	placement, placed := g.grid.TryPlace(programID, fitness, agg, eco)
+	placement, placed := g.grid.TryPlace(programID, fitness, agg, eco, expl, form)
 
 	gr := &GateResult{
 		Nash:              nash,
@@ -114,16 +116,16 @@ func (g *Gate) Evaluate(result *Result, programID int64, fitness float64, behavi
 		gr.Promoted = true
 		if !priorCell.Occupied {
 			gr.Reason = fmt.Sprintf(
-				"promoted: Nash=%.3f ≥ %.3f, WR=%.3f (95%% CI %.3f–%.3f), fills new niche [%d,%d]",
+				"promoted: Nash=%.3f ≥ %.3f, WR=%.3f (95%% CI %.3f–%.3f), fills new niche [%d,%d,%d,%d]",
 				nash.NashValue, g.cfg.NashThreshold,
 				wr.Rate, wr.Lower, wr.Upper,
-				placement.X, placement.Y)
+				placement.X, placement.Y, placement.Z, placement.W)
 		} else {
 			gr.Reason = fmt.Sprintf(
-				"promoted: Nash=%.3f ≥ %.3f, WR=%.3f (95%% CI %.3f–%.3f), beats niche [%d,%d] champion (%.3f→%.3f)",
+				"promoted: Nash=%.3f ≥ %.3f, WR=%.3f (95%% CI %.3f–%.3f), beats niche [%d,%d,%d,%d] champion (%.3f→%.3f)",
 				nash.NashValue, g.cfg.NashThreshold,
 				wr.Rate, wr.Lower, wr.Upper,
-				placement.X, placement.Y, priorCell.Fitness, fitness)
+				placement.X, placement.Y, placement.Z, placement.W, priorCell.Fitness, fitness)
 		}
 		return gr
 	}
@@ -136,8 +138,8 @@ func (g *Gate) Evaluate(result *Result, programID int64, fitness float64, behavi
 		why = append(why, fmt.Sprintf("WR CI lower=%.3f < %.3f", wr.Lower, g.cfg.WinRateLowerBound))
 	}
 	if !mapOK {
-		why = append(why, fmt.Sprintf("niche [%d,%d] occupied by fitter bot (fitness=%.3f)",
-			placement.X, placement.Y, priorCell.Fitness))
+		why = append(why, fmt.Sprintf("niche [%d,%d,%d,%d] occupied by fitter bot (fitness=%.3f)",
+			placement.X, placement.Y, placement.Z, placement.W, priorCell.Fitness))
 	}
 	gr.Reason = "rejected: " + strings.Join(why, "; ")
 	return gr

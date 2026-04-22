@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -131,6 +133,12 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB) error {
 	// Generate predictions/leaderboard.json
 	if err := generatePredictionsIndex(data, outputDir); err != nil {
 		return fmt.Errorf("predictions index: %w", err)
+	}
+
+	// Generate rivalries (data/meta/rivalries.json)
+	rivalries := computeRivalries(data, botNameMap)
+	if err := generateRivalriesIndex(rivalries, outputDir); err != nil {
+		return fmt.Errorf("rivalries index: %w", err)
 	}
 
 	// Generate playlists
@@ -985,7 +993,7 @@ func minScoreDiff(m MatchData) int {
 	return minDiff
 }
 
-func sortSlice(s []MatchData, less func(i, j int) bool) {
+func sortSlice[T any](s []T, less func(i, j int) bool) {
 	for i := 0; i < len(s)-1; i++ {
 		for j := i + 1; j < len(s); j++ {
 			if less(j, i) {
@@ -1208,6 +1216,288 @@ func isRivalryMatch(m MatchData, data *IndexData) bool {
 		}
 	}
 	return count >= 3
+}
+
+// ─── Rivalry Detection (§13.5) ─────────────────────────────────────────────────
+
+const (
+	rivalryMinMatches = 10   // minimum h2h matches to qualify
+	rivalryTopK       = 20   // max rivalries to emit
+	rivalryRecencyDecay = 0.95 // per-day decay for recency weighting
+)
+
+// RivalryEntry represents a detected rivalry pair for data/meta/rivalries.json.
+type RivalryEntry struct {
+	BotA         RivalryBot    `json:"bot_a"`
+	BotB         RivalryBot    `json:"bot_b"`
+	TotalMatches int           `json:"matches"`
+	Record       RivalryRecord `json:"record"`
+	ClosestMatch string        `json:"closest_match,omitempty"`
+	LongestStreak *RivalryStreak `json:"longest_streak,omitempty"`
+	RecentMatches []string     `json:"recent_matches"`
+	Narrative    string        `json:"narrative"`
+	Score        float64       `json:"score"`
+}
+
+type RivalryBot struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type RivalryRecord struct {
+	AWins int `json:"a_wins"`
+	BWins int `json:"b_wins"`
+	Draws int `json:"draws"`
+}
+
+type RivalryStreak struct {
+	Holder string `json:"holder"`
+	Length int    `json:"length"`
+}
+
+// RivalriesIndex is the top-level structure for data/meta/rivalries.json.
+type RivalriesIndex struct {
+	UpdatedAt string         `json:"updated_at"`
+	Rivalries []RivalryEntry `json:"rivalries"`
+}
+
+// pairKey returns a canonical key for a bot pair (alphabetically ordered).
+func pairKey(a, b string) string {
+	if a > b {
+		a, b = b, a
+	}
+	return a + ":" + b
+}
+
+type h2hRecord struct {
+	botAID, botBID string
+	aWins, bWins   int
+	draws          int
+	matchDates     []time.Time
+	matchIDs       []string
+	scoreDiffs     []int
+	winnerSeq      []string // bot_id of winner per match ("draw" for draws)
+}
+
+// computeRivalries builds the h2h matrix from all matches, scores each pair
+// by win-rate balance × recency × total matches, and returns the top K.
+func computeRivalries(data *IndexData, botNameMap map[string]string) []RivalryEntry {
+	// Accumulate head-to-head records (only 2-player matches).
+	pairs := make(map[string]*h2hRecord)
+
+	for _, m := range data.Matches {
+		if len(m.Participants) != 2 {
+			continue
+		}
+		a, b := m.Participants[0].BotID, m.Participants[1].BotID
+		key := pairKey(a, b)
+
+		rec, ok := pairs[key]
+		if !ok {
+			// Canonical order: alphabetically first is bot A.
+			if a > b {
+				a, b = b, a
+			}
+			rec = &h2hRecord{botAID: a, botBID: b}
+			pairs[key] = rec
+		}
+
+		rec.matchIDs = append(rec.matchIDs, m.ID)
+		rec.matchDates = append(rec.matchDates, m.PlayedAt)
+
+		// Score diff for closest match detection.
+		if len(m.Participants) == 2 {
+			rec.scoreDiffs = append(rec.scoreDiffs, absInt(m.Participants[0].Score-m.Participants[1].Score))
+		}
+
+		switch {
+		case m.WinnerID == "":
+			rec.draws++
+			rec.winnerSeq = append(rec.winnerSeq, "draw")
+		case m.WinnerID == rec.botAID:
+			rec.aWins++
+			rec.winnerSeq = append(rec.winnerSeq, rec.botAID)
+		default:
+			rec.bWins++
+			rec.winnerSeq = append(rec.winnerSeq, rec.botBID)
+		}
+	}
+
+	// Score and rank.
+	now := data.GeneratedAt
+	var candidates []RivalryEntry
+
+	for _, rec := range pairs {
+		total := rec.aWins + rec.bWins + rec.draws
+		if total < rivalryMinMatches {
+			continue
+		}
+
+		// Win-rate balance: 1.0 for perfect 50/50, approaches 0 for dominant pairs.
+		balance := 1.0 - float64(absInt(rec.aWins-rec.bWins))/float64(total)
+
+		// Recency: weighted sum where recent matches count more.
+		var recencyScore float64
+		for _, d := range rec.matchDates {
+			daysAgo := now.Sub(d).Hours() / 24
+			if daysAgo < 0 {
+				daysAgo = 0
+			}
+			recencyScore += math.Pow(rivalryRecencyDecay, daysAgo)
+		}
+		// Normalise recency to [0, 1] relative to total matches.
+		recencyNorm := recencyScore / float64(total)
+
+		// Final score: balance × recency × log(total) for volume weighting.
+		score := balance * recencyNorm * math.Log(float64(total))
+
+		// Closest match: smallest score diff.
+		closestMatch := ""
+		if len(rec.scoreDiffs) > 0 {
+			minDiff := rec.scoreDiffs[0]
+			minIdx := 0
+			for i, d := range rec.scoreDiffs {
+				if d < minDiff {
+					minDiff = d
+					minIdx = i
+				}
+			}
+			closestMatch = rec.matchIDs[minIdx]
+		}
+
+		// Longest win streak.
+		streak := longestStreak(rec.winnerSeq, rec.botAID, rec.botBID)
+
+		// Recent match IDs (last 10).
+		recentCount := 10
+		if len(rec.matchIDs) < recentCount {
+			recentCount = len(rec.matchIDs)
+		}
+		recentMatches := make([]string, recentCount)
+		for i := 0; i < recentCount; i++ {
+			recentMatches[i] = rec.matchIDs[len(rec.matchIDs)-1-i]
+		}
+
+		aName := botNameMap[rec.botAID]
+		bName := botNameMap[rec.botBID]
+
+		candidates = append(candidates, RivalryEntry{
+			BotA: RivalryBot{ID: rec.botAID, Name: aName},
+			BotB: RivalryBot{ID: rec.botBID, Name: bName},
+			TotalMatches: total,
+			Record: RivalryRecord{AWins: rec.aWins, BWins: rec.bWins, Draws: rec.draws},
+			ClosestMatch: closestMatch,
+			LongestStreak: streak,
+			RecentMatches: recentMatches,
+			Narrative: buildRivalryNarrative(aName, bName, total, rec.aWins, rec.bWins, rec.draws, streak),
+			Score: score,
+		})
+	}
+
+	// Sort by score descending.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	if len(candidates) > rivalryTopK {
+		candidates = candidates[:rivalryTopK]
+	}
+
+	return candidates
+}
+
+// longestStreak finds the longest consecutive win streak for either bot in the winner sequence.
+func longestStreak(winners []string, botA, botB string) *RivalryStreak {
+	if len(winners) == 0 {
+		return nil
+	}
+
+	var bestHolder string
+	var bestLen int
+	var curHolder string
+	var curLen int
+
+	for _, w := range winners {
+		if w == "draw" {
+			curLen = 0
+			curHolder = ""
+			continue
+		}
+		if w == curHolder {
+			curLen++
+		} else {
+			curHolder = w
+			curLen = 1
+		}
+		if curLen > bestLen {
+			bestLen = curLen
+			bestHolder = curHolder
+		}
+	}
+
+	if bestLen < 2 {
+		return nil
+	}
+	return &RivalryStreak{Holder: bestHolder, Length: bestLen}
+}
+
+// buildRivalryNarrative generates a template-based narrative from rivalry stats.
+func buildRivalryNarrative(aName, bName string, total, aWins, bWins, draws int, streak *RivalryStreak) string {
+	leading := aName
+	trailing := bName
+	leadWins := aWins
+	trailWins := bWins
+	if bWins > aWins {
+		leading, trailing = trailing, leading
+		leadWins, trailWins = trailWins, leadWins
+	}
+
+	switch {
+	case aWins == bWins:
+		return fmt.Sprintf("%s and %s have met %d times — the series is dead even at %d-%d%s. Every match shifts the balance.",
+			aName, bName, total, aWins, bWins, drawSuffix(draws))
+	case streak != nil && streak.Length >= 3:
+		return fmt.Sprintf("%s and %s have met %d times with %s holding a %d-%d edge. %s is currently on a %d-match winning streak.",
+			aName, bName, total, leading, leadWins, trailWins, streak.Holder, streak.Length)
+	default:
+		return fmt.Sprintf("%s and %s have met %d times — %s leads the series %d-%d%s. A rivalry defined by closely contested grid battles.",
+			aName, bName, total, leading, leadWins, trailWins, drawSuffix(draws))
+	}
+}
+
+func drawSuffix(draws int) string {
+	if draws == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (%d draw%s)", draws, pluralS(draws))
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// generateRivalriesIndex writes data/meta/rivalries.json.
+func generateRivalriesIndex(rivalries []RivalryEntry, outputDir string) error {
+	metaDir := filepath.Join(outputDir, "data", "meta")
+	if err := os.MkdirAll(metaDir, 0755); err != nil {
+		return err
+	}
+
+	index := RivalriesIndex{
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		Rivalries: rivalries,
+	}
+	return writeJSON(filepath.Join(metaDir, "rivalries.json"), index)
 }
 
 func writeJSON(path string, data interface{}) error {

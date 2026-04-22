@@ -202,7 +202,7 @@ func TestGate_RejectedWhenNicheOccupiedByFitterBot(t *testing.T) {
 	grid := mapelites.New(10)
 
 	// Pre-occupy the [5,5] cell with a very fit bot.
-	grid.TryPlace(99, 0.99, 0.5, 0.5)
+	grid.TryPlace(99, 0.99, 0.5, 0.5, 0.5, 0.5)
 
 	cfg := DefaultGateConfig()
 	gate := NewGate(cfg, grid)
@@ -226,7 +226,7 @@ func TestGate_PromotedWhenOutperformsNicheChampion(t *testing.T) {
 	grid := mapelites.New(10)
 
 	// Pre-occupy with a weaker bot.
-	grid.TryPlace(99, 0.4, 0.5, 0.5)
+	grid.TryPlace(99, 0.4, 0.5, 0.5, 0.5, 0.5)
 
 	cfg := DefaultGateConfig()
 	gate := NewGate(cfg, grid)

@@ -9,6 +9,8 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
+
+	"github.com/aicodebattle/acb/metrics"
 )
 
 const valkeyJobQueue = "acb:jobs:pending"
@@ -180,6 +182,10 @@ func (m *Matchmaker) tickMatchmaker(ctx context.Context) {
 		return
 	}
 
+	// Update metrics
+	depth, _ := m.rdb.LLen(ctx, valkeyJobQueue).Result()
+	metrics.JobQueueDepth.Set(float64(depth))
+
 	log.Printf("matchmaker: created match %s (%s vs %s), job %s", matchID, botA.ID, botB.ID, jobID)
 }
 
@@ -242,6 +248,7 @@ func (m *Matchmaker) tickHealthChecker(ctx context.Context) {
 			if newStatus != bot.Status {
 				log.Printf("health-checker: %s marked inactive after %d failures", bot.ID, newFails)
 				m.alerter.BotMarkedInactive(ctx, bot.ID, newFails)
+					metrics.BotCrashed.Inc()
 			}
 		}
 	}
@@ -297,6 +304,7 @@ func (m *Matchmaker) tickStaleReaper(ctx context.Context) {
 		log.Printf("stale-reaper: processed %d stale jobs", len(staleJobs))
 		m.alerter.StaleJobsReaped(ctx, staleJobs)
 	}
+	metrics.StaleJobCount.Set(float64(len(staleJobs)))
 }
 
 // queryActiveBotCount returns the number of active bots (used by tests).

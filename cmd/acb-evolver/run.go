@@ -488,7 +488,11 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 	promotedPrograms, _ := store.ListPromoted(ctx)
 	for _, pp := range promotedPrograms {
 		if len(pp.BehaviorVector) >= 2 {
-			grid.TryPlace(pp.ProgramID, pp.Fitness, pp.BehaviorVector[0], pp.BehaviorVector[1])
+			expl, form := 0.5, 0.5
+			if len(pp.BehaviorVector) >= 4 {
+				expl, form = pp.BehaviorVector[2], pp.BehaviorVector[3]
+			}
+			grid.TryPlace(pp.ProgramID, pp.Fitness, pp.BehaviorVector[0], pp.BehaviorVector[1], expl, form)
 		}
 	}
 
@@ -556,11 +560,13 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 	return true, nil
 }
 
-// estimateBehaviorVector analyzes code to estimate aggression/economy behavior.
+// estimateBehaviorVector analyzes code to estimate aggression/economy/exploration/formation behavior.
 func estimateBehaviorVector(code, lang string) []float64 {
 	// Default to balanced behavior
 	aggression := 0.5
 	economy := 0.5
+	exploration := 0.5
+	formation := 0.5
 
 	codeLower := strings.ToLower(code)
 
@@ -594,23 +600,49 @@ func estimateBehaviorVector(code, lang string) []float64 {
 		defensiveCount += strings.Count(codeLower, p)
 	}
 
+	// Exploration indicators
+	explorationPatterns := []string{
+		"explore", "scout", "scan", "discover", "map", "bfs", "visibility",
+		"vision", "uncover", "spread",
+	}
+	explorationCount := 0
+	for _, p := range explorationPatterns {
+		explorationCount += strings.Count(codeLower, p)
+	}
+
+	// Formation indicators
+	formationPatterns := []string{
+		"formation", "group", "cluster", "cohesion", "together", "swarm",
+		"center_of_mass", "rally", "merge", "assemble",
+	}
+	formationCount := 0
+	for _, p := range formationPatterns {
+		formationCount += strings.Count(codeLower, p)
+	}
+
 	// Normalize and adjust behavior vector
 	total := aggressiveCount + economyCount + defensiveCount
 	if total > 0 {
 		aggression = float64(aggressiveCount) / float64(total)
-		// Economy is relative to energy/gather focus vs combat
 		economy = float64(economyCount) / float64(total+1)
-		// Adjust aggression based on defensive patterns
 		if defensiveCount > aggressiveCount {
-			aggression = aggression * 0.5 // reduce aggression for defensive bots
+			aggression = aggression * 0.5
 		}
+	}
+
+	// Exploration and formation have independent scaling
+	if explorationCount > 0 {
+		exploration = clamp(float64(explorationCount)/10.0, 0.1, 0.9)
+	}
+	if formationCount > 0 {
+		formation = clamp(float64(formationCount)/10.0, 0.1, 0.9)
 	}
 
 	// Clamp to [0.1, 0.9] to avoid edge cases
 	aggression = clamp(aggression, 0.1, 0.9)
 	economy = clamp(economy, 0.1, 0.9)
 
-	return []float64{aggression, economy}
+	return []float64{aggression, economy, exploration, formation}
 }
 
 func clamp(v, min, max float64) float64 {

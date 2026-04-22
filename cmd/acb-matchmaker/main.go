@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aicodebattle/acb/metrics"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 )
@@ -93,6 +94,10 @@ func main() {
 	}
 
 	alerter := NewAlerter(cfg.DiscordWebhook, cfg.SlackWebhook)
+
+	// Start Prometheus metrics server
+	metricsSrv := metrics.StartServer()
+	defer metricsSrv.Close()
 
 	m := &Matchmaker{
 		cfg:     cfg,
