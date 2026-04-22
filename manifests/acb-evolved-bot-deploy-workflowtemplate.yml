@@ -1,0 +1,450 @@
+# Argo WorkflowTemplate for deploying evolved bots
+# Sync to: declarative-config/k8s/apexalgo-iad/argo-workflows/
+#
+# Triggered by the evolver when a candidate is promoted.
+# The promoter commits bot source to bots/evolved/<bot_name>/ before triggering.
+#
+# This workflow:
+# 1. Clones the ai-code-battle repo (bot source already committed)
+# 2. Generates Dockerfile for the language
+# 3. Builds container image with Kaniko
+# 4. Pushes to Forgejo registry
+# 5. Creates K8s Secret, Deployment, Service manifests
+# 6. Commits manifests to declarative-config repo (ArgoCD syncs them)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: acb-evolved-bot-deploy
+  namespace: argo-workflows
+  labels:
+    app: acb-evolved-bot-deploy
+spec:
+  entrypoint: deploy-evolved-bot
+  serviceAccountName: argo-workflow
+  arguments:
+    parameters:
+      - name: bot_name
+        # e.g., acb-evo-123
+      - name: bot_secret
+        # Base64-encoded bot shared secret
+      - name: language
+        # go, python, rust, typescript, java, php
+      - name: island
+        # Evolution island identifier (alpha, beta, gamma, delta)
+      - name: generation
+        # Generation number
+      - name: program_id
+        # Program ID from database
+      - name: bot_repo
+        value: https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git
+      - name: bot_branch
+        value: master
+      - name: bot_path
+        # Path to bot source in repo (relative to repo root)
+        # The promoter writes to bots/evolved/<bot_name>/
+      - name: declarative_config_repo
+        value: https://forgejo.ardenone.com/infra/ardenone-cluster.git
+      - name: declarative_config_branch
+        value: main
+      - name: registry
+        value: forgejo.ardenone.com/ai-code-battle
+      - name: namespace
+        value: ai-code-battle
+      - name: bot_port
+        value: "8080"
+  volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: docker-config
+      secret:
+        secretName: forgejo-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+  templates:
+    - name: deploy-evolved-bot
+      dag:
+        tasks:
+          - name: clone
+            template: clone-bot-source
+          - name: dockerfile
+            template: generate-dockerfile
+            dependencies: [clone]
+          - name: build
+            template: build-and-push
+            dependencies: [dockerfile]
+          - name: manifest
+            template: create-manifests
+            dependencies: [build]
+          - name: commit
+            template: commit-manifests
+            dependencies: [manifest]
+
+    - name: clone-bot-source
+      script:
+        image: alpine:3.21
+        command: [sh, -c]
+        source: |
+          set -e
+          apk add --no-cache git >/dev/null 2>&1
+
+          # Clone the ai-code-battle repo to get bot source
+          # The promoter has already committed the bot source before triggering this workflow
+          git clone --depth 1 --branch "{{workflow.parameters.bot_branch}}" \
+            "{{workflow.parameters.bot_repo}}" /workspace/bot-src 2>/dev/null
+
+          # Verify bot source exists at expected path
+          BOT_SRC_PATH="/workspace/bot-src/{{workflow.parameters.bot_path}}"
+          if [ ! -d "$BOT_SRC_PATH" ]; then
+            echo "ERROR: Bot source directory not found: $BOT_SRC_PATH"
+            echo "Contents of /workspace/bot-src:"
+            find /workspace/bot-src -type d -name "evo*" | head -20 || true
+            exit 1
+          fi
+
+          # Copy bot source to workspace
+          mkdir -p /workspace/bot
+          cp -r "$BOT_SRC_PATH"/* /workspace/bot/
+
+          echo "Bot source copied from $BOT_SRC_PATH:"
+          ls -la /workspace/bot/
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        activeDeadlineSeconds: 300
+
+    - name: generate-dockerfile
+      script:
+        image: alpine:3.21
+        command: [sh, -c]
+        source: |
+          set -e
+
+          BOT_DIR="/workspace/bot"
+          LANG="{{workflow.parameters.language}}"
+          PORT="{{workflow.parameters.bot_port}}"
+
+          case "$LANG" in
+            go)
+              cat > "${BOT_DIR}/Dockerfile" <<'EOF'
+          FROM golang:1.24-alpine AS builder
+          WORKDIR /app
+          COPY go.mod go.mod
+          COPY *.go .
+          RUN go build -o bot .
+
+          FROM alpine:3.21
+          WORKDIR /app
+          COPY --from=builder /app/bot .
+          ENV BOT_PORT=${PORT}
+          ENV BOT_SECRET=""
+          EXPOSE ${PORT}
+          CMD ["./bot"]
+          EOF
+              ;;
+            python)
+              cat > "${BOT_DIR}/Dockerfile" <<'EOF'
+          FROM python:3.12-slim
+          WORKDIR /app
+          COPY *.py .
+          ENV BOT_PORT=${PORT}
+          ENV BOT_SECRET=""
+          EXPOSE ${PORT}
+          CMD ["python3", "bot.py"]
+          EOF
+              ;;
+            rust)
+              cat > "${BOT_DIR}/Dockerfile" <<'EOF'
+          FROM rust:1.85-alpine AS builder
+          WORKDIR /app
+          COPY Cargo.toml Cargo.toml
+          COPY src ./src
+          RUN cargo build --release
+
+          FROM alpine:3.21
+          WORKDIR /app
+          COPY --from=builder /app/target/release/bot .
+          ENV BOT_PORT=${PORT}
+          ENV BOT_SECRET=""
+          EXPOSE ${PORT}
+          CMD ["./bot"]
+          EOF
+              ;;
+            typescript)
+              cat > "${BOT_DIR}/Dockerfile" <<'EOF'
+          FROM node:22-alpine AS builder
+          WORKDIR /app
+          COPY *.ts .
+          RUN npm install -g typescript && tsc --target ES2020 --module commonjs bot.ts
+
+          FROM node:22-alpine
+          WORKDIR /app
+          COPY --from=builder /app/bot.js .
+          ENV BOT_PORT=${PORT}
+          ENV BOT_SECRET=""
+          EXPOSE ${PORT}
+          CMD ["node", "bot.js"]
+          EOF
+              ;;
+            java)
+              cat > "${BOT_DIR}/Dockerfile" <<'EOF'
+          FROM eclipse-temurin:21-alpine AS builder
+          WORKDIR /app
+          COPY *.java .
+          RUN javac *.java
+
+          FROM eclipse-temurin:21-jre-alpine
+          WORKDIR /app
+          COPY --from=builder /app/*.class .
+          ENV BOT_PORT=${PORT}
+          ENV BOT_SECRET=""
+          EXPOSE ${PORT}
+          CMD ["java", "Bot"]
+          EOF
+              ;;
+            php)
+              cat > "${BOT_DIR}/Dockerfile" <<'EOF'
+          FROM php:8.3-cli-alpine
+          WORKDIR /app
+          COPY *.php .
+          ENV BOT_PORT=${PORT}
+          ENV BOT_SECRET=""
+          EXPOSE ${PORT}
+          CMD ["php", "bot.php"]
+          EOF
+              ;;
+            *)
+              echo "Unsupported language: $LANG" >&2
+              exit 1
+              ;;
+          esac
+
+          # Replace ${PORT} with actual value
+          sed -i "s/\${PORT}/${PORT}/g" "${BOT_DIR}/Dockerfile"
+
+          echo "Dockerfile generated:"
+          cat "${BOT_DIR}/Dockerfile"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        activeDeadlineSeconds: 60
+
+    - name: build-and-push
+      script:
+        image: gcr.io/kaniko-project/executor:latest
+        command: [kaniko]
+        args:
+          - --context=/workspace/bot
+          - --dockerfile=/workspace/bot/Dockerfile
+          - --destination={{workflow.parameters.registry}}/{{workflow.parameters.bot_name}}:latest
+          - --destination={{workflow.parameters.registry}}/{{workflow.parameters.bot_name}}:gen-{{workflow.parameters.generation}}
+          - --cache=false
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: docker-config
+            mountPath: /kaniko/.docker
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+        activeDeadlineSeconds: 1800
+
+    - name: create-manifests
+      script:
+        image: alpine:3.21
+        command: [sh, -c]
+        source: |
+          set -e
+          apk add --no-cache git >/dev/null 2>&1
+
+          # Clone declarative-config repo
+          git clone --depth 1 --branch "{{workflow.parameters.declarative_config_branch}}" \
+            "{{workflow.parameters.declarative_config_repo}}" /tmp/config 2>/dev/null
+
+          cd /tmp/config
+
+          # Create directory for manifests (flat structure per CLAUDE.md norms)
+          MANIFEST_BASE="declarative-config/k8s/apexalgo-iad/ai-code-battle"
+          mkdir -p "${MANIFEST_BASE}"
+
+          BOT_NAME="{{workflow.parameters.bot_name}}"
+          NAMESPACE="{{workflow.parameters.namespace}}"
+          ISLAND="{{workflow.parameters.island}}"
+          GENERATION="{{workflow.parameters.generation}}"
+          REGISTRY="{{workflow.parameters.registry}}"
+          PORT="{{workflow.parameters.bot_port}}"
+          SECRET="{{workflow.parameters.bot_secret}}"
+
+          # Secret manifest
+          cat > "${MANIFEST_BASE}/${BOT_NAME}-secret.yaml" <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: ${BOT_NAME}-secret
+            namespace: ${NAMESPACE}
+            labels:
+              app.kubernetes.io/name: ${BOT_NAME}
+              app.kubernetes.io/part-of: ai-code-battle
+              app.kubernetes.io/component: evolved-bot
+          type: Opaque
+          data:
+            bot-secret: ${SECRET}
+          EOF
+
+          # Deployment manifest
+          cat > "${MANIFEST_BASE}/${BOT_NAME}-deployment.yaml" <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${BOT_NAME}
+            namespace: ${NAMESPACE}
+            labels:
+              app.kubernetes.io/name: ${BOT_NAME}
+              app.kubernetes.io/part-of: ai-code-battle
+              app.kubernetes.io/component: evolved-bot
+              acb/island: ${ISLAND}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: ${BOT_NAME}
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: ${BOT_NAME}
+                  app.kubernetes.io/part-of: ai-code-battle
+                  app.kubernetes.io/component: evolved-bot
+                  acb/island: ${ISLAND}
+              spec:
+                containers:
+                  - name: bot
+                    image: ${REGISTRY}/${BOT_NAME}:latest
+                    env:
+                      - name: BOT_PORT
+                        value: "${PORT}"
+                      - name: BOT_SECRET
+                        valueFrom:
+                          secretKeyRef:
+                            name: ${BOT_NAME}-secret
+                            key: bot-secret
+                    ports:
+                      - name: http
+                        containerPort: ${PORT}
+                        protocol: TCP
+                    livenessProbe:
+                      httpGet:
+                        path: /health
+                        port: http
+                      initialDelaySeconds: 5
+                      periodSeconds: 30
+                    readinessProbe:
+                      httpGet:
+                        path: /health
+                        port: http
+                      initialDelaySeconds: 3
+                      periodSeconds: 10
+                    resources:
+                      requests:
+                        cpu: 50m
+                        memory: 64Mi
+                      limits:
+                        memory: 128Mi
+                restartPolicy: Always
+          EOF
+
+          # Service manifest
+          cat > "${MANIFEST_BASE}/${BOT_NAME}-service.yaml" <<EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${BOT_NAME}
+            namespace: ${NAMESPACE}
+            labels:
+              app.kubernetes.io/name: ${BOT_NAME}
+              app.kubernetes.io/part-of: ai-code-battle
+              app.kubernetes.io/component: evolved-bot
+          spec:
+            type: ClusterIP
+            selector:
+              app.kubernetes.io/name: ${BOT_NAME}
+            ports:
+              - name: http
+                port: ${PORT}
+                targetPort: http
+                protocol: TCP
+          EOF
+
+          echo "Manifests created in ${MANIFEST_BASE}:"
+          ls -la "${MANIFEST_BASE}" | grep "${BOT_NAME}" || true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        activeDeadlineSeconds: 300
+
+    - name: commit-manifests
+      script:
+        image: alpine:3.21
+        command: [sh, -c]
+        source: |
+          set -e
+          apk add --no-cache git >/dev/null 2>&1
+
+          cd /tmp/config
+
+          # Configure git
+          git config user.name "ACB Evolver"
+          git config user.email "evolver@ai-code-battle.internal"
+
+          MANIFEST_BASE="declarative-config/k8s/apexalgo-iad/ai-code-battle"
+          BOT_NAME="{{workflow.parameters.bot_name}}"
+          PROGRAM_ID="{{workflow.parameters.program_id}}"
+          ISLAND="{{workflow.parameters.island}}"
+          GENERATION="{{workflow.parameters.generation}}"
+
+          # Stage new manifests
+          git add "${MANIFEST_BASE}/${BOT_NAME}-secret.yaml" || true
+          git add "${MANIFEST_BASE}/${BOT_NAME}-deployment.yaml" || true
+          git add "${MANIFEST_BASE}/${BOT_NAME}-service.yaml" || true
+
+          # Check if there's anything to commit
+          if git diff --cached --quiet; then
+            echo "No changes to commit (bot may already exist)"
+            exit 0
+          fi
+
+          # Commit and push
+          git commit -m "Add evolved bot ${BOT_NAME} (island=${ISLAND} gen=${GENERATION} program_id=${PROGRAM_ID})"
+          git push origin "{{workflow.parameters.declarative_config_branch}}"
+
+          echo "Manifests committed and pushed to declarative-config"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        activeDeadlineSeconds: 300

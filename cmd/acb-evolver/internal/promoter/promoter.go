@@ -168,8 +168,20 @@ func (p *Promoter) Promote(ctx context.Context, program *db.Program) (*Promotion
 	}
 
 	// Trigger Argo WorkflowTemplate to build container and create K8s manifests.
-	if err := p.triggerArgoWorkflow(ctx, botName, secret, program); err != nil {
+	wfName, err := p.triggerArgoWorkflow(ctx, botName, secret, program)
+	if err != nil {
 		return nil, fmt.Errorf("trigger argo workflow: %w", err)
+	}
+
+	// Wait for the workflow to complete (build + manifest commit).
+	if err := p.waitForWorkflowCompletion(ctx, wfName); err != nil {
+		return nil, fmt.Errorf("workflow completion: %w", err)
+	}
+
+	// Wait for the K8s deployment to be ready (ArgoCD sync + pod startup).
+	// This polls via kubectl until the deployment reports at least 1 available replica.
+	if err := p.waitForDeployment(ctx, botName); err != nil {
+		return nil, fmt.Errorf("deployment readiness: %w", err)
 	}
 
 	// Insert bot record directly into the bots table (same DB as programs).
@@ -614,13 +626,55 @@ func (p *Promoter) gitCommitPushSource(ctx context.Context, botName, msg string)
 	return run("push", "origin", p.cfg.BotBranch)
 }
 
+// gitCommitPush stages, commits, and pushes changes to git. For retirement,
+// it removes the bot source directory. The remove flag indicates whether to
+// remove files (true for retirement) or add them (false for promotion).
+func (p *Promoter) gitCommitPush(ctx context.Context, botName, msg string, remove bool) error {
+	run := func(args ...string) error {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = p.cfg.RepoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
+	botPath := filepath.Join("bots", "evolved", botName)
+	if remove {
+		// Remove the bot source directory
+		if err := run("rm", "-rf", "--", botPath); err != nil {
+			return err
+		}
+		if err := run("add", "-u", "--", botPath); err != nil {
+			return err
+		}
+	} else {
+		if err := run("add", "--", botPath); err != nil {
+			return err
+		}
+	}
+
+	// Skip commit if nothing changed.
+	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	statusCmd.Dir = p.cfg.RepoDir
+	out, _ := statusCmd.Output()
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return nil
+	}
+
+	if err := run("commit", "-m", msg); err != nil {
+		return err
+	}
+	return run("push", "origin", p.cfg.BotBranch)
+}
+
 // ── Argo Workflow trigger ───────────────────────────────────────────────────────
 
 // triggerArgoWorkflow submits the acb-evolved-bot-deploy WorkflowTemplate
-// with parameters for the bot being promoted.
-func (p *Promoter) triggerArgoWorkflow(ctx context.Context, botName, secret string, program *db.Program) error {
+// with parameters for the bot being promoted. Returns the workflow name.
+func (p *Promoter) triggerArgoWorkflow(ctx context.Context, botName, secret string, program *db.Program) (string, error) {
 	if p.cfg.ArgoWorkflowServer == "" {
-		return fmt.Errorf("argo workflow server not configured")
+		return "", fmt.Errorf("argo workflow server not configured")
 	}
 
 	// Build workflow submission parameters.
@@ -659,14 +713,14 @@ func (p *Promoter) triggerArgoWorkflow(ctx context.Context, botName, secret stri
 	// Marshal to JSON.
 	wfJSON, err := json.Marshal(wfSpec)
 	if err != nil {
-		return fmt.Errorf("marshal workflow: %w", err)
+		return "", fmt.Errorf("marshal workflow: %w", err)
 	}
 
 	// Submit workflow via Argo API.
 	url := fmt.Sprintf("%s/api/v1/workflows/%s", p.cfg.ArgoWorkflowServer, p.cfg.ArgoWorkflowNamespace)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(wfJSON))
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if p.cfg.ArgoWorkflowAuthToken != "" {
@@ -676,17 +730,105 @@ func (p *Promoter) triggerArgoWorkflow(ctx context.Context, botName, secret stri
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("submit workflow: %w", err)
+		return "", fmt.Errorf("submit workflow: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("workflow submission failed (status %d): %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("workflow submission failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	fmt.Printf("promoter: triggered Argo Workflow %s for bot %s\n", wfName, botName)
-	return nil
+	return wfName, nil
+}
+
+// ── workflow completion polling ───────────────────────────────────────────────────
+
+// waitForWorkflowCompletion polls the Argo Workflow API until the workflow
+// completes (success or failure) or times out.
+func (p *Promoter) waitForWorkflowCompletion(ctx context.Context, wfName string) error {
+	if p.cfg.ArgoWorkflowServer == "" {
+		return fmt.Errorf("argo workflow server not configured")
+	}
+
+	deadline := time.Now().Add(30 * time.Minute)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	fmt.Printf("promoter: waiting for Argo Workflow %s to complete (timeout=30m)…\n", wfName)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			status, phase, err := p.getWorkflowStatus(ctx, wfName)
+			if err != nil {
+				fmt.Printf("promoter: workflow poll error: %v\n", err)
+				if time.Now().After(deadline) {
+					return fmt.Errorf("workflow poll timeout after error: %w", err)
+				}
+				continue
+			}
+
+			fmt.Printf("promoter: workflow %s status=%s phase=%s\n", wfName, status, phase)
+
+			switch phase {
+			case "Succeeded":
+				fmt.Printf("promoter: workflow %s completed successfully\n", wfName)
+				return nil
+			case "Failed", "Error":
+				return fmt.Errorf("workflow %s failed with phase %s (status: %s)", wfName, phase, status)
+			}
+
+			if time.Now().After(deadline) {
+				return fmt.Errorf("workflow %s did not complete after 30 minutes (last phase: %s)", wfName, phase)
+			}
+		}
+	}
+}
+
+// getWorkflowStatus fetches the current status and phase of a workflow.
+func (p *Promoter) getWorkflowStatus(ctx context.Context, wfName string) (status, phase string, err error) {
+	url := fmt.Sprintf("%s/api/v1/workflows/%s/%s", p.cfg.ArgoWorkflowServer, p.cfg.ArgoWorkflowNamespace, wfName)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("create request: %w", err)
+	}
+	if p.cfg.ArgoWorkflowAuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+p.cfg.ArgoWorkflowAuthToken)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("get workflow: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var wfResp struct {
+		Status struct {
+			Phase   string `json:"phase"`
+			StartedAt string `json:"startedAt"`
+			FinishedAt string `json:"finishedAt"`
+		} `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&wfResp); err != nil {
+		return "", "", fmt.Errorf("decode response: %w", err)
+	}
+
+	status = "running"
+	if wfResp.Status.FinishedAt != "" {
+		status = "finished"
+	}
+
+	return status, wfResp.Status.Phase, nil
 }
 
 // ── deployment readiness ──────────────────────────────────────────────────────
