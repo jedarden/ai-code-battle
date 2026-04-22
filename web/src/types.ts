@@ -13,6 +13,8 @@ export interface Config {
   attack_radius2: number;
   spawn_cost: number;
   energy_interval: number;
+  season_id?: string;
+  rules_version?: string;
 }
 
 export interface MatchResult {
@@ -278,6 +280,26 @@ export interface PredictorStats {
 export interface PredictionLeaderboard {
   updated_at: string;
   leaders: PredictorStats[];
+}
+
+// Community replay feedback (plan §13.6, §8.3)
+
+export type FeedbackType = 'insight' | 'mistake' | 'idea' | 'highlight';
+
+export interface FeedbackEntry {
+  feedback_id: string;
+  match_id: string;
+  turn: number;
+  type: FeedbackType;
+  body: string;
+  author: string;
+  upvotes: number;
+  created_at: string;
+}
+
+export interface FeedbackResponse {
+  match_id: string;
+  feedback: FeedbackEntry[];
 }
 
 // Evolution live.json schema (plan §14) — real-time dashboard feed from acb-evolver

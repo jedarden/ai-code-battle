@@ -135,14 +135,16 @@ type Move struct {
 
 // Config holds game configuration parameters.
 type Config struct {
-	Rows            int `json:"rows"`
-	Cols            int `json:"cols"`
-	MaxTurns        int `json:"max_turns"`
-	VisionRadius2   int `json:"vision_radius2"`   // squared vision distance
-	AttackRadius2   int `json:"attack_radius2"`   // squared attack distance
-	SpawnCost       int `json:"spawn_cost"`        // energy cost to spawn a bot
-	EnergyInterval  int `json:"energy_interval"`   // turns between energy spawns
-	CoresPerPlayer  int `json:"cores_per_player"`  // starting cores per player
+	Rows            int    `json:"rows"`
+	Cols            int    `json:"cols"`
+	MaxTurns        int    `json:"max_turns"`
+	VisionRadius2   int    `json:"vision_radius2"`   // squared vision distance
+	AttackRadius2   int    `json:"attack_radius2"`   // squared attack distance
+	SpawnCost       int    `json:"spawn_cost"`        // energy cost to spawn a bot
+	EnergyInterval  int    `json:"energy_interval"`   // turns between energy spawns
+	CoresPerPlayer  int    `json:"cores_per_player"`  // starting cores per player
+	SeasonID        string `json:"season_id,omitempty"`
+	RulesVersion    string `json:"rules_version,omitempty"`
 }
 
 // DefaultConfig returns the default game configuration.

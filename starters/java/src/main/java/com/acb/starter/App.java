@@ -65,6 +65,14 @@ public class App {
 
         try {
             GameState state = MAPPER.readValue(body, GameState.class);
+
+            if (state.turn == 0) {
+                String seasonId = state.config.season_id != null ? state.config.season_id : "";
+                String rulesVersion = state.config.rules_version != null ? state.config.rules_version : "";
+                System.out.printf("match=%s season_id=%s rules_version=%s rows=%d cols=%d%n",
+                        state.match_id, seasonId, rulesVersion, state.config.rows, state.config.cols);
+            }
+
             List<Move> moves = computeMoves(state);
 
             String responseBody = MAPPER.writeValueAsString(new MoveResponse(moves));
@@ -171,7 +179,8 @@ public class App {
     // --- Data classes ---
 
     public record GameConfig(int rows, int cols, int max_turns, int vision_radius2,
-                             int attack_radius2, int spawn_cost, int energy_interval) {}
+                             int attack_radius2, int spawn_cost, int energy_interval,
+                             String season_id, String rules_version) {}
 
     public record You(int id, int energy, int score) {}
 

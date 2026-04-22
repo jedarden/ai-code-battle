@@ -51,15 +51,53 @@ export function loadLocalAnnotations(matchId?: string): Annotation[] {
   }
 }
 
-// ─── Fetch feedback.json from pre-built data ────────────────────────────────
+// ─── Fetch feedback from API ─────────────────────────────────────────────────
 
 export async function fetchFeedback(matchId: string): Promise<Annotation[]> {
   try {
-    const resp = await fetch(`/data/matches/${matchId}/feedback.json`);
+    const resp = await fetch(`${API_BASE}/feedback/${matchId}`);
     if (!resp.ok) return [];
-    return resp.json();
+    const data = await resp.json();
+    // API returns { match_id, feedback: FeedbackEntry[] } — map to Annotation
+    if (!data.feedback || !Array.isArray(data.feedback)) return [];
+    return data.feedback.map((f: { feedback_id: string; match_id: string; turn: number; type: FeedbackType; body: string; author: string; upvotes: number; created_at: string }) => ({
+      id: f.feedback_id,
+      match_id: f.match_id,
+      turn: f.turn,
+      type: f.type,
+      body: f.body,
+      author: f.author,
+      upvotes: f.upvotes,
+      created_at: f.created_at,
+    }));
   } catch {
     return [];
+  }
+}
+
+// ─── Upvote (POST to API) ────────────────────────────────────────────────────
+
+const VISITOR_KEY = 'acb_visitor_id';
+
+function getVisitorId(): string {
+  let id = localStorage.getItem(VISITOR_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(VISITOR_KEY, id);
+  }
+  return id;
+}
+
+export async function upvoteFeedback(feedbackId: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${API_BASE}/feedback/${feedbackId}/upvote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voter_id: getVisitorId() }),
+    });
+    return resp.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -200,7 +238,7 @@ export class AnnotationOverlay {
         <div class="ann-item-body">${escapeHtml(ann.body)}</div>
         ${pos ? `<div class="ann-item-pos">@ ${pos}</div>` : ''}
         <div class="ann-item-meta">
-          <span class="ann-item-upvotes">${ann.upvotes} upvotes</span>
+          <button class="ann-upvote-btn" data-feedback-id="${ann.id}" title="Upvote">&#9650; ${ann.upvotes}</button>
           <span class="ann-item-time">${formatTime(ann.created_at)}</span>
         </div>
       </div>`;

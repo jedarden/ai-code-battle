@@ -21,6 +21,7 @@ import (
 
 	"github.com/aicodebattle/acb/engine"
 	"github.com/aicodebattle/acb/metrics"
+	"image/png"
 )
 // Config holds worker configuration.
 type Config struct {
@@ -226,6 +227,15 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 			metrics.ReplayUploadLatency.Observe(uploadSec)
 			w.logger.Printf("Uploaded replay to %s", replayURL)
 		}
+
+		// Generate and upload thumbnail
+		thumbStart := time.Now()
+		if thumbErr := w.uploadThumbnail(ctx, claimData.Match.ID, replay); thumbErr != nil {
+			w.logger.Printf("Failed to upload thumbnail: %v", thumbErr)
+		} else {
+			thumbSec := time.Since(thumbStart).Seconds()
+			w.logger.Printf("Uploaded thumbnail in %.2fs", thumbSec)
+		}
 	}
 
 	// Compute Glicko-2 rating updates
@@ -253,6 +263,8 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 		AttackRadius2:  5,   // Default attack
 		SpawnCost:      3,   // Default spawn cost
 		EnergyInterval: 10,  // Default energy interval
+		SeasonID:       claimData.Match.SeasonID,
+		RulesVersion:   claimData.Match.RulesVersion,
 	}
 
 	// Create match runner
@@ -393,6 +405,33 @@ func (w *Worker) uploadReplay(ctx context.Context, matchID string, replay *engin
 	}
 
 	return fmt.Sprintf("%s/%s", w.b2.Endpoint(), key), nil
+}
+
+// uploadThumbnail generates and uploads a PNG thumbnail for the match.
+func (w *Worker) uploadThumbnail(ctx context.Context, matchID string, replay *engine.Replay) error {
+	if w.b2 == nil {
+		return fmt.Errorf("B2 client not configured")
+	}
+
+	// Generate thumbnail image
+	img, err := engine.GenerateMatchThumbnail(replay)
+	if err != nil {
+		return fmt.Errorf("failed to generate thumbnail: %w", err)
+	}
+
+	// Encode as PNG
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return fmt.Errorf("failed to encode thumbnail as PNG: %w", err)
+	}
+
+	// Upload to B2
+	key := fmt.Sprintf("thumbnails/%s.png", matchID)
+	if err := w.b2.Upload(ctx, key, buf.Bytes(), "image/png", ""); err != nil {
+		return fmt.Errorf("failed to upload thumbnail to B2: %w", err)
+	}
+
+	return nil
 }
 
 // computeRatingUpdates computes Glicko-2 rating updates for match participants.

@@ -50,14 +50,25 @@ type StoryArc struct {
 
 // KeyMatch represents a key match for narrative context
 type KeyMatch struct {
-	MatchID    string `json:"match_id"`
-	OpponentID string `json:"opponent_id"`
+	MatchID        string `json:"match_id"`
+	OpponentID     string `json:"opponent_id"`
+	OpponentName   string `json:"opponent_name"`
+	OpponentRating int    `json:"opponent_rating"`
+	OpponentRank   int    `json:"opponent_rank,omitempty"`
+	MapName        string `json:"map_name,omitempty"`
+	Score          string `json:"score"`
+	TurnCount      int    `json:"turn_count"`
+	Won            bool   `json:"won"`
+	EndCondition   string `json:"end_condition,omitempty"`
+}
+
+// HeadToHeadRecord represents the head-to-head record between two bots
+type HeadToHeadRecord struct {
 	OpponentName string `json:"opponent_name"`
-	OpponentRating int  `json:"opponent_rating"`
-	MapName    string `json:"map_name,omitempty"`
-	Score      string `json:"score"`
-	TurnCount  int    `json:"turn_count"`
-	Won        bool   `json:"won"`
+	OpponentRank int    `json:"opponent_rank,omitempty"`
+	Wins         int    `json:"wins"`
+	Losses       int    `json:"losses"`
+	TotalMatches int    `json:"total_matches"`
 }
 
 // LLMClient handles narrative generation via LLM
@@ -82,7 +93,9 @@ func NewLLMClient(baseURL, apiKey string) *LLMClient {
 type NarrativeRequest struct {
 	ArcType     StoryArcType
 	BotName     string
+	BotID       string
 	SeasonName  string
+	SeasonTheme string
 	RatingStart int
 	RatingEnd   int
 	KeyMatches  []KeyMatch
@@ -90,7 +103,11 @@ type NarrativeRequest struct {
 	Origin      string
 	ParentIDs   []string
 	Generation  int
-	// Additional context
+	// Enriched context per §15.5
+	BotRank       int
+	CommunityHint string
+	HeadToHead    []HeadToHeadRecord
+	// Rivalry-specific fields
 	BotBName     string
 	BotAWins     int
 	BotBWins     int
@@ -123,98 +140,234 @@ func (c *LLMClient) GenerateNarrative(ctx context.Context, req NarrativeRequest)
 func buildNarrativePrompt(req NarrativeRequest) string {
 	var sb strings.Builder
 
-	sb.WriteString("Write a 200-word sports-journalism narrative about this event in the AI Code Battle platform. Be dramatic but factual. Reference specific matches. Write in present tense. Do not use emojis.\n\n")
+	sb.WriteString("Write a 200-word sports-journalism narrative about this event in the AI Code Battle platform. ")
+	sb.WriteString("Be dramatic but factual. Reference specific matches, ratings, and rivalries. ")
+	sb.WriteString("Write in present tense with a punchy, journalistic tone. Do not use emojis.\n\n")
+
+	// Season and standings context
+	seasonLabel := req.SeasonName
+	if req.SeasonTheme != "" {
+		seasonLabel = fmt.Sprintf("%s (%s)", req.SeasonName, req.SeasonTheme)
+	}
 
 	switch req.ArcType {
 	case ArcRise:
 		sb.WriteString(fmt.Sprintf("Arc type: Rise\n"))
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
-		sb.WriteString(fmt.Sprintf("Season: %s\n", req.SeasonName))
-		sb.WriteString(fmt.Sprintf("Rating: %d → %d over 7 days\n", req.RatingStart, req.RatingEnd))
-		if len(req.KeyMatches) > 0 {
-			sb.WriteString("Key matches:\n")
-			for _, m := range req.KeyMatches {
-				outcome := "Lost to"
-				if m.Won {
-					outcome = "Beat"
-				}
-				sb.WriteString(fmt.Sprintf("  - %s %s (#%d, %d) on %q — score %s, turn %d\n",
-					outcome, m.OpponentName, m.OpponentRating/10, m.OpponentRating, m.MapName, m.Score, m.TurnCount))
-			}
+		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
+		if req.BotRank > 0 {
+			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
 		}
+		delta := req.RatingEnd - req.RatingStart
+		sb.WriteString(fmt.Sprintf("ELO: %d → %d (delta %+d) over 7 days\n", req.RatingStart, req.RatingEnd, delta))
 		if req.Archetype != "" {
 			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
 		}
 		if req.Origin != "" {
 			sb.WriteString(fmt.Sprintf("Origin: %s\n", req.Origin))
 		}
+		if req.Generation > 0 && len(req.ParentIDs) > 0 {
+			sb.WriteString(fmt.Sprintf("Lineage: generation %d, parents: %s\n", req.Generation, strings.Join(req.ParentIDs, ", ")))
+		}
+		if len(req.KeyMatches) > 0 {
+			sb.WriteString("Key matches (turning points in the climb):\n")
+			for _, m := range req.KeyMatches {
+				outcome := "Lost to"
+				if m.Won {
+					outcome = "Beat"
+				}
+				rankStr := ""
+				if m.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(", #%d", m.OpponentRank)
+				}
+				condStr := ""
+				if m.EndCondition != "" {
+					condStr = fmt.Sprintf(" [%s]", m.EndCondition)
+				}
+				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d%s) on \"%s\" — score %s, %d turns%s. Match ID: %s\n",
+					outcome, m.OpponentName, m.OpponentRating, rankStr, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, condStr, m.MatchID))
+			}
+		}
+		if len(req.HeadToHead) > 0 {
+			sb.WriteString("Head-to-head records (season):\n")
+			for _, h := range req.HeadToHead {
+				rankStr := ""
+				if h.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(" (#%d)", h.OpponentRank)
+				}
+				sb.WriteString(fmt.Sprintf("  - vs %s%s: %dW-%dL (%d matches)\n",
+					h.OpponentName, rankStr, h.Wins, h.Losses, h.TotalMatches))
+			}
+		}
+		if req.CommunityHint != "" {
+			sb.WriteString(fmt.Sprintf("Community tactical insight that may have contributed: \"%s\"\n", req.CommunityHint))
+		}
 
 	case ArcFall:
 		sb.WriteString(fmt.Sprintf("Arc type: Fall\n"))
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
-		sb.WriteString(fmt.Sprintf("Season: %s\n", req.SeasonName))
-		sb.WriteString(fmt.Sprintf("Rating: %d → %d over 7 days\n", req.RatingStart, req.RatingEnd))
+		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
+		if req.BotRank > 0 {
+			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
+		}
+		delta := req.RatingStart - req.RatingEnd
+		sb.WriteString(fmt.Sprintf("ELO: %d → %d (delta -%d) over 7 days\n", req.RatingStart, req.RatingEnd, delta))
+		if req.Archetype != "" {
+			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
+		}
 		if len(req.KeyMatches) > 0 {
-			sb.WriteString("Recent losses:\n")
+			sb.WriteString("Critical losses (turning points in the decline):\n")
 			for _, m := range req.KeyMatches {
-				sb.WriteString(fmt.Sprintf("  - Lost to %s (#%d) on %q — score %s, turn %d\n",
-					m.OpponentName, m.OpponentRating/10, m.MapName, m.Score, m.TurnCount))
+				rankStr := ""
+				if m.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(", #%d", m.OpponentRank)
+				}
+				condStr := ""
+				if m.EndCondition != "" {
+					condStr = fmt.Sprintf(" [%s]", m.EndCondition)
+				}
+				sb.WriteString(fmt.Sprintf("  - Lost to %s (ELO %d%s) on \"%s\" — score %s, %d turns%s. Match ID: %s\n",
+					m.OpponentName, m.OpponentRating, rankStr, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, condStr, m.MatchID))
+			}
+		}
+		if len(req.HeadToHead) > 0 {
+			sb.WriteString("Head-to-head records (season):\n")
+			for _, h := range req.HeadToHead {
+				rankStr := ""
+				if h.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(" (#%d)", h.OpponentRank)
+				}
+				sb.WriteString(fmt.Sprintf("  - vs %s%s: %dW-%dL (%d matches)\n",
+					h.OpponentName, rankStr, h.Wins, h.Losses, h.TotalMatches))
 			}
 		}
 
 	case ArcRivalry:
 		sb.WriteString(fmt.Sprintf("Arc type: Rivalry Intensifies\n"))
 		sb.WriteString(fmt.Sprintf("Bots: %s vs %s\n", req.BotName, req.BotBName))
-		sb.WriteString(fmt.Sprintf("Season: %s\n", req.SeasonName))
-		sb.WriteString(fmt.Sprintf("Head-to-head record: %d-%d (%d matches this week)\n",
-			req.BotAWins, req.BotBWins, req.TotalMatches))
+		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
+		sb.WriteString(fmt.Sprintf("Head-to-head record this week: %s %d - %s %d (%d total matches)\n",
+			req.BotName, req.BotAWins, req.BotBName, req.BotBWins, req.TotalMatches))
 		if len(req.KeyMatches) > 0 {
-			sb.WriteString("Recent encounters:\n")
+			sb.WriteString("Recent encounters (turning points):\n")
 			for _, m := range req.KeyMatches {
-				outcome := "lost"
+				winner := req.BotBName
 				if m.Won {
-					outcome = "won"
+					winner = req.BotName
 				}
-				sb.WriteString(fmt.Sprintf("  - %s %s against %s (%s)\n",
-					req.BotName, outcome, m.OpponentName, m.Score))
+				condStr := ""
+				if m.EndCondition != "" {
+					condStr = fmt.Sprintf(" [%s]", m.EndCondition)
+				}
+				sb.WriteString(fmt.Sprintf("  - %s won on \"%s\" (%d turns, score %s)%s. Match ID: %s\n",
+					winner, nonEmpty(m.MapName, "standard map"), m.TurnCount, m.Score, condStr, m.MatchID))
+			}
+		}
+		if len(req.HeadToHead) > 0 {
+			sb.WriteString("All-time head-to-head:\n")
+			for _, h := range req.HeadToHead {
+				sb.WriteString(fmt.Sprintf("  - vs %s: %dW-%dL (%d matches)\n",
+					h.OpponentName, h.Wins, h.Losses, h.TotalMatches))
 			}
 		}
 
 	case ArcUpset:
 		sb.WriteString(fmt.Sprintf("Arc type: Upset of the Week\n"))
-		sb.WriteString(fmt.Sprintf("Underdog: %s (rating %d)\n", req.BotName, req.RatingStart))
-		sb.WriteString(fmt.Sprintf("Favorite: %s (rating %d)\n", req.BotBName, req.RatingEnd))
-		sb.WriteString(fmt.Sprintf("Season: %s\n", req.SeasonName))
+		sb.WriteString(fmt.Sprintf("Underdog: %s (ELO %d)\n", req.BotName, req.RatingStart))
+		sb.WriteString(fmt.Sprintf("Favorite: %s (ELO %d)\n", req.BotBName, req.RatingEnd))
+		gap := req.RatingEnd - req.RatingStart
+		sb.WriteString(fmt.Sprintf("ELO gap: %d points\n", gap))
+		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
 		if len(req.KeyMatches) > 0 {
 			m := req.KeyMatches[0]
-			sb.WriteString(fmt.Sprintf("Match: Final score %s after %d turns on %q\n",
-				m.Score, m.TurnCount, m.MapName))
+			condStr := ""
+			if m.EndCondition != "" {
+				condStr = fmt.Sprintf(" [%s]", m.EndCondition)
+			}
+			sb.WriteString(fmt.Sprintf("Match: %s stunned %s with a %s scoreline after %d turns on \"%s\"%s. Match ID: %s\n",
+				req.BotName, req.BotBName, m.Score, m.TurnCount, nonEmpty(m.MapName, "standard map"), condStr, m.MatchID))
+		}
+		if len(req.HeadToHead) > 0 {
+			sb.WriteString("Prior head-to-head:\n")
+			for _, h := range req.HeadToHead {
+				sb.WriteString(fmt.Sprintf("  - vs %s: %dW-%dL (%d matches)\n",
+					h.OpponentName, h.Wins, h.Losses, h.TotalMatches))
+			}
 		}
 
 	case ArcEvolutionMilestone:
 		sb.WriteString(fmt.Sprintf("Arc type: Evolution Milestone\n"))
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
-		sb.WriteString(fmt.Sprintf("Season: %s\n", req.SeasonName))
-		sb.WriteString(fmt.Sprintf("New all-time-high rating: %d\n", req.RatingEnd))
+		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
+		if req.BotRank > 0 {
+			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
+		}
+		sb.WriteString(fmt.Sprintf("ELO: new all-time high of %d\n", req.RatingEnd))
 		sb.WriteString(fmt.Sprintf("Origin: %s, generation %d\n", req.Origin, req.Generation))
 		if len(req.ParentIDs) > 0 {
-			sb.WriteString(fmt.Sprintf("Parents: %s\n", strings.Join(req.ParentIDs, ", ")))
+			sb.WriteString(fmt.Sprintf("Lineage (parent bots): %s\n", strings.Join(req.ParentIDs, ", ")))
+		}
+		if req.CommunityHint != "" {
+			sb.WriteString(fmt.Sprintf("Community tactical insight that influenced this bot: \"%s\"\n", req.CommunityHint))
 		}
 		if req.Archetype != "" {
 			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
+		}
+		if len(req.KeyMatches) > 0 {
+			sb.WriteString("Key matches driving the milestone:\n")
+			for _, m := range req.KeyMatches {
+				outcome := "lost to"
+				if m.Won {
+					outcome = "defeated"
+				}
+				rankStr := ""
+				if m.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(", #%d", m.OpponentRank)
+				}
+				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d%s) — score %s, %d turns. Match ID: %s\n",
+					req.BotName, outcome, m.OpponentRating, rankStr, m.Score, m.TurnCount, m.MatchID))
+			}
+		}
+		if len(req.HeadToHead) > 0 {
+			sb.WriteString("Head-to-head vs top opponents:\n")
+			for _, h := range req.HeadToHead {
+				rankStr := ""
+				if h.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(" (#%d)", h.OpponentRank)
+				}
+				sb.WriteString(fmt.Sprintf("  - vs %s%s: %dW-%dL\n",
+					h.OpponentName, rankStr, h.Wins, h.Losses))
+			}
 		}
 
 	case ArcComeback:
 		sb.WriteString(fmt.Sprintf("Arc type: Comeback\n"))
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
-		sb.WriteString(fmt.Sprintf("Season: %s\n", req.SeasonName))
-		sb.WriteString(fmt.Sprintf("Rating recovery: %d → %d (after declining to %d)\n",
-			req.RatingStart, req.RatingEnd, req.RatingStart-150))
+		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
+		if req.BotRank > 0 {
+			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
+		}
+		sb.WriteString(fmt.Sprintf("ELO recovery: %d → %d (after declining to %d, climbed back %+d)\n",
+			req.RatingStart, req.RatingEnd, req.RatingStart-150, req.RatingEnd-(req.RatingStart-150)))
+		if req.Archetype != "" {
+			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
+		}
 		if len(req.KeyMatches) > 0 {
 			sb.WriteString("Turning point matches:\n")
 			for _, m := range req.KeyMatches {
-				sb.WriteString(fmt.Sprintf("  - Beat %s (#%d) — score %s\n",
-					m.OpponentName, m.OpponentRating/10, m.Score))
+				rankStr := ""
+				if m.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(" (#%d)", m.OpponentRank)
+				}
+				sb.WriteString(fmt.Sprintf("  - Defeated %s (ELO %d%s) on \"%s\" — score %s, %d turns. Match ID: %s\n",
+					m.OpponentName, m.OpponentRating, rankStr, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, m.MatchID))
+			}
+		}
+		if len(req.HeadToHead) > 0 {
+			sb.WriteString("Head-to-head during comeback:\n")
+			for _, h := range req.HeadToHead {
+				sb.WriteString(fmt.Sprintf("  - vs %s: %dW-%dL (%d matches)\n",
+					h.OpponentName, h.Wins, h.Losses, h.TotalMatches))
 			}
 		}
 	}
@@ -242,13 +395,18 @@ type llmChatResponse struct {
 	} `json:"error,omitempty"`
 }
 
+// systemPromptSportsJournalist is the system prompt framing the LLM as a
+// sports journalist covering AI Code Battle — per plan §15.1 and §15.5.
+const systemPromptSportsJournalist = `You are a sports journalist covering an emergent bot league called AI Code Battle, where autonomous programs compete in grid-based strategy matches. Write with the energy and narrative instinct of esports journalism — dramatic but factual, specific but accessible. Reference bots by name, cite ratings and score lines, and describe strategic turning points the way a commentator would. Use present tense. Do not use emojis. Keep paragraphs tight and punchy.`
+
 func (c *LLMClient) chatCompletion(ctx context.Context, prompt string) (string, error) {
 	body, err := json.Marshal(llmChatRequest{
-		Model: "GLM-5-Turbo", // Use fast tier for cheap narrative generation
+		Model: "GLM-5-Turbo",
 		Messages: []llmChatMessage{
+			{Role: "system", Content: systemPromptSportsJournalist},
 			{Role: "user", Content: prompt},
 		},
-		MaxTokens: 500, // ~200 words should fit easily
+		MaxTokens: 500,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
@@ -650,10 +808,12 @@ func extractKeyMatches(botID string, data *IndexData) []KeyMatch {
 			OpponentID:     oppPart.BotID,
 			OpponentName:   getBotName(oppPart.BotID, data),
 			OpponentRating: int(oppPart.PreMatchRating),
+			OpponentRank:   getBotRank(oppPart.BotID, data),
 			MapName:        m.MapName,
 			Score:          fmt.Sprintf("%d-%d", botPart.Score, oppPart.Score),
 			TurnCount:      m.TurnCount,
 			Won:            botPart.Won,
+			EndCondition:   m.EndCondition,
 		})
 
 		if len(matches) >= 3 {

@@ -52,6 +52,13 @@ app.MapPost("/turn", (HttpContext ctx) =>
         return Results.BadRequest("Invalid JSON");
     }
 
+    if (state.Turn == 0)
+    {
+        var seasonId = state.Config.SeasonId ?? "";
+        var rulesVersion = state.Config.RulesVersion ?? "";
+        Console.WriteLine($"match={state.MatchId} season_id={seasonId} rules_version={rulesVersion} rows={state.Config.Rows} cols={state.Config.Cols}");
+    }
+
     var moves = ComputeMoves(state);
     var responseBody = JsonSerializer.Serialize(new { moves });
     var turn = int.Parse(turnStr);
@@ -182,6 +189,8 @@ record GameConfig
     public int AttackRadius2 { get; init; }
     public int SpawnCost { get; init; }
     public int EnergyInterval { get; init; }
+    public string? SeasonId { get; init; }
+    public string? RulesVersion { get; init; }
 }
 
 record You

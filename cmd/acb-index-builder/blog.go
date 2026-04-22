@@ -783,11 +783,12 @@ func extractFirstSentence(text string) string {
 func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyCount, bestMatch *notableMatch, evoHighlights []evolutionHighlight, topBots []BotData, rivalries []RivalryData) string {
 	var sb strings.Builder
 
-	sb.WriteString("You are a competitive gaming analyst for AI Code Battle, a bot programming platform. ")
-	sb.WriteString("Write a 200-word 'Counter-Strategy Spotlight' section for a weekly meta report. ")
-	sb.WriteString("Analyze the current strategy landscape and identify under-represented archetypes that could exploit weaknesses. ")
+	sb.WriteString("Write a 200-word 'Counter-Strategy Spotlight' section for a weekly meta report on AI Code Battle. ")
+	sb.WriteString("You are a sports analyst covering an emergent bot league. ")
+	sb.WriteString("Analyze the current strategy landscape, identify under-represented archetypes that could exploit weaknesses in the dominant meta, ")
+	sb.WriteString("and call out specific ELO shifts and rivalry dynamics. ")
 	sb.WriteString("Be analytical, specific, and reference real bot names and ratings. Do not use emojis. ")
-	sb.WriteString("Write in present tense with a journalistic tone.\n\n")
+	sb.WriteString("Write in present tense with a punchy, journalistic tone.\n\n")
 
 	sb.WriteString(fmt.Sprintf("Season: %s\n", getCurrentSeasonName(data)))
 	sb.WriteString(fmt.Sprintf("Active bots: %d, Matches this week: %d\n\n", len(data.Bots), countWeeklyMatches(data)))
@@ -808,8 +809,8 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 		if m.Delta < 0 {
 			dir = "fell"
 		}
-		sb.WriteString(fmt.Sprintf("  %s %s %.0f points (%.0f -> %.0f) [%s] — W%d/L%d\n",
-			m.BotName, dir, absF(m.Delta), m.OldRating, m.NewRating, nonEmpty(m.Archetype, "unclassified"), m.MatchesWon, m.MatchesLost))
+		sb.WriteString(fmt.Sprintf("  %s %s %.0f ELO points (%.0f -> %.0f, delta %+0.f) [%s] — W%d/L%d\n",
+			m.BotName, dir, absF(m.Delta), m.OldRating, m.NewRating, m.Delta, nonEmpty(m.Archetype, "unclassified"), m.MatchesWon, m.MatchesLost))
 	}
 
 	sb.WriteString("\nStrategy distribution:\n")
@@ -855,23 +856,26 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 	}
 
 	if len(rivalries) > 0 {
-		sb.WriteString("\nTop rivalries:\n")
+		sb.WriteString("\nTop rivalries (head-to-head records):\n")
 		for i, r := range rivalries {
 			if i >= 5 {
 				break
 			}
 			botAName := r.BotAID
 			botBName := r.BotBID
+			var botARating, botBRating float64
 			for _, b := range data.Bots {
 				if b.ID == r.BotAID {
 					botAName = b.Name
+					botARating = b.Rating
 				}
 				if b.ID == r.BotBID {
 					botBName = b.Name
+					botBRating = b.Rating
 				}
 			}
-			sb.WriteString(fmt.Sprintf("  %s vs %s: %d-%d (%d matches)\n",
-				botAName, botBName, r.BotAWins, r.BotBWins, r.TotalMatches))
+			sb.WriteString(fmt.Sprintf("  %s (ELO %.0f) vs %s (ELO %.0f): %d-%d over %d matches\n",
+				botAName, botARating, botBName, botBRating, r.BotAWins, r.BotBWins, r.TotalMatches))
 		}
 	}
 
@@ -882,9 +886,10 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 func buildEvolutionDeepDivePrompt(data *IndexData, evoHighlights []evolutionHighlight, rivalries []RivalryData, predLeaderboard []PredictorStats, liveData *evolutionLiveData) string {
 	var sb strings.Builder
 
-	sb.WriteString("Write a 150-word 'Evolution Deep Dive' section analyzing this week's evolved bot performance. ")
-	sb.WriteString("Highlight the most successful evolved bots, their lineage, and strategic innovations. ")
-	sb.WriteString("Be analytical and reference specific bot names. Do not use emojis.\n\n")
+	sb.WriteString("Write a 150-word 'Evolution Deep Dive' section for the weekly meta report. ")
+	sb.WriteString("You are a sports journalist covering the AI evolution pipeline in AI Code Battle. ")
+	sb.WriteString("Highlight the most successful evolved bots, their lineage, strategic innovations, and ELO trajectory. ")
+	sb.WriteString("Reference specific bot names and ratings. Do not use emojis.\n\n")
 
 	sb.WriteString(fmt.Sprintf("Season: %s\n\n", getCurrentSeasonName(data)))
 
@@ -966,9 +971,10 @@ func buildEvolutionDeepDivePrompt(data *IndexData, evoHighlights []evolutionHigh
 func buildLookingAheadPrompt(data *IndexData, movers []eloMover, strats []strategyCount, trends []strategyTrend, matchups []matchupCell, liveData *evolutionLiveData) string {
 	var sb strings.Builder
 
-	sb.WriteString("Write a 100-word 'Looking Ahead' section for a weekly meta report. ")
-	sb.WriteString("Predict what strategies will rise or fall next week based on the data. ")
-	sb.WriteString("Be forward-looking and analytical. Do not use emojis.\n\n")
+	sb.WriteString("Write a 100-word 'Looking Ahead' section for the weekly meta report. ")
+	sb.WriteString("You are a sports journalist covering AI Code Battle. ")
+	sb.WriteString("Predict what strategies will rise or fall next week based on ELO trends, matchup data, and the evolution pipeline. ")
+	sb.WriteString("Be forward-looking, analytical, and reference specific bots and ratings. Do not use emojis.\n\n")
 
 	sb.WriteString(fmt.Sprintf("Season: %s\n", getCurrentSeasonName(data)))
 

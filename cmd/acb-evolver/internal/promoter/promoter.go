@@ -6,14 +6,17 @@
 // Promotion flow
 //
 //  1. Generate a unique bot name (acb-evo-<programID>), bot ID, and secret.
-//  2. Write bot source + language-appropriate Dockerfile to bots/evolved/<name>/.
-//  3. Write K8s Secret / Deployment / Service manifests to deploy/k8s/.
-//  4. Build and push the container image (best-effort; CI pipeline is the
-//     fallback when docker is unavailable or fails).
-//  5. Git add → commit → push (triggers ArgoCD sync + image build via CI).
-//  6. Poll kubectl until the Deployment has ≥1 available replica.
-//  7. Insert the bot record directly into the bots database table.
-//  8. Record bot_id, bot_name, and bot_secret in the programs table.
+//  2. Write bot source to bots/evolved/<name>/.
+//  3. Git add → commit → push (makes source available to Argo Workflow).
+//  4. Trigger Argo WorkflowTemplate acb-evolved-bot-deploy which:
+//     a. Clones bot source from git
+//     b. Builds container image with Kaniko
+//     c. Pushes to Forgejo registry
+//     d. Creates K8s Secret / Deployment / Service manifests
+//     e. Commits manifests to declarative-config repo
+//  5. Wait for Argo Workflow to complete (with timeout).
+//  6. Insert the bot record directly into the bots database table.
+//  7. Record bot_id, bot_name, and bot_secret in the programs table.
 //
 // Retirement flow
 //
@@ -31,8 +34,10 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,18 +84,40 @@ type Config struct {
 	// PopCap is the maximum number of simultaneously promoted evolved bots.
 	// Lowest-rated bots are retired when the cap is exceeded.
 	PopCap int
+
+	// ArgoWorkflowServer is the Argo Workflow API server URL,
+	// e.g. "https://argo-ci.ardenone.com".
+	ArgoWorkflowServer string
+
+	// ArgoWorkflowNamespace is the namespace where workflows run.
+	ArgoWorkflowNamespace string
+
+	// ArgoWorkflowAuthToken is the bearer token for Argo Workflow API auth.
+	ArgoWorkflowAuthToken string
+
+	// BotRepo is the git repo URL where bot source is written,
+	// e.g. "https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git".
+	BotRepo string
+
+	// BotBranch is the git branch for bot source commits.
+	BotBranch string
 }
 
 // DefaultConfig returns production-ready defaults.
 func DefaultConfig() Config {
 	return Config{
-		Registry:          "forgejo.ardenone.com/ai-code-battle",
-		RepoDir:           ".",
-		KubectlServer:     "http://kubectl-ardenone-cluster:8001",
-		Namespace:         "ai-code-battle",
-		DeployWaitTimeout: 10 * time.Minute,
-		RatingThreshold:   1000.0,
-		PopCap:            50,
+		Registry:                "forgejo.ardenone.com/ai-code-battle",
+		RepoDir:                 ".",
+		KubectlServer:           "http://kubectl-ardenone-cluster:8001",
+		Namespace:               "ai-code-battle",
+		DeployWaitTimeout:       10 * time.Minute,
+		RatingThreshold:         1000.0,
+		PopCap:                  50,
+		ArgoWorkflowServer:      "https://argo-ci.ardenone.com",
+		ArgoWorkflowNamespace:   "argo-workflows",
+		ArgoWorkflowAuthToken:   "",
+		BotRepo:                 "https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git",
+		BotBranch:               "master",
 	}
 }
 
@@ -133,23 +160,16 @@ func (p *Promoter) Promote(ctx context.Context, program *db.Program) (*Promotion
 		return nil, fmt.Errorf("write bot dir: %w", err)
 	}
 
-	if err := p.writeManifests(botName, secret, program); err != nil {
-		return nil, fmt.Errorf("write manifests: %w", err)
-	}
-
-	// Best-effort local image build; CI pipeline is the authoritative builder.
-	if buildErr := p.buildAndPushImage(ctx, botDir, image); buildErr != nil {
-		fmt.Printf("promoter: docker build skipped (%v) — CI will build the image\n", buildErr)
-	}
-
-	commitMsg := fmt.Sprintf("Add evolved bot %s (island=%s gen=%d program_id=%d)",
+	// Commit bot source to git (required for Argo Workflow to clone it).
+	commitMsg := fmt.Sprintf("Add evolved bot source %s (island=%s gen=%d program_id=%d)",
 		botName, program.Island, program.Generation, program.ID)
-	if err := p.gitCommitPush(ctx, botName, commitMsg, false); err != nil {
+	if err := p.gitCommitPushSource(ctx, botName, commitMsg); err != nil {
 		return nil, fmt.Errorf("git commit/push: %w", err)
 	}
 
-	if err := p.waitForDeployment(ctx, botName); err != nil {
-		return nil, fmt.Errorf("wait for deployment: %w", err)
+	// Trigger Argo WorkflowTemplate to build container and create K8s manifests.
+	if err := p.triggerArgoWorkflow(ctx, botName, secret, program); err != nil {
+		return nil, fmt.Errorf("trigger argo workflow: %w", err)
 	}
 
 	// Insert bot record directly into the bots table (same DB as programs).
@@ -563,9 +583,9 @@ func renderToFile(path string, tmpl *template.Template, data any) error {
 
 // ── git operations ────────────────────────────────────────────────────────────
 
-// gitCommitPush stages, commits, and pushes changes for botName.
-// When remove=true it runs `git rm` to delete the files; otherwise `git add`.
-func (p *Promoter) gitCommitPush(ctx context.Context, botName, msg string, remove bool) error {
+// gitCommitPushSource stages, commits, and pushes only the bot source code.
+// The Argo Workflow will handle K8s manifests separately.
+func (p *Promoter) gitCommitPushSource(ctx context.Context, botName, msg string) error {
 	run := func(args ...string) error {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = p.cfg.RepoDir
@@ -575,24 +595,9 @@ func (p *Promoter) gitCommitPush(ctx context.Context, botName, msg string, remov
 		return nil
 	}
 
-	paths := []string{
-		filepath.Join("bots", "evolved", botName),
-		filepath.Join("deploy", "k8s", "deployments", botName+".yaml"),
-		filepath.Join("deploy", "k8s", "services", botName+".yaml"),
-		filepath.Join("deploy", "k8s", "secrets", botName+".yaml"),
-	}
-
-	if remove {
-		for _, path := range paths {
-			if err := run("rm", "-rf", "--ignore-unmatch", "--", path); err != nil {
-				return err
-			}
-		}
-	} else {
-		args := append([]string{"add", "--"}, paths...)
-		if err := run(args...); err != nil {
-			return err
-		}
+	botPath := filepath.Join("bots", "evolved", botName)
+	if err := run("add", "--", botPath); err != nil {
+		return err
 	}
 
 	// Skip commit if nothing changed.
@@ -606,7 +611,82 @@ func (p *Promoter) gitCommitPush(ctx context.Context, botName, msg string, remov
 	if err := run("commit", "-m", msg); err != nil {
 		return err
 	}
-	return run("push", "origin", "master")
+	return run("push", "origin", p.cfg.BotBranch)
+}
+
+// ── Argo Workflow trigger ───────────────────────────────────────────────────────
+
+// triggerArgoWorkflow submits the acb-evolved-bot-deploy WorkflowTemplate
+// with parameters for the bot being promoted.
+func (p *Promoter) triggerArgoWorkflow(ctx context.Context, botName, secret string, program *db.Program) error {
+	if p.cfg.ArgoWorkflowServer == "" {
+		return fmt.Errorf("argo workflow server not configured")
+	}
+
+	// Build workflow submission parameters.
+	wfName := fmt.Sprintf("acb-evo-deploy-%d", time.Now().Unix())
+	botPath := fmt.Sprintf("bots/evolved/%s", botName)
+	secretB64 := base64.StdEncoding.EncodeToString([]byte(secret))
+
+	wfSpec := map[string]any{
+		"apiVersion": "argoproj.io/v1alpha1",
+		"kind":       "Workflow",
+		"metadata": map[string]string{
+			"name":      wfName,
+			"namespace": p.cfg.ArgoWorkflowNamespace,
+		},
+		"spec": map[string]any{
+			"workflowTemplateRef": map[string]string{
+				"name": "acb-evolved-bot-deploy",
+			},
+			"entrypoint": "deploy-evolved-bot",
+			"arguments": map[string]any{
+				"parameters": []map[string]string{
+					{"name": "bot_name", "value": botName},
+					{"name": "bot_secret", "value": secretB64},
+					{"name": "language", "value": program.Language},
+					{"name": "island", "value": program.Island},
+					{"name": "generation", "value": fmt.Sprintf("%d", program.Generation)},
+					{"name": "program_id", "value": fmt.Sprintf("%d", program.ID)},
+					{"name": "bot_repo", "value": p.cfg.BotRepo},
+					{"name": "bot_branch", "value": p.cfg.BotBranch},
+					{"name": "bot_path", "value": botPath},
+				},
+			},
+		},
+	}
+
+	// Marshal to JSON.
+	wfJSON, err := json.Marshal(wfSpec)
+	if err != nil {
+		return fmt.Errorf("marshal workflow: %w", err)
+	}
+
+	// Submit workflow via Argo API.
+	url := fmt.Sprintf("%s/api/v1/workflows/%s", p.cfg.ArgoWorkflowServer, p.cfg.ArgoWorkflowNamespace)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(wfJSON))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if p.cfg.ArgoWorkflowAuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+p.cfg.ArgoWorkflowAuthToken)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("submit workflow: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("workflow submission failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Printf("promoter: triggered Argo Workflow %s for bot %s\n", wfName, botName)
+	return nil
 }
 
 // ── deployment readiness ──────────────────────────────────────────────────────

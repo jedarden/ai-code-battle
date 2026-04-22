@@ -23,13 +23,15 @@ var directions = []string{"N", "E", "S", "W"}
 
 // GameConfig holds the match configuration.
 type GameConfig struct {
-	Rows           int `json:"rows"`
-	Cols           int `json:"cols"`
-	MaxTurns       int `json:"max_turns"`
-	VisionRadius2  int `json:"vision_radius2"`
-	AttackRadius2  int `json:"attack_radius2"`
-	SpawnCost      int `json:"spawn_cost"`
-	EnergyInterval int `json:"energy_interval"`
+	Rows           int    `json:"rows"`
+	Cols           int    `json:"cols"`
+	MaxTurns       int    `json:"max_turns"`
+	VisionRadius2  int    `json:"vision_radius2"`
+	AttackRadius2  int    `json:"attack_radius2"`
+	SpawnCost      int    `json:"spawn_cost"`
+	EnergyInterval int    `json:"energy_interval"`
+	SeasonID       string `json:"season_id,omitempty"`
+	RulesVersion   string `json:"rules_version,omitempty"`
 }
 
 // Position is a grid coordinate.
@@ -126,6 +128,12 @@ func handleTurn(w http.ResponseWriter, r *http.Request, secret string) {
 	if err := json.Unmarshal(body, &state); err != nil {
 		http.Error(w, "invalid game state", http.StatusBadRequest)
 		return
+	}
+
+	if state.Turn == 0 {
+		log.Printf("match=%s season_id=%s rules_version=%s rows=%d cols=%d",
+			state.MatchID, state.Config.SeasonID, state.Config.RulesVersion,
+			state.Config.Rows, state.Config.Cols)
 	}
 
 	moves := computeMoves(&state)

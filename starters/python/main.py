@@ -91,6 +91,11 @@ class BotHandler(BaseHTTPRequestHandler):
             self.send_error(400, f"Invalid game state: {e}")
             return
 
+        if state.turn == 0:
+            season_id = state.config.get("season_id", "")
+            rules_version = state.config.get("rules_version", "")
+            print(f"match={state.match_id} season_id={season_id} rules_version={rules_version} rows={state.config['rows']} cols={state.config['cols']}")
+
         moves = compute_moves(state)
         turn = int(turn_str)
 

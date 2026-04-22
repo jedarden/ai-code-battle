@@ -43,6 +43,12 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("POST /api/register", regMW(http.HandlerFunc(s.handleRegister)).ServeHTTP)
 
+	// Bot profile edit — toggle debug_public (authenticated by shared_secret)
+	mux.HandleFunc("PATCH /api/bot/", s.handleBotPatch)
+
+	// Bot key rotation + optional retirement — §8.5
+	mux.HandleFunc("POST /api/rotate-key", s.handleRotateKey)
+
 	// Job coordination (for workers — authenticated, no public rate limit)
 	mux.HandleFunc("GET /api/job", s.handleGetJob)
 
@@ -64,6 +70,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 		metrics.RateLimitHits.WithLabelValues("feedback").Inc()
 	})
 	mux.HandleFunc("POST /api/feedback", fbMW(http.HandlerFunc(s.handleUIFeedback)).ServeHTTP)
+	mux.HandleFunc("GET /api/feedback/", s.handleGetFeedback)
+	mux.HandleFunc("POST /api/feedback/", fbMW(http.HandlerFunc(s.handleFeedbackUpvote)).ServeHTTP)
 
 	// Predictions — 60/hour per IP
 	predMW := s.predictLtr.Middleware(ipKey, func() {
@@ -120,6 +128,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Owner       string `json:"owner"`
 		EndpointURL string `json:"endpoint_url"`
+		DebugPublic bool   `json:"debug_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -184,9 +193,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// Insert bot into database
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO bots (bot_id, name, owner, endpoint_url, shared_secret, status)
-		VALUES ($1, $2, $3, $4, $5, 'active')
-	`, botID, req.Name, req.Owner, req.EndpointURL, encryptedSecret)
+		INSERT INTO bots (bot_id, name, owner, endpoint_url, shared_secret, status, debug_public)
+		VALUES ($1, $2, $3, $4, $5, 'active', $6)
+	`, botID, req.Name, req.Owner, req.EndpointURL, encryptedSecret, req.DebugPublic)
 	if err != nil {
 		log.Printf("failed to insert bot: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to register bot")
@@ -609,8 +618,9 @@ func (s *Server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 		Evolved    bool    `json:"evolved"`
 		Island     *string `json:"island,omitempty"`
 		Generation *int    `json:"generation,omitempty"`
-		ParentIDs  *string `json:"parent_ids,omitempty"`
-		CreatedAt  string  `json:"created_at"`
+		ParentIDs   *string `json:"parent_ids,omitempty"`
+		DebugPublic bool    `json:"debug_public"`
+		CreatedAt   string  `json:"created_at"`
 		LastActive *string `json:"last_active,omitempty"`
 	}
 
@@ -677,6 +687,199 @@ func (s *Server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// handleBotPatch handles PATCH /api/bot/{id}
+// Allows owners to toggle debug_public using their shared_secret for auth.
+func (s *Server) handleBotPatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Extract bot ID from path: /api/bot/{id}
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/bot/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		writeError(w, http.StatusBadRequest, "invalid bot ID")
+		return
+	}
+	botID := pathParts[0]
+
+	var req struct {
+		DebugPublic *bool   `json:"debug_public"`
+		APISecret   string  `json:"api_secret"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.DebugPublic == nil {
+		writeError(w, http.StatusBadRequest, "debug_public field is required")
+		return
+	}
+	if req.APISecret == "" {
+		writeError(w, http.StatusUnauthorized, "api_secret is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Verify the secret matches
+	var encryptedSecret string
+	err := s.db.QueryRowContext(ctx, `SELECT shared_secret FROM bots WHERE bot_id = $1`, botID).Scan(&encryptedSecret)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "bot not found")
+		return
+	} else if err != nil {
+		log.Printf("database error getting bot secret: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	// Decrypt stored secret for comparison
+	var storedSecret string
+	if s.cfg.EncryptionKey != "" {
+		storedSecret, err = decryptSecret(encryptedSecret, s.cfg.EncryptionKey)
+		if err != nil {
+			storedSecret = encryptedSecret
+		}
+	} else {
+		storedSecret = encryptedSecret
+	}
+
+	if storedSecret != req.APISecret {
+		writeError(w, http.StatusUnauthorized, "invalid api_secret")
+		return
+	}
+
+	// Update debug_public
+	_, err = s.db.ExecContext(ctx, `UPDATE bots SET debug_public = $1 WHERE bot_id = $2`, *req.DebugPublic, botID)
+	if err != nil {
+		log.Printf("failed to update debug_public for bot %s: %v", botID, err)
+		writeError(w, http.StatusInternalServerError, "failed to update")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"bot_id":       botID,
+		"debug_public": *req.DebugPublic,
+	})
+}
+
+// handleRotateKey handles POST /api/rotate-key (§8.5)
+// Authenticates with the current shared_secret, generates a new 256-bit secret,
+// encrypts it with AES-256-GCM, updates the bots table, and returns the new secret.
+// Optionally retires the bot when called with retire: true.
+func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		BotID  string `json:"bot_id"`
+		Secret string `json:"shared_secret"`
+		Retire bool   `json:"retire"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.BotID == "" || req.Secret == "" {
+		writeError(w, http.StatusBadRequest, "bot_id and shared_secret are required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Look up the bot and verify the current secret
+	var encryptedSecret string
+	var currentStatus string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT shared_secret, status FROM bots WHERE bot_id = $1`, req.BotID,
+	).Scan(&encryptedSecret, &currentStatus)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "bot not found")
+		return
+	} else if err != nil {
+		log.Printf("database error getting bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	// Decrypt stored secret for comparison
+	var storedSecret string
+	if s.cfg.EncryptionKey != "" {
+		storedSecret, err = decryptSecret(encryptedSecret, s.cfg.EncryptionKey)
+		if err != nil {
+			storedSecret = encryptedSecret
+		}
+	} else {
+		storedSecret = encryptedSecret
+	}
+
+	if storedSecret != req.Secret {
+		writeError(w, http.StatusUnauthorized, "invalid shared_secret")
+		return
+	}
+
+	// A retired bot cannot rotate its key again
+	if currentStatus == "retired" {
+		writeError(w, http.StatusConflict, "bot is retired")
+		return
+	}
+
+	// Generate new 256-bit secret
+	newSecret, err := generateSecret()
+	if err != nil {
+		log.Printf("failed to generate new secret for bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "failed to generate secret")
+		return
+	}
+
+	// Encrypt the new secret
+	var encryptedNew string
+	if s.cfg.EncryptionKey != "" {
+		encryptedNew, err = encryptSecret(newSecret, s.cfg.EncryptionKey)
+		if err != nil {
+			log.Printf("failed to encrypt new secret for bot %s: %v", req.BotID, err)
+			writeError(w, http.StatusInternalServerError, "failed to encrypt secret")
+			return
+		}
+	} else {
+		encryptedNew = newSecret
+	}
+
+	// Update the bot: always rotate the secret; optionally set status to retired
+	if req.Retire {
+		_, err = s.db.ExecContext(ctx,
+			`UPDATE bots SET shared_secret = $1, status = 'retired', last_active = NOW() WHERE bot_id = $2`,
+			encryptedNew, req.BotID)
+	} else {
+		_, err = s.db.ExecContext(ctx,
+			`UPDATE bots SET shared_secret = $1, last_active = NOW() WHERE bot_id = $2`,
+			encryptedNew, req.BotID)
+	}
+	if err != nil {
+		log.Printf("failed to update bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "failed to update bot")
+		return
+	}
+
+	log.Printf("rotated key for bot %s (retire=%v)", req.BotID, req.Retire)
+
+	resp := map[string]interface{}{
+		"bot_id":        req.BotID,
+		"shared_secret": newSecret,
+	}
+	if req.Retire {
+		resp["status"] = "retired"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleListBots handles GET /api/bots
@@ -1118,8 +1321,8 @@ func (s *Server) handlePredictionHistory(w http.ResponseWriter, r *http.Request)
 }
 
 // handleUIFeedback handles POST /api/feedback
-// Accepts community replay feedback per plan §13.6 (annotations, issues, etc.).
-// Stores in database or logs to disk.
+// Accepts community replay feedback per plan §13.6.
+// Stores in replay_feedback table with type enum: insight, mistake, idea, highlight.
 func (s *Server) handleUIFeedback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -1127,43 +1330,182 @@ func (s *Server) handleUIFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		MatchID  string                 `json:"match_id"`
-		Turn     int                    `json:"turn"`
-		Type     string                 `json:"type"` // "annotation", "issue", "suggestion"
-		Message  string                 `json:"message"`
-		Metadata map[string]interface{} `json:"metadata,omitempty"`
+		MatchID string `json:"match_id"`
+		Turn    int    `json:"turn"`
+		Type    string `json:"type"` // insight, mistake, idea, highlight
+		Body    string `json:"body"`
+		Author  string `json:"author"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	// Validate required fields
-	if req.MatchID == "" || req.Type == "" {
-		writeError(w, http.StatusBadRequest, "match_id and type are required")
+	if req.MatchID == "" || req.Type == "" || req.Body == "" {
+		writeError(w, http.StatusBadRequest, "match_id, type, and body are required")
+		return
+	}
+
+	validTypes := map[string]bool{"insight": true, "mistake": true, "idea": true, "highlight": true}
+	if !validTypes[req.Type] {
+		writeError(w, http.StatusBadRequest, "type must be one of: insight, mistake, idea, highlight")
+		return
+	}
+
+	if req.Author == "" {
+		req.Author = "Anonymous"
+	}
+
+	feedbackID, err := generateID("fb_", 6)
+	if err != nil {
+		log.Printf("failed to generate feedback ID: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to generate ID")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Try to store in database if ui_feedback table exists
-	metadataJSON, _ := json.Marshal(req.Metadata)
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO ui_feedback (match_id, turn, type, message, metadata, created_at)
-		VALUES ($1, $2, $3, $4, $5, NOW())
-		ON CONFLICT DO NOTHING
-	`, req.MatchID, req.Turn, req.Type, req.Message, metadataJSON)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO replay_feedback (feedback_id, match_id, turn, type, body, author, upvotes, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
+	`, feedbackID, req.MatchID, req.Turn, req.Type, req.Body, req.Author)
 
 	if err != nil {
-		// If table doesn't exist, log to file instead
-		log.Printf("[UI-FEEDBACK] match=%s turn=%d type=%s: %s", req.MatchID, req.Turn, req.Type, req.Message)
-		// Still return success to not break the UI
-	} else {
-		log.Printf("[UI-FEEDBACK] stored: match=%s turn=%d type=%s", req.MatchID, req.Turn, req.Type)
+		log.Printf("[FEEDBACK] db insert failed: match=%s turn=%d type=%s: %v", req.MatchID, req.Turn, req.Type, err)
+		writeError(w, http.StatusInternalServerError, "failed to store feedback")
+		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "recorded"})
+	log.Printf("[FEEDBACK] stored: id=%s match=%s turn=%d type=%s", feedbackID, req.MatchID, req.Turn, req.Type)
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "recorded", "feedback_id": feedbackID})
+}
+
+// handleFeedbackUpvote handles POST /api/feedback/{feedback_id}/upvote
+// One upvote per visitor (deduped by voter_id from localStorage UUID).
+func (s *Server) handleFeedbackUpvote(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Extract feedback_id from path: /api/feedback/{feedback_id}/upvote
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/feedback/"), "/")
+	if len(pathParts) < 2 || pathParts[0] == "" || pathParts[1] != "upvote" {
+		writeError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+	feedbackID := pathParts[0]
+
+	var req struct {
+		VoterID string `json:"voter_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.VoterID == "" {
+		writeError(w, http.StatusBadRequest, "voter_id is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Insert upvote (UNIQUE constraint on feedback_id+voter_id prevents duplicates)
+	var inserted bool
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO feedback_upvotes (feedback_id, voter_id)
+		VALUES ($1, $2)
+		ON CONFLICT (feedback_id, voter_id) DO NOTHING
+		RETURNING true
+	`, feedbackID, req.VoterID).Scan(&inserted)
+
+	if err == sql.ErrNoRows {
+		// Already upvoted
+		writeJSON(w, http.StatusOK, map[string]string{"status": "already_upvoted"})
+		return
+	} else if err != nil {
+		log.Printf("[FEEDBACK] upvote failed: feedback=%s voter=%s: %v", feedbackID, req.VoterID, err)
+		writeError(w, http.StatusInternalServerError, "failed to upvote")
+		return
+	}
+
+	// Increment upvote counter on the feedback row
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE replay_feedback SET upvotes = upvotes + 1 WHERE feedback_id = $1
+	`, feedbackID)
+	if err != nil {
+		log.Printf("[FEEDBACK] upvote counter increment failed: %v", err)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "upvoted"})
+}
+
+// handleGetFeedback handles GET /api/feedback/{match_id}
+// Returns all feedback for a match sorted by turn then upvotes descending.
+func (s *Server) handleGetFeedback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Extract match_id from path: /api/feedback/{match_id}
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/feedback/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		writeError(w, http.StatusBadRequest, "invalid match ID")
+		return
+	}
+	matchID := pathParts[0]
+
+	// Don't treat upvote or other sub-paths as match_id lookups
+	if matchID == "upvote" {
+		writeError(w, http.StatusBadRequest, "invalid match ID")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT feedback_id, match_id, turn, type, body, author, upvotes,
+		       to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') as created_at
+		FROM replay_feedback
+		WHERE match_id = $1
+		ORDER BY turn ASC, upvotes DESC, created_at ASC
+	`, matchID)
+	if err != nil {
+		log.Printf("[FEEDBACK] query failed for match %s: %v", matchID, err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer rows.Close()
+
+	type FeedbackEntry struct {
+		FeedbackID string `json:"feedback_id"`
+		MatchID    string `json:"match_id"`
+		Turn       int    `json:"turn"`
+		Type       string `json:"type"`
+		Body       string `json:"body"`
+		Author     string `json:"author"`
+		Upvotes    int    `json:"upvotes"`
+		CreatedAt  string `json:"created_at"`
+	}
+
+	feedback := make([]FeedbackEntry, 0)
+	for rows.Next() {
+		var f FeedbackEntry
+		if err := rows.Scan(&f.FeedbackID, &f.MatchID, &f.Turn, &f.Type, &f.Body, &f.Author, &f.Upvotes, &f.CreatedAt); err != nil {
+			log.Printf("[FEEDBACK] scan error: %v", err)
+			continue
+		}
+		feedback = append(feedback, f)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"match_id": matchID,
+		"feedback": feedback,
+	})
 }
 
 // authenticateWorker checks if the request has a valid worker API key

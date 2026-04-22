@@ -44,6 +44,10 @@ struct GameConfig {
     attack_radius2: u32,
     spawn_cost: u32,
     energy_interval: u32,
+    #[serde(default)]
+    season_id: Option<String>,
+    #[serde(default)]
+    rules_version: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -146,6 +150,16 @@ async fn handle_turn(
 
     let game_state: GameState =
         serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    if game_state.turn == 0 {
+        let season_id = game_state.config.season_id.as_deref().unwrap_or("");
+        let rules_version = game_state.config.rules_version.as_deref().unwrap_or("");
+        println!(
+            "match={} season_id={} rules_version={} rows={} cols={}",
+            game_state.match_id, season_id, rules_version,
+            game_state.config.rows, game_state.config.cols
+        );
+    }
 
     let moves = compute_moves(&game_state);
     let response = MoveResponse { moves };

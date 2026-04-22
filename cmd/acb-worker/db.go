@@ -57,12 +57,14 @@ type DBJob struct {
 
 // DBMatch represents match metadata from the database.
 type DBMatch struct {
-	ID          string     `json:"id"`
-	Status      string     `json:"status"`
-	Winner      *int       `json:"winner"` // player index
-	MapID       string     `json:"map_id"`
-	CreatedAt   time.Time  `json:"created_at"`
-	CompletedAt *time.Time `json:"completed_at"`
+	ID           string     `json:"id"`
+	Status       string     `json:"status"`
+	Winner       *int       `json:"winner"` // player index
+	MapID        string     `json:"map_id"`
+	CreatedAt    time.Time  `json:"created_at"`
+	CompletedAt  *time.Time `json:"completed_at"`
+	SeasonID     string     `json:"season_id"`
+	RulesVersion string     `json:"rules_version"`
 }
 
 // DBParticipant represents a match participant.
@@ -163,14 +165,18 @@ func (c *DBClient) ClaimJob(ctx context.Context, jobID string, workerID string) 
 		return nil, fmt.Errorf("failed to get job: %w", err)
 	}
 
-	// Get match details
+	// Get match details + active season info
 	var match DBMatch
 	err = tx.QueryRowContext(ctx, `
-		SELECT match_id, status, winner, map_id, created_at, completed_at
-		FROM matches WHERE match_id = $1
+		SELECT m.match_id, m.status, m.winner, m.map_id, m.created_at, m.completed_at,
+		       COALESCE(s.season_id, ''), COALESCE(s.rules_version::text, '')
+		FROM matches m
+		LEFT JOIN seasons s ON s.status = 'active'
+		WHERE m.match_id = $1
 	`, job.MatchID).Scan(
 		&match.ID, &match.Status, &match.Winner, &match.MapID,
 		&match.CreatedAt, &match.CompletedAt,
+		&match.SeasonID, &match.RulesVersion,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get match: %w", err)

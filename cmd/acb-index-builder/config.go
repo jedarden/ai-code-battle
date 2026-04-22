@@ -41,6 +41,13 @@ type Config struct {
 	// Output directory for generated files
 	OutputDir string
 
+	// Site build image — when set, the index builder pulls the latest SPA
+	// shell from the container registry instead of using baked-in assets.
+	SiteBuildImage   string // e.g. forgejo.ardenone.com/ai-code-battle/acb-site-build:latest
+	SiteBuildPath    string // path to dist within the image (default: "dist")
+	RegistryUsername string
+	RegistryPassword string
+
 	// LLM configuration for narrative generation
 	LLMBaseURL string
 	LLMAPIKey  string
@@ -75,6 +82,11 @@ func LoadConfig() *Config {
 		B2BucketName: os.Getenv("ACB_B2_BUCKET"),
 
 		OutputDir: getEnv("ACB_OUTPUT_DIR", "/tmp/acb-index"),
+
+		SiteBuildImage:   os.Getenv("ACB_SITE_BUILD_IMAGE"),
+		SiteBuildPath:    getEnv("ACB_SITE_BUILD_PATH", "dist"),
+		RegistryUsername: os.Getenv("ACB_REGISTRY_USERNAME"),
+		RegistryPassword: os.Getenv("ACB_REGISTRY_PASSWORD"),
 
 		LLMBaseURL: getEnv("ACB_LLM_BASE_URL", ""),
 		LLMAPIKey:  os.Getenv("ACB_LLM_API_KEY"),

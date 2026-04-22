@@ -165,8 +165,16 @@ CREATE TABLE IF NOT EXISTS bots (
     consec_fails  INTEGER NOT NULL DEFAULT 0,
     archetype     VARCHAR(64),
     crash_strikes INTEGER NOT NULL DEFAULT 0,
-    cooldown_until TIMESTAMPTZ
+    cooldown_until TIMESTAMPTZ,
+    debug_public  BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+-- Add debug_public column if it doesn't exist (idempotent migration)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bots' AND column_name = 'debug_public') THEN
+        ALTER TABLE bots ADD COLUMN debug_public BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS matches (
     match_id      VARCHAR(32) PRIMARY KEY,
@@ -246,6 +254,27 @@ CREATE TABLE IF NOT EXISTS playlist_matches (
     PRIMARY KEY (playlist_slug, match_id)
 );
 CREATE INDEX IF NOT EXISTS idx_playlist_matches_playlist ON playlist_matches(playlist_slug, sort_order);
+
+-- Community replay feedback (plan §13.6, §8.3)
+CREATE TABLE IF NOT EXISTS replay_feedback (
+    feedback_id   VARCHAR(32) PRIMARY KEY,
+    match_id      VARCHAR(32) NOT NULL REFERENCES matches(match_id),
+    turn          INTEGER NOT NULL,
+    type          VARCHAR(16) NOT NULL CHECK (type IN ('insight', 'mistake', 'idea', 'highlight')),
+    body          TEXT NOT NULL,
+    author        VARCHAR(128) NOT NULL,
+    upvotes       INTEGER NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_match ON replay_feedback(match_id, turn);
+
+-- Upvote deduplication: one upvote per visitor per feedback item
+CREATE TABLE IF NOT EXISTS feedback_upvotes (
+    feedback_id VARCHAR(32) NOT NULL REFERENCES replay_feedback(feedback_id) ON DELETE CASCADE,
+    voter_id    VARCHAR(36) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (feedback_id, voter_id)
+);
 `
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {
