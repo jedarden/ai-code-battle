@@ -514,3 +514,45 @@ export async function fetchEnrichedIndex(): Promise<EnrichedIndex> {
     return response.json();
   });
 }
+
+// Rivalry types (matches data/meta/rivalries.json from index builder §13.5)
+export interface RivalryBot {
+  id: string;
+  name: string;
+}
+
+export interface RivalryRecord {
+  a_wins: number;
+  b_wins: number;
+  draws: number;
+}
+
+export interface RivalryStreak {
+  holder: string;
+  length: number;
+}
+
+export interface RivalryEntry {
+  bot_a: RivalryBot;
+  bot_b: RivalryBot;
+  matches: number;
+  record: RivalryRecord;
+  closest_match?: string;
+  longest_streak?: RivalryStreak;
+  recent_matches: string[];
+  narrative: string;
+  score: number;
+}
+
+export interface RivalriesIndex {
+  updated_at: string;
+  rivalries: RivalryEntry[];
+}
+
+export async function fetchRivalries(): Promise<RivalriesIndex> {
+  return swr('rivalries', async () => {
+    const response = await fetch('/data/meta/rivalries.json');
+    if (!response.ok) return { updated_at: '', rivalries: [] };
+    return response.json();
+  });
+}

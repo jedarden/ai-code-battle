@@ -14,15 +14,14 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/aicodebattle/acb/engine"
+	"github.com/aicodebattle/acb/metrics"
 )
-
 // Config holds worker configuration.
 type Config struct {
 	DatabaseURL  string        // PostgreSQL connection URL
@@ -89,31 +88,22 @@ func main() {
 	}
 
 	// Create metrics
-	metrics := NewMetrics(cfg.WorkerID)
+	wMetrics := NewMetrics(cfg.WorkerID)
 
 	// Create worker
 	worker := &Worker{
 		cfg:       cfg,
 		db:        dbClient,
 		b2:        b2Client,
-		metrics:   metrics,
+		metrics:   wMetrics,
 		logger:    log.New(os.Stdout, fmt.Sprintf("[worker-%s] ", cfg.WorkerID), log.LstdFlags),
 		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
 		heartbeat: *heartbeat,
 	}
 
-	// Start metrics HTTP server
-	metricsAddr := getEnv("ACB_METRICS_ADDR", ":9090")
-	metricsServer := &http.Server{
-		Addr:    metricsAddr,
-		Handler: metrics.Handler(),
-	}
-	go func() {
-		worker.logger.Printf("Metrics server listening on %s", metricsAddr)
-		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			worker.logger.Printf("Metrics server error: %v", err)
-		}
-	}()
+	// Start Prometheus metrics server (shared package provides /metrics + /health)
+	metricsSrv := metrics.StartServer()
+	defer metricsSrv.Close()
 
 	// Set up signal handling
 	ctx, cancel := context.WithCancel(context.Background())
@@ -128,11 +118,6 @@ func main() {
 
 	// Run worker loop
 	worker.Run(ctx)
-
-	// Shut down metrics server gracefully
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
-	metricsServer.Shutdown(shutdownCtx)
 }
 
 // getEnv gets an environment variable with a default value.
@@ -221,19 +206,20 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 		return err
 	}
 	w.metrics.RecordMatch(time.Since(matchStart))
-
+	metrics.MatchThroughput.Inc()
 	// Upload replay to B2
 	replayURL := ""
 	if w.b2 != nil {
 		uploadStart := time.Now()
 		replayURL, err = w.uploadReplay(ctx, claimData.Match.ID, replay)
+		uploadSec := time.Since(uploadStart).Seconds()
 		if err != nil {
 			w.metrics.RecordReplayUploadError()
 			w.logger.Printf("Failed to upload replay: %v", err)
-			// Continue without replay URL - match result is more important
 		} else {
 			replaySize, _ := json.Marshal(replay)
 			w.metrics.RecordReplayUpload(time.Since(uploadStart), len(replaySize))
+			metrics.ReplayUploadLatency.Observe(uploadSec)
 			w.logger.Printf("Uploaded replay to %s", replayURL)
 		}
 	}

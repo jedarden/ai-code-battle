@@ -83,6 +83,8 @@ const loadFeedbackPage = () => import('./pages/feedback').then(async m => {
 });
 // Docs API page (separate chunk from compete docs)
 const loadDocsApiPage = () => import('./pages/docs-api').then(m => m.renderDocsApiPage);
+// Rivalries page (pre-computed from index builder §13.5)
+const loadRivalriesPage = () => import('./pages/rivalries').then(m => m.renderRivalriesPage);
 
 // 404
 const loadNotFoundPage = () => import('./pages/not-found').then(m => m.renderNotFoundPage);
@@ -235,7 +237,7 @@ router
   .on('/docs', redirect('/compete/docs'))
   .on('/docs/api', redirect('/compete/docs'))
   .on('/clip-maker', redirect('/watch/replays'))
-  .on('/rivalries', redirect('/watch/replays'))
+  .on('/rivalries', lazyRoute(loadRivalriesPage))
   .on('/feedback', lazyRoute(loadFeedbackPage))
   .on('/compete/feedback', lazyRoute(loadFeedbackPage))
   .on('/compete/docs/api', lazyRoute(loadDocsApiPage))
