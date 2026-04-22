@@ -84,6 +84,13 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/predict", predMW(http.HandlerFunc(s.handlePredict)).ServeHTTP)
 	mux.HandleFunc("GET /api/predictions/open", s.handleOpenPredictions)
 	mux.HandleFunc("GET /api/predictions/history", s.handlePredictionHistory)
+
+	// Map voting — 10/hour per IP (§14.6)
+	mapVoteMW := s.voteLtr.Middleware(ipKey, func() {
+		metrics.RateLimitHits.WithLabelValues("map_vote").Inc()
+	})
+	mux.HandleFunc("POST /api/vote/map", mapVoteMW(http.HandlerFunc(s.handleMapVote)).ServeHTTP)
+	mux.HandleFunc("GET /api/vote/map/", s.handleGetMapVotes)
 }
 
 // ipKey extracts the client IP from the request for rate limiting.
@@ -1526,6 +1533,142 @@ func (s *Server) authenticateWorker(r *http.Request) bool {
 	}
 
 	return parts[1] == s.cfg.WorkerAPIKey
+}
+
+// handleMapVote handles POST /api/vote/map (§14.6)
+// Accepts {map_id, voter_id, vote: +1|-1}, enforces UNIQUE(map_id, voter_id),
+// and returns the current net vote count for the map.
+func (s *Server) handleMapVote(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		MapID   string `json:"map_id"`
+		VoterID string `json:"voter_id"`
+		Vote    int    `json:"vote"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.MapID == "" || req.VoterID == "" {
+		writeError(w, http.StatusBadRequest, "map_id and voter_id are required")
+		return
+	}
+	if req.Vote != 1 && req.Vote != -1 {
+		writeError(w, http.StatusBadRequest, "vote must be +1 or -1")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if s.db == nil {
+		writeError(w, http.StatusInternalServerError, "database not configured")
+		return
+	}
+
+	// Verify the map exists
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM maps WHERE map_id = $1)`, req.MapID).Scan(&exists)
+	if err != nil {
+		log.Printf("[MAPVOTE] db error checking map %s: %v", req.MapID, err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "map not found")
+		return
+	}
+
+	// Insert or update the vote (UNIQUE constraint on map_id + voter_id)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO map_votes (map_id, voter_id, vote)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (map_id, voter_id) DO UPDATE SET vote = $3
+	`, req.MapID, req.VoterID, req.Vote)
+	if err != nil {
+		log.Printf("[MAPVOTE] insert failed: map=%s voter=%s: %v", req.MapID, req.VoterID, err)
+		writeError(w, http.StatusInternalServerError, "failed to record vote")
+		return
+	}
+
+	// Get net vote count
+	var netVotes int
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(vote), 0) FROM map_votes WHERE map_id = $1
+	`, req.MapID).Scan(&netVotes)
+	if err != nil {
+		log.Printf("[MAPVOTE] sum failed for map %s: %v", req.MapID, err)
+		netVotes = 0
+	}
+
+	log.Printf("[MAPVOTE] recorded: map=%s voter=%s vote=%d net=%d", req.MapID, req.VoterID, req.Vote, netVotes)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"map_id":    req.MapID,
+		"vote":      req.Vote,
+		"net_votes": netVotes,
+	})
+}
+
+// handleGetMapVotes handles GET /api/vote/map/{map_id}
+// Returns the net vote count and, if voter_id is provided, the caller's existing vote.
+func (s *Server) handleGetMapVotes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Extract map_id from path: /api/vote/map/{map_id}
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/vote/map/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		writeError(w, http.StatusBadRequest, "invalid map ID")
+		return
+	}
+	mapID := pathParts[0]
+
+	voterID := r.URL.Query().Get("voter_id")
+
+	if s.db == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"map_id":    mapID,
+			"net_votes": 0,
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var netVotes int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(vote), 0) FROM map_votes WHERE map_id = $1
+	`, mapID).Scan(&netVotes)
+	if err != nil {
+		log.Printf("[MAPVOTE] sum query failed for map %s: %v", mapID, err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	resp := map[string]interface{}{
+		"map_id":    mapID,
+		"net_votes": netVotes,
+	}
+
+	if voterID != "" {
+		var myVote int
+		err := s.db.QueryRowContext(ctx, `
+			SELECT vote FROM map_votes WHERE map_id = $1 AND voter_id = $2
+		`, mapID, voterID).Scan(&myVote)
+		if err == nil {
+			resp["my_vote"] = myVote
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func getEnv(key, defaultValue string) string {

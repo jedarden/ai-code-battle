@@ -64,6 +64,7 @@ type RunConfig struct {
 	// Timing
 	CycleInterval  time.Duration // delay between cycles (0 = continuous)
 	IslandCooldown time.Duration // min time between same-island evolutions
+	RetirementCheckInterval time.Duration // interval between periodic retirement checks
 
 	// Infrastructure
 	LLMURL         string
@@ -74,6 +75,10 @@ type RunConfig struct {
 	UseNsjail      bool
 	LiveExportPath string
 	UploadR2       bool
+
+	// Declarative config for K8s manifests (§10.8)
+	DeclarativeConfigRepo    string // git repo URL for K8s manifests
+	DeclarativeConfigBranch  string // git branch for K8s manifests
 
 	// Languages to evolve (in priority order)
 	Languages []string
@@ -88,9 +93,10 @@ func DefaultRunConfig() RunConfig {
 		TopBotLimit:       10,
 		NashThreshold:     0.50,
 		WinRateLowerBound: 0.40,
-		RatingThreshold:   1000.0,
+		RatingThreshold:         800.0,
 		PopCap:            50,
-		CycleInterval:     5 * time.Minute,
+		CycleInterval:          5 * time.Minute,
+		RetirementCheckInterval: 1 * time.Hour,
 		IslandCooldown:    2 * time.Minute,
 		LLMURL:            envOrDefault("ACB_LLM_URL", "http://zai-proxy-apexalgo.tail1b1987.ts.net:8080"),
 		RepoDir:           envOrDefault("ACB_REPO_DIR", "."),
@@ -187,13 +193,18 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 		cancel()
 	}()
 
+	// Start periodic retirement ticker (§10.8)
+	if cfg.RetirementCheckInterval > 0 {
+		go startRetirementTicker(ctx, db, store, cfg, &stats, *verbose)
+	}
+
 	langIdx := 0
 	islandIdx := 0
 
 	log.Printf("Evolution loop starting (continuous=%v, dry-run=%v)", *continuous, *dryRun)
 	if *verbose {
-		log.Printf("Config: nash=%.2f, win-lower=%.2f, max-retries=%d, languages=%v",
-			cfg.NashThreshold, cfg.WinRateLowerBound, cfg.MaxRetries, cfg.Languages)
+		log.Printf("Config: nash=%.2f, win-lower=%.2f, max-retries=%d, languages=%v, retirement-check=%v",
+			cfg.NashThreshold, cfg.WinRateLowerBound, cfg.MaxRetries, cfg.Languages, cfg.RetirementCheckInterval)
 	}
 
 	for {
@@ -725,6 +736,49 @@ func exportLive(ctx context.Context, db *sql.DB, cfg RunConfig, verbose bool) {
 
 	if verbose {
 		log.Printf("  Exported live.json (%d programs)", data.TotalPrograms)
+	}
+}
+
+// startRetirementTicker runs periodic retirement checks (§10.8).
+// This enforces the 7-day low-rating rule and 50-bot population cap.
+func startRetirementTicker(ctx context.Context, db *sql.DB, store *evolverdb.Store, cfg RunConfig, stats *RunStats, verbose bool) {
+	log.Printf("starting retirement ticker (every %s)", cfg.RetirementCheckInterval)
+	ticker := time.NewTicker(cfg.RetirementCheckInterval)
+	defer ticker.Stop()
+
+	promCfg := promoter.DefaultConfig()
+	promCfg.Registry = cfg.Registry
+	promCfg.RepoDir = cfg.RepoDir
+	promCfg.KubectlServer = cfg.KubectlServer
+	promCfg.EncryptionKey = cfg.EncryptionKey
+	promCfg.RatingThreshold = cfg.RatingThreshold
+	promCfg.PopCap = cfg.PopCap
+	promCfg.DeclarativeConfigRepo = cfg.DeclarativeConfigRepo
+	promCfg.DeclarativeConfigBranch = cfg.DeclarativeConfigBranch
+
+	p := promoter.New(store, db, promCfg)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("stopping retirement ticker")
+			return
+		case <-ticker.C:
+			retired, err := p.EnforcePolicy(ctx)
+			if err != nil {
+				log.Printf("retirement ticker error: %v", err)
+				continue
+			}
+			if len(retired) > 0 {
+				stats.Retired += len(retired)
+				for _, r := range retired {
+					if verbose {
+						log.Printf("  Retired %s (rating %.0f): %s", r.BotID, r.DisplayRating, r.Reason)
+					}
+				}
+				log.Printf("retirement ticker: retired %d bot(s)", len(retired))
+			}
+		}
 	}
 }
 

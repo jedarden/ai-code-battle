@@ -165,7 +165,7 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	}
 
 	// Generate all index files
-	if err := generateAllIndexes(data, cfg.OutputDir, db); err != nil {
+	if err := generateAllIndexes(data, cfg.OutputDir, db, cfg); err != nil {
 		return fmt.Errorf("generate indexes: %w", err)
 	}
 

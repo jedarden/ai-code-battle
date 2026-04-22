@@ -41,6 +41,7 @@ export interface MatchSummary {
   winner_id: string | null;
   turns: number | null;
   end_reason: string | null;
+  enriched?: boolean;
 }
 
 export interface BotProfile {
@@ -555,4 +556,48 @@ export async function fetchRivalries(): Promise<RivalriesIndex> {
     if (!response.ok) return { updated_at: '', rivalries: [] };
     return response.json();
   });
+}
+
+// Map voting types (§14.6)
+
+export interface MapVoteResponse {
+  map_id: string;
+  vote: number;
+  net_votes: number;
+}
+
+export interface MapVotesResponse {
+  map_id: string;
+  net_votes: number;
+  my_vote?: number;
+}
+
+export function getOrCreateVoterId(): string {
+  let id = localStorage.getItem('acb_voter_id');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('acb_voter_id', id);
+  }
+  return id;
+}
+
+export async function submitMapVote(mapId: string, vote: 1 | -1): Promise<MapVoteResponse> {
+  const voterId = getOrCreateVoterId();
+  const response = await fetch(`${API_BASE}/vote/map`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ map_id: mapId, voter_id: voterId, vote }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(err.error || `Failed to submit vote: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchMapVotes(mapId: string): Promise<MapVotesResponse> {
+  const voterId = getOrCreateVoterId();
+  const response = await fetch(`${API_BASE}/vote/map/${encodeURIComponent(mapId)}?voter_id=${encodeURIComponent(voterId)}`);
+  if (!response.ok) throw new Error(`Failed to fetch map votes: ${response.status}`);
+  return response.json();
 }

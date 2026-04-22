@@ -290,12 +290,14 @@ function appendRemainingMatches(target: HTMLElement, matches: MatchSummary[]): v
 
 function renderMatchCard(match: MatchSummary): string {
   const completedAt = match.completed_at ? formatTimestamp(match.completed_at) : 'In progress';
+  const enrichedBadge = match.enriched ? `<span class="enriched-badge" title="Narrated replay with AI commentary">Narrated</span>` : '';
 
   return `
     <div class="match-card" data-match-id="${escapeHtml(match.id)}">
       <button class="match-card-toggle" type="button" aria-label="Expand match details" aria-expanded="false" aria-controls="match-details-${escapeHtml(match.id)}">
         <div class="match-header">
           <span class="match-id">${escapeHtml(match.id.slice(0, 8))}</span>
+          ${enrichedBadge}
           <span class="match-time">${completedAt}</span>
           <span class="match-expand-icon" aria-hidden="true">▸</span>
         </div>

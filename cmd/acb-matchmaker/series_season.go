@@ -479,7 +479,7 @@ func (m *Matchmaker) selectSeriesMap(ctx context.Context, gameNum int, rng *rand
 
 	query := fmt.Sprintf(`
 		SELECT map_id, grid_width, grid_height FROM maps
-		WHERE player_count = 2 AND status = 'active'
+		WHERE player_count = 2 AND status IN ('active', 'classic')
 		ORDER BY %s LIMIT 1
 	`, orderBy)
 

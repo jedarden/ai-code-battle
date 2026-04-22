@@ -246,8 +246,8 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 		sb.WriteString(fmt.Sprintf("Arc type: Rivalry Intensifies\n"))
 		sb.WriteString(fmt.Sprintf("Bots: %s vs %s\n", req.BotName, req.BotBName))
 		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
-		sb.WriteString(fmt.Sprintf("Head-to-head record this week: %s %d - %s %d (%d total matches)\n",
-			req.BotName, req.BotAWins, req.BotBName, req.BotBWins, req.TotalMatches))
+		sb.WriteString(fmt.Sprintf("Head-to-head record this week: %d-%d %s vs %s (%d total matches)\n",
+			req.BotAWins, req.BotBWins, req.BotName, req.BotBName, req.TotalMatches))
 		if len(req.KeyMatches) > 0 {
 			sb.WriteString("Recent encounters (turning points):\n")
 			for _, m := range req.KeyMatches {

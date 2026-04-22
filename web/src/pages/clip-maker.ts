@@ -104,6 +104,20 @@ function buildHTML(): string {
               <div class="progress-bar"><div id="clip-progress-fill" class="progress-fill" style="width:0%"></div></div>
               <span id="clip-progress-label">0%</span>
             </div>
+            <div id="clip-share-panel" class="clip-share-panel hidden">
+              <div class="panel-header"><span>Share</span></div>
+              <div id="clip-share-text" class="share-preview-text"></div>
+              <div class="share-buttons">
+                <button id="share-twitter-btn" class="btn share-btn share-twitter">𝕏 Post</button>
+                <button id="share-reddit-btn" class="btn share-btn share-reddit">Reddit</button>
+                <button id="share-discord-btn" class="btn share-btn share-discord">Discord</button>
+                <button id="share-copy-btn" class="btn share-btn share-copy">Copy Link</button>
+              </div>
+              <div id="clip-share-native" class="hidden" style="margin-top:8px">
+                <button id="share-native-btn" class="btn primary" style="width:100%">Share via System…</button>
+              </div>
+              <div id="share-toast" class="share-toast hidden">Copied!</div>
+            </div>
           </div>
         </div>
 
@@ -278,15 +292,20 @@ function initClipMaker(): void {
     }
   });
 
+  let lastExportBlob: Blob | null = null;
+  let lastExportExt = '';
+
   // ── MP4 export ────────────────────────────────────────────────────────────
   document.getElementById('clip-export-mp4')!.addEventListener('click', async () => {
     if (!replay) return;
+    lastExportBlob = null;
     await exportVideo(replay, 'mp4');
   });
 
   // ── GIF export ────────────────────────────────────────────────────────────
   document.getElementById('clip-export-gif')!.addEventListener('click', async () => {
     if (!replay) return;
+    lastExportBlob = null;
     await exportGIF(replay);
   });
 
@@ -341,7 +360,11 @@ function initClipMaker(): void {
 
     hideProgress();
     const blob = new Blob(chunks, { type: mimeType });
-    downloadBlob(blob, `acb-clip-${r.match_id}-${preset.name.replace(/\s+/g, '_')}.webm`);
+    const filename = `acb-clip-${r.match_id}-${preset.name.replace(/\s+/g, '_')}.webm`;
+    lastExportBlob = blob;
+    lastExportExt = 'webm';
+    downloadBlob(blob, filename);
+    showSharePanel(r, startTurn, endTurn, blob);
   }
 
   async function exportGIF(r: Replay): Promise<void> {
@@ -381,7 +404,12 @@ function initClipMaker(): void {
 
     hideProgress();
     const gif = encoder.encode();
-    downloadBlob(new Blob([gif.buffer as ArrayBuffer], { type: 'image/gif' }), `acb-clip-${r.match_id}-${preset.name.replace(/\s+/g, '_')}.gif`);
+    const blob = new Blob([gif.buffer as ArrayBuffer], { type: 'image/gif' });
+    const filename = `acb-clip-${r.match_id}-${preset.name.replace(/\s+/g, '_')}.gif`;
+    lastExportBlob = blob;
+    lastExportExt = 'gif';
+    downloadBlob(blob, filename);
+    showSharePanel(r, startTurn, endTurn, blob);
   }
 
   function showProgress(pct: number): void {
@@ -401,6 +429,119 @@ function initClipMaker(): void {
   function setProgress(pct: number): void {
     (document.getElementById('clip-progress-fill') as HTMLElement).style.width = `${pct.toFixed(0)}%`;
     (document.getElementById('clip-progress-label') as HTMLElement).textContent = `${pct.toFixed(0)}%`;
+  }
+
+  // ── Share panel ──────────────────────────────────────────────────────────
+
+  function generateShareText(r: Replay): string {
+    const names = r.players.map(p => p.name);
+    const scores = r.result.scores;
+    const winnerName = r.players[r.result.winner]?.name ?? 'Unknown';
+    const loserIdx = r.players.findIndex((_, i) => i !== r.result.winner);
+    const loserName = loserIdx >= 0 ? r.players[loserIdx].name : '';
+
+    if (names.length === 2) {
+      return `${winnerName} defeats ${loserName} ${scores[0]}-${scores[1]} on AI Code Battle!`;
+    }
+    return `${winnerName} wins! ${names.map((n, i) => `${n}: ${scores[i]}`).join(', ')}`;
+  }
+
+  function replayURL(matchId: string, startTurn: number, endTurn: number): string {
+    return `https://aicodebattle.com/replay/${matchId}#turns=${startTurn}-${endTurn}`;
+  }
+
+  function showSharePanel(r: Replay, startTurn: number, endTurn: number, blob: Blob): void {
+    const panel = document.getElementById('clip-share-panel')!;
+    const textEl = document.getElementById('clip-share-text')!;
+    const nativeEl = document.getElementById('clip-share-native')!;
+
+    const text = generateShareText(r);
+    const url = replayURL(r.match_id, startTurn, endTurn);
+    textEl.textContent = `${text} ${url}`;
+
+    // Web Share API availability
+    const file = new File([blob], `acb-clip-${r.match_id}.${lastExportExt}`, { type: blob.type });
+    const canShareFiles = 'canShare' in navigator && navigator.canShare({ files: [file] });
+    if (canShareFiles || 'share' in navigator) {
+      nativeEl.classList.remove('hidden');
+    } else {
+      nativeEl.classList.add('hidden');
+    }
+
+    // Wire share buttons
+    const twitterBtn = document.getElementById('share-twitter-btn')!;
+    const redditBtn = document.getElementById('share-reddit-btn')!;
+    const discordBtn = document.getElementById('share-discord-btn')!;
+    const copyBtn = document.getElementById('share-copy-btn')!;
+    const nativeBtn = document.getElementById('share-native-btn')!;
+
+    // Clone and replace to remove old listeners
+    const newTwitter = twitterBtn.cloneNode(true) as HTMLElement;
+    const newReddit = redditBtn.cloneNode(true) as HTMLElement;
+    const newDiscord = discordBtn.cloneNode(true) as HTMLElement;
+    const newCopy = copyBtn.cloneNode(true) as HTMLElement;
+    const newNative = nativeBtn.cloneNode(true) as HTMLElement;
+    twitterBtn.replaceWith(newTwitter);
+    redditBtn.replaceWith(newReddit);
+    discordBtn.replaceWith(newDiscord);
+    copyBtn.replaceWith(newCopy);
+    nativeBtn.replaceWith(newNative);
+
+    newTwitter.addEventListener('click', () => {
+      const tweetText = encodeURIComponent(`${text} ${url}`);
+      window.open(`https://twitter.com/intent/tweet?text=${tweetText}`, '_blank', 'noopener');
+    });
+
+    newReddit.addEventListener('click', () => {
+      const md = `[${text}](${url})`;
+      copyToClipboard(md);
+      flashToast('Reddit markdown copied!');
+    });
+
+    newDiscord.addEventListener('click', () => {
+      downloadBlob(blob, `acb-clip-${r.match_id}.${lastExportExt}`);
+      copyToClipboard(`${text} ${url}`);
+      flashToast('File downloaded — link copied for caption!');
+    });
+
+    newCopy.addEventListener('click', () => {
+      copyToClipboard(`${text} ${url}`);
+      flashToast('Link copied!');
+    });
+
+    newNative.addEventListener('click', async () => {
+      try {
+        const shareData: ShareData = { text: `${text} ${url}`, title: 'AI Code Battle Clip' };
+        if (canShareFiles) shareData.files = [file];
+        await navigator.share(shareData);
+      } catch {
+        // User cancelled or not supported — do nothing
+      }
+    });
+
+    panel.classList.remove('hidden');
+  }
+
+  function copyToClipboard(text: string): void {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+  }
+
+  function flashToast(msg: string): void {
+    const toast = document.getElementById('share-toast')!;
+    toast.textContent = msg;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 2000);
   }
 }
 
@@ -772,6 +913,20 @@ const CLIP_STYLES = `
 .preview-frame canvas { display: block; max-width: 100%; }
 .preview-nav { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 12px; }
 .frame-label { color: var(--text-muted); font-size: 0.875rem; min-width: 80px; text-align: center; }
+.clip-share-panel.hidden { display: none; }
+.share-preview-text { font-size: 0.8rem; color: var(--text-muted); background: var(--bg-primary); padding: 8px 10px; border-radius: 6px; margin-bottom: 12px; line-height: 1.4; word-break: break-word; }
+.share-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.share-btn { flex: 1; min-width: 70px; font-size: 0.8rem; padding: 8px 6px; }
+.share-twitter { background: #1d9bf0; color: #fff; border-color: #1d9bf0; }
+.share-twitter:hover { background: #1a8cd8; }
+.share-reddit { background: #ff4500; color: #fff; border-color: #ff4500; }
+.share-reddit:hover { background: #e03e00; }
+.share-discord { background: #5865f2; color: #fff; border-color: #5865f2; }
+.share-discord:hover { background: #4752c4; }
+.share-copy { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border); }
+.share-copy:hover { background: var(--border); }
+.share-toast { position: relative; margin-top: 8px; padding: 6px 10px; font-size: 0.8rem; color: var(--success); background: rgba(34,197,94,0.15); border-radius: 4px; text-align: center; }
+.share-toast.hidden { display: none; }
 @media (max-width: 768px) {
   .clip-layout { flex-direction: column; }
   .clip-settings-col { width: 100%; }

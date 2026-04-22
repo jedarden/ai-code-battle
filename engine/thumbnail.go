@@ -5,7 +5,6 @@ import (
 	"image/color"
 	"image/png"
 	"io"
-	"math"
 )
 
 // ThumbnailConfig configures thumbnail rendering.
@@ -89,7 +88,12 @@ func RenderMidGameThumbnail(replay *Replay, w io.Writer) error {
 	if turnNum >= len(replay.Turns) {
 		turnNum = len(replay.Turns) - 1
 	}
-	return RenderThumbnailPNG(replay, turnNum, DefaultThumbnailConfig())
+	cfg := DefaultThumbnailConfig()
+	img, err := RenderThumbnail(replay, turnNum, cfg)
+	if err != nil {
+		return err
+	}
+	return png.Encode(w, img)
 }
 
 func drawBackground(img *image.RGBA, c color.Color) {
@@ -181,8 +185,8 @@ func drawCores(img *image.RGBA, cores []ReplayCoreState, cols int, cellW, cellH 
 
 func drawEnergy(img *image.RGBA, energy []Position, cols int, cellW, cellH float64, c color.Color) {
 	for _, e := range energy {
-		cx := int(float64(e.Col+0.5) * cellW)
-		cy := int(float64(e.Row+0.5) * cellH)
+		cx := int((float64(e.Col) + 0.5) * cellW)
+		cy := int((float64(e.Row) + 0.5) * cellH)
 		r := int(cellW * 0.3)
 
 		drawDiamond(img, cx, cy, r, c)
@@ -219,13 +223,6 @@ func drawRectOutline(img *image.RGBA, x0, y0, x1, y1 int, c color.Color) {
 		img.Set(x0, y, c)
 		img.Set(x1-1, y, c)
 	}
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 // SelectThumbnailTurn selects the most interesting turn for thumbnail generation.

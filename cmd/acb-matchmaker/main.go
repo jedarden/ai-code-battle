@@ -30,6 +30,7 @@ type Config struct {
 	ReaperSecs        int
 	SeriesSchedSecs   int
 	SeasonResetSecs   int
+	FairnessAuditSecs int
 	BotTimeoutSecs    int
 	StaleJobMinutes   int
 	MaxConsecFails    int
@@ -56,6 +57,7 @@ func loadConfig() Config {
 		ReaperSecs:        envInt("ACB_REAPER_INTERVAL", 300),
 		SeriesSchedSecs:   envInt("ACB_SERIES_SCHED_INTERVAL", 120),
 		SeasonResetSecs:   envInt("ACB_SEASON_RESET_INTERVAL", 300),
+		FairnessAuditSecs: envInt("ACB_FAIRNESS_AUDIT_INTERVAL", 3600),
 		BotTimeoutSecs:    envInt("ACB_BOT_TIMEOUT", 5),
 		StaleJobMinutes:   envInt("ACB_STALE_JOB_MINUTES", 15),
 		MaxConsecFails:    envInt("ACB_MAX_CONSEC_FAILS", 3),

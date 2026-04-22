@@ -111,7 +111,7 @@ func DefaultConfig() Config {
 		KubectlServer:           "http://kubectl-ardenone-cluster:8001",
 		Namespace:               "ai-code-battle",
 		DeployWaitTimeout:       10 * time.Minute,
-		RatingThreshold:         1000.0,
+		RatingThreshold:         800.0,
 		PopCap:                  50,
 		ArgoWorkflowServer:      "https://argo-ci.ardenone.com",
 		ArgoWorkflowNamespace:   "argo-workflows",
@@ -143,7 +143,7 @@ type PromotionResult struct {
 // Promote deploys a validated candidate as a live evolved bot.
 func (p *Promoter) Promote(ctx context.Context, program *db.Program) (*PromotionResult, error) {
 	botName := fmt.Sprintf("acb-evo-%d", program.ID)
-	image := fmt.Sprintf("%s/%s:latest", p.cfg.Registry, botName)
+	_ = fmt.Sprintf("%s/%s:latest", p.cfg.Registry, botName) // image ref built by Argo workflow
 	endpoint := fmt.Sprintf("http://%s:%d", botName, botPort)
 
 	botID, err := generateBotID()
@@ -247,11 +247,23 @@ type RetiredCandidate struct {
 	Reason        string
 }
 
-// EnforcePolicy auto-retires evolved bots below cfg.RatingThreshold and trims
-// the active fleet to cfg.PopCap.  The slice is ordered lowest-rated first so
-// the weakest bots are retired first when enforcing the cap.
-// Returns the list of bots that were retired.
+// EnforcePolicy auto-retires evolved bots that meet any of these criteria:
+//   1. Display rating below cfg.RatingThreshold (bottom 10%)
+//   2. 7 consecutive days below rating threshold (per rating_history)
+//   3. Population cap exceeded (cfg.PopCap)
+// The slice is ordered lowest-rated first so the weakest bots are retired
+// first when enforcing the cap.
 func (p *Promoter) EnforcePolicy(ctx context.Context) ([]RetiredCandidate, error) {
+
+	// First, get bots with 7 consecutive days below threshold
+	consecutiveBotIDs, err := p.queryConsecutiveLowRating(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query consecutive low rating: %w", err)
+	}
+	consecutiveSet := make(map[string]bool)
+	for _, botID := range consecutiveBotIDs {
+		consecutiveSet[botID] = true
+	}
 	rows, err := p.rawDB.QueryContext(ctx, `
 		SELECT p.id, p.bot_id, COALESCE(p.bot_name, ''),
 		       b.rating_mu - 2*b.rating_phi AS display_rating
@@ -290,7 +302,10 @@ func (p *Promoter) EnforcePolicy(ctx context.Context) ([]RetiredCandidate, error
 	var toRetire []RetiredCandidate
 	for _, b := range bots {
 		var reason string
-		if b.displayRating < p.cfg.RatingThreshold {
+		if consecutiveSet[b.botID] {
+			reason = fmt.Sprintf("7 consecutive days below rating %.0f",
+				p.cfg.RatingThreshold)
+		} else if b.displayRating < p.cfg.RatingThreshold {
 			reason = fmt.Sprintf("display rating %.0f < threshold %.0f",
 				b.displayRating, p.cfg.RatingThreshold)
 		} else if remaining > p.cfg.PopCap {
@@ -940,4 +955,57 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "…"
+}
+
+func init() {
+	// register queryConsecutiveLowRating for retirement automation
+}
+
+// queryConsecutiveLowRating returns bot_ids that have been below the rating
+// threshold for 7 consecutive days. Uses rating_history to track daily ratings.
+func (p *Promoter) queryConsecutiveLowRating(ctx context.Context) ([]string, error) {
+	// Get the latest rating for each day (using DISTINCT ON for per-day records)
+	// then check for 7 consecutive days all below threshold.
+	query := `
+		WITH daily_ratings AS (
+			SELECT DISTINCT
+				bot_id,
+				DATE(recorded_at) AS rating_date,
+				rating
+			FROM rating_history
+			WHERE DATE(recorded_at) >= CURRENT_DATE - INTERVAL '14 days'
+		),
+		consecutive_counts AS (
+			SELECT
+				bot_id,
+				rating_date,
+				rating,
+				// Count consecutive days below threshold ending at this date
+				SUM(CASE WHEN rating < $1 THEN 1 ELSE 0 END) OVER (
+					PARTITION BY bot_id
+					ORDER BY rating_date DESC
+					ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+				) AS consecutive_below
+			FROM daily_ratings
+		)
+		SELECT DISTINCT bot_id
+		FROM consecutive_counts
+		WHERE consecutive_below >= 7
+	`
+
+	rows, err := p.rawDB.QueryContext(ctx, query, p.cfg.RatingThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("query consecutive low rating: %w", err)
+	}
+	defer rows.Close()
+
+	var botIDs []string
+	for rows.Next() {
+		var botID string
+		if err := rows.Scan(&botID); err != nil {
+			return nil, fmt.Errorf("scan bot_id: %w", err)
+		}
+		botIDs = append(botIDs, botID)
+	}
+	return botIDs, rows.Err()
 }

@@ -217,7 +217,7 @@ func TestGenerateMatchIndex(t *testing.T) {
 	}
 
 	botNameMap := map[string]string{"bot1": "Bot1", "bot2": "Bot2"}
-	if err := generateMatchIndex(data, tmpDir, botNameMap); err != nil {
+	if err := generateMatchIndex(data, tmpDir, botNameMap, &Config{}); err != nil {
 		t.Fatalf("generateMatchIndex failed: %v", err)
 	}
 

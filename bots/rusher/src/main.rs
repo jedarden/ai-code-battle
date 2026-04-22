@@ -9,7 +9,8 @@ mod strategy;
 
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
@@ -65,7 +66,7 @@ async fn handle_turn(
     State(state): State<Arc<Mutex<BotState>>>,
     headers: HeaderMap,
     body: String,
-) -> Result<Json<MoveResponse>, StatusCode> {
+) -> Result<impl IntoResponse, StatusCode> {
     // Extract auth headers
     let match_id = headers
         .get("X-ACB-Match-Id")
@@ -107,9 +108,12 @@ async fn handle_turn(
 
     // Sign response
     let response_body = serde_json::to_string(&response).unwrap();
-    let _response_sig = sign_response(&state.secret, match_id, turn, &response_body);
+    let response_sig = sign_response(&state.secret, match_id, turn, &response_body);
 
-    Ok(Json(response))
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert("X-ACB-Signature", HeaderValue::from_str(&response_sig).unwrap());
+
+    Ok((resp_headers, Json(response)))
 }
 
 /// Handle health check requests

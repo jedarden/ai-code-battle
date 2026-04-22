@@ -1,4 +1,7 @@
-import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent, DebugInfo, ViewMode, EnrichedCommentary } from './types';
+import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent, DebugInfo, ViewMode, EnrichedCommentary, TranscriptEntry } from './types';
+
+// Export TranscriptEntry type for use in other modules
+export type { TranscriptEntry };
 
 // ── Particle System (pooled, 100 objects, zero GC) ──────────────────────────────
 interface Particle {
@@ -986,6 +989,307 @@ export class ReplayViewer {
     });
 
     return `Turn ${this.currentTurn}: ${descriptions.join(', ')}.`;
+  }
+
+  // ── Transcript Generation (§15.3 Screen Reader Transcript) ──────────────────────
+
+  /**
+   * Generate a detailed turn-by-turn transcript for screen readers.
+   * Returns an array of transcript entries, one per turn.
+   */
+  generateTranscript(): TranscriptEntry[] {
+    if (!this.replay) return [];
+
+    const transcript: TranscriptEntry[] = [];
+    const { players, win_prob } = this.replay;
+
+    for (let turnIdx = 0; turnIdx < this.replay.turns.length; turnIdx++) {
+      const turn = this.replay.turns[turnIdx];
+      const entry = this.generateTurnTranscript(turnIdx, turn, players, win_prob);
+      transcript.push(entry);
+    }
+
+    return transcript;
+  }
+
+  /**
+   * Generate a detailed transcript entry for a single turn.
+   */
+  private generateTurnTranscript(
+    turnIdx: number,
+    turn: ReplayTurn,
+    players: ReplayPlayer[],
+    winProb?: number[][]
+  ): TranscriptEntry {
+    const parts: string[] = [];
+
+    // Turn header
+    parts.push(`Turn ${turnIdx}:`);
+
+    // Player moves summary
+    const moveSummaries = this.summarizePlayerMoves(turn, turnIdx, players);
+    if (moveSummaries.length > 0) {
+      parts.push(moveSummaries.join('. '));
+    }
+
+    // Combat events
+    const combatSummary = this.summarizeCombatEvents(turn);
+    if (combatSummary) {
+      parts.push(combatSummary);
+    }
+
+    // Core captures
+    const captureSummary = this.summarizeCoreCaptures(turn);
+    if (captureSummary) {
+      parts.push(captureSummary);
+    }
+
+    // Energy collection
+    const energySummary = this.summarizeEnergyCollection(turn, players);
+    if (energySummary) {
+      parts.push(energySummary);
+    }
+
+    // Bot spawns
+    const spawnSummary = this.summarizeBotSpawns(turn, players);
+    if (spawnSummary) {
+      parts.push(spawnSummary);
+    }
+
+    // Win probability
+    if (winProb && winProb[turnIdx]) {
+      const probs = winProb[turnIdx];
+      const probSummary = probs.map((p, i) => `${players[i].name} ${Math.round(p * 100)}%`).join(', ');
+      parts.push(`Win probability: ${probSummary}.`);
+    }
+
+    return {
+      turn: turnIdx,
+      text: parts.join(' '),
+    };
+  }
+
+  /**
+   * Summarize player movements for a turn.
+   * Returns array of strings like "Player 1 (SwarmBot) moved 5 bots east."
+   */
+  private summarizePlayerMoves(turn: ReplayTurn, turnIdx: number, players: ReplayPlayer[]): string[] {
+    const movesByPlayer: Map<number, { byDirection: Map<string, number>, total: number }> = new Map();
+
+    // Initialize for all players
+    players.forEach((_, idx) => {
+      movesByPlayer.set(idx, { byDirection: new Map(), total: 0 });
+    });
+
+    // Count moves by direction per player
+    // We need to compare with previous turn to detect movements
+    if (turnIdx > 0) {
+      const prevTurn = this.replay!.turns[turnIdx - 1];
+      const prevBots = new Map(prevTurn.bots.map(b => [b.id, b]));
+
+      for (const bot of turn.bots) {
+        if (!bot.alive) continue;
+        const prevBot = prevBots.get(bot.id);
+        if (!prevBot || !prevBot.alive) continue;
+
+        const dr = bot.position.row - prevBot.position.row;
+        const dc = bot.position.col - prevBot.position.col;
+
+        // Handle toroidal wrapping
+        const rows = this.replay!.map.rows;
+        const cols = this.replay!.map.cols;
+        if (Math.abs(dr) > rows / 2) {
+          // Wrapped vertically
+        }
+        if (Math.abs(dc) > cols / 2) {
+          // Wrapped horizontally
+        }
+
+        let direction: string | null = null;
+        if (dr === -1 && dc === 0) direction = 'north';
+        else if (dr === 1 && dc === 0) direction = 'south';
+        else if (dr === 0 && dc === 1) direction = 'east';
+        else if (dr === 0 && dc === -1) direction = 'west';
+
+        if (direction) {
+          const playerMoves = movesByPlayer.get(bot.owner)!;
+          const count = playerMoves.byDirection.get(direction) ?? 0;
+          playerMoves.byDirection.set(direction, count + 1);
+          playerMoves.total++;
+        }
+      }
+    }
+
+    const summaries: string[] = [];
+    for (const [playerIdx, moves] of movesByPlayer) {
+      if (moves.total === 0) continue;
+
+      const directionParts: string[] = [];
+      const dirNames: Record<string, string> = {
+        north: 'north',
+        south: 'south',
+        east: 'east',
+        west: 'west',
+      };
+
+      for (const [dir, count] of moves.byDirection) {
+        directionParts.push(`${count} ${dirNames[dir]}`);
+      }
+
+      const playerName = players[playerIdx].name;
+      summaries.push(`${playerName} moved ${directionParts.join(', ')}.`);
+    }
+
+    return summaries;
+  }
+
+  /**
+   * Summarize combat events (bot deaths) for a turn.
+   */
+  private summarizeCombatEvents(turn: ReplayTurn): string | null {
+    const events = turn.events ?? [];
+    const deathEvents = events.filter(e => e.type === 'bot_died');
+
+    if (deathEvents.length === 0) return null;
+
+    // Group deaths by position (combat at same location)
+    const deathsByPosition = new Map<string, Array<{ owner: number; count: number }>>();
+
+    for (const event of deathEvents) {
+      const details = event.details as Record<string, unknown>;
+      const pos = details.position as Position | undefined;
+      const owner = details.owner as number ?? 0;
+
+      if (!pos) continue;
+
+      const key = `${pos.row},${pos.col}`;
+      if (!deathsByPosition.has(key)) {
+        deathsByPosition.set(key, []);
+      }
+
+      // Check if this owner already has deaths at this position
+      const existing = deathsByPosition.get(key)!.find(d => d.owner === owner);
+      if (existing) {
+        existing.count++;
+      } else {
+        deathsByPosition.get(key)!.push({ owner, count: 1 });
+      }
+    }
+
+    const combatParts: string[] = [];
+    for (const [posKey, deaths] of deathsByPosition) {
+      const [row, col] = posKey.split(',').map(Number);
+      const deathDescriptions = deaths.map(d => {
+        const playerName = this.replay!.players[d.owner].name;
+        return `${d.count} ${playerName} unit${d.count > 1 ? 's' : ''}`;
+      }).join(', ');
+
+      combatParts.push(`Combat at (${row},${col}): ${deathDescriptions} killed.`);
+    }
+
+    return combatParts.join(' ');
+  }
+
+  /**
+   * Summarize core captures for a turn.
+   */
+  private summarizeCoreCaptures(turn: ReplayTurn): string | null {
+    const events = turn.events ?? [];
+    const captureEvents = events.filter(e => e.type === 'core_captured');
+
+    if (captureEvents.length === 0) return null;
+
+    const captures = captureEvents.map(e => {
+      const details = e.details as Record<string, unknown>;
+      const oldOwner = details.old_owner as number ?? 0;
+      const newOwner = details.new_owner as number ?? 0;
+      const pos = details.position as Position | undefined;
+
+      const oldPlayerName = this.replay!.players[oldOwner].name;
+      const newPlayerName = this.replay!.players[newOwner].name;
+      const posStr = pos ? ` at (${pos.row},${pos.col})` : '';
+
+      return `${newPlayerName} captured ${oldPlayerName}'s core${posStr}.`;
+    });
+
+    return captures.join(' ');
+  }
+
+  /**
+   * Summarize energy collection for a turn.
+   */
+  private summarizeEnergyCollection(turn: ReplayTurn, players: ReplayPlayer[]): string | null {
+    const events = turn.events ?? [];
+    const energyEvents = events.filter(e => e.type === 'energy_collected');
+
+    if (energyEvents.length === 0) return null;
+
+    // Group by player
+    const energyByPlayer = new Map<number, number>();
+    for (const event of energyEvents) {
+      const details = event.details as Record<string, unknown>;
+      const owner = details.owner as number ?? 0;
+      const count = energyByPlayer.get(owner) ?? 0;
+      energyByPlayer.set(owner, count + 1);
+    }
+
+    const parts: string[] = [];
+    for (const [playerIdx, count] of energyByPlayer) {
+      const playerName = players[playerIdx].name;
+      const positions = energyEvents
+        .filter(e => (e.details as Record<string, unknown>).owner === playerIdx)
+        .map(e => {
+          const pos = (e.details as Record<string, unknown>).position as Position | undefined;
+          return pos ? `(${pos.row},${pos.col})` : '';
+        })
+        .filter(Boolean)
+        .slice(0, 3); // Limit to first 3 positions
+
+      const posStr = positions.length > 0
+        ? ` at ${positions.join(', ')}${positions.length < energyEvents.filter(e => (e.details as Record<string, unknown>).owner === playerIdx).length ? '...' : ''}`
+        : '';
+
+      parts.push(`${playerName} collected ${count} energy${posStr}.`);
+    }
+
+    return parts.join(' ');
+  }
+
+  /**
+   * Summarize bot spawns for a turn.
+   */
+  private summarizeBotSpawns(turn: ReplayTurn, players: ReplayPlayer[]): string | null {
+    const events = turn.events ?? [];
+    const spawnEvents = events.filter(e => e.type === 'bot_spawned');
+
+    if (spawnEvents.length === 0) return null;
+
+    // Group by player
+    const spawnsByPlayer = new Map<number, number>();
+    for (const event of spawnEvents) {
+      const details = event.details as Record<string, unknown>;
+      const owner = details.owner as number ?? 0;
+      const count = spawnsByPlayer.get(owner) ?? 0;
+      spawnsByPlayer.set(owner, count + 1);
+    }
+
+    const parts: string[] = [];
+    for (const [playerIdx, count] of spawnsByPlayer) {
+      const playerName = players[playerIdx].name;
+      parts.push(`${playerName} spawned ${count} bot${count > 1 ? 's' : ''}.`);
+    }
+
+    return parts.join(' ');
+  }
+
+  // Get transcript for a specific turn (for ARIA announcements)
+  getTranscriptForTurn(turn: number): string {
+    if (!this.replay) return '';
+    const turnData = this.replay.turns[turn];
+    if (!turnData) return '';
+
+    const entry = this.generateTurnTranscript(turn, turnData, this.replay.players, this.replay.win_prob);
+    return entry.text;
   }
 
   // Draw a player shape (circle, square, triangle, etc.)

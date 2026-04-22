@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"sort"
 	"testing"
 	"time"
 )
@@ -56,6 +57,9 @@ func (m *MockS3Client) listObjects(ctx context.Context, prefix string) ([]R2Obje
 			})
 		}
 	}
+	sort.Slice(objects, func(i, j int) bool {
+		return objects[i].LastModified.Before(objects[j].LastModified)
+	})
 	return objects, nil
 }
 

@@ -134,6 +134,14 @@ const server = http.createServer((req, res) => {
         return;
       }
 
+      if (state.turn === 0) {
+        const seasonId = state.config.season_id || "";
+        const rulesVersion = state.config.rules_version || "";
+        console.log(
+          `match=${state.match_id} season_id=${seasonId} rules_version=${rulesVersion} rows=${state.config.rows} cols=${state.config.cols}`
+        );
+      }
+
       const moves = computeMoves(state);
       const responseBody = JSON.stringify({ moves });
       const responseSig = signResponse(

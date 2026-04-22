@@ -35,6 +35,7 @@ func (m *Matchmaker) StartTickers(ctx context.Context) {
 	go m.runTicker(ctx, "stale-reaper", time.Duration(m.cfg.ReaperSecs)*time.Second, m.tickStaleReaper)
 	go m.runTicker(ctx, "series-scheduler", time.Duration(m.cfg.SeriesSchedSecs)*time.Second, m.tickSeriesScheduler)
 	go m.runTicker(ctx, "season-reset", time.Duration(m.cfg.SeasonResetSecs)*time.Second, m.tickSeasonReset)
+	go m.runTicker(ctx, "fairness-audit", time.Duration(m.cfg.FairnessAuditSecs)*time.Second, m.tickFairnessAudit)
 }
 
 func (m *Matchmaker) runTicker(ctx context.Context, name string, interval time.Duration, fn func(context.Context)) {
@@ -306,25 +307,44 @@ func bestCandidate(pool []candidateBot) candidateBot {
 	return best
 }
 
-// selectMapLRU returns the active map for playerCount with the oldest last_used_at.
-// Falls back to a random procedural seed if no maps exist for that player count.
+// selectMapLRU returns a map for playerCount with LRU priority.
+// Active maps are preferred; probation maps are included with 50% reduced
+// selection probability. Retired maps are excluded. Classic maps are always eligible.
 func (m *Matchmaker) selectMapLRU(ctx context.Context, playerCount int, rng *rand.Rand) (string, int, int, int64) {
+	// Try active+classic maps first (full probability).
 	var mapID string
 	var gridH, gridW int
 	err := m.db.QueryRowContext(ctx, `
 		SELECT mp.map_id, mp.grid_height, mp.grid_width
 		FROM maps mp
 		LEFT JOIN map_scores ms ON ms.map_id = mp.map_id
-		WHERE mp.player_count = $1 AND mp.status = 'active'
+		WHERE mp.player_count = $1 AND mp.status IN ('active', 'classic')
 		ORDER BY COALESCE(ms.last_used_at, '1970-01-01 00:00:00+00'::timestamptz) ASC
 		LIMIT 1
 	`, playerCount).Scan(&mapID, &gridH, &gridW)
-	if err != nil {
-		seed := rng.Int63()
-		rows, cols := gridForPlayers(playerCount)
-		return fmt.Sprintf("map_%d", seed%100000), rows, cols, seed
+	if err == nil {
+		return mapID, gridH, gridW, rng.Int63()
 	}
-	return mapID, gridH, gridW, rng.Int63()
+
+	// No active/classic maps — try probation maps with reduced probability (50% skip chance).
+	if rng.Float64() < 0.5 {
+		err = m.db.QueryRowContext(ctx, `
+			SELECT mp.map_id, mp.grid_height, mp.grid_width
+			FROM maps mp
+			LEFT JOIN map_scores ms ON ms.map_id = mp.map_id
+			WHERE mp.player_count = $1 AND mp.status = 'probation'
+			ORDER BY COALESCE(ms.last_used_at, '1970-01-01 00:00:00+00'::timestamptz) ASC
+			LIMIT 1
+		`, playerCount).Scan(&mapID, &gridH, &gridW)
+		if err == nil {
+			return mapID, gridH, gridW, rng.Int63()
+		}
+	}
+
+	// No maps at all — generate from seed.
+	seed := rng.Int63()
+	rows, cols := gridForPlayers(playerCount)
+	return fmt.Sprintf("map_%d", seed%100000), rows, cols, seed
 }
 
 // gridForPlayers returns default grid dimensions for a given player count,

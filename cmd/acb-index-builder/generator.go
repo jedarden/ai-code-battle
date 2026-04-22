@@ -112,7 +112,7 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB, cfg *Conf
 	}
 
 	// Generate individual bot profiles
-	if err := generateBotProfiles(data, outputDir); err != nil {
+	if err := generateBotProfiles(data, outputDir, cfg); err != nil {
 		return fmt.Errorf("bot profiles: %w", err)
 	}
 
@@ -224,7 +224,7 @@ func generateBotDirectory(data *IndexData, outputDir string) error {
 	return writeJSON(filepath.Join(outputDir, "data", "bots", "index.json"), dir)
 }
 
-func generateBotProfiles(data *IndexData, outputDir string) error {
+func generateBotProfiles(data *IndexData, outputDir string, cfg *Config) error {
 	botsDir := filepath.Join(outputDir, "data", "bots")
 
 	for _, bot := range data.Bots {
@@ -252,7 +252,7 @@ func generateBotProfiles(data *IndexData, outputDir string) error {
 				}
 			}
 			if participated {
-				summary := matchToSummary(m, data)
+				summary := matchToSummary(m, data, cfg)
 				recentMatches = append(recentMatches, summary)
 				if len(recentMatches) >= 20 {
 					break
