@@ -5,7 +5,7 @@
 // Agentation lets users click any element, annotate it, and generate structured
 // markdown output that describes the UI change in terms an AI agent can act on.
 // Submissions are stored in localStorage and optionally POSTed to /api/feedback
-// when the backend API is available.
+// when the backend API is available (per plan §13.6).
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
@@ -26,7 +26,7 @@ function handleSubmit(markdown: string, annotations: Annotation[]): void {
 
   // POST to the API if available (non-blocking, best-effort)
   const apiBase = (window as unknown as Record<string, string>)['ACB_API_BASE'] ?? '/api'
-  fetch(`${apiBase}/ui-feedback`, {
+  fetch(`${apiBase}/feedback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ markdown, annotations, submitted_at: new Date().toISOString() }),

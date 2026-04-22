@@ -43,8 +43,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/bot/", s.handleGetBot)
 	mux.HandleFunc("GET /api/bots", s.handleListBots)
 
-	// UI feedback (Agentation overlay)
-	mux.HandleFunc("POST /api/ui-feedback", s.handleUIFeedback)
+	// Community replay feedback per plan §13.6
+	mux.HandleFunc("POST /api/feedback", s.handleUIFeedback)
 
 	// Predictions
 	mux.HandleFunc("POST /api/predict", s.handlePredict)
@@ -1072,8 +1072,8 @@ func (s *Server) handlePredictionHistory(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// handleUIFeedback handles POST /api/ui-feedback
-// Accepts Agentation UI feedback (annotations, issues, etc.).
+// handleUIFeedback handles POST /api/feedback
+// Accepts community replay feedback per plan §13.6 (annotations, issues, etc.).
 // Stores in database or logs to disk.
 func (s *Server) handleUIFeedback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

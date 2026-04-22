@@ -71,3 +71,30 @@ func TestWriteError(t *testing.T) {
 		t.Errorf("body = %v, want error=test error", body)
 	}
 }
+
+// TestFeedbackEndpointPath asserts that the community feedback endpoint is
+// served at /api/feedback per plan §13.6 — not /api/ui-feedback.
+func TestFeedbackEndpointPath(t *testing.T) {
+	srv := newTestServer()
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// POST /api/feedback should be routed (200 from handler, not 404)
+	req := httptest.NewRequest("POST", "/api/feedback", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Handler returns 400 for empty body, not 404 — proves the route is registered
+	if w.Code == http.StatusNotFound {
+		t.Fatal("POST /api/feedback returned 404 — route not registered (expected per plan §13.6)")
+	}
+
+	// POST /api/ui-feedback (old name) must NOT be routed
+	reqOld := httptest.NewRequest("POST", "/api/ui-feedback", nil)
+	wOld := httptest.NewRecorder()
+	mux.ServeHTTP(wOld, reqOld)
+
+	if wOld.Code != http.StatusNotFound {
+		t.Errorf("POST /api/ui-feedback returned %d, want 404 — old route name should not be registered", wOld.Code)
+	}
+}
