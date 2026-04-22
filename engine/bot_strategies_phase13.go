@@ -178,9 +178,9 @@ func (b *ScoutBot) bestExploreDir(pos Position, config Config, turn int, claimed
 			}
 			lastSeen, ok := b.seen[p]
 			if !ok {
-				score += config.Turn + 1
+				score += turn + 1
 			} else {
-				staleness := config.Turn - lastSeen
+				staleness := turn - lastSeen
 				if staleness > 0 {
 					score += staleness
 				}
@@ -443,7 +443,6 @@ func (b *RaiderBot) GetMoves(state *VisibleState) ([]Move, error) {
 		return nil, nil
 	}
 
-	enemySet := posSetFromBots(enemyBots)
 	wallSet := posSetFromPositions(state.Walls)
 	energySet := posSetFromPositions(state.Energy)
 	isolated := findIsolatedEnemies(enemyBots, config)
