@@ -22,10 +22,14 @@ function computeMoves(state) {
     (state.energy || []).map((e) => posKey(e.row, e.col))
   );
 
-  const committed = new Set();
+  // Reserve all starting positions so no two bots end up on the same tile.
+  // When a bot moves away, its old cell is freed for others.
+  const committed = new Set(
+    myBots.map((b) => posKey(b.position.row, b.position.col))
+  );
   const moves = [];
 
-  // Bots already adjacent to enemies get priority so they press the attack
+  // Bots closest to enemies decide first — they get priority on attack positions
   myBots.sort((a, b) => {
     const da = nearestEnemyDist2(a.position, enemyBots, rows, cols);
     const db = nearestEnemyDist2(b.position, enemyBots, rows, cols);
@@ -36,7 +40,6 @@ function computeMoves(state) {
     const br = bot.position.row;
     const bc = bot.position.col;
 
-    // Find the nearest enemy
     const target = findNearestEnemy(br, bc, enemyBots, rows, cols);
 
     let bestDir = null;
@@ -52,42 +55,54 @@ function computeMoves(state) {
       let score = 0;
 
       if (target) {
-        // Primary: move toward nearest enemy — minimize squared distance
         const distToTarget = distance2(
           nr, nc, target.position.row, target.position.col, rows, cols
         );
-        score -= distToTarget * 10;
 
-        // Bonus for being within attack range (press the engagement)
+        // Close distance to nearest enemy as fast as possible
+        score -= distToTarget * 100;
+
+        // Heavy bonus for staying in attack range — press the engagement
         if (distToTarget <= attack_radius2) {
-          score += 50;
+          score += 200;
         }
 
-        // Secondary: prefer directions that also close distance to other enemies
+        // Also prefer closing distance to other enemies (don't tunnel-vision)
         let totalEnemyDist = 0;
         for (const e of enemyBots) {
           totalEnemyDist += distance2(
             nr, nc, e.position.row, e.position.col, rows, cols
           );
         }
-        score -= totalEnemyDist * 0.1;
+        score -= totalEnemyDist;
 
-        // Small bonus for collecting energy if it's along the way
+        // Grab energy only when it's directly along the attack path
         if (energySet.has(nk)) {
           score += 5;
         }
       } else {
-        // No enemies visible — march toward enemy core
+        // No enemies visible — rush enemy core to raze it
         if (enemyCores.length > 0) {
           const coreDist = nearestCoreDist(
             nr, nc, enemyCores, rows, cols
           );
-          score -= coreDist * 10;
+          score -= coreDist * 100;
+        } else {
+          // No targets at all — spread outward to explore
+          // Prefer moving away from other friendly bots
+          let friendProximity = 0;
+          for (const other of myBots) {
+            if (other === bot) continue;
+            friendProximity += distance2(
+              nr, nc, other.position.row, other.position.col, rows, cols
+            );
+          }
+          score += friendProximity * 0.5;
         }
 
-        // Collect energy opportunistically
+        // Collect energy while roaming (we need it to keep spawning)
         if (energySet.has(nk)) {
-          score += 3;
+          score += 10;
         }
       }
 
@@ -97,20 +112,16 @@ function computeMoves(state) {
       }
     }
 
-    // Commit the destination to prevent self-collision
-    const targetKey = bestDir
-      ? posKey(...moveDir(br, bc, bestDir, rows, cols))
-      : posKey(br, bc);
-
-    if (!committed.has(targetKey)) {
-      committed.add(targetKey);
-      if (bestDir) {
-        moves.push({
-          position: { row: br, col: bc },
-          direction: bestDir,
-        });
-      }
+    if (bestDir) {
+      const [nr, nc] = moveDir(br, bc, bestDir, rows, cols);
+      committed.delete(posKey(br, bc));
+      committed.add(posKey(nr, nc));
+      moves.push({
+        position: { row: br, col: bc },
+        direction: bestDir,
+      });
     }
+    // If no direction is viable the bot holds; its starting cell stays in committed
   }
 
   return moves;
