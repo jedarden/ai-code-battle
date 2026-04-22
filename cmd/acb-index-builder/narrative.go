@@ -140,8 +140,9 @@ func (c *LLMClient) GenerateNarrative(ctx context.Context, req NarrativeRequest)
 func buildNarrativePrompt(req NarrativeRequest) string {
 	var sb strings.Builder
 
+	// §15.5 instruction: sports-journalism narrative with structured contextual match data
 	sb.WriteString("Write a 200-word sports-journalism narrative about this event in the AI Code Battle platform. ")
-	sb.WriteString("Be dramatic but factual. Reference specific matches, ratings, and rivalries. ")
+	sb.WriteString("Be dramatic but factual. Reference specific matches, ELO before/after deltas, rivalry context, and critical turning points. ")
 	sb.WriteString("Write in present tense with a punchy, journalistic tone. Do not use emojis.\n\n")
 
 	// Season and standings context
@@ -170,7 +171,7 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 			sb.WriteString(fmt.Sprintf("Lineage: generation %d, parents: %s\n", req.Generation, strings.Join(req.ParentIDs, ", ")))
 		}
 		if len(req.KeyMatches) > 0 {
-			sb.WriteString("Key matches (turning points in the climb):\n")
+			sb.WriteString("Critical moments (turning points in the climb):\n")
 			for _, m := range req.KeyMatches {
 				outcome := "Lost to"
 				if m.Won {
@@ -249,7 +250,7 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 		sb.WriteString(fmt.Sprintf("Head-to-head record this week: %d-%d %s vs %s (%d total matches)\n",
 			req.BotAWins, req.BotBWins, req.BotName, req.BotBName, req.TotalMatches))
 		if len(req.KeyMatches) > 0 {
-			sb.WriteString("Recent encounters (turning points):\n")
+			sb.WriteString("Recent encounters (critical moments):\n")
 			for _, m := range req.KeyMatches {
 				winner := req.BotBName
 				if m.Won {
@@ -259,8 +260,8 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 				if m.EndCondition != "" {
 					condStr = fmt.Sprintf(" [%s]", m.EndCondition)
 				}
-				sb.WriteString(fmt.Sprintf("  - %s won on \"%s\" (%d turns, score %s)%s. Match ID: %s\n",
-					winner, nonEmpty(m.MapName, "standard map"), m.TurnCount, m.Score, condStr, m.MatchID))
+				sb.WriteString(fmt.Sprintf("  - %s won on \"%s\" (%d turns, score %s, opponent ELO %d)%s. Match ID: %s\n",
+					winner, nonEmpty(m.MapName, "standard map"), m.TurnCount, m.Score, m.OpponentRating, condStr, m.MatchID))
 			}
 		}
 		if len(req.HeadToHead) > 0 {

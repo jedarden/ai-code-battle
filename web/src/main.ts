@@ -1,5 +1,5 @@
 import { ReplayViewer } from './replay-viewer';
-import type { Replay } from './types';
+import type { Replay, TranscriptEntry } from './types';
 
 // DOM elements
 const canvas = document.getElementById('replay-canvas') as HTMLCanvasElement;
@@ -25,6 +25,17 @@ const infoMatchId = document.getElementById('info-match-id') as HTMLElement;
 const infoWinner = document.getElementById('info-winner') as HTMLElement;
 const infoTurns = document.getElementById('info-turns') as HTMLElement;
 const infoReason = document.getElementById('info-reason') as HTMLElement;
+
+// Transcript panel elements (§15.3)
+const transcriptPanel = document.getElementById('transcript-panel') as HTMLDivElement;
+const transcriptToggleBtn = document.getElementById('transcript-toggle') as HTMLButtonElement;
+const transcriptCloseBtn = document.getElementById('transcript-close') as HTMLButtonElement;
+const transcriptEntriesDiv = document.getElementById('transcript-entries') as HTMLDivElement;
+const transcriptViewMode = document.getElementById('transcript-view-mode') as HTMLSelectElement;
+
+// Transcript state
+let transcriptEntries: TranscriptEntry[] = [];
+let transcriptViewModeValue: 'all' | 'window' | 'recent' = 'all';
 
 // Initialize viewer
 let viewer = new ReplayViewer(canvas, { cellSize: 16 });
@@ -101,6 +112,7 @@ function loadReplay(replay: Replay): void {
 
   updateUI();
   updateEventLog();
+  renderTranscript(); // Generate and render transcript (§15.3)
 }
 
 // File input handler
@@ -182,7 +194,7 @@ cellSizeSelect.addEventListener('change', () => {
   const replay = viewer.getReplay();
   if (replay) {
     viewer = new ReplayViewer(canvas, { cellSize: size });
-    viewer.onTurnChange = () => { updateUI(); updateEventLog(); };
+    viewer.onTurnChange = () => { updateUI(); updateEventLog(); updateTranscriptHighlight(); };
     viewer.onPlayStateChange = (playing) => { playBtn.textContent = playing ? 'Pause' : 'Play'; };
     loadReplay(replay);
   }
@@ -192,11 +204,116 @@ cellSizeSelect.addEventListener('change', () => {
 viewer.onTurnChange = () => {
   updateUI();
   updateEventLog();
+  updateTranscriptHighlight();
 };
 
 viewer.onPlayStateChange = (playing) => {
   playBtn.textContent = playing ? 'Pause' : 'Play';
 };
+
+// ── Transcript Panel Functions (§15.3) ────────────────────────────────────────
+
+function toggleTranscriptPanel(): void {
+  transcriptPanel.classList.toggle('open');
+  // Update button visibility based on panel state
+  transcriptToggleBtn.style.display = transcriptPanel.classList.contains('open') ? 'none' : 'block';
+}
+
+function closeTranscriptPanel(): void {
+  transcriptPanel.classList.remove('open');
+  transcriptToggleBtn.style.display = 'block';
+}
+
+function renderTranscript(): void {
+  if (!viewer.getReplay()) {
+    transcriptEntriesDiv.innerHTML = '<p style="color: #64748b; text-align: center; padding: 20px;">Load a replay to view the transcript.</p>';
+    return;
+  }
+
+  // Generate transcript from viewer
+  transcriptEntries = viewer.generateTranscript();
+
+  // Filter entries based on view mode
+  const filteredEntries = filterTranscriptEntries(transcriptEntries);
+
+  if (filteredEntries.length === 0) {
+    transcriptEntriesDiv.innerHTML = '<p style="color: #64748b; text-align: center; padding: 20px;">No transcript entries available.</p>';
+    return;
+  }
+
+  // Render entries
+  transcriptEntriesDiv.innerHTML = filteredEntries.map(entry => {
+    const isCurrent = entry.turn === viewer.getTurn();
+    return `
+      <div class="transcript-entry${isCurrent ? ' current' : ''}" data-turn="${entry.turn}">
+        <div class="turn-number">Turn ${entry.turn}</div>
+        <div class="text">${entry.text}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Add click handlers for jump-to-turn
+  transcriptEntriesDiv.querySelectorAll('.transcript-entry').forEach(el => {
+    el.addEventListener('click', () => {
+      const turn = parseInt(el.getAttribute('data-turn') || '0', 10);
+      viewer.setTurn(turn);
+      updateUI();
+      updateEventLog();
+      updateTranscriptHighlight();
+    });
+  });
+
+  updateTranscriptHighlight();
+}
+
+function filterTranscriptEntries(entries: TranscriptEntry[]): TranscriptEntry[] {
+  const currentTurn = viewer.getTurn();
+  const totalTurns = viewer.getTotalTurns();
+
+  switch (transcriptViewModeValue) {
+    case 'window':
+      // Show ±10 turns from current turn
+      return entries.filter(e => e.turn >= currentTurn - 10 && e.turn <= currentTurn + 10);
+
+    case 'recent':
+      // Show last 20 turns
+      return entries.filter(e => e.turn >= totalTurns - 20);
+
+    case 'all':
+    default:
+      // Show all turns
+      return entries;
+  }
+}
+
+function updateTranscriptHighlight(): void {
+  // Update current turn highlighting in transcript
+  const currentTurn = viewer.getTurn();
+  transcriptEntriesDiv.querySelectorAll('.transcript-entry').forEach(el => {
+    const turn = parseInt(el.getAttribute('data-turn') || '-1', 10);
+    if (turn === currentTurn) {
+      el.classList.add('current');
+      // Scroll the current entry into view if panel is open
+      if (transcriptPanel.classList.contains('open')) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } else {
+      el.classList.remove('current');
+    }
+  });
+}
+
+// Transcript panel event listeners
+transcriptToggleBtn.addEventListener('click', toggleTranscriptPanel);
+transcriptCloseBtn.addEventListener('click', closeTranscriptPanel);
+
+transcriptViewMode.addEventListener('change', () => {
+  const value = transcriptViewMode.value;
+  if (value === 'all' || value === 'window' || value === 'recent') {
+    transcriptViewModeValue = value;
+    renderTranscript();
+  }
+});
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
@@ -230,6 +347,11 @@ document.addEventListener('keydown', (e) => {
       viewer.setTurn(viewer.getTotalTurns() - 1);
       updateUI();
       updateEventLog();
+      break;
+    case 'KeyT':
+      // Toggle transcript panel (§15.3)
+      e.preventDefault();
+      toggleTranscriptPanel();
       break;
   }
 });

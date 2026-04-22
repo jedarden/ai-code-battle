@@ -213,6 +213,145 @@
       border-radius: 4px;
       font-family: monospace;
     }
+
+    /* Transcript panel styles (§15.3) */
+    .transcript-panel {
+      position: fixed;
+      top: 0;
+      right: -400px;
+      width: 400px;
+      height: 100vh;
+      background-color: #1e293b;
+      border-left: 1px solid #334155;
+      box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3);
+      transition: right 0.3s ease-in-out;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .transcript-panel.open {
+      right: 0;
+    }
+
+    .transcript-header {
+      padding: 15px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .transcript-header h2 {
+      font-size: 1rem;
+      margin: 0;
+      color: #f8fafc;
+    }
+
+    .transcript-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+    }
+
+    .transcript-close:hover {
+      background-color: #334155;
+      color: #f8fafc;
+    }
+
+    .transcript-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .transcript-content select {
+      width: 100%;
+      margin-bottom: 15px;
+      background-color: #0f172a;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .transcript-entry {
+      padding: 10px;
+      margin-bottom: 10px;
+      background-color: #0f172a;
+      border-radius: 6px;
+      border-left: 3px solid #334155;
+      cursor: pointer;
+      user-select: text;
+    }
+
+    .transcript-entry:hover {
+      background-color: #1a2436;
+    }
+
+    .transcript-entry.current {
+      border-left-color: #3b82f6;
+      background-color: #1e3a5f;
+    }
+
+    .transcript-entry .turn-number {
+      font-weight: bold;
+      color: #94a3b8;
+      font-size: 11px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .transcript-entry .text {
+      color: #e2e8f0;
+    }
+
+    .transcript-toggle-btn {
+      position: fixed;
+      top: 50%;
+      right: 0;
+      transform: translateY(-50%);
+      background-color: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 6px;
+      border-radius: 6px 0 0 6px;
+      cursor: pointer;
+      font-size: 12px;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.2);
+      z-index: 99;
+      transition: background-color 0.2s;
+    }
+
+    .transcript-toggle-btn:hover {
+      background-color: #2563eb;
+    }
+
+    .transcript-panel.open .transcript-toggle-btn {
+      display: none;
+    }
+
+    /* Responsive: on smaller screens, make panel wider */
+    @media (max-width: 768px) {
+      .transcript-panel {
+        width: 100%;
+        right: -100%;
+      }
+    }
   </style>
 </head>
 <body>
@@ -305,6 +444,29 @@
           <kbd>←</kbd><kbd>→</kbd> Step
           <kbd>Home</kbd><kbd>End</kbd> First/Last
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transcript panel (§15.3) -->
+  <button id="transcript-toggle" class="transcript-toggle-btn" title="Toggle Transcript (T)">
+    Transcript
+  </button>
+  <div id="transcript-panel" class="transcript-panel">
+    <div class="transcript-header">
+      <h2>Turn-by-Turn Transcript</h2>
+      <button id="transcript-close" class="transcript-close" title="Close transcript">&times;</button>
+    </div>
+    <div class="transcript-content">
+      <select id="transcript-view-mode">
+        <option value="all">All Turns</option>
+        <option value="window">±10 Turns from Current</option>
+        <option value="recent">Recent 20 Turns</option>
+      </select>
+      <div id="transcript-entries">
+        <p style="color: #64748b; text-align: center; padding: 20px;">
+          Load a replay to view the transcript.
+        </p>
       </div>
     </div>
   </div>

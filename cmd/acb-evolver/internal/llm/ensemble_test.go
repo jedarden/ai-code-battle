@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -200,11 +201,15 @@ func buildMockJSONResponse(code string) string {
 
 // Integration test with mock server
 func TestEnsemble_WithMockServer(t *testing.T) {
+	var mu sync.Mutex
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		callCount++
+		cc := callCount
+		mu.Unlock()
 		// Return a valid response with code block
-		code := fmt.Sprintf("package main\nfunc main() { /* code %c }", rune('A'+callCount))
+		code := fmt.Sprintf("package main\nfunc main() { /* code %c }", rune('A'+cc))
 		response := buildMockJSONResponse(code)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(response))
