@@ -1,5 +1,14 @@
 // Playlists Page - Browse curated replay collections
-import { fetchPlaylistIndex, fetchPlaylist, type Playlist, type PlaylistIndex } from '../api-types';
+// §16.15: lazy-rendered playlist grid, expandable match details,
+// keyboard-accessible "Show more" affordances.
+import { fetchPlaylistIndex, fetchPlaylist, type Playlist, type PlaylistIndex, type PlaylistMatch } from '../api-types';
+import { initLazySections, lazySection } from '../lib/lazy-section';
+
+function isMobile(): boolean {
+  return window.innerWidth < 768;
+}
+
+const MATCH_BATCH = 10;
 
 export async function renderPlaylistsPage(params?: Record<string, string>): Promise<void> {
   const app = document.getElementById('app');
@@ -131,18 +140,33 @@ export async function renderPlaylistsPage(params?: Record<string, string>): Prom
       }
 
       .playlist-match {
-        display: flex;
-        align-items: center;
-        gap: 16px;
         background-color: var(--bg-secondary);
         border-radius: 8px;
-        padding: 12px 16px;
-        cursor: pointer;
+        overflow: hidden;
         transition: background-color 0.2s;
       }
 
-      .playlist-match:hover {
+      .playlist-match-toggle {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        width: 100%;
+        background: none;
+        border: none;
+        color: inherit;
+        padding: 12px 16px;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .playlist-match-toggle:hover {
         background-color: var(--bg-tertiary);
+      }
+
+      .playlist-match-toggle:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+        border-radius: 8px;
       }
 
       .match-order {
@@ -167,7 +191,25 @@ export async function renderPlaylistsPage(params?: Record<string, string>): Prom
         font-size: 0.75rem;
       }
 
-      .match-actions {
+      .match-expand-icon {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        transition: transform var(--transition-fast, 0.15s);
+      }
+
+      .playlist-match-details {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 200ms ease-out, padding 200ms ease-out;
+        padding: 0 16px;
+      }
+
+      .playlist-match-details.expanded {
+        max-height: 120px;
+        padding: 0 16px 12px;
+      }
+
+      .playlist-match-actions {
         display: flex;
         gap: 8px;
       }
@@ -186,6 +228,11 @@ export async function renderPlaylistsPage(params?: Record<string, string>): Prom
         opacity: 0.9;
       }
 
+      .watch-btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
       .embed-btn {
         background-color: transparent;
         color: var(--text-muted);
@@ -199,6 +246,11 @@ export async function renderPlaylistsPage(params?: Record<string, string>): Prom
       .embed-btn:hover {
         border-color: var(--accent);
         color: var(--accent);
+      }
+
+      .embed-btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
       }
 
       .empty-message {
@@ -235,6 +287,12 @@ export async function renderPlaylistsPage(params?: Record<string, string>): Prom
         font-style: italic;
         margin-top: 2px;
       }
+
+      @media (prefers-reduced-motion: reduce) {
+        .playlist-match-details {
+          transition: none;
+        }
+      }
     </style>
   `;
 
@@ -265,16 +323,24 @@ async function loadPlaylists(): Promise<void> {
       return;
     }
 
-    grid.innerHTML = index.playlists.map(p => `
-      <div class="playlist-card" data-slug="${p.slug}">
-        <h3>${p.title}<span class="category-badge ${p.category}">${formatCategory(p.category)}</span></h3>
-        <p>${p.description}</p>
-        <div class="meta">
-          <span class="match-count">${p.match_count} matches</span>
-          <span>Updated ${formatRelativeTime(p.updated_at)}</span>
-        </div>
-      </div>
-    `).join('');
+    // Show first 6 immediately, lazy-load the rest
+    const immediateCount = 6;
+    const immediate = index.playlists.slice(0, immediateCount);
+    const rest = index.playlists.slice(immediateCount);
+
+    const immediateHtml = immediate.map(p => renderPlaylistCardHtml(p)).join('');
+
+    if (rest.length === 0) {
+      grid.innerHTML = immediateHtml;
+    } else {
+      const lazyContent = rest.map(p => renderPlaylistCardHtml(p)).join('');
+      grid.innerHTML = immediateHtml + lazySection(
+        'playlists-below-fold',
+        lazyContent,
+        { placeholder: '<div class="lazy-placeholder" style="min-height:200px"></div>' }
+      );
+      initLazySections(grid);
+    }
 
     grid.querySelectorAll('.playlist-card').forEach(card => {
       card.addEventListener('click', () => {
@@ -286,6 +352,19 @@ async function loadPlaylists(): Promise<void> {
     console.error('Failed to load playlists:', err);
     grid.innerHTML = '<div class="empty-message">Failed to load playlists. Please try again later.</div>';
   }
+}
+
+function renderPlaylistCardHtml(p: PlaylistIndex['playlists'][number]): string {
+  return `
+    <div class="playlist-card" data-slug="${p.slug}">
+      <h3>${escapeHtml(p.title)}<span class="category-badge ${p.category}">${formatCategory(p.category)}</span></h3>
+      <p>${escapeHtml(p.description)}</p>
+      <div class="meta">
+        <span class="match-count">${p.match_count} matches</span>
+        <span>Updated ${formatRelativeTime(p.updated_at)}</span>
+      </div>
+    </div>
+  `;
 }
 
 async function showPlaylistDetail(slug: string): Promise<void> {
@@ -301,46 +380,41 @@ async function showPlaylistDetail(slug: string): Promise<void> {
   try {
     const playlist: Playlist = await fetchPlaylist(slug);
 
+    // Mobile: defer to carousel component if available
+    if (isMobile() && playlist.matches.length > 3) {
+      try {
+        const { PlaylistCarousel } = await import('../components/playlist-carousel');
+        new PlaylistCarousel({
+          playlist,
+          onClose: () => {
+            window.location.hash = '/watch/playlists';
+          },
+        });
+        return;
+      } catch {
+        // Fallback to desktop view
+      }
+    }
+
     titleEl.textContent = playlist.title;
     descEl.textContent = playlist.description;
 
-    matchesEl.innerHTML = playlist.matches.map(m => {
-      const metaParts: string[] = [];
-      if (m.turns) metaParts.push(`${m.turns} turns`);
-      if (m.end_reason) metaParts.push(m.end_reason);
-      if (m.completed_at) metaParts.push(formatRelativeTime(m.completed_at));
-      const tag = m.curation_tag ? `<span class="curation-tag">${m.curation_tag}</span>` : '';
-      return `
-        <div class="playlist-match" data-match-id="${m.match_id}">
-          <span class="match-order">${m.order + 1}</span>
-          <div class="match-info">
-            <div class="match-title">${m.title || `Match ${m.order + 1}`}</div>
-            ${tag}
-            <div class="match-meta">${metaParts.join(' · ')}</div>
-          </div>
-          <div class="match-actions">
-            <button class="watch-btn" data-match-id="${m.match_id}">Watch</button>
-            <button class="embed-btn" data-match-id="${m.match_id}">Embed</button>
-          </div>
-        </div>
-      `;
-    }).join('');
+    // Render first batch of matches immediately
+    const visibleMatches = playlist.matches.slice(0, MATCH_BATCH);
+    const remainingMatches = playlist.matches.slice(MATCH_BATCH);
 
-    matchesEl.querySelectorAll('.watch-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const matchId = (btn as HTMLElement).dataset.matchId;
-        if (matchId) watchMatch(matchId);
-      });
-    });
+    matchesEl.innerHTML = visibleMatches.map(m => renderPlaylistMatchHtml(m)).join('');
 
-    matchesEl.querySelectorAll('.embed-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const matchId = (btn as HTMLElement).dataset.matchId;
-        if (matchId) copyEmbedCode(matchId);
-      });
-    });
+    // Wire expand toggles
+    initMatchExpandToggles(matchesEl);
+
+    // Wire watch/embed buttons
+    initMatchActions(matchesEl);
+
+    // Add "Show more" for remaining matches
+    if (remainingMatches.length > 0) {
+      addMatchShowMore(matchesEl, remainingMatches);
+    }
 
     grid.style.display = 'none';
     detail.style.display = 'block';
@@ -353,6 +427,107 @@ async function showPlaylistDetail(slug: string): Promise<void> {
     console.error('Failed to load playlist:', err);
     alert('Failed to load playlist');
   }
+}
+
+function renderPlaylistMatchHtml(m: PlaylistMatch): string {
+  const metaParts: string[] = [];
+  if (m.turns) metaParts.push(`${m.turns} turns`);
+  if (m.end_reason) metaParts.push(m.end_reason);
+  if (m.completed_at) metaParts.push(formatRelativeTime(m.completed_at));
+  const tag = m.curation_tag ? `<span class="curation-tag">${escapeHtml(m.curation_tag)}</span>` : '';
+
+  return `
+    <div class="playlist-match" data-match-id="${m.match_id}">
+      <button class="playlist-match-toggle" type="button"
+              aria-label="Expand details for ${escapeHtml(m.title || `Match ${m.order + 1}`)}"
+              aria-expanded="false">
+        <span class="match-order">${m.order + 1}</span>
+        <div class="match-info">
+          <div class="match-title">${escapeHtml(m.title || `Match ${m.order + 1}`)}</div>
+          ${tag}
+          <div class="match-meta">${metaParts.join(' · ')}</div>
+        </div>
+        <span class="match-expand-icon" aria-hidden="true">▸</span>
+      </button>
+      <div class="playlist-match-details">
+        <div class="playlist-match-actions">
+          <button class="watch-btn" data-match-id="${m.match_id}">Watch</button>
+          <button class="embed-btn" data-match-id="${m.match_id}">Embed</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function initMatchExpandToggles(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>('.playlist-match').forEach(match => {
+    const toggle = match.querySelector<HTMLButtonElement>('.playlist-match-toggle');
+    if (!toggle || toggle.dataset.wired) return;
+    toggle.dataset.wired = '1';
+
+    toggle.addEventListener('click', () => {
+      const details = match.querySelector<HTMLElement>('.playlist-match-details');
+      if (!details) return;
+      const expanded = details.classList.toggle('expanded');
+      toggle.setAttribute('aria-expanded', String(expanded));
+      const icon = match.querySelector('.match-expand-icon');
+      if (icon) icon.textContent = expanded ? '▾' : '▸';
+    });
+  });
+}
+
+function initMatchActions(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>('.watch-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const matchId = btn.dataset.matchId;
+      if (matchId) watchMatch(matchId);
+    });
+  });
+
+  root.querySelectorAll<HTMLElement>('.embed-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const matchId = btn.dataset.matchId;
+      if (matchId) copyEmbedCode(matchId);
+    });
+  });
+}
+
+function addMatchShowMore(container: HTMLElement, remaining: PlaylistMatch[]): void {
+  const btn = document.createElement('button');
+  btn.className = 'btn secondary show-more-btn';
+  btn.type = 'button';
+  let offset = 0;
+  const total = remaining.length;
+
+  function updateBtn(): void {
+    const left = total - offset;
+    if (left <= 0) { btn.remove(); return; }
+    const next = Math.min(MATCH_BATCH, left);
+    btn.textContent = `Show ${next} more matches (${left} remaining)`;
+    btn.setAttribute('aria-label', `Show ${next} more matches, ${left} remaining`);
+  }
+
+  btn.addEventListener('click', () => {
+    const batch = remaining.slice(offset, offset + MATCH_BATCH);
+    if (batch.length === 0) return;
+
+    const temp = document.createElement('div');
+    temp.innerHTML = batch.map(m => renderPlaylistMatchHtml(m)).join('');
+    while (temp.firstChild) {
+      container.appendChild(temp.firstChild);
+    }
+
+    initMatchExpandToggles(container);
+    initMatchActions(container);
+
+    offset += batch.length;
+    updateBtn();
+  });
+
+  updateBtn();
+  container.after(btn);
 }
 
 function watchMatch(matchId: string): void {
@@ -396,4 +571,12 @@ function formatRelativeTime(isoDate: string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
