@@ -190,6 +190,7 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 	}
 
 	w.metrics.RecordJobClaimed()
+	metrics.WorkerJobsClaimedTotal.Inc()
 	w.logger.Printf("Claimed job %s, executing match...", job.ID)
 
 	// Execute the match
@@ -197,6 +198,7 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 	result, replay, err := w.executeMatch(ctx, claimData)
 	if err != nil {
 		w.metrics.RecordMatchError()
+		metrics.WorkerMatchErrorsTotal.Inc()
 		w.logger.Printf("Match execution failed: %v", err)
 		// Mark job as failed
 		if failErr := w.db.FailJob(ctx, job.ID, w.cfg.WorkerID, err.Error()); failErr != nil {
@@ -207,6 +209,8 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 	}
 	w.metrics.RecordMatch(time.Since(matchStart))
 	metrics.MatchThroughput.Inc()
+	metrics.WorkerMatchesTotal.Inc()
+	metrics.WorkerMatchDuration.Observe(time.Since(matchStart).Seconds())
 	// Upload replay to B2
 	replayURL := ""
 	if w.b2 != nil {

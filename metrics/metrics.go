@@ -72,6 +72,43 @@ var (
 		Name: "acb_http_requests_total",
 		Help: "Total number of HTTP requests served.",
 	}, []string{"method", "path", "status"})
+
+	// BotsActive tracks the number of currently active bots (matchmaker health checker).
+	BotsActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "acb_bots_active",
+		Help: "Number of bots currently in active status.",
+	})
+
+	// BotsFailing tracks the number of bots failing health checks.
+	BotsFailing = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "acb_bots_failing",
+		Help: "Number of bots currently failing health checks.",
+	})
+
+	// WorkerMatchesTotal counts matches executed by the worker.
+	WorkerMatchesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "acb_worker_matches_total",
+		Help: "Total matches executed by this worker.",
+	})
+
+	// WorkerMatchErrorsTotal counts match execution errors.
+	WorkerMatchErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "acb_worker_match_errors_total",
+		Help: "Total match execution errors.",
+	})
+
+	// WorkerJobsClaimedTotal counts jobs claimed by the worker.
+	WorkerJobsClaimedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "acb_worker_jobs_claimed_total",
+		Help: "Total jobs claimed by this worker.",
+	})
+
+	// WorkerMatchDuration tracks match execution time.
+	WorkerMatchDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "acb_worker_match_duration_seconds",
+		Help:    "Match execution duration in seconds.",
+		Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600},
+	})
 )
 
 func init() {
@@ -85,6 +122,12 @@ func init() {
 		EvolverGenerations,
 		IndexBuildDuration,
 		HTTPRequestsTotal,
+		BotsActive,
+		BotsFailing,
+		WorkerMatchesTotal,
+		WorkerMatchErrorsTotal,
+		WorkerJobsClaimedTotal,
+		WorkerMatchDuration,
 	)
 }
 

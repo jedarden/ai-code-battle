@@ -1,0 +1,226 @@
+# Prometheus monitoring infrastructure for AI Code Battle per plan §9.9.
+#
+# Includes:
+#   - Services exposing metrics port for all services
+#   - ServiceMonitor for Prometheus Operator scraping
+#   - PrometheusRule with alert thresholds per §9.9
+#
+# Staging file — sync to declarative-config/k8s/apexalgo-iad/ai-code-battle/
+
+# --- Services with metrics port ---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: acb-matchmaker-metrics
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-matchmaker
+    app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: acb-matchmaker
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acb-worker-metrics
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-worker
+    app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: acb-worker
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acb-index-builder-metrics
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-index-builder
+    app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: acb-index-builder
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acb-evolver-metrics
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-evolver
+    app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: acb-evolver
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: metrics
+
+---
+# --- ServiceMonitor for Prometheus Operator ---
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: acb-services
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/part-of: ai-code-battle
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: ai-code-battle
+  namespaceSelector:
+    matchNames:
+      - ai-code-battle
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+
+---
+# --- PrometheusRule with alerts per §9.9 ---
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: acb-alerts
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/part-of: ai-code-battle
+    release: prometheus
+spec:
+  groups:
+    - name: acb.match.alerts
+      rules:
+        - alert: ACBMatchThroughputLow
+          expr: rate(acb_match_throughput_total[1h]) < 10 / 3600
+          for: 1h
+          labels:
+            severity: warning
+            component: matchmaker
+          annotations:
+            summary: "Match throughput below target"
+            description: "Match completion rate is {{ $value | printf \"%.2f\" }} per second (<10/hour target) for over 1 hour."
+
+        - alert: ACBQueueDepthHigh
+          expr: acb_job_queue_depth > 50
+          for: 30m
+          labels:
+            severity: warning
+            component: matchmaker
+          annotations:
+            summary: "Job queue depth is high"
+            description: "Valkey job queue has {{ $value }} pending jobs for over 30 minutes. Workers may be overloaded or stuck."
+
+        - alert: ACBBotHealthFailing
+          expr: acb_bots_failing / acb_bots_active > 0.5
+          for: 15m
+          labels:
+            severity: critical
+            component: matchmaker
+          annotations:
+            summary: "More than 50% of bots are failing health checks"
+            description: "{{ $value | printf \"%.0f\" }} ratio of active bots are failing health checks (>0.5 threshold). Check bot deployments."
+
+        - alert: ACBStaleJobsHigh
+          expr: acb_job_stale_count > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: matchmaker
+          annotations:
+            summary: "High stale job count"
+            description: "{{ $value }} stale jobs found in the last reaper cycle. Workers may be crashing or unable to complete matches."
+
+        - alert: ACBR2UsageHigh
+          expr: acb_r2_bytes_used > 8 * 1024 * 1024 * 1024
+          for: 1h
+          labels:
+            severity: warning
+            component: index-builder
+          annotations:
+            summary: "R2 warm cache approaching free tier cap"
+            description: "R2 warm cache is using {{ $value | printf \"%.1f\" }} bytes (>8 GB). Free tier cap is 10 GB. Pruning may not be keeping up."
+
+        - alert: ACBIndexBuildSlow
+          expr: histogram_quantile(0.95, rate(acb_index_build_duration_seconds_bucket[30m])) > 300
+          for: 30m
+          labels:
+            severity: warning
+            component: index-builder
+          annotations:
+            summary: "Index build cycle taking too long"
+            description: "P95 index build duration is {{ $value | printf \"%.0f\" }}s. Should be under 300s."
+
+        - alert: ACBReplayUploadSlow
+          expr: histogram_quantile(0.95, rate(acb_replay_upload_latency_seconds_bucket[15m])) > 30
+          for: 15m
+          labels:
+            severity: warning
+            component: worker
+          annotations:
+            summary: "B2 replay uploads are slow"
+            description: "P95 replay upload latency is {{ $value | printf \"%.1f\" }}s. Check B2 connectivity."
+
+        - alert: ACBEvolverStalled
+          expr: rate(acb_evolver_generations_total[30m]) == 0
+          for: 1h
+          labels:
+            severity: warning
+            component: evolver
+          annotations:
+            summary: "Evolver has not completed any generations"
+            description: "No evolution generations completed in the last 30 minutes. Check evolver logs for errors."
+
+        - alert: ACBWorkerMatchErrorsHigh
+          expr: rate(acb_worker_match_errors_total[15m]) > rate(acb_worker_matches_total[15m]) * 0.1
+          for: 15m
+          labels:
+            severity: warning
+            component: worker
+          annotations:
+            summary: "Worker match error rate is high"
+            description: "More than 10% of match attempts are failing. Check engine logs and bot endpoints."

@@ -49,6 +49,12 @@ func TestMetricsEndpoint(t *testing.T) {
 		"acb_evolver_generations_total",
 		"acb_index_build_duration_seconds",
 		"acb_http_requests_total",
+		"acb_bots_active",
+		"acb_bots_failing",
+		"acb_worker_matches_total",
+		"acb_worker_match_errors_total",
+		"acb_worker_jobs_claimed_total",
+		"acb_worker_match_duration_seconds",
 	}
 	for _, name := range expectedMetrics {
 		if !strings.Contains(body, name) {
@@ -100,5 +106,49 @@ func TestHistogramObserved(t *testing.T) {
 	}
 	if !strings.Contains(body, "acb_index_build_duration_seconds_bucket") {
 		t.Error("index build duration histogram not found")
+	}
+}
+
+func TestBotHealthGauges(t *testing.T) {
+	BotsActive.Set(12)
+	BotsFailing.Set(3)
+
+	h := Handler()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "acb_bots_active 12") {
+		t.Error("bots_active gauge not found with expected value")
+	}
+	if !strings.Contains(body, "acb_bots_failing 3") {
+		t.Error("bots_failing gauge not found with expected value")
+	}
+}
+
+func TestWorkerMetrics(t *testing.T) {
+	WorkerMatchesTotal.Inc()
+	WorkerMatchErrorsTotal.Inc()
+	WorkerJobsClaimedTotal.Inc()
+	WorkerMatchDuration.Observe(45.0)
+
+	h := Handler()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "acb_worker_matches_total ") {
+		t.Error("worker matches total counter not found")
+	}
+	if !strings.Contains(body, "acb_worker_match_errors_total ") {
+		t.Error("worker match errors counter not found")
+	}
+	if !strings.Contains(body, "acb_worker_jobs_claimed_total ") {
+		t.Error("worker jobs claimed counter not found")
+	}
+	if !strings.Contains(body, "acb_worker_match_duration_seconds_bucket") {
+		t.Error("worker match duration histogram not found")
 	}
 }

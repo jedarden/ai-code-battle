@@ -218,6 +218,7 @@ func (m *Matchmaker) tickHealthChecker(ctx context.Context) {
 
 	client := &http.Client{Timeout: time.Duration(m.cfg.BotTimeoutSecs) * time.Second}
 
+	var activeCount, failingCount int
 	for _, bot := range bots {
 		healthy := false
 		resp, err := client.Get(bot.Endpoint + "/health")
@@ -227,6 +228,7 @@ func (m *Matchmaker) tickHealthChecker(ctx context.Context) {
 		}
 
 		if healthy {
+			activeCount++
 			if bot.Status == "inactive" || bot.ConsecFails > 0 {
 				m.db.ExecContext(ctx,
 					`UPDATE bots SET status = 'active', consec_fails = 0, last_active = NOW()
@@ -237,6 +239,7 @@ func (m *Matchmaker) tickHealthChecker(ctx context.Context) {
 				}
 			}
 		} else {
+			failingCount++
 			newFails := bot.ConsecFails + 1
 			newStatus := bot.Status
 			if newFails >= m.cfg.MaxConsecFails {
@@ -248,10 +251,13 @@ func (m *Matchmaker) tickHealthChecker(ctx context.Context) {
 			if newStatus != bot.Status {
 				log.Printf("health-checker: %s marked inactive after %d failures", bot.ID, newFails)
 				m.alerter.BotMarkedInactive(ctx, bot.ID, newFails)
-					metrics.BotCrashed.Inc()
+				metrics.BotCrashed.Inc()
 			}
 		}
 	}
+
+	metrics.BotsActive.Set(float64(activeCount))
+	metrics.BotsFailing.Set(float64(failingCount))
 }
 
 // tickStaleReaper re-enqueues jobs that have been running too long.

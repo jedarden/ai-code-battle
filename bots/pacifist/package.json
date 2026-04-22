@@ -1,0 +1,12 @@
+{
+  "name": "pacifist-bot",
+  "version": "1.0.0",
+  "description": "PacifistBot - Non-aggressive attrition archetype for AI Code Battle",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
