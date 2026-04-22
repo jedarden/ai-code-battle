@@ -15,82 +15,47 @@ import {
 
 const loadReplayViewer = () => import('../replay-viewer');
 
-// ── Swipe gesture detector ─────────────────────────────────────────────────────
+// ── Touch tracking for live 60fps swipe ─────────────────────────────────────
 
-interface SwipeState {
+interface TouchTracker {
   startX: number;
   startY: number;
   startTime: number;
-  active: boolean;
+  tracking: boolean;
+  locked: 'none' | 'vertical' | 'horizontal';
+  currentDeltaY: number;
+  currentDeltaX: number;
 }
 
-interface SwipeResult {
-  direction: 'up' | 'down' | 'left' | 'right' | 'none';
-  velocity: number; // px/ms
-}
-
-function createSwipeDetector(
-  el: HTMLElement,
-  onSwipe: (result: SwipeResult) => void,
-): void {
-  const state: SwipeState = { startX: 0, startY: 0, startTime: 0, active: false };
-
-  el.addEventListener('touchstart', (e: TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    state.startX = e.touches[0].clientX;
-    state.startY = e.touches[0].clientY;
-    state.startTime = Date.now();
-    state.active = true;
-  }, { passive: true });
-
-  el.addEventListener('touchend', (e: TouchEvent) => {
-    if (!state.active) return;
-    state.active = false;
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - state.startX;
-    const dy = touch.clientY - state.startY;
-    const dt = Date.now() - state.startTime;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    const threshold = 50; // min px for swipe
-
-    if (absDx < threshold && absDy < threshold) {
-      onSwipe({ direction: 'none', velocity: 0 });
-      return;
-    }
-
-    const velocity = Math.sqrt(dx * dx + dy * dy) / Math.max(dt, 1);
-
-    if (absDx > absDy) {
-      onSwipe({ direction: dx > 0 ? 'right' : 'left', velocity });
-    } else {
-      onSwipe({ direction: dy > 0 ? 'down' : 'up', velocity });
-    }
-  }, { passive: true });
-}
-
-// ── Carousel component ─────────────────────────────────────────────────────────
+// ── Carousel component ─────────────────────────────────────────────────────
 
 export interface CarouselOptions {
   playlist: Playlist;
   startIndex?: number;
   onClose: () => void;
+  autoAdvanceDelay?: number; // ms, default 3000
 }
 
-const AUTO_ADVANCE_DELAY = 3000; // 3s pause after replay ends
-const METADATA_PANEL_WIDTH = 280; // px revealed on horizontal swipe
+const DEFAULT_AUTO_ADVANCE_DELAY = 3000;
+const METADATA_PANEL_WIDTH = 280;
 const TRANSITION_MS = 300;
 const R2_BASE = 'https://r2.aicodebattle.com';
 const B2_FALLBACK = 'https://b2.aicodebattle.com';
+const SWIPE_THRESHOLD = 50; // min px to trigger advance
+const VELOCITY_THRESHOLD = 0.3; // px/ms — fast flick triggers even below threshold
+const REDUCED_MOTION = typeof window !== 'undefined'
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export class PlaylistCarousel {
   private overlay: HTMLDivElement;
+  private styleEl: HTMLStyleElement;
   private playlist: Playlist;
   private currentIndex: number;
   private onClose: () => void;
+  private autoAdvanceDelay: number;
 
   // Per-card DOM
-  private cardContainer: HTMLDivElement;
+  private carouselInner: HTMLDivElement;
   private canvas: HTMLCanvasElement;
   private headerBar: HTMLDivElement;
   private scoreBar: HTMLDivElement;
@@ -98,11 +63,12 @@ export class PlaylistCarousel {
   private swipeHint: HTMLDivElement;
   private metadataPanel: HTMLDivElement;
   private closeBtn: HTMLButtonElement;
+  private countdownRing: HTMLDivElement;
 
   // Replay viewer
   private viewer: InstanceType<typeof import('../replay-viewer').ReplayViewer> | null = null;
 
-  // Director state (lightweight — auto-plays at director speed)
+  // Director state
   private directorState: DirectorState = createDirectorState();
   private directorSchedule: ReturnType<typeof computeSpeedSchedule> = [];
   private directorAnimFrame: number | null = null;
@@ -112,18 +78,26 @@ export class PlaylistCarousel {
 
   // Auto-advance timer
   private autoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
+  private countdownAnimFrame: number | null = null;
 
   // Metadata panel state
   private metadataOpen = false;
-  private metadataTranslateX = METADATA_PANEL_WIDTH;
 
   // Transition state
   private transitioning = false;
+
+  // Touch tracking for live swipe
+  private touch: TouchTracker = {
+    startX: 0, startY: 0, startTime: 0,
+    tracking: false, locked: 'none',
+    currentDeltaY: 0, currentDeltaX: 0,
+  };
 
   constructor(opts: CarouselOptions) {
     this.playlist = opts.playlist;
     this.currentIndex = opts.startIndex ?? 0;
     this.onClose = opts.onClose;
+    this.autoAdvanceDelay = opts.autoAdvanceDelay ?? DEFAULT_AUTO_ADVANCE_DELAY;
 
     // Create overlay
     this.overlay = document.createElement('div');
@@ -132,8 +106,13 @@ export class PlaylistCarousel {
     document.body.appendChild(this.overlay);
     document.body.style.overflow = 'hidden';
 
+    // Inject styles
+    this.styleEl = document.createElement('style');
+    this.styleEl.textContent = CAROUSEL_CSS;
+    document.head.appendChild(this.styleEl);
+
     // Grab refs
-    this.cardContainer = this.overlay.querySelector('.carousel-card')!;
+    this.carouselInner = this.overlay.querySelector('.carousel-card')!;
     this.canvas = this.overlay.querySelector('.carousel-canvas')!;
     this.headerBar = this.overlay.querySelector('.carousel-header')!;
     this.scoreBar = this.overlay.querySelector('.carousel-score-bar')!;
@@ -141,35 +120,33 @@ export class PlaylistCarousel {
     this.swipeHint = this.overlay.querySelector('.carousel-swipe-hint')!;
     this.metadataPanel = this.overlay.querySelector('.carousel-metadata-panel')!;
     this.closeBtn = this.overlay.querySelector('.carousel-close-btn')!;
-
-    // Inject styles
-    const styleEl = document.createElement('style');
-    styleEl.textContent = CAROUSEL_CSS;
-    document.head.appendChild(styleEl);
+    this.countdownRing = this.overlay.querySelector('.carousel-countdown-ring')!;
 
     // Close button
     this.closeBtn.addEventListener('click', () => this.destroy());
 
-    // Swipe detection on card container
-    createSwipeDetector(this.cardContainer, (result) => this.handleSwipe(result));
+    // Touch events with live tracking
+    this.carouselInner.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: true });
+    this.carouselInner.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
+    this.carouselInner.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: true });
+    this.carouselInner.addEventListener('touchcancel', () => this.onTouchCancel(), { passive: true });
 
     // Tap on canvas = play/pause
     this.canvas.addEventListener('click', () => {
       if (this.viewer?.getReplay()) this.viewer.togglePlay();
     });
 
-    // Initialize viewer and load first replay
+    // Initialize
     this.init();
   }
 
   private async init(): Promise<void> {
     const { ReplayViewer } = await loadReplayViewer();
     this.viewer = new ReplayViewer(this.canvas, {
-      cellSize: 6, // small cells for mobile
+      cellSize: 6,
       animationSpeed: 100,
     });
 
-    // Listen for replay end (when viewer reaches last turn while playing)
     this.viewer.onTurnChange = () => {
       if (!this.viewer) return;
       if (this.viewer.getIsPlaying() && this.viewer.getTurn() >= this.viewer.getTotalTurns() - 1) {
@@ -178,9 +155,7 @@ export class PlaylistCarousel {
       }
     };
 
-    this.viewer.onPlayStateChange = () => {
-      // no-op needed to keep callback wired
-    };
+    this.viewer.onPlayStateChange = () => { /* keep callback wired */ };
 
     await this.loadCard(this.currentIndex);
 
@@ -189,6 +164,141 @@ export class PlaylistCarousel {
       if (this.swipeHint) this.swipeHint.classList.add('carousel-hint-fade');
     }, 3000);
   }
+
+  // ── Touch handling with live 60fps tracking ──────────────────────────────
+
+  private onTouchStart(e: TouchEvent): void {
+    if (e.touches.length !== 1 || this.transitioning) return;
+    this.touch.startX = e.touches[0].clientX;
+    this.touch.startY = e.touches[0].clientY;
+    this.touch.startTime = Date.now();
+    this.touch.tracking = true;
+    this.touch.locked = 'none';
+    this.touch.currentDeltaY = 0;
+    this.touch.currentDeltaX = 0;
+  }
+
+  private onTouchMove(e: TouchEvent): void {
+    if (!this.touch.tracking || this.transitioning) return;
+    if (e.touches.length !== 1) return;
+
+    const dx = e.touches[0].clientX - this.touch.startX;
+    const dy = e.touches[0].clientY - this.touch.startY;
+
+    // Lock axis on first significant movement
+    if (this.touch.locked === 'none' && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      this.touch.locked = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+    }
+
+    if (this.touch.locked === 'vertical') {
+      this.touch.currentDeltaY = dy;
+      // Apply live transform for visual feedback
+      if (!REDUCED_MOTION) {
+        this.carouselInner.style.transition = 'none';
+        this.carouselInner.style.transform = `translateY(${dy}px)`;
+        this.carouselInner.style.opacity = String(1 - Math.min(Math.abs(dy) / 400, 0.4));
+      }
+      // Prevent scroll-through
+      e.preventDefault();
+    } else if (this.touch.locked === 'horizontal') {
+      if (this.metadataOpen) {
+        // Drag metadata panel closed
+        const clampedDx = Math.max(0, Math.min(METADATA_PANEL_WIDTH, -dx));
+        this.touch.currentDeltaX = clampedDx;
+        if (!REDUCED_MOTION) {
+          this.metadataPanel.style.transition = 'none';
+          this.metadataPanel.style.transform = `translateX(${METADATA_PANEL_WIDTH - clampedDx}px)`;
+          this.carouselInner.style.transition = 'none';
+          this.carouselInner.style.transform = `translateX(${-METADATA_PANEL_WIDTH + clampedDx}px)`;
+        }
+      } else {
+        this.touch.currentDeltaX = dx;
+        if (!REDUCED_MOTION) {
+          // Peek metadata panel
+          const reveal = Math.max(0, Math.min(METADATA_PANEL_WIDTH, dx));
+          const ratio = reveal / METADATA_PANEL_WIDTH;
+          this.metadataPanel.style.transition = 'none';
+          this.metadataPanel.style.transform = `translateX(${METADATA_PANEL_WIDTH - reveal}px)`;
+          this.carouselInner.style.transition = 'none';
+          this.carouselInner.style.transform = `translateX(${-reveal}px)`;
+          this.metadataPanel.style.opacity = String(ratio);
+        }
+      }
+    }
+  }
+
+  private onTouchEnd(_e: TouchEvent): void {
+    if (!this.touch.tracking) return;
+    this.touch.tracking = false;
+
+    const dy = this.touch.currentDeltaY;
+    const dx = this.touch.currentDeltaX;
+    const dt = Date.now() - this.touch.startTime;
+    const velocityY = Math.abs(dy) / Math.max(dt, 1);
+    const velocityX = Math.abs(dx) / Math.max(dt, 1);
+
+    // Restore transitions
+    this.carouselInner.style.transition = '';
+    this.carouselInner.style.transform = '';
+    this.carouselInner.style.opacity = '';
+    this.metadataPanel.style.transition = '';
+    this.metadataPanel.style.opacity = '';
+
+    if (this.touch.locked === 'vertical') {
+      const shouldAdvance = Math.abs(dy) > SWIPE_THRESHOLD || velocityY > VELOCITY_THRESHOLD;
+      if (shouldAdvance) {
+        if (dy < 0 && this.currentIndex < this.playlist.matches.length - 1) {
+          this.advanceTo(this.currentIndex + 1);
+        } else if (dy > 0 && this.currentIndex > 0) {
+          this.advanceTo(this.currentIndex - 1);
+        } else {
+          // At boundary — snap back
+          this.snapBack();
+        }
+      } else {
+        // Not enough — snap back
+        this.snapBack();
+      }
+    } else if (this.touch.locked === 'horizontal') {
+      if (this.metadataOpen) {
+        const shouldClose = dx > SWIPE_THRESHOLD || velocityX > VELOCITY_THRESHOLD;
+        if (shouldClose) {
+          this.closeMetadata();
+        } else {
+          this.openMetadata(); // snap back to open
+        }
+      } else {
+        const shouldOpen = dx > SWIPE_THRESHOLD || velocityX > VELOCITY_THRESHOLD;
+        if (shouldOpen) {
+          this.openMetadata();
+        } else {
+          this.closeMetadata(); // snap back to closed
+        }
+      }
+    }
+
+    this.touch.currentDeltaY = 0;
+    this.touch.currentDeltaX = 0;
+  }
+
+  private onTouchCancel(): void {
+    this.touch.tracking = false;
+    this.carouselInner.style.transition = '';
+    this.carouselInner.style.transform = '';
+    this.carouselInner.style.opacity = '';
+    this.metadataPanel.style.transition = '';
+    this.metadataPanel.style.opacity = '';
+    this.touch.currentDeltaY = 0;
+    this.touch.currentDeltaX = 0;
+  }
+
+  private snapBack(): void {
+    // CSS transition handles the snap-back animation
+    this.carouselInner.style.transform = '';
+    this.carouselInner.style.opacity = '';
+  }
+
+  // ── Card loading ─────────────────────────────────────────────────────────
 
   private async loadCard(index: number): Promise<void> {
     const match = this.playlist.matches[index];
@@ -207,15 +317,16 @@ export class PlaylistCarousel {
 
     // Reset metadata panel
     this.metadataOpen = false;
-    this.metadataTranslateX = METADATA_PANEL_WIDTH;
-    this.metadataPanel.style.transform = `translateX(${this.metadataTranslateX}px)`;
+    this.metadataPanel.style.transform = `translateX(${METADATA_PANEL_WIDTH}px)`;
+    this.metadataPanel.style.opacity = '0';
+    this.carouselInner.classList.remove('carousel-shifted');
     this.updateMetadataContent(match, null);
 
+    // Hide countdown ring
+    this.hideCountdownRing();
+
     // Clear auto-advance timer
-    if (this.autoAdvanceTimer) {
-      clearTimeout(this.autoAdvanceTimer);
-      this.autoAdvanceTimer = null;
-    }
+    this.clearAutoAdvance();
 
     // Fetch replay
     let replay = this.preloadedReplays.get(index);
@@ -235,7 +346,7 @@ export class PlaylistCarousel {
 
     // Set up director mode for auto-play
     const densities = computeAllDensities(replay);
-    this.directorSchedule = computeSpeedSchedule(densities, 30 as DurationPreset); // 30s target
+    this.directorSchedule = computeSpeedSchedule(densities, 30 as DurationPreset);
     this.directorState = createDirectorState();
     this.directorState.enabled = true;
     this.viewer.setDirectorMode(true);
@@ -258,7 +369,6 @@ export class PlaylistCarousel {
   }
 
   private async fetchReplay(matchId: string): Promise<Replay> {
-    // Try R2 first, fall back to B2
     const urls = [
       `${R2_BASE}/replays/${matchId}.json`,
       `${B2_FALLBACK}/replays/${matchId}.json`,
@@ -269,7 +379,6 @@ export class PlaylistCarousel {
         if (resp.ok) return await resp.json();
       } catch { /* try next */ }
     }
-    // Try same-origin as last resort (dev/staging)
     const resp = await fetch(`/replays/${matchId}.json`);
     if (!resp.ok) throw new Error(`Failed to fetch replay ${matchId}`);
     return resp.json();
@@ -297,7 +406,7 @@ export class PlaylistCarousel {
     const events = replay.turns.reduce((count, t) => count + (t.events?.length ?? 0), 0);
     const icons = events > 20 ? '⚔️💎🏰' : events > 5 ? '⚔️💎' : '⚔️';
     const totalTurns = replay.turns.length;
-    const estSeconds = Math.round(totalTurns / 16); // rough estimate at director speed
+    const estSeconds = Math.round(totalTurns / 16);
     this.eventHint.innerHTML = `${icons} ~${estSeconds}s`;
   }
 
@@ -317,7 +426,6 @@ export class PlaylistCarousel {
     parts.push(`<button class="carousel-meta-watch-full" data-match-id="${match.match_id}">Watch Full Replay →</button>`);
     this.metadataPanel.innerHTML = parts.join('');
 
-    // Wire "watch full" button
     const btn = this.metadataPanel.querySelector('.carousel-meta-watch-full');
     if (btn) {
       btn.addEventListener('click', () => {
@@ -328,62 +436,115 @@ export class PlaylistCarousel {
     }
   }
 
+  // ── Auto-advance with countdown ring ─────────────────────────────────────
+
   private onReplayEnd(): void {
-    // Show final score overlay briefly, then auto-advance
-    this.autoAdvanceTimer = setTimeout(() => {
-      if (this.currentIndex < this.playlist.matches.length - 1) {
-        this.advanceTo(this.currentIndex + 1);
-      }
-    }, AUTO_ADVANCE_DELAY);
-  }
-
-  private handleSwipe(result: SwipeResult): void {
-    if (this.transitioning) return;
-
-    // If metadata panel is open, close it on any swipe
-    if (this.metadataOpen && result.direction !== 'none') {
-      this.closeMetadata();
+    if (this.currentIndex >= this.playlist.matches.length - 1) {
+      // Last match — no auto-advance
       return;
     }
 
-    switch (result.direction) {
-      case 'up':
-        if (this.currentIndex < this.playlist.matches.length - 1) {
-          this.advanceTo(this.currentIndex + 1);
-        }
-        break;
-      case 'down':
-        if (this.currentIndex > 0) {
-          this.advanceTo(this.currentIndex - 1);
-        }
-        break;
-      case 'right':
-        this.openMetadata();
-        break;
-      case 'left':
-        this.closeMetadata();
-        break;
-      case 'none':
-        // tap — already handled by canvas click
-        break;
+    const startTime = performance.now();
+    const duration = this.autoAdvanceDelay;
+
+    // Show countdown ring
+    this.showCountdownRing();
+
+    // Animate the countdown ring
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Update ring stroke-dashoffset
+      const circle = this.countdownRing.querySelector('.carousel-countdown-circle') as SVGElement | null;
+      if (circle) {
+        const circumference = 2 * Math.PI * 14; // r=14
+        circle.style.strokeDashoffset = String(circumference * (1 - progress));
+      }
+
+      // Update label
+      const label = this.countdownRing.querySelector('.carousel-countdown-label');
+      if (label) {
+        const remaining = Math.ceil((duration - elapsed) / 1000);
+        label.textContent = String(Math.max(remaining, 0));
+      }
+
+      if (progress < 1) {
+        this.countdownAnimFrame = requestAnimationFrame(animate);
+      }
+    };
+    this.countdownAnimFrame = requestAnimationFrame(animate);
+
+    // Set the actual timer
+    this.autoAdvanceTimer = setTimeout(() => {
+      this.hideCountdownRing();
+      if (this.currentIndex < this.playlist.matches.length - 1) {
+        this.advanceTo(this.currentIndex + 1);
+      }
+    }, duration);
+
+    // Tap anywhere on the ring area to cancel
+    const cancelHandler = () => {
+      this.clearAutoAdvance();
+      this.hideCountdownRing();
+      this.countdownRing.removeEventListener('click', cancelHandler);
+    };
+    this.countdownRing.addEventListener('click', cancelHandler);
+  }
+
+  private showCountdownRing(): void {
+    this.countdownRing.style.display = 'flex';
+    this.countdownRing.style.opacity = '1';
+    const circle = this.countdownRing.querySelector('.carousel-countdown-circle') as SVGElement | null;
+    if (circle) {
+      const circumference = 2 * Math.PI * 14;
+      circle.style.strokeDasharray = String(circumference);
+      circle.style.strokeDashoffset = String(circumference);
     }
   }
+
+  private hideCountdownRing(): void {
+    this.countdownRing.style.opacity = '0';
+    if (this.countdownAnimFrame !== null) {
+      cancelAnimationFrame(this.countdownAnimFrame);
+      this.countdownAnimFrame = null;
+    }
+    // Keep display for fade-out transition
+    setTimeout(() => {
+      this.countdownRing.style.display = 'none';
+    }, 200);
+  }
+
+  private clearAutoAdvance(): void {
+    if (this.autoAdvanceTimer) {
+      clearTimeout(this.autoAdvanceTimer);
+      this.autoAdvanceTimer = null;
+    }
+    if (this.countdownAnimFrame !== null) {
+      cancelAnimationFrame(this.countdownAnimFrame);
+      this.countdownAnimFrame = null;
+    }
+  }
+
+  // ── Metadata panel ───────────────────────────────────────────────────────
 
   private openMetadata(): void {
     if (this.metadataOpen) return;
     this.metadataOpen = true;
-    this.metadataTranslateX = 0;
     this.metadataPanel.style.transform = 'translateX(0)';
-    this.cardContainer.classList.add('carousel-shifted');
+    this.metadataPanel.style.opacity = '1';
+    this.carouselInner.classList.add('carousel-shifted');
   }
 
   private closeMetadata(): void {
     if (!this.metadataOpen) return;
     this.metadataOpen = false;
-    this.metadataTranslateX = METADATA_PANEL_WIDTH;
     this.metadataPanel.style.transform = `translateX(${METADATA_PANEL_WIDTH}px)`;
-    this.cardContainer.classList.remove('carousel-shifted');
+    this.metadataPanel.style.opacity = '0';
+    this.carouselInner.classList.remove('carousel-shifted');
   }
+
+  // ── Card transitions ─────────────────────────────────────────────────────
 
   private advanceTo(index: number): void {
     if (index < 0 || index >= this.playlist.matches.length) return;
@@ -391,22 +552,36 @@ export class PlaylistCarousel {
     const direction = index > this.currentIndex ? 1 : -1;
     this.currentIndex = index;
 
-    // Cross-fade animation
-    this.cardContainer.classList.add(direction > 0 ? 'carousel-exit-up' : 'carousel-exit-down');
+    this.clearAutoAdvance();
+    this.hideCountdownRing();
+
+    if (REDUCED_MOTION) {
+      // Instant swap
+      this.stopDirectorTick();
+      this.loadCard(this.currentIndex).then(() => {
+        this.transitioning = false;
+      });
+      return;
+    }
+
+    // Animate out
+    this.carouselInner.classList.add(direction > 0 ? 'carousel-exit-up' : 'carousel-exit-down');
 
     setTimeout(() => {
       this.stopDirectorTick();
-      this.cardContainer.classList.remove('carousel-exit-up', 'carousel-exit-down', 'carousel-enter-up', 'carousel-enter-down');
-      this.cardContainer.classList.add(direction > 0 ? 'carousel-enter-up' : 'carousel-enter-down');
+      this.carouselInner.classList.remove('carousel-exit-up', 'carousel-exit-down');
+      this.carouselInner.classList.add(direction > 0 ? 'carousel-enter-up' : 'carousel-enter-down');
 
       this.loadCard(this.currentIndex).then(() => {
         setTimeout(() => {
-          this.cardContainer.classList.remove('carousel-enter-up', 'carousel-enter-down');
+          this.carouselInner.classList.remove('carousel-enter-up', 'carousel-enter-down');
           this.transitioning = false;
         }, TRANSITION_MS);
       });
     }, TRANSITION_MS / 2);
   }
+
+  // ── Director tick ────────────────────────────────────────────────────────
 
   private startDirectorTick(): void {
     this.stopDirectorTick();
@@ -428,20 +603,23 @@ export class PlaylistCarousel {
     }
   }
 
+  // ── Cleanup ──────────────────────────────────────────────────────────────
+
   destroy(): void {
     this.stopDirectorTick();
-    if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
+    this.clearAutoAdvance();
     if (this.viewer) {
       this.viewer.pause();
       this.viewer.destroy();
     }
+    this.styleEl.remove();
     this.overlay.remove();
     document.body.style.overflow = '';
     this.onClose();
   }
 }
 
-// ── HTML template ──────────────────────────────────────────────────────────────
+// ── HTML template ──────────────────────────────────────────────────────────
 
 const CAROUSEL_HTML = `
 <div class="carousel-container">
@@ -457,6 +635,18 @@ const CAROUSEL_HTML = `
     <div class="carousel-event-hint"></div>
   </div>
 
+  <div class="carousel-countdown-ring" style="display:none">
+    <svg viewBox="0 0 36 36" class="carousel-countdown-svg">
+      <circle class="carousel-countdown-bg" cx="18" cy="18" r="14"
+              fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2.5"/>
+      <circle class="carousel-countdown-circle" cx="18" cy="18" r="14"
+              fill="none" stroke="rgba(59,130,246,0.9)" stroke-width="2.5"
+              stroke-linecap="round"
+              transform="rotate(-90 18 18)"/>
+    </svg>
+    <span class="carousel-countdown-label">3</span>
+  </div>
+
   <div class="carousel-swipe-hint">↑ swipe for next</div>
 
   <div class="carousel-metadata-panel"></div>
@@ -465,7 +655,7 @@ const CAROUSEL_HTML = `
 </div>
 `;
 
-// ── CSS ────────────────────────────────────────────────────────────────────────
+// ── CSS ────────────────────────────────────────────────────────────────────
 
 const CAROUSEL_CSS = `
 .carousel-overlay {
@@ -523,7 +713,10 @@ const CAROUSEL_CSS = `
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  transition: transform ${TRANSITION_MS}ms ease-in-out;
+  transition: transform ${TRANSITION_MS}ms ease-in-out, opacity ${TRANSITION_MS}ms ease-in-out;
+  will-change: transform, opacity;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .carousel-card.carousel-shifted {
@@ -581,6 +774,50 @@ const CAROUSEL_CSS = `
   pointer-events: none;
 }
 
+/* ── Countdown ring (auto-advance indicator) ── */
+
+.carousel-countdown-ring {
+  position: absolute;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 200ms ease-out;
+  cursor: pointer;
+}
+
+.carousel-countdown-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.carousel-countdown-bg {
+  /* static background ring */
+}
+
+.carousel-countdown-circle {
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+.carousel-countdown-label {
+  position: relative;
+  z-index: 1;
+  color: rgba(255,255,255,0.9);
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: monospace;
+  pointer-events: none;
+}
+
+/* ── Swipe hint ── */
+
 .carousel-swipe-hint {
   position: absolute;
   bottom: 24px;
@@ -599,6 +836,8 @@ const CAROUSEL_CSS = `
   opacity: 0;
 }
 
+/* ── Metadata panel (revealed on horizontal swipe) ── */
+
 .carousel-metadata-panel {
   position: absolute;
   top: 0;
@@ -608,9 +847,11 @@ const CAROUSEL_CSS = `
   z-index: 20;
   background: rgba(15, 15, 25, 0.95);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 60px 16px 16px;
   transform: translateX(${METADATA_PANEL_WIDTH}px);
-  transition: transform ${TRANSITION_MS}ms ease-in-out;
+  opacity: 0;
+  transition: transform ${TRANSITION_MS}ms ease-in-out, opacity ${TRANSITION_MS}ms ease-in-out;
   color: rgba(255,255,255,0.85);
   font-size: 0.85rem;
   overflow-y: auto;
@@ -625,7 +866,7 @@ const CAROUSEL_CSS = `
 
 .carousel-meta-tag {
   font-size: 0.7rem;
-  color: var(--text-muted, #94a3b8);
+  color: #94a3b8;
   font-style: italic;
   margin-bottom: 12px;
 }
@@ -646,7 +887,7 @@ const CAROUSEL_CSS = `
   width: 100%;
   margin-top: 16px;
   padding: 10px;
-  background: var(--accent, #3b82f6);
+  background: #3b82f6;
   color: white;
   border: none;
   border-radius: 6px;
@@ -659,6 +900,8 @@ const CAROUSEL_CSS = `
 .carousel-meta-watch-full:active {
   opacity: 0.8;
 }
+
+/* ── Close button ── */
 
 .carousel-close-btn {
   position: absolute;
@@ -682,7 +925,8 @@ const CAROUSEL_CSS = `
   background: rgba(0,0,0,0.8);
 }
 
-/* Exit/enter animations for vertical transitions */
+/* ── Exit/enter animations ── */
+
 .carousel-exit-up {
   animation: carousel-slide-out-up ${TRANSITION_MS}ms ease-in forwards;
 }
@@ -717,5 +961,25 @@ const CAROUSEL_CSS = `
 @keyframes carousel-slide-in-down {
   from { transform: translateY(-100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* ── Reduced motion ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .carousel-overlay {
+    animation: none;
+  }
+  .carousel-card {
+    transition: none !important;
+  }
+  .carousel-metadata-panel {
+    transition: none !important;
+  }
+  .carousel-exit-up,
+  .carousel-exit-down,
+  .carousel-enter-up,
+  .carousel-enter-down {
+    animation: none !important;
+  }
 }
 `;

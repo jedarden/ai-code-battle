@@ -1,4 +1,6 @@
 // Home page — dynamic landing page per plan §16.3
+// §16.15: below-the-fold sections (playlists, season, evolution) deferred
+// via IntersectionObserver lazy sections to reduce initial DOM weight.
 import {
   fetchLeaderboard,
   fetchBlogIndex,
@@ -10,7 +12,7 @@ import {
   type Season,
   type MatchSummary,
 } from '../api-types';
-
+import { initLazySections, lazySection } from '../lib/lazy-section';
 // Featured replay selection: prefer enriched/AI-commentary matches, then most recent
 async function findFeaturedReplay(
   matches: MatchSummary[],
@@ -75,6 +77,21 @@ function esc(text: string): string {
   return d.innerHTML;
 }
 
+function renderPlaylistCards(playlists: any[]): string {
+  return playlists.map((pl: any) => `
+      <a href="#/watch/playlists/${pl.slug}" class="home-pl-card">
+        <div class="home-pl-thumb">
+          ${pl.thumbnail_match_id
+            ? `<img src="/replays/${pl.thumbnail_match_id}.jpg" alt="${esc(pl.title)}" loading="lazy">`
+            : '<div class="home-pl-placeholder">&#9876;</div>'}
+        </div>
+        <div class="home-pl-info">
+          <span class="home-pl-title">${esc(pl.title)}</span>
+          <span class="home-pl-count">${pl.match_count} matches</span>
+        </div>
+      </a>`).join('');
+}
+
 export async function renderHomePage(): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
@@ -132,6 +149,29 @@ export async function renderHomePage(): Promise<void> {
   const replayLink = hasLiveReplay
     ? `#/watch/replay?url=/replays/${featuredReplay!.id}.json`
     : '#/watch/replays';
+
+  // Build lazy-loaded content for below-the-fold sections
+  const playlistsHtml = featuredPlaylists.length > 0
+    ? lazySection(
+        'home-playlists',
+        `<section class="home-playlists"><h2>Playlists</h2><div class="home-carousel">${renderPlaylistCards(featuredPlaylists)}</div></section>`,
+        { placeholder: '<div class="lazy-placeholder" style="min-height:120px"></div>' }
+      )
+    : '';
+
+  const seasonHtml = activeSeason && seasonProgress
+    ? lazySection(
+        'home-season',
+        `<section class="home-season"><div class="home-season-info"><span class="home-season-name">${esc(activeSeason.name)}</span><span class="home-season-week">Week ${seasonProgress.week} of ${seasonProgress.totalWeeks}</span><span class="home-season-time">${seasonProgress.timeRemaining}</span></div><a href="#/watch/predictions" class="btn small primary">Predictions Open &rarr;</a></section>`,
+        { placeholder: '<div class="lazy-placeholder" style="min-height:60px"></div>' }
+      )
+    : '';
+
+  const evoHtml = lazySection(
+    'home-evo',
+    `<section class="home-evo"><div class="home-evo-info"><span class="home-evo-icon">&#129516;</span><span class="home-evo-text"><strong>Evolution Observatory</strong> &mdash; Gen #${evolutionMeta.generation}${evolutionMeta.promoted_today > 0 ? ` &middot; ${evolutionMeta.promoted_today} promoted today` : ''}${evolutionMeta.top_10_count > 0 ? ` &middot; ${evolutionMeta.top_10_count} in top 10` : ''}</span></div><a href="#/evolution" class="btn small secondary">Watch evolution live &rarr;</a></section>`,
+    { placeholder: '<div class="lazy-placeholder" style="min-height:60px"></div>' }
+  );
 
   app.innerHTML = `
 <div class="home-page">
@@ -199,60 +239,9 @@ export async function renderHomePage(): Promise<void> {
     </div>
   </section>
 
-  <!-- Playlists Carousel -->
-  ${featuredPlaylists.length > 0
-    ? `
-  <section class="home-playlists">
-    <h2>Playlists</h2>
-    <div class="home-carousel">
-      ${featuredPlaylists
-        .map(
-          (pl: any) => `
-      <a href="#/watch/playlists/${pl.slug}" class="home-pl-card">
-        <div class="home-pl-thumb">
-          ${pl.thumbnail_match_id
-            ? `<img src="/replays/${pl.thumbnail_match_id}.jpg" alt="${esc(pl.title)}" loading="lazy">`
-            : '<div class="home-pl-placeholder">&#9876;</div>'}
-        </div>
-        <div class="home-pl-info">
-          <span class="home-pl-title">${esc(pl.title)}</span>
-          <span class="home-pl-count">${pl.match_count} matches</span>
-        </div>
-      </a>`,
-        )
-        .join('')}
-    </div>
-  </section>`
-    : ''}
-
-  <!-- Season Status Bar -->
-  ${activeSeason && seasonProgress
-    ? `
-  <section class="home-season">
-    <div class="home-season-info">
-      <span class="home-season-name">${esc(activeSeason.name)}</span>
-      <span class="home-season-week">Week ${seasonProgress.week} of ${seasonProgress.totalWeeks}</span>
-      <span class="home-season-time">${seasonProgress.timeRemaining}</span>
-    </div>
-    <a href="#/watch/predictions" class="btn small primary">Predictions Open &rarr;</a>
-  </section>`
-    : ''}
-
-  <!-- Evolution Observatory Mini -->
-  <section class="home-evo">
-    <div class="home-evo-info">
-      <span class="home-evo-icon">&#129516;</span>
-      <span class="home-evo-text">
-        <strong>Evolution Observatory</strong> &mdash;
-        Gen #${evolutionMeta.generation}${evolutionMeta.promoted_today > 0
-          ? ` &middot; ${evolutionMeta.promoted_today} promoted today`
-          : ''}${evolutionMeta.top_10_count > 0
-          ? ` &middot; ${evolutionMeta.top_10_count} in top 10`
-          : ''}
-      </span>
-    </div>
-    <a href="#/evolution" class="btn small secondary">Watch evolution live &rarr;</a>
-  </section>
+  ${playlistsHtml}
+  ${seasonHtml}
+  ${evoHtml}
 </div>
 
 <style>
@@ -540,4 +529,7 @@ export async function renderHomePage(): Promise<void> {
   .home-pl-card { width: 140px; }
 }
 </style>`;
+
+  // Activate lazy sections for below-the-fold content
+  initLazySections(app);
 }
