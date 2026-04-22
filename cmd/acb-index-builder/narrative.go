@@ -13,34 +13,34 @@ import (
 type StoryArcType string
 
 const (
-	ArcRise            StoryArcType = "rise"
-	ArcFall            StoryArcType = "fall"
-	ArcRivalry         StoryArcType = "rivalry"
-	ArcUpset           StoryArcType = "upset"
+	ArcRise               StoryArcType = "rise"
+	ArcFall               StoryArcType = "fall"
+	ArcRivalry            StoryArcType = "rivalry"
+	ArcUpset              StoryArcType = "upset"
 	ArcEvolutionMilestone StoryArcType = "evolution"
-	ArcComeback        StoryArcType = "comeback"
-	ArcSeasonRecap     StoryArcType = "season-recap"
+	ArcComeback           StoryArcType = "comeback"
+	ArcSeasonRecap        StoryArcType = "season-recap"
 )
 
 // StoryArc represents a detected narrative arc
 type StoryArc struct {
-	Type        StoryArcType `json:"type"`
-	BotID       string       `json:"bot_id,omitempty"`
-	BotName     string       `json:"bot_name,omitempty"`
-	BotBID      string       `json:"bot_b_id,omitempty"`
-	BotBName    string       `json:"bot_b_name,omitempty"`
-	RatingStart int          `json:"rating_start,omitempty"`
-	RatingEnd   int          `json:"rating_end,omitempty"`
-	MatchID     string       `json:"match_id,omitempty"`
-	SeasonName  string       `json:"season_name,omitempty"`
+	Type       StoryArcType `json:"type"`
+	BotID      string       `json:"bot_id,omitempty"`
+	BotName    string       `json:"bot_name,omitempty"`
+	BotBID     string       `json:"bot_b_id,omitempty"`
+	BotBName   string       `json:"bot_b_name,omitempty"`
+	RatingStart int         `json:"rating_start,omitempty"`
+	RatingEnd   int         `json:"rating_end,omitempty"`
+	MatchID    string       `json:"match_id,omitempty"`
+	SeasonName string       `json:"season_name,omitempty"`
 
 	// Context for LLM prompt
-	KeyMatches   []KeyMatch `json:"key_matches,omitempty"`
-	Archetype    string     `json:"archetype,omitempty"`
-	Origin       string     `json:"origin,omitempty"`
-	ParentIDs    []string   `json:"parent_ids,omitempty"`
-	Generation   int        `json:"generation,omitempty"`
-	CommunityHint string    `json:"community_hint,omitempty"`
+	KeyMatches    []KeyMatch `json:"key_matches,omitempty"`
+	Archetype     string     `json:"archetype,omitempty"`
+	Origin        string     `json:"origin,omitempty"`
+	ParentIDs     []string   `json:"parent_ids,omitempty"`
+	Generation    int        `json:"generation,omitempty"`
+	CommunityHint string     `json:"community_hint,omitempty"`
 
 	// Rivalry-specific fields
 	BotAWins     int `json:"bot_a_wins,omitempty"`
@@ -138,11 +138,15 @@ func (c *LLMClient) GenerateNarrative(ctx context.Context, req NarrativeRequest)
 	return headline, narrative, nil
 }
 
+// buildNarrativePrompt constructs a sports-journalism prompt per plan §15.5,
+// injecting rivalry context, ELO before/after, critical moments from §13.2,
+// season standings, and head-to-head stats.
 func buildNarrativePrompt(req NarrativeRequest) string {
 	var sb strings.Builder
 
 	// §15.5 instruction: sports-journalism narrative with structured contextual match data
 	sb.WriteString("Write a 200-word sports-journalism narrative about this event in the AI Code Battle platform. ")
+	sb.WriteString("You are a sports journalist covering an emergent bot league — write with the energy and specificity of esports commentary. ")
 	sb.WriteString("Be dramatic but factual. Reference specific matches by ID, ELO before/after deltas, rivalry context, head-to-head records, critical turning points, and season standings. ")
 	sb.WriteString("Weave the data into a compelling story — quote scores, cite map names, describe the strategic moments that defined the outcome. ")
 	sb.WriteString("Write in present tense with a punchy, journalistic tone. Do not use emojis.\n\n")
@@ -155,7 +159,7 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 
 	switch req.ArcType {
 	case ArcRise:
-		sb.WriteString(fmt.Sprintf("Arc type: Rise\n"))
+		sb.WriteString("Arc type: Rise\n")
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
 		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
 		if req.BotRank > 0 {
@@ -171,6 +175,9 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 		}
 		if req.Generation > 0 && len(req.ParentIDs) > 0 {
 			sb.WriteString(fmt.Sprintf("Lineage: generation %d, parents: %s\n", req.Generation, strings.Join(req.ParentIDs, ", ")))
+		}
+		if req.CommunityHint != "" {
+			sb.WriteString(fmt.Sprintf("Community tactical hint: %s\n", req.CommunityHint))
 		}
 		if len(req.KeyMatches) > 0 {
 			sb.WriteString("Critical moments (turning points in the climb):\n")
@@ -189,38 +196,41 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 				}
 				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d%s) on \"%s\" — score %s, %d turns%s. Match ID: %s\n",
 					outcome, m.OpponentName, m.OpponentRating, rankStr, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, condStr, m.MatchID))
+				if m.CriticalMoment != "" {
+					sb.WriteString(fmt.Sprintf("    Turning point: %s\n", m.CriticalMoment))
+				}
 			}
 		}
 		if len(req.HeadToHead) > 0 {
-			sb.WriteString("Head-to-head records (season):\n")
+			sb.WriteString("Head-to-head records (season context):\n")
 			for _, h := range req.HeadToHead {
 				rankStr := ""
 				if h.OpponentRank > 0 {
-					rankStr = fmt.Sprintf(" (#%d)", h.OpponentRank)
+					rankStr = fmt.Sprintf(", ranked #%d", h.OpponentRank)
 				}
-				sb.WriteString(fmt.Sprintf("  - vs %s%s: %dW-%dL (%d matches)\n",
-					h.OpponentName, rankStr, h.Wins, h.Losses, h.TotalMatches))
+				sb.WriteString(fmt.Sprintf("  vs %s%s: %dW-%dL (%d matches)\n", h.OpponentName, rankStr, h.Wins, h.Losses, h.TotalMatches))
 			}
-		}
-		if req.CommunityHint != "" {
-			sb.WriteString(fmt.Sprintf("Community tactical insight that may have contributed: \"%s\"\n", req.CommunityHint))
 		}
 
 	case ArcFall:
-		sb.WriteString(fmt.Sprintf("Arc type: Fall\n"))
+		sb.WriteString("Arc type: Fall\n")
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
 		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
 		if req.BotRank > 0 {
 			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
 		}
 		delta := req.RatingStart - req.RatingEnd
-		sb.WriteString(fmt.Sprintf("ELO: %d → %d (delta -%d) over 7 days\n", req.RatingStart, req.RatingEnd, delta))
+		sb.WriteString(fmt.Sprintf("ELO: %d → %d (dropped %d points) over 7 days\n", req.RatingStart, req.RatingEnd, delta))
 		if req.Archetype != "" {
 			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
 		}
 		if len(req.KeyMatches) > 0 {
 			sb.WriteString("Critical losses (turning points in the decline):\n")
 			for _, m := range req.KeyMatches {
+				outcome := "Lost to"
+				if m.Won {
+					outcome = "Beat"
+				}
 				rankStr := ""
 				if m.OpponentRank > 0 {
 					rankStr = fmt.Sprintf(", #%d", m.OpponentRank)
@@ -229,28 +239,33 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 				if m.EndCondition != "" {
 					condStr = fmt.Sprintf(" [%s]", m.EndCondition)
 				}
-				sb.WriteString(fmt.Sprintf("  - Lost to %s (ELO %d%s) on \"%s\" — score %s, %d turns%s. Match ID: %s\n",
-					m.OpponentName, m.OpponentRating, rankStr, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, condStr, m.MatchID))
+				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d%s) on \"%s\" — score %s, %d turns%s. Match ID: %s\n",
+					outcome, m.OpponentName, m.OpponentRating, rankStr, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, condStr, m.MatchID))
+				if m.CriticalMoment != "" {
+					sb.WriteString(fmt.Sprintf("    Turning point: %s\n", m.CriticalMoment))
+				}
 			}
 		}
 		if len(req.HeadToHead) > 0 {
-			sb.WriteString("Head-to-head records (season):\n")
+			sb.WriteString("Head-to-head records (season context):\n")
 			for _, h := range req.HeadToHead {
 				rankStr := ""
 				if h.OpponentRank > 0 {
-					rankStr = fmt.Sprintf(" (#%d)", h.OpponentRank)
+					rankStr = fmt.Sprintf(", ranked #%d", h.OpponentRank)
 				}
-				sb.WriteString(fmt.Sprintf("  - vs %s%s: %dW-%dL (%d matches)\n",
-					h.OpponentName, rankStr, h.Wins, h.Losses, h.TotalMatches))
+				sb.WriteString(fmt.Sprintf("  vs %s%s: %dW-%dL (%d matches)\n", h.OpponentName, rankStr, h.Wins, h.Losses, h.TotalMatches))
 			}
 		}
 
 	case ArcRivalry:
-		sb.WriteString(fmt.Sprintf("Arc type: Rivalry Intensifies\n"))
-		sb.WriteString(fmt.Sprintf("Bots: %s vs %s\n", req.BotName, req.BotBName))
+		sb.WriteString("Arc type: Rivalry Intensifies\n")
+		sb.WriteString(fmt.Sprintf("Bot A: %s\n", req.BotName))
+		sb.WriteString(fmt.Sprintf("Bot B: %s\n", req.BotBName))
 		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
-		sb.WriteString(fmt.Sprintf("Head-to-head record this week: %d-%d %s vs %s (%d total matches)\n",
-			req.BotAWins, req.BotBWins, req.BotName, req.BotBName, req.TotalMatches))
+		sb.WriteString(fmt.Sprintf("Head-to-head: %d-%d over %d matches\n", req.BotAWins, req.BotBWins, req.TotalMatches))
+		if req.RatingStart > 0 || req.RatingEnd > 0 {
+			sb.WriteString(fmt.Sprintf("ELO context: %s at %d, %s at %d\n", req.BotName, req.RatingStart, req.BotBName, req.RatingEnd))
+		}
 		if len(req.KeyMatches) > 0 {
 			sb.WriteString("Recent encounters (critical moments):\n")
 			for _, m := range req.KeyMatches {
@@ -262,144 +277,115 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 				if m.EndCondition != "" {
 					condStr = fmt.Sprintf(" [%s]", m.EndCondition)
 				}
-				sb.WriteString(fmt.Sprintf("  - %s won on \"%s\" (%d turns, score %s, opponent ELO %d)%s. Match ID: %s\n",
-					winner, nonEmpty(m.MapName, "standard map"), m.TurnCount, m.Score, m.OpponentRating, condStr, m.MatchID))
+				sb.WriteString(fmt.Sprintf("  - %s won on \"%s\" — score %s, %d turns, opponent ELO %d%s. Match ID: %s\n",
+					winner, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, m.OpponentRating, condStr, m.MatchID))
+				if m.CriticalMoment != "" {
+					sb.WriteString(fmt.Sprintf("    Turning point: %s\n", m.CriticalMoment))
+				}
 			}
 		}
 		if len(req.HeadToHead) > 0 {
 			sb.WriteString("All-time head-to-head:\n")
 			for _, h := range req.HeadToHead {
-				sb.WriteString(fmt.Sprintf("  - vs %s: %dW-%dL (%d matches)\n",
+				sb.WriteString(fmt.Sprintf("  vs %s: %dW-%dL (%d matches)\n",
 					h.OpponentName, h.Wins, h.Losses, h.TotalMatches))
 			}
 		}
 
 	case ArcUpset:
-		sb.WriteString(fmt.Sprintf("Arc type: Upset of the Week\n"))
-		sb.WriteString(fmt.Sprintf("Underdog: %s (ELO %d)\n", req.BotName, req.RatingStart))
-		sb.WriteString(fmt.Sprintf("Favorite: %s (ELO %d)\n", req.BotBName, req.RatingEnd))
-		gap := req.RatingEnd - req.RatingStart
-		sb.WriteString(fmt.Sprintf("ELO gap: %d points\n", gap))
+		sb.WriteString("Arc type: Upset of the Week\n")
+		sb.WriteString(fmt.Sprintf("Underdog: %s\n", req.BotName))
+		sb.WriteString(fmt.Sprintf("Favorite: %s\n", req.BotBName))
 		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
+		eloDelta := req.RatingEnd - req.RatingStart
+		sb.WriteString(fmt.Sprintf("ELO gap: %d (underdog %d vs favorite %d)\n", eloDelta, req.RatingStart, req.RatingEnd))
 		if len(req.KeyMatches) > 0 {
 			m := req.KeyMatches[0]
-			condStr := ""
-			if m.EndCondition != "" {
-				condStr = fmt.Sprintf(" [%s]", m.EndCondition)
-			}
-			sb.WriteString(fmt.Sprintf("Match: %s stunned %s with a %s scoreline after %d turns on \"%s\"%s. Match ID: %s\n",
-				req.BotName, req.BotBName, m.Score, m.TurnCount, nonEmpty(m.MapName, "standard map"), condStr, m.MatchID))
-		}
-		if len(req.HeadToHead) > 0 {
-			sb.WriteString("Prior head-to-head:\n")
-			for _, h := range req.HeadToHead {
-				sb.WriteString(fmt.Sprintf("  - vs %s: %dW-%dL (%d matches)\n",
-					h.OpponentName, h.Wins, h.Losses, h.TotalMatches))
+			sb.WriteString(fmt.Sprintf("Match: %s upset %s on \"%s\" — score %s, %d turns. Match ID: %s\n",
+				req.BotName, req.BotBName, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, m.MatchID))
+			if m.CriticalMoment != "" {
+				sb.WriteString(fmt.Sprintf("  Turning point: %s\n", m.CriticalMoment))
 			}
 		}
 
 	case ArcEvolutionMilestone:
-		sb.WriteString(fmt.Sprintf("Arc type: Evolution Milestone\n"))
+		sb.WriteString("Arc type: Evolution Milestone\n")
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
 		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
 		if req.BotRank > 0 {
 			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
 		}
-		sb.WriteString(fmt.Sprintf("ELO: new all-time high of %d\n", req.RatingEnd))
-		sb.WriteString(fmt.Sprintf("Origin: %s, generation %d\n", req.Origin, req.Generation))
-		if len(req.ParentIDs) > 0 {
-			sb.WriteString(fmt.Sprintf("Lineage (parent bots): %s\n", strings.Join(req.ParentIDs, ", ")))
-		}
-		if req.CommunityHint != "" {
-			sb.WriteString(fmt.Sprintf("Community tactical insight that influenced this bot: \"%s\"\n", req.CommunityHint))
-		}
+		sb.WriteString(fmt.Sprintf("ELO: %d\n", req.RatingEnd))
 		if req.Archetype != "" {
 			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
 		}
-		if len(req.KeyMatches) > 0 {
-			sb.WriteString("Key matches driving the milestone:\n")
-			for _, m := range req.KeyMatches {
-				outcome := "lost to"
-				if m.Won {
-					outcome = "defeated"
-				}
-				rankStr := ""
-				if m.OpponentRank > 0 {
-					rankStr = fmt.Sprintf(", #%d", m.OpponentRank)
-				}
-				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d%s) — score %s, %d turns. Match ID: %s\n",
-					req.BotName, outcome, m.OpponentRating, rankStr, m.Score, m.TurnCount, m.MatchID))
-			}
+		if req.Origin != "" {
+			sb.WriteString(fmt.Sprintf("Origin: %s\n", req.Origin))
 		}
-		if len(req.HeadToHead) > 0 {
-			sb.WriteString("Head-to-head vs top opponents:\n")
-			for _, h := range req.HeadToHead {
-				rankStr := ""
-				if h.OpponentRank > 0 {
-					rankStr = fmt.Sprintf(" (#%d)", h.OpponentRank)
+		if req.Generation > 0 {
+			sb.WriteString(fmt.Sprintf("generation %d\n", req.Generation))
+		}
+		if len(req.ParentIDs) > 0 {
+			sb.WriteString(fmt.Sprintf("Parents: %s\n", strings.Join(req.ParentIDs, ", ")))
+		}
+		if req.CommunityHint != "" {
+			sb.WriteString(fmt.Sprintf("Community tactical hint that influenced it: %s\n", req.CommunityHint))
+		}
+		if len(req.KeyMatches) > 0 {
+			sb.WriteString("Key matches in the breakthrough:\n")
+			for _, m := range req.KeyMatches {
+				outcome := "Lost to"
+				if m.Won {
+					outcome = "Beat"
 				}
-				sb.WriteString(fmt.Sprintf("  - vs %s%s: %dW-%dL\n",
-					h.OpponentName, rankStr, h.Wins, h.Losses))
+				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d) — score %s, %d turns. Match ID: %s\n",
+					outcome, m.OpponentName, m.OpponentRating, m.Score, m.TurnCount, m.MatchID))
+				if m.CriticalMoment != "" {
+					sb.WriteString(fmt.Sprintf("    Turning point: %s\n", m.CriticalMoment))
+				}
 			}
 		}
 
 	case ArcComeback:
-		sb.WriteString(fmt.Sprintf("Arc type: Comeback\n"))
+		sb.WriteString("Arc type: Comeback\n")
 		sb.WriteString(fmt.Sprintf("Bot: %s\n", req.BotName))
 		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
 		if req.BotRank > 0 {
 			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
 		}
-		sb.WriteString(fmt.Sprintf("ELO recovery: %d → %d (after declining to %d, climbed back %+d)\n",
-			req.RatingStart, req.RatingEnd, req.RatingStart-150, req.RatingEnd-(req.RatingStart-150)))
+		sb.WriteString(fmt.Sprintf("ELO: peaked at %d, fell to trough, recovered to %d\n", req.RatingStart, req.RatingEnd))
 		if req.Archetype != "" {
 			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
 		}
 		if len(req.KeyMatches) > 0 {
-			sb.WriteString("Turning point matches:\n")
+			sb.WriteString("Key matches in the comeback:\n")
 			for _, m := range req.KeyMatches {
-				rankStr := ""
-				if m.OpponentRank > 0 {
-					rankStr = fmt.Sprintf(" (#%d)", m.OpponentRank)
+				outcome := "Lost to"
+				if m.Won {
+					outcome = "Beat"
 				}
-				sb.WriteString(fmt.Sprintf("  - Defeated %s (ELO %d%s) on \"%s\" — score %s, %d turns. Match ID: %s\n",
-					m.OpponentName, m.OpponentRating, rankStr, nonEmpty(m.MapName, "standard map"), m.Score, m.TurnCount, m.MatchID))
+				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d) — score %s, %d turns. Match ID: %s\n",
+					outcome, m.OpponentName, m.OpponentRating, m.Score, m.TurnCount, m.MatchID))
+				if m.CriticalMoment != "" {
+					sb.WriteString(fmt.Sprintf("    Turning point: %s\n", m.CriticalMoment))
+				}
 			}
 		}
-		if len(req.HeadToHead) > 0 {
-			sb.WriteString("Head-to-head during comeback:\n")
-			for _, h := range req.HeadToHead {
-				sb.WriteString(fmt.Sprintf("  - vs %s: %dW-%dL (%d matches)\n",
-					h.OpponentName, h.Wins, h.Losses, h.TotalMatches))
-			}
+
+	case ArcSeasonRecap:
+		sb.WriteString("Arc type: Season Narrative\n")
+		sb.WriteString(fmt.Sprintf("Season: %s\n", seasonLabel))
+		if req.BotName != "" {
+			sb.WriteString(fmt.Sprintf("Champion: %s\n", req.BotName))
 		}
 	}
 
 	return sb.String()
 }
 
-type llmChatRequest struct {
-	Model    string          `json:"model"`
-	Messages []llmChatMessage `json:"messages"`
-	MaxTokens int            `json:"max_tokens,omitempty"`
-}
-
-type llmChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type llmChatResponse struct {
-	Choices []struct {
-		Message llmChatMessage `json:"message"`
-	} `json:"choices"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
-}
-
-// systemPromptSportsJournalist is the system prompt framing the LLM as a
-// sports journalist covering AI Code Battle — per plan §15.1 and §15.5.
+// systemPromptSportsJournalist frames the LLM as a sports journalist covering AI Code Battle.
+// Per plan §15.1 and §15.5, this produces sports-journalism-style output with structured
+// contextual match data including rivalry context, ELO deltas, critical moments, season stakes.
 const systemPromptSportsJournalist = `You are a sports journalist covering an emergent bot league called AI Code Battle, where autonomous programs compete in grid-based strategy matches. Write with the energy and narrative instinct of esports journalism — dramatic but factual, specific but accessible.
 
 Your coverage style:
@@ -408,123 +394,82 @@ Your coverage style:
 - Describe ELO shifts the way a power rankings columnist describes team movement — "surged 200 points" not "increased."
 - Use present tense. Keep paragraphs tight and punchy. Do not use emojis.
 - When lineage or evolution data is provided, frame it like a scouting report — origin story, parent strategies, behavioral archetype.
-- Always ground narrative in the specific match data, scores, and ratings provided — never fabricate match details.`
+- Always ground narrative in the specific match data, scores, and ratings provided — never fabricate match details.
+- Keep narratives to 200 words.`
 
+// chatCompletion sends a prompt to the LLM API and returns the completion text.
+// Per §15.1/§15.5, uses systemPromptSportsJournalist to frame the output.
 func (c *LLMClient) chatCompletion(ctx context.Context, prompt string) (string, error) {
-	body, err := json.Marshal(llmChatRequest{
-		Model: "GLM-5-Turbo",
-		Messages: []llmChatMessage{
+	reqBody := struct {
+		Model    string `json:"model"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+		MaxTokens   int     `json:"max_tokens"`
+		Temperature float64 `json:"temperature"`
+	}{
+		Model: "gpt-4o-mini",
+		Messages: []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}{
 			{Role: "system", Content: systemPromptSportsJournalist},
 			{Role: "user", Content: prompt},
 		},
-		MaxTokens: 500,
-	})
+		MaxTokens:   1024,
+		Temperature: 0.7,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := c.baseURL + "/v1/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/v1/chat/completions", strings.NewReader(string(bodyBytes)))
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		return "", fmt.Errorf("create request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("http request: %w", err)
+		return "", fmt.Errorf("llm request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var cr llmChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("llm api returned status %d", resp.StatusCode)
+	}
+
+	var chatResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return "", fmt.Errorf("decode response: %w", err)
 	}
-
-	if cr.Error != nil {
-		return "", fmt.Errorf("llm api error: %s", cr.Error.Message)
+	if len(chatResp.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
 	}
-	if len(cr.Choices) == 0 {
-		return "", fmt.Errorf("llm api returned no choices")
-	}
-
-	return cr.Choices[0].Message.Content, nil
+	return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
 }
 
-// detectStoryArcs scans data for narrative arcs per plan §15.5
+// detectStoryArcs scans index data for active story arcs per §15.5.
 func detectStoryArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
-
-	// Rise: Bot gained >=200 rating in last 7 days
 	arcs = append(arcs, detectRiseArcs(data)...)
-
-	// Fall: Bot lost >=200 rating in last 7 days
 	arcs = append(arcs, detectFallArcs(data)...)
-
-	// Rivalry Intensifies: 5+ matches this week with alternating wins
 	arcs = append(arcs, detectRivalryArcs(data)...)
-
-	// Upset of the Week: Biggest rating gap where underdog won
 	arcs = append(arcs, detectUpsetArcs(data)...)
-
-	// Evolution Milestone: Evolved bot reached new ATH or entered top 5
 	arcs = append(arcs, detectEvolutionArcs(data)...)
-
-	// Comeback: Bot recovered >=150 rating after decline
 	arcs = append(arcs, detectComebackArcs(data)...)
-
-	// Enrich arcs with community tactical hints where available.
-	arcs = attachCommunityHints(arcs, data)
-
-	return arcs
-}
-
-// attachCommunityHints enriches detected story arcs with the highest-upvote
-// community tactical hint associated with the primary bot in each arc.
-// Feedback is expected to be sorted by upvotes DESC (as fetched from the DB).
-func attachCommunityHints(arcs []StoryArc, data *IndexData) []StoryArc {
-	if len(data.Feedback) == 0 {
-		return arcs
-	}
-
-	// Build matchID → participant botIDs map.
-	matchBots := make(map[string][]string, len(data.Matches))
-	for _, m := range data.Matches {
-		ids := make([]string, 0, len(m.Participants))
-		for _, p := range m.Participants {
-			ids = append(ids, p.BotID)
-		}
-		matchBots[m.ID] = ids
-	}
-
-	// Assign the first (highest-upvote) eligible hint per bot.
-	const minHintUpvotes = 3
-	botHint := make(map[string]string)
-	for _, f := range data.Feedback {
-		if f.Type != "idea" && f.Type != "mistake" {
-			continue
-		}
-		if f.Upvotes < minHintUpvotes {
-			break // Sorted DESC; no higher-upvote entries remain.
-		}
-		for _, botID := range matchBots[f.MatchID] {
-			if _, seen := botHint[botID]; !seen {
-				botHint[botID] = f.Body
-			}
-		}
-	}
-
-	for i := range arcs {
-		if arcs[i].CommunityHint != "" {
-			continue
-		}
-		if hint, ok := botHint[arcs[i].BotID]; ok {
-			arcs[i].CommunityHint = hint
-		}
-	}
 	return arcs
 }
 
@@ -532,40 +477,37 @@ func detectRiseArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
 
 	for _, bot := range data.Bots {
-		// Check if bot has rating history showing >=200 point gain
-		if len(getBotRatingHistory(bot.ID, data)) < 2 {
+		history := getBotRatingHistory(bot.ID, data)
+		if len(history) < 2 {
 			continue
 		}
 
-		// Find rating from 7 days ago
-		now := data.GeneratedAt
-		sevenDaysAgo := now.AddDate(0, 0, -7)
-
+		weekAgo := data.GeneratedAt.AddDate(0, 0, -7)
 		var oldRating float64
 		var foundOld bool
-		for _, rh := range getBotRatingHistory(bot.ID, data) {
-			if rh.RecordedAt.Before(sevenDaysAgo) || rh.RecordedAt.Equal(sevenDaysAgo) {
+		for _, rh := range history {
+			if rh.RecordedAt.Before(weekAgo) || rh.RecordedAt.Equal(weekAgo) {
 				oldRating = rh.Rating
 				foundOld = true
 			}
 		}
-
 		if !foundOld {
 			continue
 		}
 
-		currentRating := bot.Rating
-		ratingGain := currentRating - oldRating
-
-		if ratingGain >= 200 {
+		delta := bot.Rating - oldRating
+		if delta >= 200 {
 			arcs = append(arcs, StoryArc{
 				Type:        ArcRise,
 				BotID:       bot.ID,
 				BotName:     bot.Name,
 				RatingStart: int(oldRating),
-				RatingEnd:   int(currentRating),
-				KeyMatches:  extractKeyMatches(bot.ID, data),
+				RatingEnd:   int(bot.Rating),
 				Archetype:   bot.Archetype,
+				Origin:      buildOriginString(bot),
+				ParentIDs:   bot.ParentIDs,
+				Generation:  bot.Generation,
+				KeyMatches:  extractKeyMatches(bot.ID, data),
 			})
 		}
 	}
@@ -577,36 +519,33 @@ func detectFallArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
 
 	for _, bot := range data.Bots {
-		if len(getBotRatingHistory(bot.ID, data)) < 2 {
+		history := getBotRatingHistory(bot.ID, data)
+		if len(history) < 2 {
 			continue
 		}
 
-		now := data.GeneratedAt
-		sevenDaysAgo := now.AddDate(0, 0, -7)
-
+		weekAgo := data.GeneratedAt.AddDate(0, 0, -7)
 		var oldRating float64
 		var foundOld bool
-		for _, rh := range getBotRatingHistory(bot.ID, data) {
-			if rh.RecordedAt.Before(sevenDaysAgo) || rh.RecordedAt.Equal(sevenDaysAgo) {
+		for _, rh := range history {
+			if rh.RecordedAt.Before(weekAgo) || rh.RecordedAt.Equal(weekAgo) {
 				oldRating = rh.Rating
 				foundOld = true
 			}
 		}
-
 		if !foundOld {
 			continue
 		}
 
-		currentRating := bot.Rating
-		ratingLoss := oldRating - currentRating
-
-		if ratingLoss >= 200 {
+		delta := oldRating - bot.Rating
+		if delta >= 200 {
 			arcs = append(arcs, StoryArc{
 				Type:        ArcFall,
 				BotID:       bot.ID,
 				BotName:     bot.Name,
 				RatingStart: int(oldRating),
-				RatingEnd:   int(currentRating),
+				RatingEnd:   int(bot.Rating),
+				Archetype:   bot.Archetype,
 				KeyMatches:  extractKeyMatches(bot.ID, data),
 			})
 		}
@@ -617,71 +556,66 @@ func detectFallArcs(data *IndexData) []StoryArc {
 
 func detectRivalryArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
+	weekAgo := data.GeneratedAt.AddDate(0, 0, -7)
 
-	// Count matches between bot pairs this week
-	pairMatches := make(map[string][]MatchData)
-
-	now := data.GeneratedAt
-	weekAgo := now.AddDate(0, 0, -7)
+	pairData := make(map[string]*struct {
+		botAID, botBID   string
+		aWins, bWins     int
+		total            int
+		weekA, weekB     int
+	})
 
 	for _, m := range data.Matches {
-		if m.PlayedAt.Before(weekAgo) {
-			continue
-		}
 		if len(m.Participants) < 2 {
 			continue
 		}
-
 		for i, p1 := range m.Participants {
 			for _, p2 := range m.Participants[i+1:] {
-				key := fmt.Sprintf("%s|%s", minStr(p1.BotID, p2.BotID), maxStr(p1.BotID, p2.BotID))
-				pairMatches[key] = append(pairMatches[key], m)
+				key := minStr(p1.BotID, p2.BotID) + "-" + maxStr(p1.BotID, p2.BotID)
+				aID := minStr(p1.BotID, p2.BotID)
+				bID := maxStr(p1.BotID, p2.BotID)
+
+				if pairData[key] == nil {
+					pairData[key] = &struct {
+						botAID, botBID   string
+						aWins, bWins     int
+						total            int
+						weekA, weekB     int
+					}{botAID: aID, botBID: bID}
+				}
+				pairData[key].total++
+				if p1.Won {
+					if p1.BotID == aID {
+						pairData[key].aWins++
+					} else {
+						pairData[key].bWins++
+					}
+				} else if p2.Won {
+					if p2.BotID == aID {
+						pairData[key].aWins++
+					} else {
+						pairData[key].bWins++
+					}
+				}
+				if m.PlayedAt.After(weekAgo) {
+					pairData[key].weekA++
+				}
 			}
 		}
 	}
 
-	// Find pairs with 5+ matches and alternating wins
-	for key, matches := range pairMatches {
-		if len(matches) < 5 {
-			continue
-		}
-
-		// Parse bot IDs from key (separator is "|" to avoid conflicts with UUID hyphens).
-		parts := strings.SplitN(key, "|", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		botAID, botBID := parts[0], parts[1]
-
-		// Count wins for each bot
-		botAWins := 0
-		botBWins := 0
-
-		for _, m := range matches {
-			for _, p := range m.Participants {
-				if p.Won {
-					if p.BotID == botAID {
-						botAWins++
-					} else if p.BotID == botBID {
-						botBWins++
-					}
-					break
-				}
-			}
-		}
-
-		// Only include if wins are reasonably close (not one-sided)
-		if botAWins >= 2 && botBWins >= 2 {
+	for _, pd := range pairData {
+		if pd.weekA >= 5 && pd.aWins >= 2 && pd.bWins >= 2 {
 			arcs = append(arcs, StoryArc{
 				Type:         ArcRivalry,
-				BotID:        botAID,
-				BotName:      getBotName(botAID, data),
-				BotBID:       botBID,
-				BotBName:     getBotName(botBID, data),
-				BotAWins:     botAWins,
-				BotBWins:     botBWins,
-				TotalMatches: len(matches),
-				KeyMatches:   extractRivalryMatches(botAID, botBID, data),
+				BotID:        pd.botAID,
+				BotName:      getBotName(pd.botAID, data),
+				BotBID:       pd.botBID,
+				BotBName:     getBotName(pd.botBID, data),
+				BotAWins:     pd.aWins,
+				BotBWins:     pd.bWins,
+				TotalMatches: pd.total,
+				KeyMatches:   extractRivalryMatches(pd.botAID, pd.botBID, data),
 			})
 		}
 	}
@@ -700,7 +634,6 @@ func detectUpsetArcs(data *IndexData) []StoryArc {
 			continue
 		}
 
-		// Find winner and loser
 		var winner, loser *ParticipantData
 		for i := range m.Participants {
 			if m.Participants[i].Won {
@@ -714,7 +647,6 @@ func detectUpsetArcs(data *IndexData) []StoryArc {
 			continue
 		}
 
-		// Check if underdog won (winner had lower rating)
 		gap := int(loser.PreMatchRating - winner.PreMatchRating)
 		if gap > biggestGap {
 			biggestGap = gap
@@ -728,20 +660,20 @@ func detectUpsetArcs(data *IndexData) []StoryArc {
 				RatingEnd:   int(loser.PreMatchRating),
 				MatchID:     m.ID,
 				KeyMatches: []KeyMatch{{
-					MatchID:       m.ID,
-					OpponentID:    loser.BotID,
-					OpponentName:  getBotName(loser.BotID, data),
+					MatchID:        m.ID,
+					OpponentID:     loser.BotID,
+					OpponentName:   getBotName(loser.BotID, data),
 					OpponentRating: int(loser.PreMatchRating),
-					MapName:       m.MapName,
-					Score:         fmt.Sprintf("%d-%d", winner.Score, loser.Score),
-					TurnCount:     m.TurnCount,
-					Won:           true,
+					MapName:        m.MapName,
+					Score:          fmt.Sprintf("%d-%d", winner.Score, loser.Score),
+					TurnCount:      m.TurnCount,
+					Won:            true,
 				}},
 			}
 		}
 	}
 
-	if biggestUpset != nil && biggestGap >= 100 { // Minimum 100 rating gap to count as upset
+	if biggestUpset != nil && biggestGap >= 100 {
 		arcs = append(arcs, *biggestUpset)
 	}
 
@@ -756,7 +688,6 @@ func detectEvolutionArcs(data *IndexData) []StoryArc {
 			continue
 		}
 
-		// Check if bot reached new all-time-high rating
 		var previousATH float64
 		for _, rh := range getBotRatingHistory(bot.ID, data) {
 			if rh.Rating > previousATH && rh.RecordedAt.Before(data.GeneratedAt.AddDate(0, 0, -1)) {
@@ -764,33 +695,31 @@ func detectEvolutionArcs(data *IndexData) []StoryArc {
 			}
 		}
 
-		// Current rating exceeds previous ATH by significant margin
 		if bot.Rating > previousATH+50 {
 			arcs = append(arcs, StoryArc{
-				Type:        ArcEvolutionMilestone,
-				BotID:       bot.ID,
-				BotName:     bot.Name,
-				RatingEnd:   int(bot.Rating),
-				Origin:      fmt.Sprintf("evolved, %s island", bot.Island),
-				Generation:  bot.Generation,
-				ParentIDs:   bot.ParentIDs,
-				Archetype:   bot.Archetype,
-				KeyMatches:  extractKeyMatches(bot.ID, data),
+				Type:       ArcEvolutionMilestone,
+				BotID:      bot.ID,
+				BotName:    bot.Name,
+				RatingEnd:  int(bot.Rating),
+				Origin:     fmt.Sprintf("evolved, %s island", bot.Island),
+				Generation: bot.Generation,
+				ParentIDs:  bot.ParentIDs,
+				Archetype:  bot.Archetype,
+				KeyMatches: extractKeyMatches(bot.ID, data),
 			})
 		}
 
-		// Check if bot entered top 5
 		rank := getBotRank(bot.ID, data)
 		if rank > 0 && rank <= 5 {
 			arcs = append(arcs, StoryArc{
-				Type:        ArcEvolutionMilestone,
-				BotID:       bot.ID,
-				BotName:     bot.Name,
-				RatingEnd:   int(bot.Rating),
-				Origin:      fmt.Sprintf("evolved, %s island, generation %d", bot.Island, bot.Generation),
-				Generation:  bot.Generation,
-				ParentIDs:   bot.ParentIDs,
-				Archetype:   bot.Archetype,
+				Type:       ArcEvolutionMilestone,
+				BotID:      bot.ID,
+				BotName:    bot.Name,
+				RatingEnd:  int(bot.Rating),
+				Origin:     fmt.Sprintf("evolved, %s island, generation %d", bot.Island, bot.Generation),
+				Generation: bot.Generation,
+				ParentIDs:  bot.ParentIDs,
+				Archetype:  bot.Archetype,
 			})
 		}
 	}
@@ -806,12 +735,10 @@ func detectComebackArcs(data *IndexData) []StoryArc {
 			continue
 		}
 
-		// Find a decline followed by recovery
 		currentRating := bot.Rating
 		var peakRating, troughRating float64
 		var foundDecline, foundRecovery bool
 
-		// Walk through history to find decline and recovery pattern
 		for i, rh := range getBotRatingHistory(bot.ID, data) {
 			if rh.Rating > peakRating {
 				peakRating = rh.Rating
@@ -824,7 +751,6 @@ func detectComebackArcs(data *IndexData) []StoryArc {
 			}
 		}
 
-		// Check if current rating represents recovery of >=150 from trough
 		if foundDecline && currentRating >= troughRating+150 {
 			foundRecovery = true
 		}
@@ -924,9 +850,7 @@ func extractRivalryMatches(botAID, botBID string, data *IndexData) []KeyMatch {
 }
 
 // summarizeCriticalMoment generates a brief turning-point description from
-// match data per plan §13.2. The index builder does not have access to the
-// full replay JSON (stored on B2/R2), so this uses the score, turn count,
-// end condition, and pre-match ELO to synthesize a contextual summary.
+// match data per plan §13.2.
 func summarizeCriticalMoment(m MatchData, winner, loser *ParticipantData) string {
 	scoreDelta := winner.Score - loser.Score
 	if scoreDelta < 0 {
@@ -935,12 +859,10 @@ func summarizeCriticalMoment(m MatchData, winner, loser *ParticipantData) string
 
 	parts := make([]string, 0, 3)
 
-	// Close match indicator
 	if scoreDelta <= 1 {
 		parts = append(parts, "decided by a single point")
 	}
 
-	// ELO upset indicator
 	if winner.PreMatchRating > 0 && loser.PreMatchRating > 0 {
 		eloDelta := loser.PreMatchRating - winner.PreMatchRating
 		if eloDelta >= 150 {
@@ -948,12 +870,10 @@ func summarizeCriticalMoment(m MatchData, winner, loser *ParticipantData) string
 		}
 	}
 
-	// End condition context
 	if m.EndCondition != "" && m.EndCondition != "turn_limit" {
 		parts = append(parts, m.EndCondition)
 	}
 
-	// Late-game drama
 	if m.TurnCount >= 400 {
 		parts = append(parts, "marathon match")
 	}
@@ -1027,6 +947,12 @@ func buildHeadToHeadFromArc(arc StoryArc, data *IndexData) []HeadToHeadRecord {
 	return records
 }
 
+func buildOriginString(bot BotData) string {
+	if !bot.Evolved {
+		return ""
+	}
+	return fmt.Sprintf("evolved, %s island", nonEmpty(bot.Island, "unknown"))
+}
 
 // getBotRatingHistory returns rating history entries for a specific bot
 func getBotRatingHistory(botID string, data *IndexData) []RatingHistoryEntry {
