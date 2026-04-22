@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aicodebattle/acb/metrics"
 	_ "github.com/lib/pq"
 )
 
@@ -47,6 +48,10 @@ func main() {
 		"database", cfg.PostgresDatabase,
 	)
 
+	// Start internal metrics server (separate port for Prometheus scraping)
+	metricsSrv := metrics.StartServer()
+	defer metricsSrv.Close()
+
 	// Create output directory
 	if err := os.MkdirAll(cfg.OutputDir, 0755); err != nil {
 		slog.Error("Failed to create output directory", "error", err, "path", cfg.OutputDir)
@@ -79,6 +84,7 @@ func main() {
 		buildCount++
 		slog.Info("Starting build cycle", "count", buildCount)
 
+		buildStart := time.Now()
 		buildCtx, buildCancel := context.WithTimeout(context.Background(), cfg.BuildTimeout)
 		if err := runBuildCycle(buildCtx, db, cfg); err != nil {
 			slog.Error("Build cycle failed", "error", err)
@@ -86,6 +92,7 @@ func main() {
 			slog.Info("Build cycle completed", "count", buildCount)
 		}
 		buildCancel()
+		metrics.IndexBuildDuration.Observe(time.Since(buildStart).Seconds())
 
 		// Deploy every N cycles
 		if buildCount%cfg.DeployInterval == 0 {

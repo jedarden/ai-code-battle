@@ -308,30 +308,48 @@ func TestComputeRivalries_MultiPlayerSkipped(t *testing.T) {
 func TestComputeRivalries_RecencyBoost(t *testing.T) {
 	now := time.Now()
 
-	// Pair 1: all matches in the last week (high recency)
+	// Pair 1: all matches in the last week (high recency), balanced 5-5 split
 	var recentMatches []MatchData
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		recentMatches = append(recentMatches, MatchData{
-			ID:       fmt.Sprintf("recent_%d", i),
+			ID:       fmt.Sprintf("recent_a_%d", i),
 			WinnerID: "bot1",
-			PlayedAt: now.Add(-time.Duration(i*12) * time.Hour), // within last 5 days
+			PlayedAt: now.Add(-time.Duration(i*12) * time.Hour),
 			Participants: []ParticipantData{
 				{BotID: "bot1", Score: 3, Won: true},
 				{BotID: "bot2", Score: 2, Won: false},
 			},
 		})
+		recentMatches = append(recentMatches, MatchData{
+			ID:       fmt.Sprintf("recent_b_%d", i),
+			WinnerID: "bot2",
+			PlayedAt: now.Add(-time.Duration(i*12+6) * time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot1", Score: 2, Won: false},
+				{BotID: "bot2", Score: 3, Won: true},
+			},
+		})
 	}
 
-	// Pair 2: all matches 6 months ago (low recency)
+	// Pair 2: all matches 6 months ago (low recency), balanced 5-5 split
 	var oldMatches []MatchData
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		oldMatches = append(oldMatches, MatchData{
-			ID:       fmt.Sprintf("old_%d", i),
+			ID:       fmt.Sprintf("old_a_%d", i),
 			WinnerID: "bot3",
-			PlayedAt: now.Add(-180*24*time.Hour - time.Duration(i)*time.Hour), // ~6 months ago
+			PlayedAt: now.Add(-180*24*time.Hour - time.Duration(i)*time.Hour),
 			Participants: []ParticipantData{
 				{BotID: "bot3", Score: 3, Won: true},
 				{BotID: "bot4", Score: 2, Won: false},
+			},
+		})
+		oldMatches = append(oldMatches, MatchData{
+			ID:       fmt.Sprintf("old_b_%d", i),
+			WinnerID: "bot4",
+			PlayedAt: now.Add(-180*24*time.Hour - time.Duration(i+5)*time.Hour),
+			Participants: []ParticipantData{
+				{BotID: "bot3", Score: 2, Won: false},
+				{BotID: "bot4", Score: 3, Won: true},
 			},
 		})
 	}
