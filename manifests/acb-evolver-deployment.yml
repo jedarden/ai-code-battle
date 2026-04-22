@@ -1,0 +1,106 @@
+# acb-evolver: LLM-driven bot evolution pipeline
+# Reads match data from PostgreSQL, generates candidates via LLM, validates,
+# evaluates in arena, promotes winners to the live bot fleet.
+#
+# Staging file — sync to declarative-config/k8s/apexalgo-iad/ai-code-battle/
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: acb-evolver
+  namespace: ai-code-battle
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acb-evolver
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-evolver
+    app.kubernetes.io/part-of: ai-code-battle
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acb-evolver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: acb-evolver
+        app.kubernetes.io/part-of: ai-code-battle
+    spec:
+      serviceAccountName: acb-evolver
+      restartPolicy: Always
+      containers:
+        - name: evolver
+          image: ronaldraygun/acb-evolver:latest
+          imagePullPolicy: Always
+          args: ["run", "-continuous"]
+          env:
+            - name: ACB_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: acb-app-credentials-acb-app
+                  key: uri
+            - name: ACB_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-evolver-secrets
+                  key: encryption-key
+            - name: ACB_LLM_URL
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: url
+                  optional: true
+            - name: ACB_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+                  optional: true
+            - name: ACB_KUBECTL_SERVER
+              value: "http://traefik-apexalgo-iad:8001"
+            - name: ACB_REGISTRY
+              value: "ronaldraygun"
+            - name: ACB_REPO_DIR
+              value: "/repo"
+            - name: ACB_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-pages-secret
+                  key: r2-endpoint
+                  optional: true
+            - name: ACB_R2_BUCKET
+              value: "acb-data"
+            - name: ACB_R2_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-pages-secret
+                  key: r2-access-key
+                  optional: true
+            - name: ACB_R2_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-pages-secret
+                  key: r2-secret-key
+                  optional: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          # Evolver is a batch loop, not an HTTP server — use exec probe
+          livenessProbe:
+            exec:
+              command:
+                - pgrep
+                - -x
+                - acb-evolver
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
+      imagePullSecrets:
+        - name: docker-hub-registry
