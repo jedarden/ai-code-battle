@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aicodebattle/acb/metrics"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 )
@@ -84,9 +85,13 @@ func main() {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
+	// Start internal metrics server (separate port for Prometheus scraping)
+	metricsSrv := metrics.StartServer()
+	defer metricsSrv.Close()
+
 	httpSrv := &http.Server{
 		Addr:         cfg.ListenAddr,
-		Handler:      mux,
+		Handler:      metrics.HTTPMiddleware(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

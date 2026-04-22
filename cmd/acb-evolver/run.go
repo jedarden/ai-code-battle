@@ -42,6 +42,7 @@ import (
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/prompt"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/selector"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/validator"
+	"github.com/aicodebattle/acb/metrics"
 )
 
 // RunConfig holds configuration for the autonomous evolution loop.
@@ -140,6 +141,10 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 
+	// Start Prometheus metrics server
+	metricsSrv := metrics.StartServer()
+	defer metricsSrv.Close()
+
 	// Open database
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -228,6 +233,7 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 
 		stats.Cycles++
 		stats.Generated++
+		metrics.EvolverGenerations.Inc()
 
 		// Check cycle limit
 		if *maxCycles > 0 && stats.Cycles >= *maxCycles {

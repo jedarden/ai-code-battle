@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/aicodebattle/acb/metrics"
 )
 
 // fetchExemptMatchIDs retrieves match IDs that should never be pruned (from
@@ -158,6 +160,9 @@ func pruneR2CacheWithDB(ctx context.Context, cfg *Config, db *sql.DB) error {
 		"total_size_gb", float64(totalSize)/(1024*1024*1024),
 		"max_size_gb", float64(maxSize)/(1024*1024*1024),
 	)
+
+	// Export R2 cache size metric per §9.9
+	metrics.R2BytesUsed.Set(float64(totalSize))
 
 	// If under limit, nothing to prune
 	if totalSize <= maxSize {
