@@ -179,6 +179,12 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		return fmt.Errorf("generate indexes: %w", err)
 	}
 
+	// Upload new static meta JSON files to R2 warm cache
+	if err := uploadMetaJSONToR2(ctx, cfg, cfg.OutputDir, data); err != nil {
+		slog.Error("Failed to upload meta JSON to R2", "error", err)
+		// Non-fatal
+	}
+
 	// Generate blog posts (weekly meta reports and chronicles)
 	var llmClient *LLMClient
 	if cfg.LLMBaseURL != "" {

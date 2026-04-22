@@ -780,49 +780,59 @@ func extractFirstSentence(text string) string {
 }
 
 // buildSpotlightPrompt creates the LLM prompt for the Counter-Strategy Spotlight section.
+// Per plan §15.1, the prompt uses sports-journalism framing with structured match context
+// including rivalry dynamics, ELO deltas, critical moments, and season standings.
 func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyCount, bestMatch *notableMatch, evoHighlights []evolutionHighlight, topBots []BotData, rivalries []RivalryData) string {
 	var sb strings.Builder
 
-	sb.WriteString("Write a 200-word 'Counter-Strategy Spotlight' section for a weekly meta report on AI Code Battle. ")
-	sb.WriteString("You are a sports analyst covering an emergent bot league. ")
-	sb.WriteString("Analyze the current strategy landscape, identify under-represented archetypes that could exploit weaknesses in the dominant meta, ")
-	sb.WriteString("and call out specific ELO shifts and rivalry dynamics. ")
-	sb.WriteString("Be analytical, specific, and reference real bot names and ratings. Do not use emojis. ")
-	sb.WriteString("Write in present tense with a punchy, journalistic tone.\n\n")
+	// §15.1 instruction: sports-journalism prompt with structured contextual match data
+	sb.WriteString("Write a 200-word 'Counter-Strategy Spotlight' section for the weekly meta report. ")
+	sb.WriteString("You are a sports journalist covering an emergent bot league. ")
+	sb.WriteString("Identify under-represented archetypes that could exploit weaknesses in the dominant meta. ")
+	sb.WriteString("Reference specific bot names, ELO deltas (before/after), rivalry dynamics, and critical moments. ")
+	sb.WriteString("Be dramatic but factual. Write in present tense with a punchy, journalistic tone. Do not use emojis.\n\n")
 
+	// Season standings context
 	sb.WriteString(fmt.Sprintf("Season: %s\n", getCurrentSeasonName(data)))
 	sb.WriteString(fmt.Sprintf("Active bots: %d, Matches this week: %d\n\n", len(data.Bots), countWeeklyMatches(data)))
 
-	sb.WriteString("Top 5 Leaderboard:\n")
+	// Season standings (top 5 with rank, rating delta, archetype)
+	sb.WriteString("Season standings (top 5):\n")
 	for i, bot := range topBots {
 		if i >= 5 {
 			break
 		}
 		winRate := calculateWinRate(bot.MatchesPlayed, bot.MatchesWon) * 100
-		sb.WriteString(fmt.Sprintf("  #%d %s (rating %d, %.0f%% win rate, archetype: %s)\n",
-			i+1, bot.Name, int(bot.Rating), winRate, nonEmpty(bot.Archetype, "unclassified")))
+		delta := computeRatingDelta(bot.ID, data)
+		deltaStr := ""
+		if delta != 0 {
+			deltaStr = fmt.Sprintf(", weekly %+0.f", delta)
+		}
+		sb.WriteString(fmt.Sprintf("  #%d %s (ELO %d%s, %.0f%% win rate, archetype: %s)\n",
+			i+1, bot.Name, int(bot.Rating), deltaStr, winRate, nonEmpty(bot.Archetype, "unclassified")))
 	}
 
+	// ELO movers with before/after deltas (§15.1 spec)
 	sb.WriteString("\nTop 5 ELO movers this week:\n")
 	for _, m := range movers {
-		dir := "rose"
+		dir := "climbed"
 		if m.Delta < 0 {
-			dir = "fell"
+			dir = "dropped"
 		}
-		sb.WriteString(fmt.Sprintf("  %s %s %.0f ELO points (%.0f -> %.0f, delta %+0.f) [%s] — W%d/L%d\n",
-			m.BotName, dir, absF(m.Delta), m.OldRating, m.NewRating, m.Delta, nonEmpty(m.Archetype, "unclassified"), m.MatchesWon, m.MatchesLost))
+		sb.WriteString(fmt.Sprintf("  %s %s %.0f points (ELO %.0f → %.0f) [%s] — W%d/L%d\n",
+			m.BotName, dir, absF(m.Delta), m.OldRating, m.NewRating, nonEmpty(m.Archetype, "unclassified"), m.MatchesWon, m.MatchesLost))
 	}
 
 	sb.WriteString("\nStrategy distribution:\n")
 	for _, s := range strats {
-		sb.WriteString(fmt.Sprintf("  %s: %d bots (avg rating %.0f, %d in top 20)\n",
+		sb.WriteString(fmt.Sprintf("  %s: %d bots (avg ELO %.0f, %d in top 20)\n",
 			s.Archetype, s.Count, s.AvgRating, s.InTop20))
 	}
 
-	// Matchup matrix: archetype-vs-archetype win/loss data
+	// Matchup matrix: archetype-vs-archetype win/loss data (§15.1 head-to-head stats)
 	matchups := calculateMatchupMatrix(data)
 	if len(matchups) > 0 {
-		sb.WriteString("\nMatchup matrix (top advantages):\n")
+		sb.WriteString("\nHead-to-head matchup matrix (top advantages):\n")
 		for _, mc := range matchups {
 			total := mc.Wins + mc.Losses
 			winPct := 0.0
@@ -839,24 +849,36 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 	if len(trends) > 0 {
 		sb.WriteString("\nStrategy trends (week-over-week):\n")
 		for _, t := range trends {
-			arrow := "→"
+			arrow := "stable"
 			if t.Shift > 2 {
-				arrow = "↑"
+				arrow = "rising"
 			} else if t.Shift < -2 {
-				arrow = "↓"
+				arrow = "declining"
 			}
-			sb.WriteString(fmt.Sprintf("  %s: %.1f%% (was %.1f%%) %s %.1fpp, avg rating %.0f, %d in top 20\n",
-				t.Archetype, t.ThisWeekPct, t.LastWeekPct, arrow, t.Shift, t.AvgRating, t.Count))
+			sb.WriteString(fmt.Sprintf("  %s: %.1f%% of top 20 (was %.1f%%, %s %+.1fpp), avg ELO %.0f\n",
+				t.Archetype, t.ThisWeekPct, t.LastWeekPct, arrow, t.Shift, t.AvgRating))
 		}
 	}
 
+	// Most-watched match with critical moments context (§13.2)
 	if bestMatch != nil {
-		sb.WriteString(fmt.Sprintf("\nMost-watched match: %s — %s (score %s, %d turns)\n",
-			bestMatch.MatchID, bestMatch.Description, bestMatch.Score, bestMatch.TurnCount))
+		sb.WriteString(fmt.Sprintf("\nMatch of the week: %s — score %s in %d turns [match %s]\n",
+			bestMatch.Description, bestMatch.Score, bestMatch.TurnCount, bestMatch.MatchID))
+		// Include pre-match ELO for participants if available
+		for _, m := range data.Matches {
+			if m.ID == bestMatch.MatchID && len(m.Participants) >= 2 {
+				for _, p := range m.Participants {
+					sb.WriteString(fmt.Sprintf("  %s: pre-match ELO %.0f\n",
+						getBotName(p.BotID, data), p.PreMatchRating))
+				}
+				break
+			}
+		}
 	}
 
+	// Rivalry context with ELO deltas and head-to-head records (§15.1)
 	if len(rivalries) > 0 {
-		sb.WriteString("\nTop rivalries (head-to-head records):\n")
+		sb.WriteString("\nActive rivalries (head-to-head):\n")
 		for i, r := range rivalries {
 			if i >= 5 {
 				break
@@ -864,18 +886,21 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 			botAName := r.BotAID
 			botBName := r.BotBID
 			var botARating, botBRating float64
+			var botADelta, botBDelta float64
 			for _, b := range data.Bots {
 				if b.ID == r.BotAID {
 					botAName = b.Name
 					botARating = b.Rating
+					botADelta = computeRatingDelta(b.ID, data)
 				}
 				if b.ID == r.BotBID {
 					botBName = b.Name
 					botBRating = b.Rating
+					botBDelta = computeRatingDelta(b.ID, data)
 				}
 			}
-			sb.WriteString(fmt.Sprintf("  %s (ELO %.0f) vs %s (ELO %.0f): %d-%d over %d matches\n",
-				botAName, botARating, botBName, botBRating, r.BotAWins, r.BotBWins, r.TotalMatches))
+			sb.WriteString(fmt.Sprintf("  %s (ELO %.0f, weekly %+0.f) vs %s (ELO %.0f, weekly %+0.f): %d-%d over %d matches\n",
+				botAName, botARating, botADelta, botBName, botBRating, botBDelta, r.BotAWins, r.BotBWins, r.TotalMatches))
 		}
 	}
 
@@ -883,24 +908,36 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 }
 
 // buildEvolutionDeepDivePrompt creates the LLM prompt for the Evolution Deep Dive section.
+// Per plan §15.1, includes rivalry context, ELO trajectory, lineage data, and season standings.
 func buildEvolutionDeepDivePrompt(data *IndexData, evoHighlights []evolutionHighlight, rivalries []RivalryData, predLeaderboard []PredictorStats, liveData *evolutionLiveData) string {
 	var sb strings.Builder
 
 	sb.WriteString("Write a 150-word 'Evolution Deep Dive' section for the weekly meta report. ")
 	sb.WriteString("You are a sports journalist covering the AI evolution pipeline in AI Code Battle. ")
 	sb.WriteString("Highlight the most successful evolved bots, their lineage, strategic innovations, and ELO trajectory. ")
-	sb.WriteString("Reference specific bot names and ratings. Do not use emojis.\n\n")
+	sb.WriteString("Reference specific bot names, ELO before/after, lineage details, and rivalry context. Do not use emojis.\n\n")
 
 	sb.WriteString(fmt.Sprintf("Season: %s\n\n", getCurrentSeasonName(data)))
 
-	sb.WriteString("Evolution highlights:\n")
+	// Evolved bot profiles with ELO trajectory
+	sb.WriteString("Evolved bot performance this week:\n")
 	for _, e := range evoHighlights {
 		winRate := 0.0
 		if e.WeekMatches > 0 {
 			winRate = float64(e.WeekWins) / float64(e.WeekMatches) * 100
 		}
-		sb.WriteString(fmt.Sprintf("  %s: rating %.0f, island=%s, gen=%d, weekly W%d/L%d (%.0f%% win rate), archetype=%s\n",
-			e.BotName, e.Rating, e.Island, e.Generation, e.WeekWins, e.WeekMatches-e.WeekWins, winRate, nonEmpty(e.Archetype, "evolved")))
+		rank := getBotRank(e.BotID, data)
+		rankStr := ""
+		if rank > 0 {
+			rankStr = fmt.Sprintf(", ranked #%d", rank)
+		}
+		sb.WriteString(fmt.Sprintf("  %s: ELO %.0f%s, island=%s, gen=%d, weekly W%d/L%d (%.0f%% win rate), archetype=%s\n",
+			e.BotName, e.Rating, rankStr, e.Island, e.Generation, e.WeekWins, e.WeekMatches-e.WeekWins, winRate, nonEmpty(e.Archetype, "evolved")))
+		// Include lineage if available
+		bot := findBotByID(e.BotID, data)
+		if bot != nil && len(bot.ParentIDs) > 0 {
+			sb.WriteString(fmt.Sprintf("    Lineage: parents %s\n", strings.Join(bot.ParentIDs, ", ")))
+		}
 	}
 
 	// Count evolved bots in top 10 and top 20
@@ -919,9 +956,9 @@ func buildEvolutionDeepDivePrompt(data *IndexData, evoHighlights []evolutionHigh
 
 	// Live evolution data from R2 (population stats, promotion rates, island activity)
 	if liveData != nil {
-		sb.WriteString(fmt.Sprintf("\nEvolution pipeline stats: %d total generations, %d promoted today, %.1f%% 7-day promotion rate\n",
+		sb.WriteString(fmt.Sprintf("\nEvolution pipeline: %d total generations, %d promoted today, %.1f%% 7-day promotion rate\n",
 			liveData.Totals.GenerationsTotal, liveData.Totals.PromotedToday, liveData.Totals.PromotionRate7d))
-		sb.WriteString(fmt.Sprintf("Highest evolved rating: %.0f, evolved in top 10: %d\n",
+		sb.WriteString(fmt.Sprintf("Highest evolved ELO: %.0f, evolved in top 10: %d\n",
 			liveData.Totals.HighestEvolved, liveData.Totals.EvolvedInTop10))
 
 		if len(liveData.Islands) > 0 {
@@ -938,20 +975,34 @@ func buildEvolutionDeepDivePrompt(data *IndexData, evoHighlights []evolutionHigh
 				if count >= 5 {
 					break
 				}
-				sb.WriteString(fmt.Sprintf("  %s: %s on %s — %s (%s)\n",
+				sb.WriteString(fmt.Sprintf("  %s: %s on %s island — %s (%s)\n",
 					act.Time, act.Candidate, act.Island, act.Result, act.Reason))
 				count++
 			}
 		}
 	}
 
-	// Active rivalries involving evolved bots
-	for _, r := range rivalries {
-		if len(rivalries) >= 3 {
-			break
+	// Active rivalries involving evolved bots with ELO context
+	if len(rivalries) > 0 {
+		sb.WriteString("\nRivalries involving evolved bots:\n")
+		for i, r := range rivalries {
+			if i >= 3 {
+				break
+			}
+			botAName := getBotName(r.BotAID, data)
+			botBName := getBotName(r.BotBID, data)
+			var botARating, botBRating float64
+			for _, b := range data.Bots {
+				if b.ID == r.BotAID {
+					botARating = b.Rating
+				}
+				if b.ID == r.BotBID {
+					botBRating = b.Rating
+				}
+			}
+			sb.WriteString(fmt.Sprintf("  %s (ELO %.0f) vs %s (ELO %.0f): %d-%d over %d matches\n",
+				botAName, botARating, botBName, botBRating, r.BotAWins, r.BotBWins, r.TotalMatches))
 		}
-		sb.WriteString(fmt.Sprintf("  Rivalry: %s vs %s (%d-%d over %d matches)\n",
-			getBotName(r.BotAID, data), getBotName(r.BotBID, data), r.BotAWins, r.BotBWins, r.TotalMatches))
 	}
 
 	// Prediction leaderboard context
@@ -968,36 +1019,56 @@ func buildEvolutionDeepDivePrompt(data *IndexData, evoHighlights []evolutionHigh
 }
 
 // buildLookingAheadPrompt creates the LLM prompt for the Looking Ahead section.
+// Per plan §15.1, includes ELO trends, rivalry dynamics, season championship positioning.
 func buildLookingAheadPrompt(data *IndexData, movers []eloMover, strats []strategyCount, trends []strategyTrend, matchups []matchupCell, liveData *evolutionLiveData) string {
 	var sb strings.Builder
 
 	sb.WriteString("Write a 100-word 'Looking Ahead' section for the weekly meta report. ")
 	sb.WriteString("You are a sports journalist covering AI Code Battle. ")
-	sb.WriteString("Predict what strategies will rise or fall next week based on ELO trends, matchup data, and the evolution pipeline. ")
-	sb.WriteString("Be forward-looking, analytical, and reference specific bots and ratings. Do not use emojis.\n\n")
+	sb.WriteString("Predict what strategies will rise or fall next week based on ELO trends, matchup data, rivalry dynamics, and the evolution pipeline. ")
+	sb.WriteString("Reference specific bots, ELO before/after, and rivalry stakes. Do not use emojis.\n\n")
 
 	sb.WriteString(fmt.Sprintf("Season: %s\n", getCurrentSeasonName(data)))
 
-	if len(movers) > 0 {
-		sb.WriteString("Top ELO movers:\n")
-		for _, m := range movers {
-			dir := "up"
-			if m.Delta < 0 {
-				dir = "down"
+	// Season championship positioning
+	for i := range data.Seasons {
+		if data.Seasons[i].Status == "active" {
+			s := data.Seasons[i]
+			daysElapsed := data.GeneratedAt.Sub(s.StartsAt).Hours() / 24
+			weekNum := int(daysElapsed/7) + 1
+			if weekNum > 4 {
+				weekNum = 4
 			}
-			sb.WriteString(fmt.Sprintf("  %s went %s %.0f points [%s]\n", m.BotName, dir, absF(m.Delta), nonEmpty(m.Archetype, "unclassified")))
+			sb.WriteString(fmt.Sprintf("Season progress: Week %d of 4", weekNum))
+			if weekNum >= 3 {
+				sb.WriteString(" — championship bracket approaching")
+			}
+			sb.WriteString("\n")
+			break
+		}
+	}
+
+	if len(movers) > 0 {
+		sb.WriteString("\nTop ELO movers (with before/after):\n")
+		for _, m := range movers {
+			dir := "surged"
+			if m.Delta < 0 {
+				dir = "dropped"
+			}
+			sb.WriteString(fmt.Sprintf("  %s %s %.0f points (ELO %.0f → %.0f) [%s]\n",
+				m.BotName, dir, absF(m.Delta), m.OldRating, m.NewRating, nonEmpty(m.Archetype, "unclassified")))
 		}
 	}
 
 	if len(trends) > 0 {
 		sb.WriteString("\nStrategy trends:\n")
 		for _, t := range trends {
-			sb.WriteString(fmt.Sprintf("  %s: %.1f%% (shift %+.1fpp)\n", t.Archetype, t.ThisWeekPct, t.Shift))
+			sb.WriteString(fmt.Sprintf("  %s: %.1f%% of top 20 (shift %+.1fpp)\n", t.Archetype, t.ThisWeekPct, t.Shift))
 		}
 	}
 
 	if len(matchups) > 0 {
-		sb.WriteString("\nTop matchup advantages:\n")
+		sb.WriteString("\nKey matchup advantages:\n")
 		for i, mc := range matchups {
 			if i >= 5 {
 				break
@@ -1012,8 +1083,8 @@ func buildLookingAheadPrompt(data *IndexData, movers []eloMover, strats []strate
 	}
 
 	if liveData != nil {
-		sb.WriteString(fmt.Sprintf("\nEvolution pipeline: %d generations total, %.1f%% promotion rate\n",
-			liveData.Totals.GenerationsTotal, liveData.Totals.PromotionRate7d))
+		sb.WriteString(fmt.Sprintf("\nEvolution pipeline: %d generations, %.1f%% promotion rate, highest evolved ELO %.0f\n",
+			liveData.Totals.GenerationsTotal, liveData.Totals.PromotionRate7d, liveData.Totals.HighestEvolved))
 	}
 
 	return sb.String()

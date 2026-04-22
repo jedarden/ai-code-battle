@@ -187,6 +187,18 @@ type OpenPredictionMatch struct {
 	HeadToHeadRecord   *string   `json:"head_to_head_record,omitempty"`
 }
 
+// FeedbackEntry represents a community replay annotation from §13.6.
+type FeedbackEntry struct {
+	FeedbackID string    `json:"feedback_id"`
+	MatchID    string    `json:"match_id"`
+	Turn       int       `json:"turn"`
+	Type       string    `json:"type"`
+	Body       string    `json:"body"`
+	Author     string    `json:"author"`
+	Upvotes    int       `json:"upvotes"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 // IndexData contains all data needed for index generation
 type IndexData struct {
 	GeneratedAt       time.Time
@@ -200,6 +212,7 @@ type IndexData struct {
 	Maps              []MapData
 	TopPredictors     []PredictorStats
 	OpenPredictionMatches []OpenPredictionMatch
+	Feedback          []FeedbackEntry
 }
 
 // fetchAllData retrieves all data from PostgreSQL for index generation
@@ -234,6 +247,10 @@ func fetchAllData(ctx context.Context, db *sql.DB) (*IndexData, error) {
 		return nil, err
 	}
 	if data.OpenPredictionMatches, err = fetchOpenPredictions(ctx, db); err != nil {
+		return nil, err
+	}
+
+	if data.Feedback, err = fetchFeedback(ctx, db); err != nil {
 		return nil, err
 	}
 
@@ -945,6 +962,31 @@ func computeHeadToHeadRecord(ctx context.Context, db *sql.DB, botAID, botBID str
 		return ""
 	}
 	return fmt.Sprintf("%d-%d", aWins, bWins)
+}
+
+func fetchFeedback(ctx context.Context, db *sql.DB) ([]FeedbackEntry, error) {
+	query := `
+		SELECT feedback_id, match_id, turn, type, body, author, upvotes, created_at
+		FROM replay_feedback
+		ORDER BY upvotes DESC, created_at DESC
+		LIMIT 5000
+	`
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []FeedbackEntry
+	for rows.Next() {
+		var e FeedbackEntry
+		if err := rows.Scan(&e.FeedbackID, &e.MatchID, &e.Turn, &e.Type, &e.Body, &e.Author, &e.Upvotes, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
 }
 
 func computeTopPredictors(stats []PredictorStats) []PredictorStats {

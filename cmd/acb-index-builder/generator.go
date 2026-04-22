@@ -166,6 +166,21 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB, cfg *Conf
 		return fmt.Errorf("maps index: %w", err)
 	}
 
+	// Generate archetypes (data/meta/archetypes.json)
+	if err := generateArchetypes(data, outputDir); err != nil {
+		return fmt.Errorf("archetypes: %w", err)
+	}
+
+	// Generate community hints (data/evolution/community_hints.json)
+	if err := generateCommunityHints(data, outputDir); err != nil {
+		return fmt.Errorf("community hints: %w", err)
+	}
+
+	// Generate per-match feedback (data/matches/{id}/feedback.json)
+	if err := generateMatchFeedback(data, outputDir); err != nil {
+		return fmt.Errorf("match feedback: %w", err)
+	}
+
 	return nil
 }
 
@@ -1781,4 +1796,212 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ─── Archetypes (§15.2) ────────────────────────────────────────────────────────
+
+// ArchetypeBot is a bot entry within an archetype group.
+type ArchetypeBot struct {
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
+	Rating float64 `json:"rating"`
+}
+
+// ArchetypeEntry aggregates bots sharing a behavioral archetype.
+type ArchetypeEntry struct {
+	Name      string         `json:"name"`
+	BotCount  int            `json:"bot_count"`
+	AvgRating float64        `json:"avg_rating"`
+	WinRate   float64        `json:"win_rate"`
+	Bots      []ArchetypeBot `json:"bots"`
+}
+
+// ArchetypesIndex is the top-level structure for data/meta/archetypes.json.
+type ArchetypesIndex struct {
+	UpdatedAt  string           `json:"updated_at"`
+	Archetypes []ArchetypeEntry `json:"archetypes"`
+}
+
+// classifyArchetype infers a behavioral archetype from bot name when the
+// archetype field is empty.
+func classifyArchetype(bot BotData) string {
+	name := strings.ToLower(bot.Name)
+	switch {
+	case strings.Contains(name, "rush") || strings.Contains(name, "aggress") || strings.Contains(name, "attack") || strings.Contains(name, "blitz"):
+		return "aggressive"
+	case strings.Contains(name, "defend") || strings.Contains(name, "wall") || strings.Contains(name, "fort") || strings.Contains(name, "guard"):
+		return "defensive"
+	case strings.Contains(name, "swarm") || strings.Contains(name, "hive") || strings.Contains(name, "colony") || strings.Contains(name, "mass"):
+		return "swarm"
+	case strings.Contains(name, "hunt") || strings.Contains(name, "chase") || strings.Contains(name, "pursuit") || strings.Contains(name, "stalk"):
+		return "hunter"
+	case strings.Contains(name, "turtle") || strings.Contains(name, "base") || strings.Contains(name, "camp") || strings.Contains(name, "bunker"):
+		return "turtler"
+	default:
+		return "balanced"
+	}
+}
+
+// generateArchetypes builds data/meta/archetypes.json from the bot population.
+func generateArchetypes(data *IndexData, outputDir string) error {
+	type archetypeAccum struct {
+		entry       ArchetypeEntry
+		totalWins   int
+		totalPlayed int
+	}
+	accum := make(map[string]*archetypeAccum)
+
+	for _, bot := range data.Bots {
+		arch := bot.Archetype
+		if arch == "" {
+			arch = classifyArchetype(bot)
+		}
+
+		a, ok := accum[arch]
+		if !ok {
+			a = &archetypeAccum{entry: ArchetypeEntry{Name: arch}}
+			accum[arch] = a
+		}
+		a.entry.BotCount++
+		a.entry.AvgRating += bot.Rating
+		a.entry.Bots = append(a.entry.Bots, ArchetypeBot{
+			ID:     bot.ID,
+			Name:   bot.Name,
+			Rating: bot.Rating,
+		})
+		a.totalWins += bot.MatchesWon
+		a.totalPlayed += bot.MatchesPlayed
+	}
+
+	archetypes := make([]ArchetypeEntry, 0, len(accum))
+	for arch, a := range accum {
+		if a.entry.BotCount > 0 {
+			a.entry.AvgRating = round1(a.entry.AvgRating / float64(a.entry.BotCount))
+		}
+		if a.totalPlayed > 0 {
+			a.entry.WinRate = round1(float64(a.totalWins) / float64(a.totalPlayed) * 100)
+		}
+		sort.Slice(a.entry.Bots, func(i, j int) bool {
+			return a.entry.Bots[i].Rating > a.entry.Bots[j].Rating
+		})
+		if len(a.entry.Bots) > 20 {
+			a.entry.Bots = a.entry.Bots[:20]
+		}
+		_ = arch
+		archetypes = append(archetypes, a.entry)
+	}
+
+	sort.Slice(archetypes, func(i, j int) bool {
+		return archetypes[i].BotCount > archetypes[j].BotCount
+	})
+
+	metaDir := filepath.Join(outputDir, "data", "meta")
+	if err := os.MkdirAll(metaDir, 0755); err != nil {
+		return err
+	}
+
+	index := ArchetypesIndex{
+		UpdatedAt:  data.GeneratedAt.Format(time.RFC3339),
+		Archetypes: archetypes,
+	}
+	return writeJSON(filepath.Join(metaDir, "archetypes.json"), index)
+}
+
+// ─── Community Hints (§15.2 / §13.6) ──────────────────────────────────────────
+
+// CommunityHint is a single high-upvote tactical insight from §13.6 feedback.
+type CommunityHint struct {
+	FeedbackID string `json:"feedback_id"`
+	MatchID    string `json:"match_id"`
+	Turn       int    `json:"turn"`
+	Type       string `json:"type"`
+	Body       string `json:"body"`
+	Upvotes    int    `json:"upvotes"`
+	CreatedAt  string `json:"created_at"`
+}
+
+// CommunityHintsFile is the top-level structure for data/evolution/community_hints.json.
+type CommunityHintsFile struct {
+	GeneratedAt string          `json:"generated_at"`
+	Hints       []CommunityHint `json:"hints"`
+}
+
+const communityHintMinUpvotes = 3
+const communityHintMaxHints = 50
+
+// generateCommunityHints builds data/evolution/community_hints.json from
+// high-upvote 'idea' and 'mistake' feedback entries. The evolver reads this
+// file to include tactical community insights in LLM prompts.
+func generateCommunityHints(data *IndexData, outputDir string) error {
+	var hints []CommunityHint
+	for _, f := range data.Feedback {
+		if f.Type != "idea" && f.Type != "mistake" {
+			continue
+		}
+		if f.Upvotes < communityHintMinUpvotes {
+			continue
+		}
+		hints = append(hints, CommunityHint{
+			FeedbackID: f.FeedbackID,
+			MatchID:    f.MatchID,
+			Turn:       f.Turn,
+			Type:       f.Type,
+			Body:       f.Body,
+			Upvotes:    f.Upvotes,
+			CreatedAt:  f.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	// Feedback is already sorted by upvotes DESC from DB; cap at max.
+	if len(hints) > communityHintMaxHints {
+		hints = hints[:communityHintMaxHints]
+	}
+
+	evolDir := filepath.Join(outputDir, "data", "evolution")
+	if err := os.MkdirAll(evolDir, 0755); err != nil {
+		return err
+	}
+
+	file := CommunityHintsFile{
+		GeneratedAt: data.GeneratedAt.Format(time.RFC3339),
+		Hints:       hints,
+	}
+	return writeJSON(filepath.Join(evolDir, "community_hints.json"), file)
+}
+
+// ─── Per-match Feedback (§15.2) ────────────────────────────────────────────────
+
+// MatchFeedbackFile is the structure for data/matches/{id}/feedback.json.
+type MatchFeedbackFile struct {
+	MatchID   string          `json:"match_id"`
+	UpdatedAt string          `json:"updated_at"`
+	Feedback  []FeedbackEntry `json:"feedback"`
+}
+
+// generateMatchFeedback creates data/matches/{match_id}/feedback.json for every
+// match that has community annotations. The static file mirrors the live API
+// response so annotation.ts can fall back to it when the API is unavailable.
+func generateMatchFeedback(data *IndexData, outputDir string) error {
+	byMatch := make(map[string][]FeedbackEntry)
+	for _, f := range data.Feedback {
+		byMatch[f.MatchID] = append(byMatch[f.MatchID], f)
+	}
+
+	for matchID, entries := range byMatch {
+		matchDir := filepath.Join(outputDir, "data", "matches", matchID)
+		if err := os.MkdirAll(matchDir, 0755); err != nil {
+			return fmt.Errorf("create match dir %s: %w", matchID, err)
+		}
+
+		file := MatchFeedbackFile{
+			MatchID:   matchID,
+			UpdatedAt: data.GeneratedAt.Format(time.RFC3339),
+			Feedback:  entries,
+		}
+		if err := writeJSON(filepath.Join(matchDir, "feedback.json"), file); err != nil {
+			return fmt.Errorf("write feedback for match %s: %w", matchID, err)
+		}
+	}
+
+	return nil
 }

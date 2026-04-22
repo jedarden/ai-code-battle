@@ -132,7 +132,11 @@ Removed superseded code that no longer matches the architecture:
 - [x] Match worker container (`cmd/acb-worker/Dockerfile`)
 - [x] Discord/Slack alerting webhooks (`cmd/acb-api/alerts.go`)
 - [x] Prometheus metrics endpoint (`cmd/acb-worker/metrics.go`)
-- [x] GitHub Actions CI workflow (`.github/workflows/ci.yml`)
+- [x] Argo Workflows CI pipeline (`manifests/acb-build.yml`, `manifests/acb-eventsensor.yml`)
+  - acb-build-images: clone → go vet + go test -race → Kaniko build 23 images → push to Forgejo registry
+  - acb-build-site: clone → npm ci && npm run build → package as container image → push to Forgejo registry
+  - Argo Events: EventBus + EventSource (Forgejo webhook) + Sensor (triggers both workflows on push to master)
+  - Index builder pulls latest site build from registry via crane (sitebuild.go)
 
 ### Phase 5 Completed ✅
 
@@ -162,7 +166,14 @@ ai-code-battle/
 ├── docker-compose.workers.yml # Worker orchestration
 ├── .github/
 │   └── workflows/
-│       └── ci.yml            # GitHub Actions CI workflow
+│       └── ci.yml.disabled   # GitHub Actions CI (disabled — Argo Workflows is the CI system)
+├── manifests/                  # K8s staging manifests (synced to ardenone-cluster repo)
+│   ├── acb-build.yml           # Argo WorkflowTemplates: acb-build-images + acb-build-site
+│   ├── acb-eventsensor.yml     # Argo Events: EventBus + EventSource + Sensor
+│   ├── acb-evolved-bot-deploy-workflowtemplate.yml  # Evolved bot deploy pipeline
+│   ├── acb-api-deployment.yml  # API server Deployment + Service + IngressRoute
+│   ├── acb-evolver-deployment.yml  # Evolver Deployment
+│   └── acb-metrics-monitoring.yml  # ServiceMonitor + PrometheusRule
 ├── engine/
 │   ├── types.go        # Core data types
 │   ├── grid.go         # Toroidal grid implementation

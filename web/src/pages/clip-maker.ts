@@ -292,20 +292,18 @@ function initClipMaker(): void {
     }
   });
 
-  let lastExportBlob: Blob | null = null;
   let lastExportExt = '';
 
   // ── MP4 export ────────────────────────────────────────────────────────────
   document.getElementById('clip-export-mp4')!.addEventListener('click', async () => {
     if (!replay) return;
-    lastExportBlob = null;
     await exportVideo(replay, 'mp4');
   });
 
   // ── GIF export ────────────────────────────────────────────────────────────
   document.getElementById('clip-export-gif')!.addEventListener('click', async () => {
     if (!replay) return;
-    lastExportBlob = null;
+    
     await exportGIF(replay);
   });
 
@@ -361,7 +359,7 @@ function initClipMaker(): void {
     hideProgress();
     const blob = new Blob(chunks, { type: mimeType });
     const filename = `acb-clip-${r.match_id}-${preset.name.replace(/\s+/g, '_')}.webm`;
-    lastExportBlob = blob;
+    // lastExportBlob = blob;
     lastExportExt = 'webm';
     downloadBlob(blob, filename);
     showSharePanel(r, startTurn, endTurn, blob);
@@ -406,7 +404,7 @@ function initClipMaker(): void {
     const gif = encoder.encode();
     const blob = new Blob([gif.buffer as ArrayBuffer], { type: 'image/gif' });
     const filename = `acb-clip-${r.match_id}-${preset.name.replace(/\s+/g, '_')}.gif`;
-    lastExportBlob = blob;
+    // lastExportBlob = blob;
     lastExportExt = 'gif';
     downloadBlob(blob, filename);
     showSharePanel(r, startTurn, endTurn, blob);

@@ -1461,6 +1461,14 @@ export class ReplayViewer {
     if (this.onTurnChange) this.onTurnChange(this.currentTurn);
     this.fireCommentaryForTurn(this.currentTurn);
     this.fireDebugForTurn(this.currentTurn);
+
+    // Announce turn transcript to screen readers during auto-playback (§15.3)
+    if (this.isPlaying) {
+      const transcriptText = this.getTranscriptForTurn(this.currentTurn);
+      if (transcriptText) {
+        this.announceToScreenReader(transcriptText);
+      }
+    }
   }
 
   private fireTurnAnimations(turnData: ReplayTurn): void {
