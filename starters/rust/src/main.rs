@@ -3,6 +3,8 @@
 //! A minimal bot scaffold with HMAC authentication and a placeholder
 //! random strategy. Replace `compute_moves()` with your own logic.
 
+mod grid;
+
 use axum::{
     body::Bytes,
     extract::State,
@@ -52,9 +54,9 @@ struct You {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-struct Position {
-    row: u32,
-    col: u32,
+pub struct Position {
+    pub row: u32,
+    pub col: u32,
 }
 
 #[derive(Deserialize)]
@@ -164,11 +166,49 @@ async fn handle_turn(
 
 fn compute_moves(state: &GameState) -> Vec<Move> {
     // Replace this with your strategy!
+    let rows = state.config.rows;
+    let cols = state.config.cols;
     let mut moves = Vec::new();
     let mut rng = rand::thread_rng();
 
+    let cardinal: [(i32, i32, &str); 4] = [
+        (-1, 0, "N"),
+        (0, 1, "E"),
+        (1, 0, "S"),
+        (0, -1, "W"),
+    ];
+
     for bot in &state.bots {
-        if bot.owner == state.you.id && rand::Rng::gen_ratio(&mut rng, 1, 2) {
+        if bot.owner != state.you.id {
+            continue;
+        }
+
+        // Find direction toward nearest energy using toroidal distance
+        if !state.energy.is_empty() {
+            let mut best_dist = u32::MAX;
+            let mut best_dir: Option<&str> = None;
+            for (dr, dc, dir) in &cardinal {
+                let nr = (bot.position.row as i32 + dr).rem_euclid(rows as i32) as u32;
+                let nc = (bot.position.col as i32 + dc).rem_euclid(cols as i32) as u32;
+                let step = Position { row: nr, col: nc };
+                for e in &state.energy {
+                    let d = grid::toroidal_manhattan(&step, e, rows, cols);
+                    if d < best_dist {
+                        best_dist = d;
+                        best_dir = Some(dir);
+                    }
+                }
+            }
+            if let Some(dir) = best_dir {
+                moves.push(Move {
+                    position: bot.position.clone(),
+                    direction: dir.to_string(),
+                });
+                continue;
+            }
+        }
+
+        if rand::Rng::gen_ratio(&mut rng, 1, 2) {
             let dir = DIRECTIONS[rand::Rng::gen_range(&mut rng, 0..4)];
             moves.push(Move {
                 position: bot.position.clone(),

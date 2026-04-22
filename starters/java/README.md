@@ -41,9 +41,19 @@ Save the `bot_id` and `shared_secret` from the response — the secret is shown 
 
 ```
 src/main/java/com/acb/starter/App.java  # Server, auth, types, and strategy
+src/main/java/com/acb/starter/Grid.java # Grid utilities (toroidal distance, BFS, neighbors)
 pom.xml                                 # Maven build configuration
 Dockerfile                              # Multi-stage container build
 ```
+
+## Grid Helpers
+
+`Grid.java` provides static utility methods for the toroidal grid:
+
+- `Grid.toroidalManhattan(r1, c1, r2, c2, rows, cols)` — Manhattan distance with wrap-around
+- `Grid.toroidalChebyshev(r1, c1, r2, c2, rows, cols)` — Chebyshev distance with wrap-around
+- `Grid.neighbors(row, col, rows, cols)` — 8-directional neighbors with wrap
+- `Grid.bfs(start, goal, passable, rows, cols)` — BFS pathfinding, returns path or `null`
 
 ## Customization
 

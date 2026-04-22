@@ -106,15 +106,45 @@ class BotHandler(BaseHTTPRequestHandler):
 
 def compute_moves(state: GameState) -> list:
     """Replace this with your strategy!"""
+    from grid import toroidal_manhattan
+
+    rows = state.config["rows"]
+    cols = state.config["cols"]
     moves = []
+
     for bot in state.bots:
-        if bot["owner"] == state.you_id:
-            if random.random() < 0.5:
-                moves.append({
-                    "position": bot["position"],
-                    "direction": random.choice(DIRECTIONS),
-                })
+        if bot["owner"] != state.you_id:
+            continue
+
+        br, bc = bot["position"]["row"], bot["position"]["col"]
+
+        # Find nearest energy using toroidal distance
+        if state.energy:
+            best_dist = float("inf")
+            best_dir = None
+            for er, ec, d in _cardinal_moves(br, bc, rows, cols):
+                for e in state.energy:
+                    dist = toroidal_manhattan(er, ec, e["row"], e["col"], cols, rows)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_dir = d
+            if best_dir:
+                moves.append({"position": bot["position"], "direction": best_dir})
+                continue
+
+        if random.random() < 0.5:
+            moves.append({
+                "position": bot["position"],
+                "direction": random.choice(DIRECTIONS),
+            })
+
     return moves
+
+
+def _cardinal_moves(row, col, rows, cols):
+    """Yield (new_row, new_col, direction) for each cardinal step with wrap."""
+    for dr, dc, d in [(-1, 0, "N"), (0, 1, "E"), (1, 0, "S"), (0, -1, "W")]:
+        yield (row + dr) % rows, (col + dc) % cols, d
 
 
 def main():

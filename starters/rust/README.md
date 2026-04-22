@@ -39,9 +39,19 @@ Save the `bot_id` and `shared_secret` from the response — the secret is shown 
 
 ```
 src/main.rs  # HTTP server, HMAC auth, game types, and strategy entry point
+src/grid.rs  # Grid utilities (toroidal distance, BFS, neighbors)
 Cargo.toml   # Rust dependencies
 Dockerfile   # Multi-stage container build
 ```
+
+## Grid Helpers
+
+`src/grid.rs` provides utility functions for the toroidal grid:
+
+- `toroidal_manhattan(a, b, rows, cols)` — Manhattan distance with wrap-around
+- `toroidal_chebyshev(a, b, rows, cols)` — Chebyshev distance with wrap-around
+- `neighbors(pos, rows, cols)` — 8-directional neighbors with wrap
+- `bfs(start, goal, passable, rows, cols)` — BFS pathfinding, returns `Option<Vec<Position>>`
 
 ## Customization
 

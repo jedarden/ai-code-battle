@@ -506,3 +506,123 @@ func TestCheckAndPollinate_emptyIsland_noEvent(t *testing.T) {
 func newRandZero() *rand.Rand {
 	return rand.New(rand.NewSource(0))
 }
+
+// TestCheckAndPollinate_persistencePattern verifies that the prevGens map
+// is correctly updated so that a second call with the same data produces
+// no duplicate events (simulating the save-and-reload persistence pattern).
+func TestCheckAndPollinate_persistencePattern(t *testing.T) {
+	store := newMockStore()
+	for _, island := range evolverdb.AllIslands {
+		seedIsland(store, island, "go", 100.0, 50)
+		seedIsland(store, island, "go", 50.0, 30)
+	}
+
+	llmClient := &mockLLM{}
+	rng := rand.New(rand.NewSource(42))
+	checker := &Checker{store: store, client: llmClient, rng: rng}
+
+	// First call: should trigger 4 events.
+	prevGens := make(map[string]int)
+	results, err := checker.CheckAndPollinate(context.Background(), prevGens, false)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if len(results) != 4 {
+		t.Fatalf("first call: expected 4 events, got %d", len(results))
+	}
+
+	// Second call with same prevGens (now updated to 50): should trigger 0 events.
+	results2, err := checker.CheckAndPollinate(context.Background(), prevGens, false)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if len(results2) != 0 {
+		t.Fatalf("second call: expected 0 events (no duplicates), got %d", len(results2))
+	}
+
+	// Advance to gen 100 and call again: should trigger 4 more events.
+	for _, island := range evolverdb.AllIslands {
+		seedIsland(store, island, "go", 120.0, 100)
+	}
+	results3, err := checker.CheckAndPollinate(context.Background(), prevGens, false)
+	if err != nil {
+		t.Fatalf("third call: %v", err)
+	}
+	if len(results3) != 4 {
+		t.Fatalf("third call: expected 4 events (gen 100), got %d", len(results3))
+	}
+
+	// Verify prevGens now reflects 100 for all islands.
+	for _, island := range evolverdb.AllIslands {
+		if prevGens[island] != 100 {
+			t.Errorf("prevGens[%s] = %d, want 100", island, prevGens[island])
+		}
+	}
+}
+
+// TestCheckAndPollinate_translatedCodeStructure verifies that translated
+// code is stored with the target language and contains recognizable
+// language patterns from the LLM output.
+func TestCheckAndPollinate_translatedCodeStructure(t *testing.T) {
+	store := newMockStore()
+	seedIsland(store, evolverdb.IslandAlpha, "python", 100.0, 50)
+	seedIsland(store, evolverdb.IslandBeta, "go", 80.0, 10)
+	seedIsland(store, evolverdb.IslandGamma, "go", 70.0, 10)
+	seedIsland(store, evolverdb.IslandDelta, "go", 60.0, 10)
+
+	// Mock LLM returns syntactically valid Go code.
+	goCode := `package main
+import ("net/http"; "encoding/json")
+func main() {
+    http.HandleFunc("/turn", func(w http.ResponseWriter, r *http.Request) {
+        json.NewEncoder(w).Encode(map[string]interface{}{"moves": []interface{}{}})
+    })
+    http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {})
+    http.ListenAndServe(":8080", nil)
+}`
+
+	llmClient := &mockLLM{
+		generateFunc: func(ctx context.Context, req llm.GenerateRequest) (*llm.GenerateResponse, error) {
+			return &llm.GenerateResponse{
+				Candidate: &llm.Candidate{Code: goCode},
+			}, nil
+		},
+	}
+
+	rng := rand.New(rand.NewSource(42))
+	checker := &Checker{store: store, client: llmClient, rng: rng}
+
+	prevGens := make(map[string]int)
+	results, err := checker.CheckAndPollinate(context.Background(), prevGens, false)
+	if err != nil {
+		t.Fatalf("CheckAndPollinate: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(results))
+	}
+
+	r := results[0]
+	if !r.Translated {
+		t.Error("expected translation from python to go")
+	}
+	if r.TargetLang != "go" {
+		t.Errorf("target lang: got %q, want go", r.TargetLang)
+	}
+
+	// Verify the stored program has the Go code and language.
+	if len(store.createdCalls) != 1 {
+		t.Fatal("expected 1 Create call")
+	}
+	created := store.createdCalls[0]
+	if created.Language != "go" {
+		t.Errorf("stored language: got %q, want go", created.Language)
+	}
+	if created.Code != goCode {
+		t.Errorf("stored code mismatch: got %d bytes, want %d bytes", len(created.Code), len(goCode))
+	}
+	// Verify fitness penalty applied.
+	if created.Fitness != 90.0 {
+		t.Errorf("fitness: got %f, want 90.0", created.Fitness)
+	}
+}

@@ -158,8 +158,16 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 	// Track last evolution time per island for cooldown
 	lastEvolved := make(map[string]time.Time)
 
-	// Track per-island generation counters for cross-pollination boundary detection
-	prevGens := make(map[string]int)
+	// Track per-island generation counters for cross-pollination boundary detection.
+	// Load persisted state from DB so we don't re-trigger on restart.
+	prevGens, err := store.LoadCrossPollState(ctx)
+	if err != nil {
+		log.Printf("warn: could not load cross-pollination state (starting fresh): %v", err)
+		prevGens = make(map[string]int)
+	}
+	if *verbose {
+		log.Printf("Cross-pollination state: %v", prevGens)
+	}
 
 	// Stats
 	stats := RunStats{StartTime: time.Now()}
@@ -238,6 +246,13 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 			log.Printf("Cross-pollination check error: %v", err)
 		}
 		stats.CrossPollinated += len(cpResults)
+
+		// Persist updated cross-pollination state so we don't re-trigger on restart.
+		for isl, gen := range prevGens {
+			if err := store.SaveCrossPollState(ctx, isl, gen); err != nil {
+				log.Printf("warn: could not save crosspoll state for %s: %v", isl, err)
+			}
+		}
 
 		// Continuous mode: wait for next cycle
 		if *continuous {

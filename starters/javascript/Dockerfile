@@ -2,7 +2,7 @@ FROM node:22-alpine
 
 WORKDIR /app
 COPY package.json .
-COPY index.js .
+COPY index.js grid.js .
 
 ENV BOT_PORT=8080
 ENV BOT_SECRET=""

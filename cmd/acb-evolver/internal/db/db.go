@@ -38,6 +38,16 @@ CREATE INDEX IF NOT EXISTS idx_validation_log_island ON validation_log(island);
 CREATE INDEX IF NOT EXISTS idx_validation_log_island_passed ON validation_log(island, passed);
 `
 
+// crosspollStateSQL creates the crosspoll_state table for persisting per-island
+// last-pollinated generation numbers across evolver restarts.
+const crosspollStateSQL = `
+CREATE TABLE IF NOT EXISTS crosspoll_state (
+    island             VARCHAR(16) PRIMARY KEY,
+    last_pollinated_gen INTEGER NOT NULL DEFAULT 0,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+`
+
 // migrationSQL holds additive migrations run after the base schema is ensured.
 // Each statement is idempotent (ALTER TABLE … ADD COLUMN IF NOT EXISTS).
 const migrationSQL = `
@@ -50,6 +60,9 @@ ALTER TABLE programs ADD COLUMN IF NOT EXISTS bot_secret TEXT;
 // already exist, then applies any pending additive migrations.
 func EnsureSchema(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, crosspollStateSQL); err != nil {
 		return err
 	}
 	_, err := db.ExecContext(ctx, migrationSQL)

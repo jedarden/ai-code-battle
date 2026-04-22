@@ -39,9 +39,19 @@ Save the `bot_id` and `shared_secret` from the response — the secret is shown 
 
 ```
 Program.cs                    # HTTP server, HMAC auth, types, and strategy
+Grid.cs                       # Grid utilities (toroidal distance, BFS, neighbors)
 acb-starter-csharp.csproj    # .NET project file
 Dockerfile                    # Container build
 ```
+
+## Grid Helpers
+
+`Grid.cs` provides static utility methods for the toroidal grid:
+
+- `Grid.ToroidalManhattan(r1, c1, r2, c2, rows, cols)` — Manhattan distance with wrap-around
+- `Grid.ToroidalChebyshev(r1, c1, r2, c2, rows, cols)` — Chebyshev distance with wrap-around
+- `Grid.Neighbors(p, rows, cols)` — 8-directional neighbors with wrap
+- `Grid.Bfs(start, goal, passable, rows, cols)` — BFS pathfinding, returns path or `null`
 
 ## Customization
 

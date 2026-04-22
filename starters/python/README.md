@@ -37,9 +37,19 @@ Save the `bot_id` and `shared_secret` from the response — the secret is shown 
 
 ```
 main.py              # HTTP server, HMAC auth, and strategy entry point
+grid.py              # Grid utilities (toroidal distance, BFS, neighbors)
 requirements.txt     # Python dependencies (stdlib only for this starter)
 Dockerfile           # Container build
 ```
+
+## Grid Helpers
+
+`grid.py` provides utility functions for the toroidal grid:
+
+- `toroidal_manhattan(r1, c1, r2, c2, cols, rows)` — Manhattan distance with wrap-around
+- `toroidal_chebyshev(r1, c1, r2, c2, cols, rows)` — Chebyshev distance with wrap-around
+- `neighbors(row, col, rows, cols)` — 8-directional neighbors with wrap
+- `bfs(start, goal, passable, rows, cols)` — BFS pathfinding, returns path or `None`
 
 ## Customization
 

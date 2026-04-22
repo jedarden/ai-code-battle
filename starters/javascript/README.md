@@ -38,9 +38,19 @@ Save the `bot_id` and `shared_secret` from the response — the secret is shown 
 
 ```
 index.js     # HTTP server, HMAC auth, and strategy entry point
+grid.js      # Grid utilities (toroidal distance, BFS, neighbors)
 package.json # Node.js project definition
 Dockerfile   # Container build
 ```
+
+## Grid Helpers
+
+`grid.js` provides utility functions for the toroidal grid:
+
+- `toroidalManhattan(r1, c1, r2, c2, cols, rows)` — Manhattan distance with wrap-around
+- `toroidalChebyshev(r1, c1, r2, c2, cols, rows)` — Chebyshev distance with wrap-around
+- `neighbors(row, col, rows, cols)` — 8-directional neighbors with wrap
+- `bfs(start, goal, passable, rows, cols)` — BFS pathfinding, returns path or `null`
 
 ## Customization
 

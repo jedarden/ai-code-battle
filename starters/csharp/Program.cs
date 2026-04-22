@@ -70,12 +70,50 @@ string[] Directions = ["N", "E", "S", "W"];
 
 List<Move> ComputeMoves(GameState state)
 {
+    var rows = state.Config.Rows;
+    var cols = state.Config.Cols;
     var moves = new List<Move>();
     var rng = Random.Shared;
 
+    var cardinal = new (int dr, int dc, string dir)[] {
+        (-1, 0, "N"), (0, 1, "E"), (1, 0, "S"), (0, -1, "W"),
+    };
+
     foreach (var bot in state.Bots)
     {
-        if (bot.Owner == state.You.Id && rng.NextDouble() < 0.5)
+        if (bot.Owner != state.You.Id) continue;
+
+        // Find direction toward nearest energy using toroidal distance
+        if (state.Energy.Count > 0)
+        {
+            int bestDist = int.MaxValue;
+            string? bestDir = null;
+            foreach (var (dr, dc, dir) in cardinal)
+            {
+                var nr = (bot.Position.Row + dr + rows) % rows;
+                var nc = (bot.Position.Col + dc + cols) % cols;
+                foreach (var e in state.Energy)
+                {
+                    var d = Grid.ToroidalManhattan(nr, nc, e.Row, e.Col, rows, cols);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        bestDir = dir;
+                    }
+                }
+            }
+            if (bestDir != null)
+            {
+                moves.Add(new Move
+                {
+                    Position = bot.Position,
+                    Direction = bestDir
+                });
+                continue;
+            }
+        }
+
+        if (rng.NextDouble() < 0.5)
         {
             moves.Add(new Move
             {

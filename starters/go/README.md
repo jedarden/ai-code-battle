@@ -37,9 +37,19 @@ Save the `bot_id` and `shared_secret` from the response — the secret is shown 
 
 ```
 main.go     # HTTP server, HMAC auth, game types, and strategy entry point
+grid.go     # Grid utilities (toroidal distance, BFS, neighbors)
 go.mod      # Go module definition
 Dockerfile  # Multi-stage container build
 ```
+
+## Grid Helpers
+
+`grid.go` provides utility functions for the toroidal grid:
+
+- `ToroidalManhattan(a, b, rows, cols)` — Manhattan distance with wrap-around
+- `ToroidalChebyshev(a, b, rows, cols)` — Chebyshev distance with wrap-around
+- `Neighbors(p, rows, cols)` — 8-directional neighbors with wrap
+- `BFS(start, goal, passable, rows, cols)` — BFS pathfinding, returns path or `nil`
 
 ## Customization
 

@@ -409,3 +409,39 @@ func (s *Store) GetLineage(ctx context.Context, id int64) ([]int64, error) {
 	}
 	return lineage, nil
 }
+
+// LoadCrossPollState returns the last-pollinated generation per island from
+// the crosspoll_state table. Islands with no row default to 0.
+func (s *Store) LoadCrossPollState(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT island, last_pollinated_gen FROM crosspoll_state`)
+	if err != nil {
+		return nil, fmt.Errorf("load crosspoll state: %w", err)
+	}
+	defer rows.Close()
+
+	state := make(map[string]int)
+	for rows.Next() {
+		var island string
+		var gen int
+		if err := rows.Scan(&island, &gen); err != nil {
+			return nil, fmt.Errorf("scan crosspoll state: %w", err)
+		}
+		state[island] = gen
+	}
+	return state, rows.Err()
+}
+
+// SaveCrossPollState persists the last-pollinated generation for a single island.
+// Uses UPSERT to insert or update the row.
+func (s *Store) SaveCrossPollState(ctx context.Context, island string, gen int) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO crosspoll_state (island, last_pollinated_gen, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (island) DO UPDATE SET last_pollinated_gen = $2, updated_at = NOW()`,
+		island, gen)
+	if err != nil {
+		return fmt.Errorf("save crosspoll state for %s: %w", island, err)
+	}
+	return nil
+}

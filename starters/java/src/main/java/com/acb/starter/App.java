@@ -82,10 +82,37 @@ public class App {
 
     static List<Move> computeMoves(GameState state) {
         // Replace this with your strategy!
+        int rows = state.config.rows;
+        int cols = state.config.cols;
         List<Move> moves = new ArrayList<>();
 
+        int[][] cardinal = {{-1, 0}, {0, 1}, {1, 0}, {0, -1}};
+
         for (VisibleBot bot : state.bots) {
-            if (bot.owner == state.you.id && RANDOM.nextDouble() < 0.5) {
+            if (bot.owner != state.you.id) continue;
+
+            // Find direction toward nearest energy using toroidal distance
+            if (!state.energy.isEmpty()) {
+                int bestDist = Integer.MAX_VALUE;
+                String bestDir = null;
+                for (int i = 0; i < cardinal.length; i++) {
+                    int nr = Math.floorMod(bot.row + cardinal[i][0], rows);
+                    int nc = Math.floorMod(bot.col + cardinal[i][1], cols);
+                    for (Position e : state.energy) {
+                        int d = Grid.toroidalManhattan(nr, nc, e.row, e.col, rows, cols);
+                        if (d < bestDist) {
+                            bestDist = d;
+                            bestDir = DIRECTIONS[i];
+                        }
+                    }
+                }
+                if (bestDir != null) {
+                    moves.add(new Move(bot.row, bot.col, bestDir));
+                    continue;
+                }
+            }
+
+            if (RANDOM.nextDouble() < 0.5) {
                 String dir = DIRECTIONS[RANDOM.nextInt(DIRECTIONS.length)];
                 moves.add(new Move(bot.row, bot.col, dir));
             }

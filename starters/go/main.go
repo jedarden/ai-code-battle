@@ -147,18 +147,65 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func computeMoves(state *GameState) []Move {
 	// Replace this with your strategy!
+	rows := state.Config.Rows
+	cols := state.Config.Cols
 	var moves []Move
+
 	for _, bot := range state.Bots {
-		if bot.Owner == state.You.ID {
-			if rand.Float64() < 0.5 {
-				moves = append(moves, Move{
-					Position:  bot.Position,
-					Direction: directions[rand.Intn(len(directions))],
-				})
+		if bot.Owner != state.You.ID {
+			continue
+		}
+
+		// Find direction toward nearest energy using toroidal distance
+		if len(state.Energy) > 0 {
+			bestDist := int(^uint(0) >> 1)
+			bestDir := ""
+			for _, d := range cardinalSteps(bot.Position, rows, cols) {
+				for _, e := range state.Energy {
+					dist := ToroidalManhattan(d.pos, e, rows, cols)
+					if dist < bestDist {
+						bestDist = dist
+						bestDir = d.dir
+					}
+				}
 			}
+			if bestDir != "" {
+				moves = append(moves, Move{Position: bot.Position, Direction: bestDir})
+				continue
+			}
+		}
+
+		if rand.Float64() < 0.5 {
+			moves = append(moves, Move{
+				Position:  bot.Position,
+				Direction: directions[rand.Intn(len(directions))],
+			})
 		}
 	}
 	return moves
+}
+
+type cardinalStep struct {
+	pos Position
+	dir string
+}
+
+func cardinalSteps(p Position, rows, cols int) []cardinalStep {
+	steps := []struct {
+		dr, dc int
+		dir    string
+	}{{-1, 0, "N"}, {0, 1, "E"}, {1, 0, "S"}, {0, -1, "W"}}
+	var result []cardinalStep
+	for _, s := range steps {
+		result = append(result, cardinalStep{
+			pos: Position{
+				Row: (p.Row + s.dr + rows) % rows,
+				Col: (p.Col + s.dc + cols) % cols,
+			},
+			dir: s.dir,
+		})
+	}
+	return result
 }
 
 func verifySignature(secret, matchID, turnStr, timestamp string, body []byte, signature string) bool {

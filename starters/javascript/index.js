@@ -46,15 +46,51 @@ function signResponse(body, matchId, turn) {
 
 function computeMoves(state) {
   // Replace this with your strategy!
+  const { toroidalManhattan } = require("./grid");
+
+  const rows = state.config.rows;
+  const cols = state.config.cols;
   const moves = [];
+
+  const cardinalSteps = [
+    { dr: -1, dc: 0, dir: "N" },
+    { dr: 0, dc: 1, dir: "E" },
+    { dr: 1, dc: 0, dir: "S" },
+    { dr: 0, dc: -1, dir: "W" },
+  ];
+
   for (const bot of state.bots) {
-    if (bot.owner === state.you.id) {
-      if (Math.random() < 0.5) {
-        moves.push({
-          position: bot.position,
-          direction: DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)],
-        });
+    if (bot.owner !== state.you.id) continue;
+
+    const br = bot.position.row;
+    const bc = bot.position.col;
+
+    // Find direction toward nearest energy using toroidal distance
+    if (state.energy && state.energy.length > 0) {
+      let bestDist = Infinity;
+      let bestDir = null;
+      for (const { dr, dc, dir } of cardinalSteps) {
+        const nr = (br + dr + rows) % rows;
+        const nc = (bc + dc + cols) % cols;
+        for (const e of state.energy) {
+          const dist = toroidalManhattan(nr, nc, e.row, e.col, cols, rows);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestDir = dir;
+          }
+        }
       }
+      if (bestDir) {
+        moves.push({ position: bot.position, direction: bestDir });
+        continue;
+      }
+    }
+
+    if (Math.random() < 0.5) {
+      moves.push({
+        position: bot.position,
+        direction: DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)],
+      });
     }
   }
   return moves;
