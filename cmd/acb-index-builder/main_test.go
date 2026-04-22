@@ -1433,3 +1433,116 @@ func TestGeneratePlaylistsWithFastLookups(t *testing.T) {
 		t.Errorf("rivalry-classics should have 3 matches for bot1:bot2 (count=3), got %d", len(rivalryPlaylist.Matches))
 	}
 }
+
+func TestGenerateMapsIndex(t *testing.T) {
+	wallsJSON := `[{"row":10,"col":10},{"row":10,"col":11}]`
+	coresJSON := `[{"position":{"row":5,"col":5},"owner":0},{"position":{"row":55,"col":55},"owner":1}]`
+	energyJSON := `[{"row":20,"col":25}]`
+	mapJSON := []byte(`{"walls":` + wallsJSON + `,"cores":` + coresJSON + `,"energy_nodes":` + energyJSON + `}`)
+
+	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	data := &IndexData{
+		GeneratedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+		Maps: []MapData{
+			{
+				MapID:       "map_abc123",
+				PlayerCount: 2,
+				Status:      "active",
+				Engagement:  0.85,
+				WallDensity: 0.15,
+				EnergyCount: 1,
+				GridWidth:   60,
+				GridHeight:  60,
+				CreatedAt:   createdAt,
+				RawJSON:     mapJSON,
+			},
+			{
+				MapID:       "map_def456",
+				PlayerCount: 4,
+				Status:      "probation",
+				Engagement:  0.40,
+				WallDensity: 0.20,
+				EnergyCount: 0,
+				GridWidth:   80,
+				GridHeight:  80,
+				CreatedAt:   createdAt,
+				RawJSON:     json.RawMessage(`{}`),
+			},
+		},
+	}
+
+	tmpDir := t.TempDir()
+
+	if err := generateMapsIndex(data, tmpDir); err != nil {
+		t.Fatalf("generateMapsIndex failed: %v", err)
+	}
+
+	// Verify maps/index.json
+	indexContent, err := os.ReadFile(filepath.Join(tmpDir, "maps", "index.json"))
+	if err != nil {
+		t.Fatalf("Failed to read maps/index.json: %v", err)
+	}
+	var index MapIndexFile
+	if err := json.Unmarshal(indexContent, &index); err != nil {
+		t.Fatalf("Failed to parse maps/index.json: %v", err)
+	}
+	if len(index.Maps) != 2 {
+		t.Errorf("Expected 2 maps in index, got %d", len(index.Maps))
+	}
+	if index.UpdatedAt == "" {
+		t.Error("UpdatedAt should not be empty")
+	}
+	if index.Maps[0].MapID != "map_abc123" {
+		t.Errorf("First map_id: got %q, want %q", index.Maps[0].MapID, "map_abc123")
+	}
+	if len(index.ByPlayerCount["2"]) != 1 {
+		t.Errorf("by_player_count[\"2\"]: expected 1, got %d", len(index.ByPlayerCount["2"]))
+	}
+	if len(index.ByPlayerCount["4"]) != 1 {
+		t.Errorf("by_player_count[\"4\"]: expected 1, got %d", len(index.ByPlayerCount["4"]))
+	}
+
+	// Verify maps/map_abc123.json has geometry
+	detailContent, err := os.ReadFile(filepath.Join(tmpDir, "maps", "map_abc123.json"))
+	if err != nil {
+		t.Fatalf("Failed to read maps/map_abc123.json: %v", err)
+	}
+	var detail MapDetail
+	if err := json.Unmarshal(detailContent, &detail); err != nil {
+		t.Fatalf("Failed to parse maps/map_abc123.json: %v", err)
+	}
+	if detail.MapID != "map_abc123" {
+		t.Errorf("map_id: got %q, want %q", detail.MapID, "map_abc123")
+	}
+	if len(detail.Walls) != 2 {
+		t.Errorf("Expected 2 walls, got %d", len(detail.Walls))
+	}
+	if len(detail.Cores) != 2 {
+		t.Errorf("Expected 2 cores, got %d", len(detail.Cores))
+	}
+	if len(detail.EnergyNodes) != 1 {
+		t.Errorf("Expected 1 energy node, got %d", len(detail.EnergyNodes))
+	}
+	if detail.Walls[0].Row != 10 || detail.Walls[0].Col != 10 {
+		t.Errorf("First wall: got {%d,%d}, want {10,10}", detail.Walls[0].Row, detail.Walls[0].Col)
+	}
+	if detail.Cores[0].Owner != 0 || detail.Cores[0].Position.Row != 5 {
+		t.Errorf("First core: got owner=%d row=%d, want owner=0 row=5", detail.Cores[0].Owner, detail.Cores[0].Position.Row)
+	}
+
+	// Verify maps/map_def456.json has empty slices (no geometry in RawJSON)
+	detail2Content, err := os.ReadFile(filepath.Join(tmpDir, "maps", "map_def456.json"))
+	if err != nil {
+		t.Fatalf("Failed to read maps/map_def456.json: %v", err)
+	}
+	var detail2 MapDetail
+	if err := json.Unmarshal(detail2Content, &detail2); err != nil {
+		t.Fatalf("Failed to parse maps/map_def456.json: %v", err)
+	}
+	if len(detail2.Walls) != 0 {
+		t.Errorf("Expected 0 walls for map_def456, got %d", len(detail2.Walls))
+	}
+	if len(detail2.Cores) != 0 {
+		t.Errorf("Expected 0 cores for map_def456, got %d", len(detail2.Cores))
+	}
+}

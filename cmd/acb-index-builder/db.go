@@ -158,29 +158,47 @@ type PredictorStats struct {
 
 // MapData represents a map for the index
 type MapData struct {
-	MapID       string    `json:"map_id"`
-	PlayerCount int       `json:"player_count"`
-	Status      string    `json:"status"`
-	Engagement  float64   `json:"engagement"`
-	WallDensity float64   `json:"wall_density"`
-	EnergyCount int       `json:"energy_count"`
-	GridWidth   int       `json:"grid_width"`
-	GridHeight  int       `json:"grid_height"`
-	CreatedAt   time.Time `json:"created_at"`
+	MapID       string          `json:"map_id"`
+	PlayerCount int             `json:"player_count"`
+	Status      string          `json:"status"`
+	Engagement  float64         `json:"engagement"`
+	WallDensity float64         `json:"wall_density"`
+	EnergyCount int             `json:"energy_count"`
+	GridWidth   int             `json:"grid_width"`
+	GridHeight  int             `json:"grid_height"`
+	CreatedAt   time.Time       `json:"created_at"`
+	RawJSON     json.RawMessage `json:"-"`
+}
+
+// OpenPredictionMatch represents a pending match open for predictions
+type OpenPredictionMatch struct {
+	MatchID            string    `json:"match_id"`
+	BotAID             string    `json:"bot_a"`
+	BotBID             string    `json:"bot_b"`
+	BotAName           string    `json:"bot_a_name"`
+	BotBName           string    `json:"bot_b_name"`
+	ARating            float64   `json:"a_rating"`
+	BRating            float64   `json:"b_rating"`
+	AEvolved           bool      `json:"a_evolved"`
+	BEvolved           bool      `json:"b_evolved"`
+	CreatedAt          time.Time `json:"created_at"`
+	IsSeriesMatch      bool      `json:"is_series_match"`
+	HeadToHeadRecord   *string   `json:"head_to_head_record,omitempty"`
 }
 
 // IndexData contains all data needed for index generation
 type IndexData struct {
-	GeneratedAt    time.Time
-	Bots           []BotData
-	Matches        []MatchData
-	RatingHistory  []RatingHistoryEntry
-	Series         []SeriesData
-	Seasons        []SeasonData
-	Predictions    []PredictionData
-	PredictorStats []PredictorStats
-	Maps           []MapData
-	TopPredictors  []PredictorStats
+	GeneratedAt       time.Time
+	Bots              []BotData
+	Matches           []MatchData
+	RatingHistory     []RatingHistoryEntry
+	Series            []SeriesData
+	Seasons           []SeasonData
+	Predictions       []PredictionData
+	PredictorStats    []PredictorStats
+	Maps              []MapData
+	TopPredictors     []PredictorStats
+	OpenPredictionMatches []OpenPredictionMatch
 }
 
 // fetchAllData retrieves all data from PostgreSQL for index generation
@@ -212,6 +230,9 @@ func fetchAllData(ctx context.Context, db *sql.DB) (*IndexData, error) {
 		return nil, err
 	}
 	if data.Maps, err = fetchMaps(ctx, db); err != nil {
+		return nil, err
+	}
+	if data.OpenPredictionMatches, err = fetchOpenPredictions(ctx, db); err != nil {
 		return nil, err
 	}
 
@@ -715,7 +736,7 @@ func fetchPredictorStats(ctx context.Context, db *sql.DB) ([]PredictorStats, err
 func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 	query := `
 		SELECT map_id, player_count, status, engagement, wall_density,
-		       energy_count, grid_width, grid_height, created_at
+		       energy_count, grid_width, grid_height, created_at, map_json
 		FROM maps
 		WHERE status IN ('active', 'probation', 'classic')
 		ORDER BY engagement DESC
@@ -732,7 +753,7 @@ func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 		var m MapData
 		if err := rows.Scan(
 			&m.MapID, &m.PlayerCount, &m.Status, &m.Engagement, &m.WallDensity,
-			&m.EnergyCount, &m.GridWidth, &m.GridHeight, &m.CreatedAt,
+			&m.EnergyCount, &m.GridWidth, &m.GridHeight, &m.CreatedAt, &m.RawJSON,
 		); err != nil {
 			return nil, err
 		}
@@ -740,6 +761,187 @@ func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 	}
 
 	return maps, nil
+}
+
+// fetchOpenPredictions retrieves pending matches that are "predictable":
+// - Both bots are in the top 20
+// - It's a rivalry match (at least 3 previous h2h matches)
+// - It's a series match
+// - An evolved bot faces a top-10 human-written bot
+func fetchOpenPredictions(ctx context.Context, db *sql.DB) ([]OpenPredictionMatch, error) {
+	// Get all pending matches with their participants
+	query := `
+		SELECT m.match_id, m.created_at,
+		       mp1.bot_id as bot_a_id, b1.name as bot_a_name,
+		       (b1.rating_mu - 2*b1.rating_phi) as bot_a_rating,
+		       b1.evolved as bot_a_evolved,
+		       mp2.bot_id as bot_b_id, b2.name as bot_b_name,
+		       (b2.rating_mu - 2*b2.rating_phi) as bot_b_rating,
+		       b2.evolved as bot_b_evolved,
+		       COALESCE(EXISTS(
+		           SELECT 1 FROM series_games sg
+		           WHERE sg.match_id = m.match_id
+		       ), false) as is_series_match
+		FROM matches m
+		JOIN match_participants mp1 ON m.match_id = mp1.match_id AND mp1.player_slot = 0
+		JOIN match_participants mp2 ON m.match_id = mp2.match_id AND mp2.player_slot = 1
+		JOIN bots b1 ON mp1.bot_id = b1.bot_id
+		JOIN bots b2 ON mp2.bot_id = b2.bot_id
+		WHERE m.status = 'pending'
+		ORDER BY m.created_at ASC
+		LIMIT 50
+	`
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query pending matches: %w", err)
+	}
+	defer rows.Close()
+
+	var allMatches []OpenPredictionMatch
+	for rows.Next() {
+		var m OpenPredictionMatch
+		var isSeries bool
+		err := rows.Scan(
+			&m.MatchID, &m.CreatedAt,
+			&m.BotAID, &m.BotAName, &m.ARating, &m.AEvolved,
+			&m.BotBID, &m.BotBName, &m.BRating, &m.BEvolved,
+			&isSeries,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan pending match: %w", err)
+		}
+		m.IsSeriesMatch = isSeries
+		allMatches = append(allMatches, m)
+	}
+
+	if len(allMatches) == 0 {
+		return []OpenPredictionMatch{}, nil
+	}
+
+	// Get top 20 bot IDs for top-20 vs top-20 check
+	topBotIDs := make(map[string]bool)
+	topRows, err := db.QueryContext(ctx, `
+		SELECT bot_id FROM bots
+		WHERE status = 'active'
+		ORDER BY rating_mu DESC
+		LIMIT 20
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query top bots: %w", err)
+	}
+	defer topRows.Close()
+	for topRows.Next() {
+		var botID string
+		if err := topRows.Scan(&botID); err != nil {
+			return nil, err
+		}
+		topBotIDs[botID] = true
+	}
+
+	// Get top 10 bot IDs for evolved vs top-10 check
+	top10BotIDs := make(map[string]bool)
+	top10Rows, err := db.QueryContext(ctx, `
+		SELECT bot_id FROM bots
+		WHERE status = 'active' AND evolved = false
+		ORDER BY rating_mu DESC
+		LIMIT 10
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query top 10 bots: %w", err)
+	}
+	defer top10Rows.Close()
+	for top10Rows.Next() {
+		var botID string
+		if err := top10Rows.Scan(&botID); err != nil {
+			return nil, err
+		}
+		top10BotIDs[botID] = true
+	}
+
+	// Build pair frequency map for rivalry detection (count completed h2h matches)
+	pairFrequency := make(map[string]int)
+	freqRows, err := db.QueryContext(ctx, `
+		SELECT mp1.bot_id, mp2.bot_id, COUNT(*)
+		FROM matches m
+		JOIN match_participants mp1 ON m.match_id = mp1.match_id AND mp1.player_slot = 0
+		JOIN match_participants mp2 ON m.match_id = mp2.match_id AND mp2.player_slot = 1
+		WHERE m.status = 'completed'
+		GROUP BY mp1.bot_id, mp2.bot_id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query pair frequency: %w", err)
+	}
+	defer freqRows.Close()
+	for freqRows.Next() {
+		var botA, botB string
+		var count int
+		if err := freqRows.Scan(&botA, &botB, &count); err != nil {
+			return nil, err
+		}
+		pairFrequency[botA+":"+botB] = count
+	}
+
+	// Filter matches that are "predictable"
+	var predictableMatches []OpenPredictionMatch
+	for _, m := range allMatches {
+		isPredictable := false
+
+		// Check: both bots in top 20
+		if topBotIDs[m.BotAID] && topBotIDs[m.BotBID] {
+			isPredictable = true
+		}
+
+		// Check: rivalry match (at least 3 previous h2h matches)
+		if freq, ok := pairFrequency[m.BotAID+":"+m.BotBID]; ok && freq >= 3 {
+			isPredictable = true
+		}
+
+		// Check: series match
+		if m.IsSeriesMatch {
+			isPredictable = true
+		}
+
+		// Check: evolved bot vs top-10 human-written bot
+		if m.AEvolved && top10BotIDs[m.BotBID] {
+			isPredictable = true
+		}
+		if m.BEvolved && top10BotIDs[m.BotAID] {
+			isPredictable = true
+		}
+
+		if isPredictable {
+			// Calculate head-to-head record
+			h2hRecord := computeHeadToHeadRecord(ctx, db, m.BotAID, m.BotBID)
+			m.HeadToHeadRecord = &h2hRecord
+			predictableMatches = append(predictableMatches, m)
+		}
+
+		// Limit to next 10 matches
+		if len(predictableMatches) >= 10 {
+			break
+		}
+	}
+
+	return predictableMatches, nil
+}
+
+// computeHeadToHeadRecord returns the head-to-head record between two bots
+func computeHeadToHeadRecord(ctx context.Context, db *sql.DB, botAID, botBID string) string {
+	var aWins, bWins int
+	err := db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE m.winner = 0) as a_wins,
+			COUNT(*) FILTER (WHERE m.winner = 1) as b_wins
+		FROM matches m
+		JOIN match_participants mp1 ON m.match_id = mp1.match_id AND mp1.player_slot = 0
+		JOIN match_participants mp2 ON m.match_id = mp2.match_id AND mp2.player_slot = 1
+		WHERE mp1.bot_id = $1 AND mp2.bot_id = $2 AND m.status = 'completed'
+	`, botAID, botBID).Scan(&aWins, &bWins)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d-%d", aWins, bWins)
 }
 
 func computeTopPredictors(stats []PredictorStats) []PredictorStats {

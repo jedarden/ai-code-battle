@@ -154,6 +154,11 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB) error {
 		}
 	}
 
+	// Generate maps/index.json and maps/{map_id}.json
+	if err := generateMapsIndex(data, outputDir); err != nil {
+		return fmt.Errorf("maps index: %w", err)
+	}
+
 	return nil
 }
 
@@ -1500,6 +1505,131 @@ func generateRivalriesIndex(rivalries []RivalryEntry, outputDir string) error {
 		Rivalries: rivalries,
 	}
 	return writeJSON(filepath.Join(metaDir, "rivalries.json"), index)
+}
+
+// mapPosition is a grid coordinate used in map geometry output.
+type mapPosition struct {
+	Row int `json:"row"`
+	Col int `json:"col"`
+}
+
+// mapCore is a spawn/core point in a map.
+type mapCore struct {
+	Position mapPosition `json:"position"`
+	Owner    int         `json:"owner"`
+}
+
+// mapGeometryJSON mirrors the map_json column structure for geometry extraction.
+type mapGeometryJSON struct {
+	Walls       []mapPosition `json:"walls"`
+	Cores       []mapCore     `json:"cores"`
+	EnergyNodes []mapPosition `json:"energy_nodes"`
+}
+
+// MapIndexEntry is the per-map summary in maps/index.json.
+type MapIndexEntry struct {
+	MapID       string  `json:"map_id"`
+	PlayerCount int     `json:"player_count"`
+	Status      string  `json:"status"`
+	Engagement  float64 `json:"engagement"`
+	WallDensity float64 `json:"wall_density"`
+	EnergyCount int     `json:"energy_count"`
+	GridWidth   int     `json:"grid_width"`
+	GridHeight  int     `json:"grid_height"`
+	CreatedAt   string  `json:"created_at"`
+}
+
+// MapIndexFile represents maps/index.json.
+type MapIndexFile struct {
+	UpdatedAt     string                     `json:"updated_at"`
+	Maps          []MapIndexEntry            `json:"maps"`
+	ByPlayerCount map[string][]MapIndexEntry `json:"by_player_count"`
+}
+
+// MapDetail represents maps/{map_id}.json — summary metadata plus full geometry.
+type MapDetail struct {
+	MapID       string        `json:"map_id"`
+	PlayerCount int           `json:"player_count"`
+	Status      string        `json:"status"`
+	Engagement  float64       `json:"engagement"`
+	WallDensity float64       `json:"wall_density"`
+	EnergyCount int           `json:"energy_count"`
+	GridWidth   int           `json:"grid_width"`
+	GridHeight  int           `json:"grid_height"`
+	CreatedAt   string        `json:"created_at"`
+	Walls       []mapPosition `json:"walls"`
+	Cores       []mapCore     `json:"cores"`
+	EnergyNodes []mapPosition `json:"energy_nodes"`
+}
+
+func generateMapsIndex(data *IndexData, outputDir string) error {
+	mapsDir := filepath.Join(outputDir, "maps")
+	if err := os.MkdirAll(mapsDir, 0755); err != nil {
+		return err
+	}
+
+	entries := make([]MapIndexEntry, 0, len(data.Maps))
+	byPlayerCount := make(map[string][]MapIndexEntry)
+
+	for _, m := range data.Maps {
+		entry := MapIndexEntry{
+			MapID:       m.MapID,
+			PlayerCount: m.PlayerCount,
+			Status:      m.Status,
+			Engagement:  m.Engagement,
+			WallDensity: m.WallDensity,
+			EnergyCount: m.EnergyCount,
+			GridWidth:   m.GridWidth,
+			GridHeight:  m.GridHeight,
+			CreatedAt:   m.CreatedAt.Format(time.RFC3339),
+		}
+		entries = append(entries, entry)
+		key := fmt.Sprintf("%d", m.PlayerCount)
+		byPlayerCount[key] = append(byPlayerCount[key], entry)
+
+		var geo mapGeometryJSON
+		if len(m.RawJSON) > 0 {
+			if err := json.Unmarshal(m.RawJSON, &geo); err != nil {
+				return fmt.Errorf("parse map_json for %s: %w", m.MapID, err)
+			}
+		}
+
+		detail := MapDetail{
+			MapID:       m.MapID,
+			PlayerCount: m.PlayerCount,
+			Status:      m.Status,
+			Engagement:  m.Engagement,
+			WallDensity: m.WallDensity,
+			EnergyCount: m.EnergyCount,
+			GridWidth:   m.GridWidth,
+			GridHeight:  m.GridHeight,
+			CreatedAt:   m.CreatedAt.Format(time.RFC3339),
+			Walls:       geo.Walls,
+			Cores:       geo.Cores,
+			EnergyNodes: geo.EnergyNodes,
+		}
+		if detail.Walls == nil {
+			detail.Walls = []mapPosition{}
+		}
+		if detail.Cores == nil {
+			detail.Cores = []mapCore{}
+		}
+		if detail.EnergyNodes == nil {
+			detail.EnergyNodes = []mapPosition{}
+		}
+
+		if err := writeJSON(filepath.Join(mapsDir, m.MapID+".json"), detail); err != nil {
+			return fmt.Errorf("write map %s: %w", m.MapID, err)
+		}
+	}
+
+	index := MapIndexFile{
+		UpdatedAt:     data.GeneratedAt.Format(time.RFC3339),
+		Maps:          entries,
+		ByPlayerCount: byPlayerCount,
+	}
+
+	return writeJSON(filepath.Join(mapsDir, "index.json"), index)
 }
 
 func writeJSON(path string, data interface{}) error {
