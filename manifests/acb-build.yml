@@ -1,0 +1,514 @@
+# Argo WorkflowTemplates for AI Code Battle CI
+# Sync to: declarative-config/k8s/iad-ci/argo-workflows/acb-build.yml
+#
+# Two WorkflowTemplates:
+#   1. acb-build-images — builds Go binaries + container images, runs tests
+#   2. acb-build-site   — builds the web SPA and stores as a container image
+#
+# Triggered by Argo Events on git push (see acb-eventsensor.yml).
+---
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: acb-build-images
+  namespace: argo-workflows
+  labels:
+    app: acb-ci
+spec:
+  entrypoint: build-all
+  serviceAccountName: argo-workflow
+  arguments:
+    parameters:
+      - name: repo
+        value: https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git
+      - name: branch
+        value: master
+      - name: sha
+        # Short commit SHA, supplied by the Argo Events sensor
+      - name: registry
+        value: forgejo.ardenone.com/ai-code-battle
+  volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: docker-config
+      secret:
+        secretName: forgejo-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+  templates:
+    - name: build-all
+      dag:
+        tasks:
+          - name: clone
+            template: clone-repo
+          - name: test
+            template: run-tests
+            dependencies: [clone]
+          # --- Go services (context: repo root, Dockerfiles COPY engine/) ---
+          - name: build-matchmaker
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-matchmaker
+                - name: dockerfile
+                  value: cmd/acb-matchmaker/Dockerfile
+                - name: context
+                  value: .
+          - name: build-worker
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-worker
+                - name: dockerfile
+                  value: cmd/acb-worker/Dockerfile
+                - name: context
+                  value: .
+          - name: build-evolver
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-evolver
+                - name: dockerfile
+                  value: cmd/acb-evolver/Dockerfile
+                - name: context
+                  value: .
+          - name: build-index-builder
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-index-builder
+                - name: dockerfile
+                  value: cmd/acb-index-builder/Dockerfile
+                - name: context
+                  value: .
+          - name: build-api
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-api
+                - name: dockerfile
+                  value: cmd/acb-api/Dockerfile
+                - name: context
+                  value: .
+          # --- Strategy bots (context: bots/<name>, Dockerfiles self-contained) ---
+          - name: build-bot-random
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-random
+                - name: dockerfile
+                  value: bots/random/Dockerfile
+                - name: context
+                  value: bots/random
+          - name: build-bot-gatherer
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-gatherer
+                - name: dockerfile
+                  value: bots/gatherer/Dockerfile
+                - name: context
+                  value: bots/gatherer
+          - name: build-bot-rusher
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-rusher
+                - name: dockerfile
+                  value: bots/rusher/Dockerfile
+                - name: context
+                  value: bots/rusher
+          - name: build-bot-guardian
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-guardian
+                - name: dockerfile
+                  value: bots/guardian/Dockerfile
+                - name: context
+                  value: bots/guardian
+          - name: build-bot-swarm
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-swarm
+                - name: dockerfile
+                  value: bots/swarm/Dockerfile
+                - name: context
+                  value: bots/swarm
+          - name: build-bot-hunter
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-hunter
+                - name: dockerfile
+                  value: bots/hunter/Dockerfile
+                - name: context
+                  value: bots/hunter
+          - name: build-bot-scout
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-scout
+                - name: dockerfile
+                  value: bots/scout/Dockerfile
+                - name: context
+                  value: bots/scout
+          # --- Phase 13 expansion bots ---
+          - name: build-bot-assassin
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-assassin
+                - name: dockerfile
+                  value: bots/assassin/Dockerfile
+                - name: context
+                  value: bots/assassin
+          - name: build-bot-defender
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-defender
+                - name: dockerfile
+                  value: bots/defender/Dockerfile
+                - name: context
+                  value: bots/defender
+          - name: build-bot-farmer
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-farmer
+                - name: dockerfile
+                  value: bots/farmer/Dockerfile
+                - name: context
+                  value: bots/farmer
+          - name: build-bot-kamikaze
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-kamikaze
+                - name: dockerfile
+                  value: bots/kamikaze/Dockerfile
+                - name: context
+                  value: bots/kamikaze
+          - name: build-bot-nomad
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-nomad
+                - name: dockerfile
+                  value: bots/nomad/Dockerfile
+                - name: context
+                  value: bots/nomad
+          - name: build-bot-opportunist
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-opportunist
+                - name: dockerfile
+                  value: bots/opportunist/Dockerfile
+                - name: context
+                  value: bots/opportunist
+          - name: build-bot-pacifist
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-pacifist
+                - name: dockerfile
+                  value: bots/pacifist/Dockerfile
+                - name: context
+                  value: bots/pacifist
+          - name: build-bot-phalanx
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-phalanx
+                - name: dockerfile
+                  value: bots/phalanx/Dockerfile
+                - name: context
+                  value: bots/phalanx
+          - name: build-bot-raider
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-strategy-raider
+                - name: dockerfile
+                  value: bots/raider/Dockerfile
+                - name: context
+                  value: bots/raider
+
+    - name: clone-repo
+      script:
+        image: alpine:3.21
+        command: [sh, -c]
+        source: |
+          set -e
+          apk add --no-cache git >/dev/null 2>&1
+          git clone --depth 1 --branch "{{workflow.parameters.branch}}" \
+            "{{workflow.parameters.repo}}" /workspace/src 2>/dev/null
+          cd /workspace/src
+          SHA="{{workflow.parameters.sha}}"
+          if [ -n "$SHA" ]; then
+            git fetch origin "$SHA" 2>/dev/null || true
+            git checkout "$SHA" 2>/dev/null || true
+          fi
+          echo "Checked out: $(git rev-parse HEAD)"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        activeDeadlineSeconds: 120
+
+    - name: run-tests
+      script:
+        image: golang:1.25-alpine
+        command: [sh, -c]
+        source: |
+          set -e
+          cd /workspace/src
+          echo "Running go vet..."
+          go vet ./...
+          echo "Running go test..."
+          go test -race -count=1 ./...
+          echo "All tests passed"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 1Gi
+          limits:
+            cpu: 4000m
+            memory: 4Gi
+        activeDeadlineSeconds: 600
+
+    - name: kaniko-build
+      inputs:
+        parameters:
+          - name: image
+          - name: dockerfile
+          - name: context
+      container:
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+          - --context=/workspace/src/{{inputs.parameters.context}}
+          - --dockerfile=/workspace/src/{{inputs.parameters.dockerfile}}
+          - --destination={{workflow.parameters.registry}}/{{inputs.parameters.image}}:{{workflow.parameters.sha}}
+          - --destination={{workflow.parameters.registry}}/{{inputs.parameters.image}}:latest
+          - --cache=true
+          - --cache-ttl=72h
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: docker-config
+            mountPath: /kaniko/.docker
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+        activeDeadlineSeconds: 1800
+
+---
+# build-site: builds the web SPA and pushes a container image artifact.
+# The index builder pulls this image (acb-site-build:latest) on its next cycle
+# via crane to get the latest SPA shell, then merges it with generated data and
+# deploys to Cloudflare Pages.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: acb-build-site
+  namespace: argo-workflows
+  labels:
+    app: acb-ci
+spec:
+  entrypoint: build-site
+  serviceAccountName: argo-workflow
+  arguments:
+    parameters:
+      - name: repo
+        value: https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git
+      - name: branch
+        value: master
+      - name: sha
+      - name: registry
+        value: forgejo.ardenone.com/ai-code-battle
+  volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: docker-config
+      secret:
+        secretName: forgejo-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+  templates:
+    - name: build-site
+      dag:
+        tasks:
+          - name: clone
+            template: clone-repo
+          - name: npm-build
+            template: npm-build
+            dependencies: [clone]
+          - name: prepare-image-context
+            template: prepare-image-context
+            dependencies: [npm-build]
+          - name: push-image
+            template: push-site-image
+            dependencies: [prepare-image-context]
+
+    - name: clone-repo
+      script:
+        image: alpine:3.21
+        command: [sh, -c]
+        source: |
+          set -e
+          apk add --no-cache git >/dev/null 2>&1
+          git clone --depth 1 --branch "{{workflow.parameters.branch}}" \
+            "{{workflow.parameters.repo}}" /workspace/src 2>/dev/null
+          cd /workspace/src
+          SHA="{{workflow.parameters.sha}}"
+          if [ -n "$SHA" ]; then
+            git fetch origin "$SHA" 2>/dev/null || true
+            git checkout "$SHA" 2>/dev/null || true
+          fi
+          echo "Checked out: $(git rev-parse HEAD)"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        activeDeadlineSeconds: 120
+
+    - name: npm-build
+      script:
+        image: node:22-alpine
+        command: [sh, -c]
+        source: |
+          set -e
+          cd /workspace/src/web
+          npm ci
+          npm run build
+          echo "Build output:"
+          ls -la dist/
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+        activeDeadlineSeconds: 300
+
+    - name: prepare-image-context
+      script:
+        image: alpine:3.21
+        command: [sh, -c]
+        source: |
+          set -e
+          mkdir -p /workspace/image
+          cp -r /workspace/src/web/dist /workspace/image/dist
+
+          cat > /workspace/image/Dockerfile <<'DFEOF'
+FROM alpine:3.21
+COPY dist /app/dist
+DFEOF
+
+          echo "Site image context ready:"
+          ls -la /workspace/image/
+          ls -la /workspace/image/dist/ | head -20
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+        activeDeadlineSeconds: 60
+
+    - name: push-site-image
+      container:
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+          - --context=/workspace/image
+          - --dockerfile=/workspace/image/Dockerfile
+          - --destination={{workflow.parameters.registry}}/acb-site-build:{{workflow.parameters.sha}}
+          - --destination={{workflow.parameters.registry}}/acb-site-build:latest
+          - --cache=false
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: docker-config
+            mountPath: /kaniko/.docker
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+        activeDeadlineSeconds: 600

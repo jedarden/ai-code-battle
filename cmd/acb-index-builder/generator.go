@@ -64,6 +64,7 @@ type BotProfile struct {
 	Evolved          bool                   `json:"evolved"`
 	Island           string                 `json:"island,omitempty"`
 	Generation       int                    `json:"generation,omitempty"`
+	DebugPublic      bool                   `json:"debug_public"`
 	CreatedAt        string                 `json:"created_at"`
 	RatingHistory    []RatingHistoryEntry   `json:"rating_history"`
 	RecentMatches    []MatchSummary         `json:"recent_matches"`
@@ -275,6 +276,7 @@ func generateBotProfiles(data *IndexData, outputDir string, cfg *Config) error {
 			Evolved:          bot.Evolved,
 			Island:           bot.Island,
 			Generation:       bot.Generation,
+			DebugPublic:      bot.DebugPublic,
 			CreatedAt:        bot.CreatedAt.Format(time.RFC3339),
 			RatingHistory:    history,
 			RecentMatches:    recentMatches,

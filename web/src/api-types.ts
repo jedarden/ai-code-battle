@@ -64,6 +64,8 @@ export interface BotProfile {
   island?: string;
   generation?: number;
   parent_ids?: string[];
+  // §14.1: debug telemetry public-visibility toggle
+  debug_public?: boolean;
 }
 
 export interface BotDirectoryEntry {
@@ -90,6 +92,7 @@ export interface RegisterRequest {
   name: string;
   endpoint_url: string;
   owner_id: string;
+  debug_public?: boolean;
 }
 
 export interface RegisterResponse {

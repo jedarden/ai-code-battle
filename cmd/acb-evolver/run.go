@@ -106,6 +106,8 @@ func DefaultRunConfig() RunConfig {
 		UseNsjail:         true,
 		LiveExportPath:    envOrDefault("ACB_EVOLUTION_OUT", "evolution/live.json"),
 		UploadR2:          false,
+		DeclarativeConfigRepo:    envOrDefault("ACB_DECLARATIVE_CONFIG_REPO", "https://forgejo.ardenone.com/infra/ardenone-cluster.git"),
+		DeclarativeConfigBranch:  envOrDefault("ACB_DECLARATIVE_CONFIG_BRANCH", "main"),
 		Languages:         []string{"go", "python", "rust", "typescript", "java", "php"},
 	}
 }

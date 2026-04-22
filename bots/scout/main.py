@@ -220,15 +220,34 @@ def compute_moves(state):
                 if c["owner"] == state.you_id and c.get("active", True)]
 
     moves = []
+    claimed = set()
+    for b in my_bots:
+        claimed.add((b["position"]["row"], b["position"]["col"]))
 
     for idx, bot in enumerate(my_bots):
         br = bot["position"]["row"]
         bc = bot["position"]["col"]
 
+        def _try_dir(d):
+            """Return direction if destination is unclaimed, else None."""
+            if d is None:
+                return None
+            for name, dr, dc in DIRECTIONS:
+                if name == d:
+                    nr, nc = (br + dr) % rows, (bc + dc) % cols
+                    if (nr, nc) not in claimed:
+                        return d
+            return None
+
         # Priority 1: Flee if enemy nearby
         if enemies and _should_flee(br, bc, enemies, rows, cols, attack_r2):
-            d = _flee_direction(br, bc, enemies, rows, cols, walls)
-            moves.append({"position": bot["position"], "direction": d})
+            d = _try_dir(_flee_direction(br, bc, enemies, rows, cols, walls))
+            if d:
+                for name, dr, dc in DIRECTIONS:
+                    if name == d:
+                        claimed.discard((br, bc))
+                        claimed.add(((br + dr) % rows, (bc + dc) % cols))
+                moves.append({"position": bot["position"], "direction": d})
             continue
 
         # Priority 2: Multi-bot coordination — head to assigned zone if far
@@ -238,14 +257,22 @@ def compute_moves(state):
                 zr, zc = zone
                 dist_to_zone = _manhattan(br, bc, zr, zc, rows, cols)
                 if dist_to_zone > max(rows, cols) // 3:
-                    d = _direction_toward(br, bc, zr, zc, rows, cols, walls)
+                    d = _try_dir(_direction_toward(br, bc, zr, zc, rows, cols, walls))
                     if d:
+                        for name, dr, dc in DIRECTIONS:
+                            if name == d:
+                                claimed.discard((br, bc))
+                                claimed.add(((br + dr) % rows, (bc + dc) % cols))
                         moves.append({"position": bot["position"], "direction": d})
-                        continue
+                    continue
 
         # Priority 3: Explore — move toward the direction with stalest territory
-        d = _best_explore_direction(br, bc, seen, turn, rows, cols, walls)
+        d = _try_dir(_best_explore_direction(br, bc, seen, turn, rows, cols, walls))
         if d:
+            for name, dr, dc in DIRECTIONS:
+                if name == d:
+                    claimed.discard((br, bc))
+                    claimed.add(((br + dr) % rows, (bc + dc) % cols))
             moves.append({"position": bot["position"], "direction": d})
             continue
 

@@ -16,7 +16,7 @@ use axum::{
 };
 use game::{GameState, Move, MoveResponse};
 use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;

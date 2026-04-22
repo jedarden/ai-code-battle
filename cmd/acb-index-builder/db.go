@@ -25,6 +25,7 @@ type BotData struct {
 	Generation       int       `json:"generation,omitempty"`
 	Archetype        string    `json:"archetype,omitempty"`
 	ParentIDs        []string  `json:"parent_ids,omitempty"`
+	DebugPublic      bool      `json:"debug_public"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -248,6 +249,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		       0, 0, status,
 		       evolved, island, generation,
 		       COALESCE(archetype, ''), COALESCE(parent_ids, '[]'::jsonb),
+		       debug_public,
 		       created_at, COALESCE(last_active, created_at)
 		FROM bots
 		WHERE status != 'retired'
@@ -273,6 +275,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 			&b.MatchesPlayed, &b.MatchesWon, &b.HealthStatus,
 			&b.Evolved, &island, &gen,
 			&b.Archetype, &parentIDsJSON,
+			&b.DebugPublic,
 			&b.CreatedAt, &b.UpdatedAt,
 		)
 		if err != nil {

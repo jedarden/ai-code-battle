@@ -1,4 +1,4 @@
-import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent, DebugInfo, ViewMode, EnrichedCommentary, TranscriptEntry } from './types';
+import type { Replay, ReplayTurn, Position, ReplayBot, GameEvent, DebugInfo, ViewMode, EnrichedCommentary, TranscriptEntry, ReplayPlayer } from './types';
 
 // Export TranscriptEntry type for use in other modules
 export type { TranscriptEntry };

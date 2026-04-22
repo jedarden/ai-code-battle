@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -238,11 +239,11 @@ func TestEnsemble_WithMockServer(t *testing.T) {
 }
 
 func TestEnsemble_WithRefinement(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		n := int(callCount.Add(1))
 		var code string
-		if callCount <= 2 {
+		if n <= 2 {
 			// Fast tier responses
 			code = "package main\nfunc main() { /* fast code */ }"
 		} else {

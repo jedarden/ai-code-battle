@@ -150,7 +150,17 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 
 	// Sync site build from registry (if configured) and copy into output directory.
 	// Falls back to baked-in assets when registry is unreachable.
-	webDistDir := syncSiteBuild(ctx, cfg)
+	webDistDir, siteBuildChanged := syncSiteBuild(ctx, cfg)
+
+	// When a new site build is detected, remove old SPA files to prevent
+	// stale hashed JS/CSS accumulation toward Pages' 20K file limit.
+	if siteBuildChanged {
+		slog.Info("Site build changed, cleaning stale web assets before merge")
+		if err := cleanStaleWebAssets(cfg); err != nil {
+			slog.Error("Failed to clean stale web assets", "error", err)
+		}
+	}
+
 	if _, err := os.Stat(webDistDir); err == nil {
 		if err := copyWebAssets(cfg, webDistDir); err != nil {
 			slog.Error("Failed to copy web assets", "error", err)

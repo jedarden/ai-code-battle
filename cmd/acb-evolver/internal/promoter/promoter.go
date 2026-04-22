@@ -101,6 +101,13 @@ type Config struct {
 
 	// BotBranch is the git branch for bot source commits.
 	BotBranch string
+
+	// DeclarativeConfigRepo is the git repo URL where K8s manifests are written,
+	// e.g. "https://forgejo.ardenone.com/infra/ardenone-cluster.git".
+	DeclarativeConfigRepo string
+
+	// DeclarativeConfigBranch is the git branch for K8s manifest commits.
+	DeclarativeConfigBranch string
 }
 
 // DefaultConfig returns production-ready defaults.
@@ -118,6 +125,8 @@ func DefaultConfig() Config {
 		ArgoWorkflowAuthToken:   "",
 		BotRepo:                 "https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git",
 		BotBranch:               "master",
+		DeclarativeConfigRepo:   "https://forgejo.ardenone.com/infra/ardenone-cluster.git",
+		DeclarativeConfigBranch: "main",
 	}
 }
 
@@ -232,9 +241,14 @@ func (p *Promoter) RetireBot(ctx context.Context, programID int64, botID, botNam
 			// Log but don't fail — the bot is already retired in the DB.
 			fmt.Printf("promoter: git remove failed for %s: %v\n", botName, err)
 		}
+		// 3. Remove K8s manifests from declarative-config repo.
+		if err := p.removeK8sManifests(ctx, botName, retireMsg); err != nil {
+			// Log but don't fail — the bot is already retired in the DB.
+			fmt.Printf("promoter: k8s manifest removal failed for %s: %v\n", botName, err)
+		}
 	}
 
-	// 3. Clear promoted flag in programs table.
+	// 4. Clear promoted flag in programs table.
 	return p.store.UnsetPromoted(ctx, programID)
 }
 
@@ -683,6 +697,73 @@ func (p *Promoter) gitCommitPush(ctx context.Context, botName, msg string, remov
 	return run("push", "origin", p.cfg.BotBranch)
 }
 
+// removeK8sManifests removes K8s manifests from the declarative-config repo.
+// The declarative-config repo is managed by ArgoCD, so removing manifests here
+// will cause ArgoCD to delete the corresponding resources from the cluster.
+func (p *Promoter) removeK8sManifests(ctx context.Context, botName, commitMsg string) error {
+	if p.cfg.DeclarativeConfigRepo == "" {
+		return fmt.Errorf("declarative-config repo not configured")
+	}
+
+	// Create a temp directory for the declarative-config clone
+	tmpDir, err := os.MkdirTemp("", "acb-declarative-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Clone the declarative-config repo
+	cloneCmd := exec.CommandContext(ctx, "git", "clone",
+		"--depth", "1",
+		"--branch", p.cfg.DeclarativeConfigBranch,
+		p.cfg.DeclarativeConfigRepo,
+		tmpDir)
+	if out, err := cloneCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git clone declarative-config: %s", strings.TrimSpace(string(out)))
+	}
+
+	run := func(args ...string) error {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
+	// Remove the K8s manifest files
+	manifestFiles := []string{
+		filepath.Join("deploy", "k8s", "secrets", botName+".yaml"),
+		filepath.Join("deploy", "k8s", "deployments", botName+".yaml"),
+		filepath.Join("deploy", "k8s", "services", botName+".yaml"),
+	}
+
+	removed := false
+	for _, f := range manifestFiles {
+		path := filepath.Join(tmpDir, f)
+		if _, err := os.Stat(path); err == nil {
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("remove manifest %s: %w", f, err)
+			}
+			if err := run("add", "-u", "--", f); err != nil {
+				return fmt.Errorf("git add -u %s: %w", f, err)
+			}
+			removed = true
+		}
+	}
+
+	if !removed {
+		// No manifests found to remove
+		return nil
+	}
+
+	// Commit and push
+	if err := run("commit", "-m", commitMsg); err != nil {
+		return err
+	}
+	return run("push", "origin", p.cfg.DeclarativeConfigBranch)
+}
+
 // ── Argo Workflow trigger ───────────────────────────────────────────────────────
 
 // triggerArgoWorkflow submits the acb-evolved-bot-deploy WorkflowTemplate
@@ -966,6 +1047,12 @@ func init() {
 func (p *Promoter) queryConsecutiveLowRating(ctx context.Context) ([]string, error) {
 	// Get the latest rating for each day (using DISTINCT ON for per-day records)
 	// then check for 7 consecutive days all below threshold.
+	//
+	// The logic works by:
+	// 1. Getting the latest rating for each bot for each day
+	// 2. For each day, checking if the rating is below threshold
+	// 3. Counting consecutive days below threshold ending at each date
+	// 4. Returning bots that have 7+ consecutive days below threshold
 	query := `
 		WITH daily_ratings AS (
 			SELECT DISTINCT
@@ -975,22 +1062,37 @@ func (p *Promoter) queryConsecutiveLowRating(ctx context.Context) ([]string, err
 			FROM rating_history
 			WHERE DATE(recorded_at) >= CURRENT_DATE - INTERVAL '14 days'
 		),
-		consecutive_counts AS (
+		below_threshold AS (
 			SELECT
 				bot_id,
 				rating_date,
-				rating,
-				// Count consecutive days below threshold ending at this date
-				SUM(CASE WHEN rating < $1 THEN 1 ELSE 0 END) OVER (
+				CASE WHEN rating < $1 THEN 1 ELSE 0 END AS is_below
+			FROM daily_ratings
+		),
+		consecutive_groups AS (
+			SELECT
+				bot_id,
+				rating_date,
+				-- Create a group ID that changes each time we have a day above threshold
+				-- Days in the same group are consecutive below-threshold days
+				SUM(CASE WHEN is_below = 0 THEN 1 ELSE 0 END) OVER (
 					PARTITION BY bot_id
 					ORDER BY rating_date DESC
-					ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-				) AS consecutive_below
-			FROM daily_ratings
+				) AS grp
+			FROM below_threshold
+		),
+		consecutive_counts AS (
+			SELECT
+				bot_id,
+				grp,
+				COUNT(*) AS consecutive_days
+			FROM consecutive_groups
+			WHERE is_below = 1
+			GROUP BY bot_id, grp
 		)
 		SELECT DISTINCT bot_id
 		FROM consecutive_counts
-		WHERE consecutive_below >= 7
+		WHERE consecutive_days >= 7
 	`
 
 	rows, err := p.rawDB.QueryContext(ctx, query, p.cfg.RatingThreshold)

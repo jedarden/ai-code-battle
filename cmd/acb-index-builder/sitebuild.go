@@ -55,28 +55,29 @@ func craneEnviron() []string {
 }
 
 // syncSiteBuild checks for a newer site build image in the container registry
-// and extracts it if available. Returns the path to the web assets directory.
-// Falls back to baked-in assets when the registry is unreachable or crane is
-// not installed.
-func syncSiteBuild(ctx context.Context, cfg *Config) string {
+// and extracts it if available. Returns the path to the web assets directory
+// and whether the site build changed (new image extracted or baked-in used
+// for the first time). Falls back to baked-in assets when the registry is
+// unreachable or crane is not installed.
+func syncSiteBuild(ctx context.Context, cfg *Config) (string, bool) {
 	if cfg.SiteBuildImage == "" {
-		return bakedInWebDist
+		return bakedInWebDist, false
 	}
 	if _, err := exec.LookPath("crane"); err != nil {
 		slog.Warn("crane not found in PATH, using baked-in web assets")
-		return bakedInWebDist
+		return bakedInWebDist, false
 	}
 
 	remoteDigest, err := craneDigest(ctx, cfg)
 	if err != nil {
 		slog.Warn("Failed to query remote site build digest, using cached or baked-in assets", "error", err)
-		return fallbackWebDir(cfg)
+		return fallbackWebDir(cfg), false
 	}
 
 	cachedDigest := readCachedDigest(cfg.OutputDir)
 	if cachedDigest == remoteDigest {
 		slog.Debug("Site build image unchanged", "digest", remoteDigest)
-		return extractedDistPath(cfg)
+		return extractedDistPath(cfg), false
 	}
 
 	slog.Info("New site build image detected",
@@ -87,11 +88,11 @@ func syncSiteBuild(ctx context.Context, cfg *Config) string {
 
 	if err := craneExport(ctx, cfg); err != nil {
 		slog.Error("Failed to extract site build image", "error", err)
-		return fallbackWebDir(cfg)
+		return fallbackWebDir(cfg), false
 	}
 
 	writeCachedDigest(cfg.OutputDir, remoteDigest)
-	return extractedDistPath(cfg)
+	return extractedDistPath(cfg), true
 }
 
 // extractedDistPath returns the path to the dist directory within the
@@ -172,6 +173,39 @@ func writeCachedDigest(outputDir, digest string) {
 	if err := os.WriteFile(filepath.Join(outputDir, siteBuildDigestFile), []byte(digest+"\n"), 0644); err != nil {
 		slog.Warn("Failed to cache site build digest", "error", err)
 	}
+}
+
+// cleanStaleWebAssets removes old SPA files from the output directory when a
+// new site build is detected. It preserves the generated data/ directory and
+// the internal .site-build-digest tracking file. Without this cleanup, hashed
+// JS/CSS files from previous Vite builds accumulate toward Pages' 20K file
+// limit.
+func cleanStaleWebAssets(cfg *Config) error {
+	entries, err := os.ReadDir(cfg.OutputDir)
+	if err != nil {
+		return fmt.Errorf("read output dir: %w", err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		// Preserve generated data files
+		if name == "data" {
+			continue
+		}
+		// Preserve internal tracking files
+		if name == siteBuildDigestFile {
+			continue
+		}
+		path := filepath.Join(cfg.OutputDir, name)
+		if err := os.RemoveAll(path); err != nil {
+			slog.Warn("Failed to remove stale asset", "path", path, "error", err)
+		} else {
+			slog.Debug("Removed stale web asset", "path", path)
+		}
+	}
+
+	slog.Info("Cleaned stale web assets from output directory")
+	return nil
 }
 
 // extractRegistry parses the registry host from an image reference.

@@ -289,7 +289,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <kbd>1</kbd>-<kbd>6</kbd> Follow Bot
             <kbd>0</kbd>/<kbd>Esc</kbd> Exit Follow
             <kbd>F</kbd> Theater Mode
-            <kbd>R</kbd> Transcript
+            <kbd>T</kbd> Transcript
           </div>
         </div>
       </div>
@@ -428,6 +428,38 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .transcript-turn-number { font-weight: 600; color: var(--text-muted); margin-right: 8px; }
       .transcript-entry.turn-current .transcript-turn-number { color: rgba(255,255,255,0.7); }
       .no-transcript { color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
+      /* Mobile: bottom sheet for transcript */
+      @media (max-width: 900px) {
+        .transcript-panel {
+          position: fixed !important;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          z-index: 200;
+          border-radius: 12px 12px 0 0 !important;
+          max-height: 70vh;
+          overflow-y: auto;
+          transform: translateY(calc(100% - 52px));
+          transition: transform 0.3s ease;
+          box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+        }
+        .transcript-panel.expanded {
+          transform: translateY(0);
+        }
+        .transcript-panel-header::before {
+          content: '';
+          display: block;
+          width: 36px;
+          height: 4px;
+          background: var(--border, #374151);
+          border-radius: 2px;
+          position: absolute;
+          top: 8px;
+          left: 50%;
+          transform: translateX(-50%);
+        }
+        .transcript-panel-header { position: relative; padding-top: 20px; }
+      }
       /* Mobile: bottom sheet */
       @media (max-width: 900px) {
         .debug-panel {
@@ -511,6 +543,9 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const debugPanelToggleBtn = document.getElementById('debug-panel-toggle-btn') as HTMLDivElement;
   const debugPlayerToggles = document.getElementById('debug-player-toggles') as HTMLDivElement;
   const debugInfoDisplay = document.getElementById('debug-info-display') as HTMLDivElement;
+  const transcriptPanel = document.getElementById('transcript-panel') as HTMLDivElement;
+  const transcriptPanelToggleBtn = document.getElementById('transcript-panel-toggle-btn') as HTMLDivElement;
+  const transcriptContent = document.getElementById('transcript-content') as HTMLDivElement;
 
   // Mobile controls
   const mobilePlayBtn = document.getElementById('mobile-play-btn') as HTMLButtonElement;
@@ -548,6 +583,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
   let commentaryEnabled = true;
   let debugPanelExpanded = false;
+  let transcriptPanelExpanded = false;
 
   // Theater mode
   const theaterBtn = document.getElementById('theater-btn') as HTMLButtonElement;
@@ -735,6 +771,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     initDebugPanel(replay);
     initAnnotations(replay);
     initMapVote(replay);
+    updateTranscript();
 
     // §16.13: Register active replay for PIP support
     const pipCanvasWrapper = document.querySelector('.canvas-wrapper') as HTMLElement;
@@ -1088,6 +1125,30 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     debugPanelToggleBtn.setAttribute('aria-expanded', String(debugPanelExpanded));
   }
 
+  function toggleTranscriptPanel(): void {
+    transcriptPanelExpanded = !transcriptPanelExpanded;
+    transcriptPanel.classList.toggle('expanded', transcriptPanelExpanded);
+    transcriptPanelToggleBtn.setAttribute('aria-expanded', String(transcriptPanelExpanded));
+  }
+
+  function updateTranscript(): void {
+    if (!viewer.getReplay()) {
+      transcriptContent.innerHTML = '<div class="no-transcript">Load a replay to view transcript</div>';
+      return;
+    }
+
+    const transcript = viewer.generateTranscript();
+    const currentTurn = viewer.getTurn();
+
+    transcriptContent.innerHTML = transcript.map((entry: { turn: number; text: string }) => {
+      const isCurrent = entry.turn === currentTurn;
+      return `<div class="transcript-entry${isCurrent ? ' turn-current' : ''}">
+        <span class="transcript-turn-number">${entry.turn}:</span>
+        ${entry.text}
+      </div>`;
+    }).join('');
+  }
+
   // ── Director Mode (§16.10) ──────────────────────────────────────────────────
 
   function initDirector(replay: Replay): void {
@@ -1406,6 +1467,11 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDebugPanel(); }
   });
 
+  transcriptPanelToggleBtn.addEventListener('click', toggleTranscriptPanel);
+  transcriptPanelToggleBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTranscriptPanel(); }
+  });
+
   viewer.onTurnChange = () => {
     updateUI();
     updateEventLog();
@@ -1414,6 +1480,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateMobileTimeline();
     viewer.refreshWinProbSparkline();
     updateAnnotationOverlay();
+    updateTranscript();
   };
   viewer.onDebugChange = (debug: Record<number, DebugInfo> | null) => {
     updateDebugDisplay(debug);
@@ -1623,6 +1690,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       case 'KeyF':
         e.preventDefault();
         theater.toggle();
+        break;
+      case 'KeyT':
+        e.preventDefault();
+        toggleTranscriptPanel();
         break;
       case 'Digit0':
       case 'Escape':

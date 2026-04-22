@@ -63,6 +63,9 @@ static class DefenderStrategy
 
         var moves = new List<Move>();
         var assignedThreats = new HashSet<(int, int)>();
+        var claimedDests = new HashSet<(int, int)>();
+        foreach (var b in myBots)
+            claimedDests.Add((b.Position.Row, b.Position.Col));
         var perimSq = PerimeterRadius * PerimeterRadius;
         var interceptSq = MaxInterceptRadius * MaxInterceptRadius;
 
@@ -145,7 +148,19 @@ static class DefenderStrategy
                 }
 
                 if (move != null)
-                    moves.Add(move);
+                {
+                    var (dr, dc, _) = Array.Find(Cardinal, c => c.dir == move.Direction);
+                    int nr = (move.Position.Row + dr + rows) % rows;
+                    int nc = (move.Position.Col + dc + cols) % cols;
+                    if (claimedDests.Contains((nr, nc)))
+                        move = null; // destination occupied — hold
+                    else
+                    {
+                        claimedDests.Remove((move.Position.Row, move.Position.Col));
+                        claimedDests.Add((nr, nc));
+                        moves.Add(move);
+                    }
+                }
             }
         }
 

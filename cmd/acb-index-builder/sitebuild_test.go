@@ -265,3 +265,99 @@ func assertFileContent(t *testing.T, path, want string) {
 		t.Errorf("content of %s = %q, want %q", path, string(data), want)
 	}
 }
+
+func TestCleanStaleWebAssets(t *testing.T) {
+	outputDir := t.TempDir()
+
+	// Create a realistic output directory with mixed content
+	os.MkdirAll(filepath.Join(outputDir, "data", "bots"), 0755)
+	os.MkdirAll(filepath.Join(outputDir, "js"), 0755)
+	os.MkdirAll(filepath.Join(outputDir, "css"), 0755)
+	os.WriteFile(filepath.Join(outputDir, "index.html"), []byte("<html>old</html>"), 0644)
+	os.WriteFile(filepath.Join(outputDir, "js", "app.oldhash.js"), []byte("// old"), 0644)
+	os.WriteFile(filepath.Join(outputDir, "css", "style.oldhash.css"), []byte("body{}"), 0644)
+	os.WriteFile(filepath.Join(outputDir, "data", "leaderboard.json"), []byte(`{"entries":[]}`), 0644)
+	os.WriteFile(filepath.Join(outputDir, "data", "bots", "index.json"), []byte(`[]`), 0644)
+	os.WriteFile(filepath.Join(outputDir, ".site-build-digest"), []byte("sha256:abc123\n"), 0644)
+
+	cfg := &Config{OutputDir: outputDir}
+	if err := cleanStaleWebAssets(cfg); err != nil {
+		t.Fatalf("cleanStaleWebAssets: %v", err)
+	}
+
+	// data/ directory should be preserved
+	assertFileContent(t, filepath.Join(outputDir, "data", "leaderboard.json"), `{"entries":[]}`)
+	assertFileContent(t, filepath.Join(outputDir, "data", "bots", "index.json"), `[]`)
+
+	// .site-build-digest should be preserved
+	assertFileContent(t, filepath.Join(outputDir, ".site-build-digest"), "sha256:abc123\n")
+
+	// Old web assets should be removed
+	if _, err := os.Stat(filepath.Join(outputDir, "index.html")); err == nil {
+		t.Error("index.html should have been removed")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "js")); err == nil {
+		t.Error("js/ directory should have been removed")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "css")); err == nil {
+		t.Error("css/ directory should have been removed")
+	}
+}
+
+func TestCleanStaleWebAssets_EmptyDir(t *testing.T) {
+	outputDir := t.TempDir()
+	cfg := &Config{OutputDir: outputDir}
+
+	if err := cleanStaleWebAssets(cfg); err != nil {
+		t.Fatalf("cleanStaleWebAssets on empty dir: %v", err)
+	}
+}
+
+func TestVerifyMergedOutput(t *testing.T) {
+	outputDir := t.TempDir()
+
+	// Create minimal valid merged output
+	os.MkdirAll(filepath.Join(outputDir, "data"), 0755)
+	os.WriteFile(filepath.Join(outputDir, "index.html"), []byte("<html></html>"), 0644)
+	os.WriteFile(filepath.Join(outputDir, "data", "leaderboard.json"), []byte(`{}`), 0644)
+
+	cfg := &Config{OutputDir: outputDir}
+	if err := verifyMergedOutput(cfg); err != nil {
+		t.Errorf("verifyMergedOutput should succeed with valid output: %v", err)
+	}
+}
+
+func TestVerifyMergedOutput_MissingSPA(t *testing.T) {
+	outputDir := t.TempDir()
+	os.MkdirAll(filepath.Join(outputDir, "data"), 0755)
+	os.WriteFile(filepath.Join(outputDir, "data", "leaderboard.json"), []byte(`{}`), 0644)
+
+	cfg := &Config{OutputDir: outputDir}
+	if err := verifyMergedOutput(cfg); err == nil {
+		t.Error("expected error when SPA shell (index.html) is missing")
+	}
+}
+
+func TestVerifyMergedOutput_MissingDataDir(t *testing.T) {
+	outputDir := t.TempDir()
+	os.WriteFile(filepath.Join(outputDir, "index.html"), []byte("<html></html>"), 0644)
+
+	cfg := &Config{OutputDir: outputDir}
+	if err := verifyMergedOutput(cfg); err == nil {
+		t.Error("expected error when data/ directory is missing")
+	}
+}
+
+func TestVerifyMergedOutput_PartialDataOK(t *testing.T) {
+	outputDir := t.TempDir()
+
+	// Has SPA and data dir, but no leaderboard.json yet (first build)
+	os.MkdirAll(filepath.Join(outputDir, "data"), 0755)
+	os.WriteFile(filepath.Join(outputDir, "index.html"), []byte("<html></html>"), 0644)
+
+	cfg := &Config{OutputDir: outputDir}
+	// Should succeed — leaderboard missing is just a warning, not an error
+	if err := verifyMergedOutput(cfg); err != nil {
+		t.Errorf("verifyMergedOutput should succeed with partial data: %v", err)
+	}
+}

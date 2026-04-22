@@ -86,10 +86,40 @@ func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map
 	return exempt, nil
 }
 
+// verifyMergedOutput checks that the output directory contains both the SPA
+// shell (index.html) and generated data files before deploying to Pages.
+func verifyMergedOutput(cfg *Config) error {
+	// Check for SPA shell
+	indexPath := filepath.Join(cfg.OutputDir, "index.html")
+	if _, err := os.Stat(indexPath); err != nil {
+		return fmt.Errorf("SPA shell missing: index.html not found in %s", cfg.OutputDir)
+	}
+
+	// Check for generated data directory
+	dataDir := filepath.Join(cfg.OutputDir, "data")
+	if _, err := os.Stat(dataDir); err != nil {
+		return fmt.Errorf("data directory missing in %s", cfg.OutputDir)
+	}
+
+	// Check for at least one generated data file
+	leaderboardPath := filepath.Join(dataDir, "leaderboard.json")
+	if _, err := os.Stat(leaderboardPath); err != nil {
+		slog.Warn("leaderboard.json not yet generated, deploying with partial data")
+	}
+
+	slog.Info("Merged output verified", "directory", cfg.OutputDir)
+	return nil
+}
+
 // deployToPages deploys the generated files to Cloudflare Pages via wrangler
 func deployToPages(cfg *Config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	// Verify the merged output has both SPA shell and data files
+	if err := verifyMergedOutput(cfg); err != nil {
+		return fmt.Errorf("merged output verification failed: %w", err)
+	}
 
 	// Check if wrangler is available
 	if _, err := exec.LookPath("wrangler"); err != nil {

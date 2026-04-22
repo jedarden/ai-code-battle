@@ -129,6 +129,19 @@ function renderForm(): void {
         <span class="hint">Your identifier for account management</span>
       </div>
 
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input
+            type="checkbox"
+            id="debug-public"
+            name="debug_public"
+            ${state.submitting ? 'disabled' : ''}
+          >
+          Make debug telemetry public
+        </label>
+        <span class="hint">When enabled, your bot's internal state log is visible to all viewers on replay pages.</span>
+      </div>
+
       <button type="submit" class="btn primary" ${state.submitting ? 'disabled' : ''}>
         ${state.submitting ? 'Registering...' : 'Register Bot'}
       </button>
@@ -150,6 +163,7 @@ async function handleSubmit(e: Event): Promise<void> {
   const name = formData.get('name') as string;
   const endpointUrl = formData.get('endpoint_url') as string;
   const ownerId = formData.get('owner_id') as string;
+  const debugPublic = (form.querySelector('#debug-public') as HTMLInputElement)?.checked ?? false;
 
   state = {
     ...state,
@@ -163,6 +177,7 @@ async function handleSubmit(e: Event): Promise<void> {
       name,
       endpoint_url: endpointUrl,
       owner_id: ownerId,
+      debug_public: debugPublic,
     });
 
     state = {

@@ -405,8 +405,6 @@ SECRET = os.environ.get("BOT_SECRET", "")
 
 class NomadHandler(BaseHTTPRequestHandler):
     def _verify_signature(self, body: bytes) -> bool:
-        if not SECRET:
-            return True
         sig = self.headers.get("X-ACB-Signature", "")
         match_id = self.headers.get("X-ACB-Match-Id", "")
         turn = self.headers.get("X-ACB-Turn", "")
@@ -417,8 +415,6 @@ class NomadHandler(BaseHTTPRequestHandler):
         return hmac.compare_digest(sig, expected)
 
     def _sign_response(self, match_id: str, turn: str, body: bytes) -> str:
-        if not SECRET:
-            return ""
         body_hash = hashlib.sha256(body).hexdigest()
         signing = f"{match_id}.{turn}.{body_hash}"
         return hmac.new(SECRET.encode(), signing.encode(), hashlib.sha256).hexdigest()
@@ -469,6 +465,10 @@ class NomadHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    if not SECRET:
+        print("BOT_SECRET environment variable is required")
+        exit(1)
+
     port = int(os.environ.get("BOT_PORT", "8080"))
     server = HTTPServer(("0.0.0.0", port), NomadHandler)
     print(f"NomadBot listening on :{port}")

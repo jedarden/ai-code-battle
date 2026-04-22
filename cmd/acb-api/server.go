@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -497,6 +499,8 @@ func (s *Server) handleJobResult(w http.ResponseWriter, r *http.Request) {
 
 // handleGetReplay handles GET /api/replay/{id}
 // Serves replay JSON from R2 warm cache with B2 fallback.
+// Debug telemetry is stripped for bots with debug_public=false unless the
+// requester authenticates as that bot's owner via Authorization: Bearer <api_key>.
 func (s *Server) handleGetReplay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -514,31 +518,187 @@ func (s *Server) handleGetReplay(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
+	var replayData []byte
+	var source string
+
 	// First, try to get from R2 warm cache
-	// This requires R2 credentials to be configured
-	replayData, err := s.fetchReplayFromR2(ctx, matchID)
-	if err == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		w.WriteHeader(http.StatusOK)
-		w.Write(replayData)
-		return
-	}
-	log.Printf("R2 fetch failed for %s: %v", matchID, err)
-
-	// Fall back to B2 cold archive
-	replayData, err = s.fetchReplayFromB2(ctx, matchID)
-	if err == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		w.Header().Set("X-ACB-Source", "b2")
-		w.WriteHeader(http.StatusOK)
-		w.Write(replayData)
-		return
+	var err error
+	replayData, err = s.fetchReplayFromR2(ctx, matchID)
+	if err != nil {
+		log.Printf("R2 fetch failed for %s: %v", matchID, err)
+		// Fall back to B2 cold archive
+		replayData, err = s.fetchReplayFromB2(ctx, matchID)
+		if err != nil {
+			log.Printf("B2 fetch also failed for %s: %v", matchID, err)
+			writeError(w, http.StatusNotFound, "replay not found")
+			return
+		}
+		source = "b2"
 	}
 
-	log.Printf("B2 fetch also failed for %s: %v", matchID, err)
-	writeError(w, http.StatusNotFound, "replay not found")
+	// Filter debug telemetry based on bot debug_public settings.
+	authHeader := r.Header.Get("Authorization")
+	filtered, filterErr := s.filterReplayDebug(ctx, matchID, replayData, authHeader)
+	if filterErr != nil {
+		log.Printf("warning: failed to filter replay debug for %s: %v", matchID, filterErr)
+		// Serve original decompressed bytes on filter failure
+		filtered, _ = decompressIfGzip(replayData)
+		if filtered == nil {
+			filtered = replayData
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	if source != "" {
+		w.Header().Set("X-ACB-Source", source)
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write(filtered)
+}
+
+// decompressIfGzip returns decompressed data if the input is gzip-encoded,
+// otherwise returns the input unchanged.
+func decompressIfGzip(data []byte) ([]byte, error) {
+	if len(data) < 2 || data[0] != 0x1f || data[1] != 0x8b {
+		return data, nil
+	}
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
+// filterReplayDebug parses the replay JSON and removes debug telemetry for bots
+// whose debug_public flag is false. If authHeader is a valid "Bearer <api_key>"
+// for one of the bots in the match, that bot's debug data is preserved regardless.
+func (s *Server) filterReplayDebug(ctx context.Context, matchID string, data []byte, authHeader string) ([]byte, error) {
+	decompressed, err := decompressIfGzip(data)
+	if err != nil {
+		return nil, fmt.Errorf("decompress: %w", err)
+	}
+
+	// Look up each participant's debug_public flag and encrypted secret.
+	type participant struct {
+		BotID           string
+		PlayerSlot      int
+		DebugPublic     bool
+		EncryptedSecret string
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT mp.bot_id, mp.player_slot, b.debug_public, b.shared_secret
+		FROM match_participants mp
+		JOIN bots b ON mp.bot_id = b.bot_id
+		WHERE mp.match_id = $1
+	`, matchID)
+	if err != nil {
+		return nil, fmt.Errorf("query participants: %w", err)
+	}
+	defer rows.Close()
+
+	var participants []participant
+	for rows.Next() {
+		var p participant
+		if err := rows.Scan(&p.BotID, &p.PlayerSlot, &p.DebugPublic, &p.EncryptedSecret); err != nil {
+			return nil, err
+		}
+		participants = append(participants, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Determine which slots belong to the authenticated bot owner (if any).
+	ownerSlots := make(map[int]bool)
+	if apiKey := strings.TrimPrefix(authHeader, "Bearer "); apiKey != "" && authHeader != apiKey {
+		for _, p := range participants {
+			secret := p.EncryptedSecret
+			if s.cfg.EncryptionKey != "" {
+				if decrypted, err := decryptSecret(p.EncryptedSecret, s.cfg.EncryptionKey); err == nil {
+					secret = decrypted
+				}
+			}
+			if secret == apiKey {
+				ownerSlots[p.PlayerSlot] = true
+			}
+		}
+	}
+
+	// Build slot → debug_public map; skip filtering for owner slots.
+	slotPublic := make(map[string]bool)
+	allPublic := true
+	for _, p := range participants {
+		pub := p.DebugPublic || ownerSlots[p.PlayerSlot]
+		slotPublic[strconv.Itoa(p.PlayerSlot)] = pub
+		if !pub {
+			allPublic = false
+		}
+	}
+
+	if allPublic || len(participants) == 0 {
+		return decompressed, nil
+	}
+
+	// Parse and filter the replay JSON.
+	var replay map[string]json.RawMessage
+	if err := json.Unmarshal(decompressed, &replay); err != nil {
+		return nil, fmt.Errorf("parse replay: %w", err)
+	}
+
+	turnsRaw, ok := replay["turns"]
+	if !ok {
+		return decompressed, nil
+	}
+
+	var turns []json.RawMessage
+	if err := json.Unmarshal(turnsRaw, &turns); err != nil {
+		return nil, fmt.Errorf("parse turns: %w", err)
+	}
+
+	for i, turnRaw := range turns {
+		var turn map[string]json.RawMessage
+		if err := json.Unmarshal(turnRaw, &turn); err != nil {
+			continue
+		}
+		debugRaw, hasDebug := turn["debug"]
+		if !hasDebug {
+			continue
+		}
+		var debugMap map[string]json.RawMessage
+		if err := json.Unmarshal(debugRaw, &debugMap); err != nil {
+			continue
+		}
+		changed := false
+		for slot, pub := range slotPublic {
+			if !pub {
+				if _, exists := debugMap[slot]; exists {
+					delete(debugMap, slot)
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			continue
+		}
+		if len(debugMap) == 0 {
+			delete(turn, "debug")
+		} else {
+			if b, err := json.Marshal(debugMap); err == nil {
+				turn["debug"] = b
+			}
+		}
+		if b, err := json.Marshal(turn); err == nil {
+			turns[i] = b
+		}
+	}
+
+	if b, err := json.Marshal(turns); err == nil {
+		replay["turns"] = b
+	}
+	return json.Marshal(replay)
 }
 
 // fetchReplayFromR2 attempts to fetch a replay from R2 warm cache
@@ -637,14 +797,14 @@ func (s *Server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT bot_id, name, owner, status, rating_mu, rating_phi,
-		       evolved, island, generation, parent_ids,
+		       evolved, island, generation, parent_ids, debug_public,
 		       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SSZ') as created_at,
 		       to_char(last_active, 'YYYY-MM-DD\"T\"HH24:MI:SSZ') as last_active
 		FROM bots WHERE bot_id = $1
 	`, botID).Scan(
 		&bot.BotID, &bot.Name, &bot.Owner, &bot.Status,
 		&bot.RatingMu, &bot.RatingPhi, &bot.Evolved,
-		&bot.Island, &bot.Generation, &bot.ParentIDs,
+		&bot.Island, &bot.Generation, &bot.ParentIDs, &bot.DebugPublic,
 		&bot.CreatedAt, &bot.LastActive,
 	)
 
@@ -678,19 +838,20 @@ func (s *Server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 
 	// Build response
 	response := map[string]interface{}{
-		"bot_id":      bot.BotID,
-		"name":        bot.Name,
-		"owner":       bot.Owner,
-		"status":      bot.Status,
-		"rating":      bot.RatingMu - 2*bot.RatingPhi, // Conservative rating estimate
-		"rating_mu":   bot.RatingMu,
-		"rating_phi":  bot.RatingPhi,
-		"evolved":     bot.Evolved,
-		"island":      bot.Island,
-		"generation":  bot.Generation,
-		"parent_ids":  bot.ParentIDs,
-		"created_at":  bot.CreatedAt,
-		"last_active": bot.LastActive,
+		"bot_id":       bot.BotID,
+		"name":         bot.Name,
+		"owner":        bot.Owner,
+		"status":       bot.Status,
+		"rating":       bot.RatingMu - 2*bot.RatingPhi, // Conservative rating estimate
+		"rating_mu":    bot.RatingMu,
+		"rating_phi":   bot.RatingPhi,
+		"evolved":      bot.Evolved,
+		"island":       bot.Island,
+		"generation":   bot.Generation,
+		"parent_ids":   bot.ParentIDs,
+		"debug_public": bot.DebugPublic,
+		"created_at":   bot.CreatedAt,
+		"last_active":  bot.LastActive,
 		"record": map[string]int{
 			"wins":   wins,
 			"losses": losses,

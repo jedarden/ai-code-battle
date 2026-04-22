@@ -1,0 +1,115 @@
+# Argo Events resources for AI Code Battle CI triggers
+# Sync to: declarative-config/k8s/iad-ci/argo-events/
+#
+# Components:
+#   1. EventBus (Jetstream) — message bus for events
+#   2. EventSource — Forgejo webhook listener for push events
+#   3. Sensor — routes push events to the appropriate WorkflowTemplate
+#
+# The sensor triggers:
+#   - acb-build-images: when Go source or Dockerfiles change
+#   - acb-build-site:   when web/ directory changes
+---
+apiVersion: argoproj.io/v1alpha1
+kind: EventBus
+metadata:
+  name: acb-bus
+  namespace: argo-workflows
+spec:
+  nats:
+    native:
+      auth: token
+---
+# EventSource: receives Forgejo/GitHub webhook push events
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: acb-webhook
+  namespace: argo-workflows
+spec:
+  webhook:
+    acb-push:
+      port: "12000"
+      endpoint: /push
+      method: POST
+      # The webhook URL registered in Forgejo:
+      #   http://acb-webhook-eventsource-svc.argo-workflows.svc:12000/push
+      # Exposed externally via IngressRoute or port-forward.
+---
+# Sensor: routes push events to the correct WorkflowTemplate
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: acb-ci-trigger
+  namespace: argo-workflows
+spec:
+  template:
+    serviceAccountName: argo-workflow
+  dependencies:
+    - name: acb-push
+      eventSourceName: acb-webhook
+      eventName: acb-push
+      filters:
+        # Only trigger on push to master branch
+        data:
+          - path: body.ref
+            type: string
+            value:
+              - "refs/heads/master"
+  triggers:
+    # Trigger image builds for all pushes to master
+    - template:
+        name: build-images-trigger
+        k8s:
+          group: argoproj.io
+          version: v1alpha1
+          resource: workflows
+          operation: create
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: acb-build-images-
+                namespace: argo-workflows
+              spec:
+                workflowTemplateRef:
+                  name: acb-build-images
+                arguments:
+                  parameters:
+                    - name: sha
+                      value: ""
+          parameters:
+            - src:
+                dependencyName: acb-push
+                dataKey: body.after
+              dest: spec.arguments.parameters[0].value
+    # Trigger site build for all pushes to master (the site workflow
+    # is lightweight — only rebuilds if web/ actually changed, but we
+    # trigger unconditionally to keep the artifact current)
+    - template:
+        name: build-site-trigger
+        k8s:
+          group: argoproj.io
+          version: v1alpha1
+          resource: workflows
+          operation: create
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: acb-build-site-
+                namespace: argo-workflows
+              spec:
+                workflowTemplateRef:
+                  name: acb-build-site
+                arguments:
+                  parameters:
+                    - name: sha
+                      value: ""
+          parameters:
+            - src:
+                dependencyName: acb-push
+                dataKey: body.after
+              dest: spec.arguments.parameters[0].value
