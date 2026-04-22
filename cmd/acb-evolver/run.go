@@ -33,6 +33,7 @@ import (
 
 	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/arena"
+	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/crosspoll"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/live"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/llm"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/mapelites"
@@ -111,6 +112,7 @@ type RunStats struct {
 	Evaluated        int
 	Promoted         int
 	Retired          int
+	CrossPollinated  int
 	Errors           int
 	StartTime        time.Time
 }
@@ -155,6 +157,9 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 
 	// Track last evolution time per island for cooldown
 	lastEvolved := make(map[string]time.Time)
+
+	// Track per-island generation counters for cross-pollination boundary detection
+	prevGens := make(map[string]int)
 
 	// Stats
 	stats := RunStats{StartTime: time.Now()}
@@ -225,6 +230,14 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 
 		// Export live.json after each cycle
 		exportLive(ctx, db, cfg, *verbose)
+
+		// Check for cross-pollination (§10.2: every 50 generations per island)
+		cpChecker := crosspoll.NewChecker(store, llm.NewClient(cfg.LLMURL, ""), rng)
+		cpResults, err := cpChecker.CheckAndPollinate(ctx, prevGens, *verbose)
+		if err != nil {
+			log.Printf("Cross-pollination check error: %v", err)
+		}
+		stats.CrossPollinated += len(cpResults)
 
 		// Continuous mode: wait for next cycle
 		if *continuous {
@@ -672,6 +685,7 @@ func printStats(stats *RunStats) {
 	log.Printf("  Evaluated: %d", stats.Evaluated)
 	log.Printf("  Promoted: %d", stats.Promoted)
 	log.Printf("  Retired: %d", stats.Retired)
+	log.Printf("  Cross-pollinated: %d", stats.CrossPollinated)
 	log.Printf("  Errors: %d", stats.Errors)
 	log.Printf("  Uptime: %v", elapsed.Round(time.Second))
 }

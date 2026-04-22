@@ -352,6 +352,28 @@ func (s *Store) ListTopByIsland(ctx context.Context, island string, limit int) (
 	return programs, rows.Err()
 }
 
+// MaxGenerationByIsland returns the maximum generation number for each island.
+// Islands with no programs are omitted from the map.
+func (s *Store) MaxGenerationByIsland(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT island, COALESCE(MAX(generation), 0) FROM programs GROUP BY island`)
+	if err != nil {
+		return nil, fmt.Errorf("max generation by island: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var island string
+		var maxGen int
+		if err := rows.Scan(&island, &maxGen); err != nil {
+			return nil, fmt.Errorf("scan max generation: %w", err)
+		}
+		result[island] = maxGen
+	}
+	return result, rows.Err()
+}
+
 // GetLineage returns all ancestor program IDs for a given program by
 // traversing the parent_ids chain recursively.
 func (s *Store) GetLineage(ctx context.Context, id int64) ([]int64, error) {
