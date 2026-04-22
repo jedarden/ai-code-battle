@@ -228,30 +228,38 @@ func extractMatchIDFromKey(key string) string {
 	return filename
 }
 
-// promoteRecentReplays copies recent replays from B2 to R2 warm cache
+// promoteRecentReplays copies recent replays and thumbnails from B2 to R2 warm cache
 func promoteRecentReplays(ctx context.Context, cfg *Config, matchIDs []string) error {
 	for _, matchID := range matchIDs {
-		// Source path in B2
-		b2Key := fmt.Sprintf("replays/%s.json.gz", matchID)
+		// Promote replay
+		b2ReplayKey := fmt.Sprintf("replays/%s.json.gz", matchID)
+		r2ReplayKey := b2ReplayKey
 
-		// Check if already in R2
-		r2Key := b2Key
-		exists, err := checkR2ObjectExists(ctx, cfg, r2Key)
+		exists, err := checkR2ObjectExists(ctx, cfg, r2ReplayKey)
 		if err != nil {
-			slog.Error("Failed to check R2 object existence", "key", r2Key, "error", err)
-			continue
-		}
-		if exists {
-			continue // Already in warm cache
-		}
-
-		// Copy from B2 to R2
-		if err := copyB2ToR2(ctx, cfg, b2Key, r2Key); err != nil {
-			slog.Error("Failed to promote replay to R2", "match_id", matchID, "error", err)
-			continue
+			slog.Error("Failed to check R2 object existence", "key", r2ReplayKey, "error", err)
+		} else if !exists {
+			if err := copyB2ToR2(ctx, cfg, b2ReplayKey, r2ReplayKey); err != nil {
+				slog.Error("Failed to promote replay to R2", "match_id", matchID, "error", err)
+			} else {
+				slog.Info("Promoted replay to R2 warm cache", "match_id", matchID)
+			}
 		}
 
-		slog.Info("Promoted replay to R2 warm cache", "match_id", matchID)
+		// Promote thumbnail
+		b2ThumbKey := fmt.Sprintf("thumbnails/%s.png", matchID)
+		r2ThumbKey := b2ThumbKey
+
+		exists, err = checkR2ObjectExists(ctx, cfg, r2ThumbKey)
+		if err != nil {
+			slog.Error("Failed to check R2 thumbnail existence", "key", r2ThumbKey, "error", err)
+		} else if !exists {
+			if err := copyB2ToR2(ctx, cfg, b2ThumbKey, r2ThumbKey); err != nil {
+				slog.Warn("Failed to promote thumbnail to R2", "match_id", matchID, "error", err)
+			} else {
+				slog.Info("Promoted thumbnail to R2 warm cache", "match_id", matchID)
+			}
+		}
 	}
 
 	return nil

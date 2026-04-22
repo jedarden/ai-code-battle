@@ -861,10 +861,12 @@ func buildPlaylistMatch(m MatchData, order int, data *IndexData, curationTag str
 	if !m.CompletedAt.IsZero() {
 		completedAt = m.CompletedAt.Format(time.RFC3339)
 	}
+	thumbnailURL := fmt.Sprintf("https://r2.aicodebattle.com/thumbnails/%s.png", m.ID)
 	return PlaylistMatch{
 		MatchID:      m.ID,
 		Order:        order,
 		Title:        title,
+		ThumbnailURL: thumbnailURL,
 		CurationTag:  curationTag,
 		Participants: participants,
 		Score:        strings.Join(scoreParts, "-"),
