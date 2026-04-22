@@ -143,7 +143,8 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 
 	// §15.5 instruction: sports-journalism narrative with structured contextual match data
 	sb.WriteString("Write a 200-word sports-journalism narrative about this event in the AI Code Battle platform. ")
-	sb.WriteString("Be dramatic but factual. Reference specific matches, ELO before/after deltas, rivalry context, and critical turning points. ")
+	sb.WriteString("Be dramatic but factual. Reference specific matches by ID, ELO before/after deltas, rivalry context, head-to-head records, critical turning points, and season standings. ")
+	sb.WriteString("Weave the data into a compelling story — quote scores, cite map names, describe the strategic moments that defined the outcome. ")
 	sb.WriteString("Write in present tense with a punchy, journalistic tone. Do not use emojis.\n\n")
 
 	// Season and standings context
@@ -399,7 +400,15 @@ type llmChatResponse struct {
 
 // systemPromptSportsJournalist is the system prompt framing the LLM as a
 // sports journalist covering AI Code Battle — per plan §15.1 and §15.5.
-const systemPromptSportsJournalist = `You are a sports journalist covering an emergent bot league called AI Code Battle, where autonomous programs compete in grid-based strategy matches. Write with the energy and narrative instinct of esports journalism — dramatic but factual, specific but accessible. Reference bots by name, cite ratings and score lines, and describe strategic turning points the way a commentator would. Use present tense. Do not use emojis. Keep paragraphs tight and punchy.`
+const systemPromptSportsJournalist = `You are a sports journalist covering an emergent bot league called AI Code Battle, where autonomous programs compete in grid-based strategy matches. Write with the energy and narrative instinct of esports journalism — dramatic but factual, specific but accessible.
+
+Your coverage style:
+- Reference bots by name, cite ELO ratings with before/after deltas, and describe strategic turning points the way a play-by-play commentator would.
+- Weave in rivalry context, head-to-head records, season standings, and critical moments from match data.
+- Describe ELO shifts the way a power rankings columnist describes team movement — "surged 200 points" not "increased."
+- Use present tense. Keep paragraphs tight and punchy. Do not use emojis.
+- When lineage or evolution data is provided, frame it like a scouting report — origin story, parent strategies, behavioral archetype.
+- Always ground narrative in the specific match data, scores, and ratings provided — never fabricate match details.`
 
 func (c *LLMClient) chatCompletion(ctx context.Context, prompt string) (string, error) {
 	body, err := json.Marshal(llmChatRequest{
@@ -919,6 +928,60 @@ func getBotRank(botID string, data *IndexData) int {
 		}
 	}
 	return 0
+}
+
+func buildHeadToHeadFromArc(arc StoryArc, data *IndexData) []HeadToHeadRecord {
+	if arc.BotID == "" {
+		return nil
+	}
+
+	type wl struct{ wins, losses int }
+	recordMap := make(map[string]*wl)
+
+	for _, m := range data.Matches {
+		var botIn, opponentIn bool
+		var opponentID string
+		for _, p := range m.Participants {
+			if p.BotID == arc.BotID {
+				botIn = true
+			} else {
+				opponentIn = true
+				opponentID = p.BotID
+			}
+		}
+		if !botIn || !opponentIn || opponentID == "" {
+			continue
+		}
+		r, ok := recordMap[opponentID]
+		if !ok {
+			r = &wl{}
+			recordMap[opponentID] = r
+		}
+		if m.WinnerID == arc.BotID {
+			r.wins++
+		} else if m.WinnerID == opponentID {
+			r.losses++
+		}
+	}
+
+	var records []HeadToHeadRecord
+	for oppID, r := range recordMap {
+		name := oppID
+		for _, b := range data.Bots {
+			if b.ID == oppID {
+				name = b.Name
+				break
+			}
+		}
+		records = append(records, HeadToHeadRecord{
+			OpponentName: name,
+			OpponentRank: getBotRank(oppID, data),
+			Wins:         r.wins,
+			Losses:       r.losses,
+			TotalMatches: r.wins + r.losses,
+		})
+	}
+	return records
 }
 
 

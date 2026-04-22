@@ -1444,19 +1444,25 @@ func generateLLMChronicles(ctx context.Context, data *IndexData, llmClient *LLMC
 // generateLLMChronicle creates a chronicle using LLM narrative generation
 func generateLLMChronicle(ctx context.Context, arc StoryArc, data *IndexData, llmClient *LLMClient) (BlogPost, error) {
 	seasonName := getCurrentSeasonName(data)
+	seasonTheme := getCurrentSeasonTheme(data)
 
 	req := NarrativeRequest{
-		ArcType:     arc.Type,
-		BotName:     arc.BotName,
-		SeasonName:  seasonName,
-		RatingStart: arc.RatingStart,
-		RatingEnd:   arc.RatingEnd,
-		KeyMatches:  arc.KeyMatches,
-		Archetype:   arc.Archetype,
-		Origin:      arc.Origin,
-		ParentIDs:   arc.ParentIDs,
-		Generation:  arc.Generation,
-		BotBName:    arc.BotBName,
+		ArcType:       arc.Type,
+		BotName:       arc.BotName,
+		BotID:         arc.BotID,
+		SeasonName:    seasonName,
+		SeasonTheme:   seasonTheme,
+		RatingStart:   arc.RatingStart,
+		RatingEnd:     arc.RatingEnd,
+		KeyMatches:    arc.KeyMatches,
+		Archetype:     arc.Archetype,
+		Origin:        arc.Origin,
+		ParentIDs:     arc.ParentIDs,
+		Generation:    arc.Generation,
+		BotBName:      arc.BotBName,
+		BotRank:       getBotRank(arc.BotID, data),
+		CommunityHint: arc.CommunityHint,
+		HeadToHead:    buildHeadToHeadFromArc(arc, data),
 	}
 
 	if arc.Type == ArcRivalry {
@@ -1830,6 +1836,17 @@ func getCurrentSeasonName(data *IndexData) string {
 		}
 	}
 	return "Season 1"
+}
+
+func getCurrentSeasonTheme(data *IndexData) string {
+	for _, s := range data.Seasons {
+		if s.StartsAt.Before(data.GeneratedAt) {
+			if s.EndsAt.IsZero() || s.EndsAt.After(data.GeneratedAt) {
+				return s.Theme
+			}
+		}
+	}
+	return ""
 }
 
 func getTopBots(data *IndexData, count int) []BotData {
