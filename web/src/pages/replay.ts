@@ -1,5 +1,5 @@
 // Standalone replay viewer page - lazy loaded from app.ts
-import type { Replay, GameEvent, DebugInfo, Position } from '../types';
+import type { Replay, GameEvent, DebugInfo, Position, ViewMode } from '../types';
 import { fetchCommentary } from '../api-types';
 import {
   AnnotationOverlay,
@@ -25,6 +25,7 @@ import {
   type DirectorState,
   type DurationPreset,
 } from '../components/director';
+import { THEATER_STYLES, TheaterMode } from '../components/theater';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -56,9 +57,10 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
 
       <div class="replay-layout">
         <div class="replay-main">
-          <div class="canvas-wrapper">
+          <div class="canvas-wrapper" style="position:relative">
             <canvas id="replay-canvas" style="touch-action:none"></canvas>
             <div id="no-replay" class="no-replay-message">Load a replay file to view</div>
+            <button id="theater-btn" class="theater-btn" aria-label="Toggle theater mode" title="Theater mode (F)" style="position:absolute;top:8px;right:8px">&#x26F6;</button>
           </div>
 
           <!-- Mobile compact controls bar — CSS hides on tablet+ -->
@@ -248,6 +250,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <kbd>Home</kbd><kbd>End</kbd> First/Last
             <kbd>1</kbd>-<kbd>6</kbd> Follow Bot
             <kbd>0</kbd>/<kbd>Esc</kbd> Exit Follow
+            <kbd>F</kbd> Theater Mode
           </div>
         </div>
       </div>
@@ -399,6 +402,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
     </style>
     <style>${ANNOTATION_OVERLAY_STYLES}</style>
     <style>${EVENT_TIMELINE_STYLES}</style>
+    <style>${THEATER_STYLES}</style>
   `;
 
   initReplayViewer(ReplayViewerClass, initialUrl);
@@ -449,12 +453,47 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const mobileTurnSlider = document.getElementById('mobile-turn-slider') as HTMLInputElement;
   const mobileSpeedBtn = document.getElementById('mobile-speed-btn') as HTMLButtonElement;
   const mobileTimeline = document.getElementById('mobile-timeline') as HTMLDivElement;
+  const viewModeSelect = document.getElementById('view-mode-select') as HTMLSelectElement;
   const mobileViewModeBtn = document.getElementById('mobile-view-mode-btn') as HTMLButtonElement;
 
   let viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
   let commentaryEnabled = true;
   let debugPanelExpanded = false;
+
+  // Theater mode
+  const theaterBtn = document.getElementById('theater-btn') as HTMLButtonElement;
+  const theater = new TheaterMode(canvas, {
+    getScoreText: () => {
+      const replay = viewer.getReplay() as Replay | null;
+      if (!replay) return '';
+      return replay.players.map((p: any, i: number) => `${p.name}: ${replay.result.scores?.[i] ?? 0}`).join('  ');
+    },
+    getPlayerColors: () => {
+      const replay = viewer.getReplay() as Replay | null;
+      if (!replay) return [];
+      const palettes = ['#332288', '#88ccee', '#44aa99', '#117733', '#999933', '#ddcc77'];
+      return replay.players.map((_: any, i: number) => palettes[i] ?? '#888888');
+    },
+    getWinProb: () => {
+      const replay = viewer.getReplay() as Replay | null;
+      if (!replay?.win_prob) return [];
+      const turn = viewer.getTurn();
+      return replay.win_prob[turn] ?? [];
+    },
+    getTurn: () => viewer.getTurn(),
+    getTotalTurns: () => viewer.getTotalTurns(),
+    getIsPlaying: () => viewer.getIsPlaying(),
+    getSpeed: () => {
+      const el = document.getElementById('speed-slider') as HTMLInputElement;
+      return el ? parseInt(el.value, 10) : 100;
+    },
+    togglePlay: () => viewer.togglePlay(),
+    setTurn: (t: number) => { viewer.setTurn(t); updateUI(); updateEventLog(); },
+    exitTheater: () => {},
+    onCriticalMoment: () => theater.pulseVignette(),
+  });
+  theaterBtn.addEventListener('click', () => theater.toggle());
 
   // Director mode state
   let directorState: DirectorState = createDirectorState();
@@ -1122,6 +1161,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     viewer.setFogOfWar(value === '' ? null : parseInt(value, 10));
   });
 
+  viewModeSelect.addEventListener('change', () => {
+    viewer.setViewMode(viewModeSelect.value as ViewMode);
+  });
+
   cellSizeSelect.addEventListener('change', () => {
     const size = parseInt(cellSizeSelect.value, 10);
     const replay = viewer.getReplay();
@@ -1361,8 +1404,13 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
         e.preventDefault();
         navigateToNextCriticalMoment();
         break;
+      case 'KeyF':
+        e.preventDefault();
+        theater.toggle();
+        break;
       case 'Digit0':
       case 'Escape':
+        if (theater.isActive()) break; // let theater handle its own escape
         e.preventDefault();
         viewer.setFollowPlayer(null);
         break;
