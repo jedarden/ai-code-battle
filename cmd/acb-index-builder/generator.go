@@ -77,6 +77,7 @@ type MatchSummary struct {
 	WinnerID     string               `json:"winner_id,omitempty"`
 	Turns        int                  `json:"turns"`
 	EndReason    string               `json:"end_reason"`
+	Enriched     bool                 `json:"enriched"`
 }
 
 // MatchParticipantSummary represents a bot in a match summary
@@ -94,7 +95,7 @@ type MatchIndex struct {
 }
 
 // generateAllIndexes creates all JSON index files
-func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB) error {
+func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB, cfg *Config) error {
 	botNameMap := make(map[string]string)
 	for _, bot := range data.Bots {
 		botNameMap[bot.ID] = bot.Name
@@ -116,7 +117,7 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB) error {
 	}
 
 	// Generate matches/index.json
-	if err := generateMatchIndex(data, outputDir, botNameMap); err != nil {
+	if err := generateMatchIndex(data, outputDir, botNameMap, cfg); err != nil {
 		return fmt.Errorf("match index: %w", err)
 	}
 
@@ -133,6 +134,11 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB) error {
 	// Generate predictions/leaderboard.json
 	if err := generatePredictionsIndex(data, outputDir); err != nil {
 		return fmt.Errorf("predictions index: %w", err)
+	}
+
+	// Generate predictions/open.json
+	if err := generatePredictionsOpen(data, outputDir); err != nil {
+		return fmt.Errorf("predictions open: %w", err)
 	}
 
 	// Generate rivalries (data/meta/rivalries.json)
@@ -282,10 +288,10 @@ func generateBotProfiles(data *IndexData, outputDir string) error {
 	return nil
 }
 
-func generateMatchIndex(data *IndexData, outputDir string, botNameMap map[string]string) error {
+func generateMatchIndex(data *IndexData, outputDir string, botNameMap map[string]string, cfg *Config) error {
 	summaries := make([]MatchSummary, 0, len(data.Matches))
 	for _, m := range data.Matches {
-		summaries = append(summaries, matchToSummary(m, data))
+		summaries = append(summaries, matchToSummary(m, data, cfg))
 	}
 
 	index := MatchIndex{
@@ -296,7 +302,7 @@ func generateMatchIndex(data *IndexData, outputDir string, botNameMap map[string
 	return writeJSON(filepath.Join(outputDir, "data", "matches", "index.json"), index)
 }
 
-func matchToSummary(m MatchData, data *IndexData) MatchSummary {
+func matchToSummary(m MatchData, data *IndexData, cfg *Config) MatchSummary {
 	participants := make([]MatchParticipantSummary, 0, len(m.Participants))
 	for _, p := range m.Participants {
 		name := "Unknown"
@@ -314,6 +320,8 @@ func matchToSummary(m MatchData, data *IndexData) MatchSummary {
 		})
 	}
 
+	enriched := isMatchEnriched(m.ID, cfg)
+
 	return MatchSummary{
 		ID:           m.ID,
 		CompletedAt:  m.CompletedAt.Format(time.RFC3339),
@@ -321,7 +329,28 @@ func matchToSummary(m MatchData, data *IndexData) MatchSummary {
 		WinnerID:     m.WinnerID,
 		Turns:        m.TurnCount,
 		EndReason:    m.EndCondition,
+		Enriched:     enriched,
 	}
+}
+
+// isMatchEnriched checks if a match has AI commentary available on R2.
+// Returns true if the commentary file exists in R2.
+func isMatchEnriched(matchID string, cfg *Config) bool {
+	if cfg == nil || cfg.R2Endpoint == "" || cfg.R2BucketName == "" {
+		return false
+	}
+
+	r2Client, err := getR2Client(cfg)
+	if err != nil {
+		return false
+	}
+
+	commentaryKey := fmt.Sprintf("commentary/%s.json", matchID)
+	exists, err := r2Client.objectExists(context.Background(), commentaryKey)
+	if err != nil {
+		return false
+	}
+	return exists
 }
 
 func generateSeriesIndex(data *IndexData, outputDir string) error {
@@ -390,6 +419,49 @@ func generatePredictionsIndex(data *IndexData, outputDir string) error {
 	}
 
 	return writeJSON(filepath.Join(outputDir, "data", "predictions", "leaderboard.json"), index)
+}
+
+// generatePredictionsOpen creates data/predictions/open.json with upcoming
+// predictable matches (top-20 vs top-20, rivalry matches, series games,
+// evolved bot vs top-10).
+func generatePredictionsOpen(data *IndexData, outputDir string) error {
+	type OpenMatchEntry struct {
+		MatchID           string  `json:"match_id"`
+		BotA              string  `json:"bot_a"`
+		BotB              string  `json:"bot_b"`
+		ARating           int     `json:"a_rating"`
+		BRating           int     `json:"b_rating"`
+		OpenUntil         string  `json:"open_until"`
+		HeadToHeadRecord  *string `json:"head_to_head_record,omitempty"`
+	}
+
+	type OpenPredictionsIndex struct {
+		UpdatedAt string           `json:"updated_at"`
+		Matches   []OpenMatchEntry `json:"matches"`
+	}
+
+	entries := make([]OpenMatchEntry, 0, len(data.OpenPredictionMatches))
+	for _, m := range data.OpenPredictionMatches {
+		// Open until 5 minutes after creation (typical execution time)
+		openUntil := m.CreatedAt.Add(5 * time.Minute).Format(time.RFC3339)
+
+		entries = append(entries, OpenMatchEntry{
+			MatchID:          m.MatchID,
+			BotA:             m.BotAName,
+			BotB:             m.BotBName,
+			ARating:          int(m.ARating),
+			BRating:          int(m.BRating),
+			OpenUntil:        openUntil,
+			HeadToHeadRecord: m.HeadToHeadRecord,
+		})
+	}
+
+	index := OpenPredictionsIndex{
+		UpdatedAt: data.GeneratedAt.Format(time.RFC3339),
+		Matches:   entries,
+	}
+
+	return writeJSON(filepath.Join(outputDir, "data", "predictions", "open.json"), index)
 }
 
 func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]string) error {
