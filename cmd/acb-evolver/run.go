@@ -96,7 +96,7 @@ func DefaultRunConfig() RunConfig {
 		RatingThreshold:         800.0,
 		PopCap:            50,
 		CycleInterval:          5 * time.Minute,
-		RetirementCheckInterval: 1 * time.Hour,
+		RetirementCheckInterval: 24 * time.Hour,
 		IslandCooldown:    2 * time.Minute,
 		LLMURL:            envOrDefault("ACB_LLM_URL", "http://zai-proxy-apexalgo.tail1b1987.ts.net:8080"),
 		RepoDir:           envOrDefault("ACB_REPO_DIR", "."),
