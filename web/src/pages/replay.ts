@@ -163,7 +163,14 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
           <div class="panel">
             <h2>View Options</h2>
             <div class="view-options">
-              <label for="fog-select">Fog of War:</label>
+              <label for="view-mode-select">View Mode:</label>
+              <select id="view-mode-select">
+                <option value="standard">Standard</option>
+                <option value="dots">Dots</option>
+                <option value="voronoi">Territory (Voronoi)</option>
+                <option value="influence">Influence Gradient</option>
+              </select>
+              <label for="fog-select" style="margin-top: 10px;">Fog of War:</label>
               <select id="fog-select">
                 <option value="">Disabled (full view)</option>
               </select>
@@ -231,6 +238,8 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <kbd>←</kbd><kbd>→</kbd> Step
             <kbd>[</kbd><kbd>]</kbd> Prev/Next Critical
             <kbd>Home</kbd><kbd>End</kbd> First/Last
+            <kbd>1</kbd>-<kbd>6</kbd> Follow Bot
+            <kbd>0</kbd>/<kbd>Esc</kbd> Exit Follow
           </div>
         </div>
       </div>
@@ -1324,6 +1333,20 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       case 'BracketRight':
         e.preventDefault();
         navigateToNextCriticalMoment();
+        break;
+      case 'Digit0':
+      case 'Escape':
+        e.preventDefault();
+        viewer.setFollowPlayer(null);
+        break;
+      case 'Digit1': case 'Digit2': case 'Digit3':
+      case 'Digit4': case 'Digit5': case 'Digit6':
+        e.preventDefault();
+        const followIdx = parseInt(e.code.replace('Digit', ''), 10) - 1;
+        const replay = viewer.getReplay();
+        if (replay && followIdx < replay.players.length) {
+          viewer.setFollowPlayer(viewer.getFollowPlayer() === followIdx ? null : followIdx);
+        }
         break;
     }
   });

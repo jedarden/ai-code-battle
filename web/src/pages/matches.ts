@@ -1,4 +1,6 @@
-// Match history page - displays recent matches with featured playlists
+// Match history page - displays recent matches with featured playlists.
+// §16.15: expandable match cards, lazy-rendered below-the-fold content,
+// keyboard-accessible "Show more" affordances.
 
 import { fetchMatchIndex, fetchPlaylistIndex, type MatchSummary, type PlaylistIndex } from '../api-types';
 
@@ -141,13 +143,11 @@ export async function renderMatchesPage(): Promise<void> {
 }
 
 function renderPlaylistCards(container: HTMLElement, index: PlaylistIndex): void {
-  // Priority slugs for the curated sections at the top
   const curatedSlugs = ['best-of-week', 'biggest-upsets', 'closest-finishes'];
   const curatedSections = curatedSlugs
     .map(slug => index.playlists.find(p => p.slug === slug))
     .filter((p): p is NonNullable<typeof p> => p !== undefined);
 
-  // Remaining playlists shown as a scrollable row
   const curatedSlugSet = new Set(curatedSlugs);
   const rest = index.playlists.filter(p => !curatedSlugSet.has(p.slug));
 
@@ -205,12 +205,82 @@ function renderMatchesList(
     return;
   }
 
+  // Show first batch immediately, lazy-load the rest
+  const initialCount = 20;
+  const initialMatches = matches.slice(0, initialCount);
+  const remaining = matches.slice(initialCount);
+
   container.innerHTML = `
     <p class="updated-at">Last updated: ${formatTimestamp(updatedAt)}</p>
-    <div class="matches-list">
-      ${matches.map(match => renderMatchCard(match)).join('')}
+    <div class="matches-list" id="matches-list">
+      ${initialMatches.map(match => renderMatchCard(match)).join('')}
     </div>
+    ${remaining.length > 0 ? `<div id="matches-remaining" data-remaining-count="${remaining.length}"></div>` : ''}
   `;
+
+  // Wire expand toggles on initial batch
+  initMatchCardToggles(container);
+
+  // Lazy-load remaining matches when scrolled into view
+  if (remaining.length > 0) {
+    const remainingEl = document.getElementById('matches-remaining');
+    if (remainingEl) {
+      const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          observer.disconnect();
+          appendRemainingMatches(remainingEl, remaining);
+        }
+      }, { rootMargin: '300px' });
+      observer.observe(remainingEl);
+    }
+  }
+}
+
+function appendRemainingMatches(target: HTMLElement, matches: MatchSummary[]): void {
+  // Render in batches to avoid huge DOM
+  const batchSize = 50;
+  let offset = 0;
+  const totalCount = matches.length;
+
+  function appendBatch(): void {
+    const batch = matches.slice(offset, offset + batchSize);
+    if (batch.length === 0) return;
+
+    const html = batch.map(m => renderMatchCard(m)).join('');
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    while (wrapper.firstChild) {
+      target.before(wrapper.firstChild);
+    }
+
+    offset += batchSize;
+
+    if (offset < totalCount) {
+      // Add "Show more" button for next batch
+      const btn = document.createElement('button');
+      btn.className = 'btn secondary show-more-btn';
+      btn.type = 'button';
+      const remaining = totalCount - offset;
+      const next = Math.min(batchSize, remaining);
+      btn.textContent = `Show ${next} more matches (${remaining} remaining)`;
+      btn.setAttribute('aria-label', `Show ${next} more matches, ${remaining} remaining`);
+
+      btn.addEventListener('click', () => {
+        btn.remove();
+        appendBatch();
+      });
+
+      target.before(btn);
+    } else {
+      target.remove();
+    }
+
+    // Wire expand toggles on new cards
+    initMatchCardToggles(target.parentElement!);
+  }
+
+  appendBatch();
 }
 
 function renderMatchCard(match: MatchSummary): string {
@@ -218,28 +288,52 @@ function renderMatchCard(match: MatchSummary): string {
 
   return `
     <div class="match-card" data-match-id="${escapeHtml(match.id)}">
-      <div class="match-header">
-        <span class="match-id">${escapeHtml(match.id.slice(0, 8))}</span>
-        <span class="match-time">${completedAt}</span>
-      </div>
-      <div class="match-participants">
-        ${match.participants.map(p => `
-          <div class="participant ${p.won ? 'winner' : ''}">
-            <a href="#/bot/${encodeURIComponent(p.bot_id)}" class="participant-name">
-              ${escapeHtml(p.name)}
-            </a>
-            <span class="participant-score">${p.score}</span>
-            ${p.won ? '<span class="winner-badge">Winner</span>' : ''}
-          </div>
-        `).join('')}
-      </div>
-      <div class="match-footer">
-        <span class="match-turns">${match.turns ?? '-'} turns</span>
-        <span class="match-reason">${match.end_reason ?? '-'}</span>
-        <a href="#/watch/replay?url=/replays/${match.id}.json" class="btn small">Watch</a>
+      <button class="match-card-toggle" type="button" aria-label="Expand match details" aria-expanded="false">
+        <div class="match-header">
+          <span class="match-id">${escapeHtml(match.id.slice(0, 8))}</span>
+          <span class="match-time">${completedAt}</span>
+          <span class="match-expand-icon" aria-hidden="true">▸</span>
+        </div>
+        <div class="match-participants">
+          ${match.participants.map(p => `
+            <div class="participant ${p.won ? 'winner' : ''}">
+              <a href="#/bot/${encodeURIComponent(p.bot_id)}" class="participant-name" onclick="event.stopPropagation()">
+                ${escapeHtml(p.name)}
+              </a>
+              <span class="participant-score">${p.score}</span>
+              ${p.won ? '<span class="winner-badge">Winner</span>' : ''}
+            </div>
+          `).join('')}
+        </div>
+      </button>
+      <div class="match-card-details">
+        <div class="match-footer">
+          <span class="match-turns">${match.turns ?? '-'} turns</span>
+          <span class="match-reason">${match.end_reason ?? '-'}</span>
+        </div>
+        <a href="#/watch/replay?url=/replays/${match.id}.json" class="btn small">Watch Replay</a>
       </div>
     </div>
   `;
+}
+
+function initMatchCardToggles(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>('.match-card').forEach(card => {
+    const toggle = card.querySelector<HTMLButtonElement>('.match-card-toggle');
+    if (!toggle || toggle.dataset.wired) return;
+    toggle.dataset.wired = '1';
+
+    toggle.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('a')) return;
+      const details = card.querySelector<HTMLElement>('.match-card-details');
+      if (!details) return;
+      const expanded = details.classList.toggle('expanded');
+      card.setAttribute('aria-expanded', String(expanded));
+      toggle.setAttribute('aria-expanded', String(expanded));
+      const icon = card.querySelector('.match-expand-icon');
+      if (icon) icon.textContent = expanded ? '▾' : '▸';
+    });
+  });
 }
 
 function formatCategory(category: string): string {

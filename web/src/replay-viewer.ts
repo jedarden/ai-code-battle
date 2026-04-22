@@ -422,12 +422,42 @@ export class ReplayViewer {
   // Global idle pulse phase (radians)
   private idlePhase: number = 0;
 
+  // View mode cross-fade transition state (§16.11)
+  private viewTransition: {
+    active: boolean;
+    fromMode: ViewMode;
+    toMode: ViewMode;
+    startTime: number;
+    duration: number; // ms
+    offscreenFrom: HTMLCanvasElement | null;
+    offscreenTo: HTMLCanvasElement | null;
+  } = {
+    active: false,
+    fromMode: 'standard',
+    toMode: 'standard',
+    startTime: 0,
+    duration: 400,
+    offscreenFrom: null,
+    offscreenTo: null,
+  };
+
+  // Follow camera state (§16.12)
+  private followPlayer: number | null = null;
+  private cameraCenterX: number = 0;
+  private cameraCenterY: number = 0;
+  private cameraTargetCenterX: number = 0;
+  private cameraTargetCenterY: number = 0;
+  private cameraZoom: number = 1;
+  private cameraTargetZoom: number = 1;
+  private followZoom: number = 3;
+
   // Event callbacks
   public onTurnChange?: (turn: number) => void;
   public onPlayStateChange?: (playing: boolean) => void;
   public onReplayLoad?: (replay: Replay) => void;
   public onCommentaryChange?: (entry: { turn: number; text: string; type: string } | null) => void;
   public onDebugChange?: (debug: Record<number, DebugInfo> | null) => void;
+  public onFollowChange?: (player: number | null) => void;
 
   // Director mode: external speed override from director controller
   private directorEnabled: boolean = false;
@@ -499,6 +529,17 @@ export class ReplayViewer {
 
     // Resize canvas to fit the grid
     this.resizeCanvas();
+
+    // Initialize follow camera to full grid view
+    const mapW = replay.map.cols * this.cellSize;
+    const mapH = replay.map.rows * this.cellSize;
+    this.cameraCenterX = mapW / 2;
+    this.cameraCenterY = mapH / 2;
+    this.cameraTargetCenterX = mapW / 2;
+    this.cameraTargetCenterY = mapH / 2;
+    this.cameraZoom = 1;
+    this.cameraTargetZoom = 1;
+    this.followPlayer = null;
 
     // Render initial state
     this.render();
@@ -612,8 +653,56 @@ export class ReplayViewer {
   // ── View Mode Controls ─────────────────────────────────────────────────────
 
   setViewMode(mode: ViewMode): void {
+    if (mode === this.viewMode) return;
+
+    // Snap instantly when reduced motion is preferred
+    if (this.accessibility.reducedMotion) {
+      this.viewMode = mode;
+      this.render();
+      return;
+    }
+
+    // Capture the current canvas state as the "from" buffer
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (w === 0 || h === 0) {
+      this.viewMode = mode;
+      this.render();
+      return;
+    }
+
+    const fromBuf = document.createElement('canvas');
+    fromBuf.width = w;
+    fromBuf.height = h;
+    fromBuf.getContext('2d')!.drawImage(this.canvas, 0, 0);
+
+    // Switch mode and render the "to" state into an offscreen buffer
+    const prevMode = this.viewMode;
     this.viewMode = mode;
-    this.render();
+
+    const toBuf = document.createElement('canvas');
+    toBuf.width = w;
+    toBuf.height = h;
+    const toCtx = toBuf.getContext('2d')!;
+
+    // Render the new mode into the offscreen buffer
+    const origCtx = this.ctx;
+    (this as any).ctx = toCtx;
+    this.renderViewLayer();
+    (this as any).ctx = origCtx;
+
+    // Start transition
+    this.viewTransition = {
+      active: true,
+      fromMode: prevMode,
+      toMode: mode,
+      startTime: performance.now(),
+      duration: 400,
+      offscreenFrom: fromBuf,
+      offscreenTo: toBuf,
+    };
+
+    this.startRenderLoop();
   }
 
   getViewMode(): ViewMode {
@@ -679,6 +768,129 @@ export class ReplayViewer {
 
   getCommentaryEnabled(): boolean {
     return this.commentaryEnabled;
+  }
+
+  // ── Follow Camera Controls (§16.12) ────────────────────────────────────────────
+
+  setFollowPlayer(player: number | null): void {
+    if (player === this.followPlayer) return;
+    this.followPlayer = player;
+
+    if (player === null && this.replay) {
+      // Target: full grid view
+      const mapW = this.replay.map.cols * this.cellSize;
+      const mapH = this.replay.map.rows * this.cellSize;
+      this.cameraTargetCenterX = mapW / 2;
+      this.cameraTargetCenterY = mapH / 2;
+      this.cameraTargetZoom = 1;
+    }
+
+    if (this.onFollowChange) this.onFollowChange(player);
+    this.startRenderLoop();
+  }
+
+  getFollowPlayer(): number | null {
+    return this.followPlayer;
+  }
+
+  setFollowZoom(zoom: number): void {
+    this.followZoom = Math.max(1, Math.min(10, zoom));
+  }
+
+  getFollowZoom(): number {
+    return this.followZoom;
+  }
+
+  private updateCamera(): void {
+    if (!this.replay) return;
+    const { rows, cols } = this.replay.map;
+    const mapW = cols * this.cellSize;
+    const mapH = rows * this.cellSize;
+
+    if (this.followPlayer !== null) {
+      const turnData = this.replay.turns[this.currentTurn];
+      if (turnData) {
+        const playerBots = turnData.bots.filter(b => b.owner === this.followPlayer && b.alive);
+
+        if (playerBots.length === 0) {
+          // No living bots — gradually return to full view
+          this.cameraTargetCenterX = mapW / 2;
+          this.cameraTargetCenterY = mapH / 2;
+          this.cameraTargetZoom = 1;
+        } else {
+          // Toroidal centroid via circular mean (handles wrap-around groups)
+          let sinR = 0, cosR = 0, sinC = 0, cosC = 0;
+          for (const bot of playerBots) {
+            const aR = (2 * Math.PI * bot.position.row) / rows;
+            const aC = (2 * Math.PI * bot.position.col) / cols;
+            sinR += Math.sin(aR);
+            cosR += Math.cos(aR);
+            sinC += Math.sin(aC);
+            cosC += Math.cos(aC);
+          }
+          sinR /= playerBots.length;
+          cosR /= playerBots.length;
+          sinC /= playerBots.length;
+          cosC /= playerBots.length;
+
+          const centroidRow = ((rows * Math.atan2(sinR, cosR) / (2 * Math.PI)) % rows + rows) % rows;
+          const centroidCol = ((cols * Math.atan2(sinC, cosC) / (2 * Math.PI)) % cols + cols) % cols;
+
+          this.cameraTargetCenterX = centroidCol * this.cellSize + this.cellSize / 2;
+          this.cameraTargetCenterY = centroidRow * this.cellSize + this.cellSize / 2;
+
+          // Max distance from centroid (in pixels)
+          let maxDist = 0;
+          for (const bot of playerBots) {
+            const d = this.toroidalDistance(centroidRow, centroidCol, bot.position.row, bot.position.col);
+            maxDist = Math.max(maxDist, d);
+          }
+          maxDist *= this.cellSize;
+
+          // Zoom to fit all bots + 8-tile margin
+          const margin = 8 * this.cellSize;
+          const viewRadius = maxDist + margin;
+          const canvasW = this.canvas.width;
+          const fitZoom = Math.min(canvasW, mapH) / (2 * viewRadius);
+
+          // Clamp: followZoom default (3x), fitZoom when spread, max 15x15 tiles visible, min full grid
+          const maxZoom = Math.min(canvasW / (15 * this.cellSize), mapH / (15 * this.cellSize));
+          this.cameraTargetZoom = Math.max(1, Math.min(maxZoom, Math.min(this.followZoom, fitZoom)));
+        }
+      }
+    } else {
+      this.cameraTargetCenterX = mapW / 2;
+      this.cameraTargetCenterY = mapH / 2;
+      this.cameraTargetZoom = 1;
+    }
+
+    // Smooth lerp toward targets (toroidal-aware for center coordinates)
+    const panFactor = this.accessibility.reducedMotion ? 1 : 0.15;
+    const zoomFactor = this.accessibility.reducedMotion ? 1 : 0.10;
+
+    this.cameraCenterX = this.lerpToroidal(this.cameraCenterX, this.cameraTargetCenterX, panFactor, mapW);
+    this.cameraCenterY = this.lerpToroidal(this.cameraCenterY, this.cameraTargetCenterY, panFactor, mapH);
+    this.cameraZoom += (this.cameraTargetZoom - this.cameraZoom) * zoomFactor;
+  }
+
+  private lerpToroidal(current: number, target: number, factor: number, size: number): number {
+    let delta = target - current;
+    if (delta > size / 2) delta -= size;
+    if (delta < -size / 2) delta += size;
+    const result = current + delta * factor;
+    return ((result % size) + size) % size;
+  }
+
+  private applyCameraTransform(): void {
+    const { ctx } = this;
+    if (!this.replay) return;
+
+    const mapH = this.replay.map.rows * this.cellSize;
+    const canvasW = this.canvas.width;
+
+    ctx.translate(canvasW / 2, mapH / 2);
+    ctx.scale(this.cameraZoom, this.cameraZoom);
+    ctx.translate(-this.cameraCenterX, -this.cameraCenterY);
   }
 
   // Get the active commentary entry for a given turn
@@ -886,6 +1098,9 @@ export class ReplayViewer {
     // Advance idle pulse phase (2s cycle = π per second)
     this.idlePhase += (Math.PI * dt) / 1000;
 
+    // Update follow camera (§16.12)
+    this.updateCamera();
+
     // Tick particles and effects
     if (!this.accessibility.reducedMotion) {
       tickParticles(dt);
@@ -1040,6 +1255,44 @@ export class ReplayViewer {
   private render(): void {
     if (!this.replay) return;
 
+    // If a view mode cross-fade is active, blend the two offscreen buffers
+    if (this.viewTransition.active) {
+      const { ctx } = this;
+      const now = performance.now();
+      const elapsed = now - this.viewTransition.startTime;
+      let t = Math.min(1, elapsed / this.viewTransition.duration);
+
+      // Ease-in-out cubic
+      t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+      // Blend the two complete frames (both already contain overlays)
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.globalAlpha = 1 - t;
+      if (this.viewTransition.offscreenFrom) {
+        ctx.drawImage(this.viewTransition.offscreenFrom, 0, 0);
+      }
+      ctx.globalAlpha = t;
+      if (this.viewTransition.offscreenTo) {
+        ctx.drawImage(this.viewTransition.offscreenTo, 0, 0);
+      }
+      ctx.globalAlpha = 1;
+
+      // End transition when complete
+      if (elapsed >= this.viewTransition.duration) {
+        this.viewTransition.active = false;
+        this.viewTransition.offscreenFrom = null;
+        this.viewTransition.offscreenTo = null;
+      }
+      return;
+    }
+
+    this.renderViewLayer();
+  }
+
+  // Renders the full frame for the current view mode (no transition blending)
+  private renderViewLayer(): void {
+    if (!this.replay) return;
+
     const { ctx } = this;
     const colors = this.getPlayerColors();
     const bgColor = this.getBackgroundColor();
@@ -1060,6 +1313,14 @@ export class ReplayViewer {
     const visible = this.fogOfWarPlayer !== null
       ? this.computeVisibility(turnData, this.fogOfWarPlayer)
       : null;
+
+    // ── Camera transform: clip to map area, apply pan/zoom (§16.12) ──
+    const mapH = this.replay.map.rows * this.cellSize;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, this.canvas.width, mapH);
+    ctx.clip();
+    this.applyCameraTransform();
 
     // Render based on view mode
     switch (this.viewMode) {
@@ -1084,15 +1345,18 @@ export class ReplayViewer {
       drawParticles(ctx);
     }
 
-    // Draw debug telemetry overlay if enabled
+    // Draw annotation markers on canvas (§16.8) — world-space
+    this.renderAnnotationMarkers(colors);
+
+    ctx.restore();
+    // ── End camera transform ──
+
+    // Draw debug telemetry overlay (screen-space)
     if (this.showDebug && turnData.debug) {
       this.renderDebugOverlay(turnData.debug, colors);
     }
 
-    // Draw annotation markers on canvas (§16.8)
-    this.renderAnnotationMarkers(colors);
-
-    // Draw score overlay
+    // Draw score overlay (screen-space, below map)
     this.drawScoreOverlay(turnData, colors);
 
     // Announce turn to screen reader if reduced motion is preferred
@@ -1802,12 +2066,21 @@ export class ReplayViewer {
       const bots = turnData.bots.filter((b: any) => b.owner === idx).length;
       const color = colors[idx];
       const yOffset = overlayY + padding + idx * lineHeight;
+      const isFollowed = this.followPlayer === idx;
+
+      // Highlight row if followed
+      if (isFollowed) {
+        ctx.fillStyle = color + '22';
+        ctx.fillRect(0, yOffset, bgWidth, lineHeight);
+      }
 
       ctx.fillStyle = color;
       ctx.fillRect(padding, yOffset + 2, 12, 12);
 
-      ctx.fillStyle = '#e5e7eb';
-      ctx.fillText(`${player.name}  score:${score}  bots:${bots}  energy:${energy}`, padding + 18, yOffset + 2);
+      // Follow indicator (eye icon)
+      const followIcon = isFollowed ? ' ◉' : ''; // ◉ when followed
+      ctx.fillStyle = isFollowed ? color : '#e5e7eb';
+      ctx.fillText(`${player.name}  score:${score}  bots:${bots}  energy:${energy}${followIcon}`, padding + 18, yOffset + 2);
     });
   }
 

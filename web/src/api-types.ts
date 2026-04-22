@@ -187,6 +187,13 @@ function swr<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
   });
 }
 
+/** Seed the SWR cache with pre-fetched data (used by hover preloader). */
+export function seedSwrCache(key: string, data: unknown): void {
+  if (!swrCache.has(key)) {
+    swrCache.set(key, { data, ts: Date.now() });
+  }
+}
+
 // API client functions
 export async function fetchLeaderboard(): Promise<LeaderboardIndex> {
   return swr('leaderboard', async () => {

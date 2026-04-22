@@ -1,45 +1,86 @@
 // §16.14 Performance trifecta: preload-on-hover + instant back-cache
+// Preload fetches data into both the browser HTTP cache (via <link rel=prefetch>)
+// and the SWR application cache (via manual fetch + seedSwrCache).
 
-// ─── Route → data URL mapping ──────────────────────────────────────────────────
+import { seedSwrCache } from '../api-types';
+
+// ─── Route → data URL + SWR key mapping ────────────────────────────────────────
 // Maps SPA routes to the JSON data files they fetch so we can prefetch on hover.
+// Each entry includes the SWR cache key so preloaded data populates the app cache.
 
-type DataUrlFactory = (params: Record<string, string>) => string[];
+interface DataMapping {
+  url: string;
+  swrKey: string;
+}
 
-const ROUTE_DATA: Array<{ pattern: RegExp; paramNames: string[]; urls: DataUrlFactory }> = [];
+type DataMappingFactory = (params: Record<string, string>) => DataMapping[];
 
-function registerRouteData(pattern: string, urls: DataUrlFactory): void {
+const ROUTE_DATA: Array<{ pattern: RegExp; paramNames: string[]; mappings: DataMappingFactory }> = [];
+
+function registerRouteData(pattern: string, mappings: DataMappingFactory): void {
   const paramNames: string[] = [];
   const regexPattern = pattern.replace(/:(\w+)/g, (_, name) => {
     paramNames.push(name);
     return '([^/]+)';
   });
-  ROUTE_DATA.push({ pattern: new RegExp(`^${regexPattern}$`), paramNames, urls });
+  ROUTE_DATA.push({ pattern: new RegExp(`^${regexPattern}$`), paramNames, mappings });
 }
 
-// Static routes — single data file
-registerRouteData('/', () => ['/data/leaderboard.json', '/data/playlists/index.json', '/data/evolution/meta.json']);
-registerRouteData('/leaderboard', () => ['/data/leaderboard.json']);
-registerRouteData('/watch', () => ['/data/playlists/index.json', '/data/matches/index.json']);
-registerRouteData('/watch/replays', () => ['/data/matches/index.json']);
-registerRouteData('/watch/playlists', () => ['/data/playlists/index.json']);
-registerRouteData('/watch/predictions', () => ['/data/predictions/leaderboard.json']);
-registerRouteData('/evolution', () => ['/data/evolution/meta.json', '/data/evolution/lineage.json']);
-registerRouteData('/blog', () => ['/data/blog/index.json']);
-registerRouteData('/seasons', () => ['/data/seasons/index.json']);
-registerRouteData('/compete', () => []);
-registerRouteData('/compete/register', () => []);
-registerRouteData('/compete/docs', () => []);
+// Static routes
+registerRouteData('/', () => [
+  { url: '/data/leaderboard.json', swrKey: 'leaderboard' },
+  { url: '/data/playlists/index.json', swrKey: 'playlist-index' },
+  { url: '/data/evolution/meta.json', swrKey: 'evolution-meta' },
+]);
+registerRouteData('/leaderboard', () => [
+  { url: '/data/leaderboard.json', swrKey: 'leaderboard' },
+]);
+registerRouteData('/watch', () => [
+  { url: '/data/playlists/index.json', swrKey: 'playlist-index' },
+  { url: '/data/matches/index.json', swrKey: 'match-index' },
+]);
+registerRouteData('/watch/replays', () => [
+  { url: '/data/matches/index.json', swrKey: 'match-index' },
+]);
+registerRouteData('/watch/playlists', () => [
+  { url: '/data/playlists/index.json', swrKey: 'playlist-index' },
+]);
+registerRouteData('/watch/predictions', () => [
+  { url: '/data/predictions/leaderboard.json', swrKey: 'predictions-leaderboard' },
+]);
+registerRouteData('/evolution', () => [
+  { url: '/data/evolution/meta.json', swrKey: 'evolution-meta' },
+  { url: '/data/evolution/lineage.json', swrKey: 'evolution-lineage' },
+]);
+registerRouteData('/blog', () => [
+  { url: '/data/blog/index.json', swrKey: 'blog-index' },
+]);
+registerRouteData('/seasons', () => [
+  { url: '/data/seasons/index.json', swrKey: 'season-index' },
+]);
 
 // Parameterized routes
 registerRouteData('/watch/replay/:id', () => []);
-registerRouteData('/watch/series/:id', (p) => [`/data/series/${p.id}.json`]);
-registerRouteData('/watch/playlists/:slug', (p) => [`/data/playlists/${p.slug}.json`]);
-registerRouteData('/blog/:slug', (p) => [`/data/blog/${p.slug}.json`]);
-registerRouteData('/bot/:id', (p) => [`/data/bots/${p.id}.json`]);
-registerRouteData('/compete/bot/:id', (p) => [`/data/bots/${p.id}.json`]);
-registerRouteData('/season/:id', (p) => [`/data/seasons/${p.id}.json`]);
+registerRouteData('/watch/series/:id', (p) => [
+  { url: `/data/series/${p.id}.json`, swrKey: `series-${p.id}` },
+]);
+registerRouteData('/watch/playlists/:slug', (p) => [
+  { url: `/data/playlists/${p.slug}.json`, swrKey: `playlist-${p.slug}` },
+]);
+registerRouteData('/blog/:slug', (p) => [
+  { url: `/data/blog/posts/${p.slug}.json`, swrKey: `blog-${p.slug}` },
+]);
+registerRouteData('/bot/:id', (p) => [
+  { url: `/data/bots/${p.id}.json`, swrKey: `bot-${p.id}` },
+]);
+registerRouteData('/compete/bot/:id', (p) => [
+  { url: `/data/bots/${p.id}.json`, swrKey: `bot-${p.id}` },
+]);
+registerRouteData('/season/:id', (p) => [
+  { url: `/data/seasons/${p.id}.json`, swrKey: `season-${p.id}` },
+]);
 
-function resolveDataUrls(path: string): string[] {
+function resolveDataMappings(path: string): DataMapping[] {
   for (const entry of ROUTE_DATA) {
     const match = path.match(entry.pattern);
     if (match) {
@@ -47,7 +88,7 @@ function resolveDataUrls(path: string): string[] {
       entry.paramNames.forEach((name, idx) => {
         params[name] = decodeURIComponent(match[idx + 1]);
       });
-      return entry.urls(params);
+      return entry.mappings(params);
     }
   }
   return [];
@@ -59,20 +100,27 @@ function resolveDataUrls(path: string): string[] {
 const prefetched = new Set<string>();
 const PRELOAD_DELAY = 150; // ms — debounce per §16.14 (120–200ms range)
 
-function prefetchUrl(url: string): void {
-  if (prefetched.has(url)) return;
-  prefetched.add(url);
-  // Use <link rel=prefetch> for low-priority background fetch
+function prefetchMapping(mapping: DataMapping): void {
+  if (prefetched.has(mapping.url)) return;
+  prefetched.add(mapping.url);
+
+  // 1. <link rel=prefetch> for browser HTTP cache (low priority)
   const link = document.createElement('link');
   link.rel = 'prefetch';
-  link.href = url;
+  link.href = mapping.url;
   document.head.appendChild(link);
+
+  // 2. Manual fetch into SWR application cache (medium priority)
+  fetch(mapping.url)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+    .then(data => seedSwrCache(mapping.swrKey, data))
+    .catch(() => { /* prefetch failures are non-critical */ });
 }
 
 function prefetchRoute(path: string): void {
-  const urls = resolveDataUrls(path);
-  for (const url of urls) {
-    prefetchUrl(url);
+  const mappings = resolveDataMappings(path);
+  for (const m of mappings) {
+    prefetchMapping(m);
   }
 }
 
@@ -107,7 +155,6 @@ function setupLinkListeners(): void {
 interface CachedPage {
   html: string;
   scrollY: number;
-  data: unknown;
 }
 
 const MAX_CACHE_SIZE = 8;
@@ -120,7 +167,6 @@ export function savePageCache(path: string): void {
   pageCache.set(path, {
     html: app.innerHTML,
     scrollY: window.scrollY,
-    data: null,
   });
 
   // Evict oldest entries beyond cap
@@ -130,16 +176,8 @@ export function savePageCache(path: string): void {
   }
 }
 
-export function getPageCache(path: string): CachedPage | undefined {
-  return pageCache.get(path);
-}
-
 export function hasPageCache(path: string): boolean {
   return pageCache.has(path);
-}
-
-export function clearPageCache(path: string): void {
-  pageCache.delete(path);
 }
 
 export function restorePageFromCache(path: string): boolean {
@@ -155,6 +193,17 @@ export function restorePageFromCache(path: string): boolean {
   // Remove from cache so a forward-navigate re-renders fresh
   pageCache.delete(path);
   return true;
+}
+
+// ─── Skeleton → content fade-in ────────────────────────────────────────────────
+// When skeleton is replaced by real content, apply a fade-in transition.
+
+export function fadeInContent(container: HTMLElement): void {
+  container.style.opacity = '0';
+  // Force reflow so the browser registers the initial state
+  container.offsetHeight; // eslint-disable-line no-unused-expressions
+  container.style.transition = 'opacity 150ms ease';
+  container.style.opacity = '1';
 }
 
 // ─── Initialization ────────────────────────────────────────────────────────────

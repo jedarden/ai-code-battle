@@ -11,6 +11,7 @@ import {
   savePageCache,
   restorePageFromCache,
   hasPageCache,
+  fadeInContent,
 } from './lib/preload';
 import {
   skeletonLeaderboard,
@@ -87,7 +88,7 @@ const loadDocsApiPage = () => import('./pages/docs-api').then(m => m.renderDocsA
 const loadNotFoundPage = () => import('./pages/not-found').then(m => m.renderNotFoundPage);
 
 // ─── Helper: wrap async page loader in sync RouteHandler ────────────────────────
-// Shows skeleton immediately, then loads the real page async.
+// Shows skeleton immediately, then loads the real page async with fade-in.
 function lazyRoute(loader: () => Promise<(params: Record<string, string>) => void>): RouteHandler {
   return (params: Record<string, string>) => {
     const targetPath = router.getCurrentPath();
@@ -105,7 +106,12 @@ function lazyRoute(loader: () => Promise<(params: Record<string, string>) => voi
       if (app) app.innerHTML = skeleton;
     }
 
-    loader().then(handler => handler(params));
+    loader().then(handler => {
+      handler(params);
+      // Fade in real content over the skeleton
+      const app = document.getElementById('app');
+      if (app && skeleton) fadeInContent(app);
+    });
   };
 }
 
