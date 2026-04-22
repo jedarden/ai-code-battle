@@ -94,17 +94,17 @@ function renderDashboard(container: HTMLElement, data: EvolutionLiveData): void 
       <div id="activity-feed"></div>
     </section>
 
-    <section class="evo-section">
+    <section class="evo-section evo-below-fold" data-evo-section="meta">
       <h2 class="evo-section-title">Meta Tracker <span class="evo-subtitle">Best fitness per island over generations</span></h2>
       <div class="chart-container" id="meta-chart"></div>
     </section>
 
-    <section class="evo-section">
+    <section class="evo-section evo-below-fold" data-evo-section="lineage">
       <h2 class="evo-section-title">Lineage Tree <span class="evo-subtitle">Program ancestry (top 80 by fitness)</span></h2>
       <div class="lineage-container" id="lineage-tree"></div>
     </section>
 
-    <section class="evo-section">
+    <section class="evo-section evo-below-fold" data-evo-section="genlog">
       <h2 class="evo-section-title">Generation Log</h2>
       <div id="generation-log"></div>
     </section>
@@ -509,9 +509,52 @@ function renderDashboard(container: HTMLElement, data: EvolutionLiveData): void 
   renderLiveStatus(document.getElementById('live-status')!, data.cycle);
   renderStatistics(document.getElementById('statistics')!, data.totals);
   renderActivityFeed(document.getElementById('activity-feed')!, data.recent_activity || []);
-  renderMetaChart(document.getElementById('meta-chart')!, data.meta_snapshots ?? []);
-  renderLineageTree(document.getElementById('lineage-tree')!, data.lineage ?? []);
-  renderGenerationLog(document.getElementById('generation-log')!, data.generation_log ?? []);
+
+  // Below-the-fold sections: render immediately if already visible (polling update),
+  // otherwise defer with IntersectionObserver.
+  const belowFoldSections = container.querySelectorAll<HTMLElement>('.evo-below-fold');
+  const rendered = new Set<string>();
+
+  function renderSection(name: string): void {
+    if (rendered.has(name)) return;
+    rendered.add(name);
+    switch (name) {
+      case 'meta':
+        renderMetaChart(document.getElementById('meta-chart')!, data.meta_snapshots ?? []);
+        break;
+      case 'lineage':
+        renderLineageTree(document.getElementById('lineage-tree')!, data.lineage ?? []);
+        break;
+      case 'genlog':
+        renderGenerationLog(document.getElementById('generation-log')!, data.generation_log ?? []);
+        break;
+    }
+  }
+
+  if (belowFoldSections.length > 0) {
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const section = (entry.target as HTMLElement).dataset.evoSection;
+        if (section) {
+          renderSection(section);
+          observer.unobserve(entry.target);
+        }
+      }
+    }, { rootMargin: '200px' });
+
+    belowFoldSections.forEach(el => {
+      const name = el.dataset.evoSection;
+      if (!name) return;
+      // If already in viewport (e.g. polling update on small screen), render immediately
+      const rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight + 200) {
+        renderSection(name);
+      } else {
+        observer.observe(el);
+      }
+    });
+  }
 }
 
 // ── Island Status ──────────────────────────────────────────────────────────────
@@ -932,36 +975,17 @@ function renderLineageTree(container: HTMLElement, nodes: LineageNode[]): void {
 
 // ── Generation Log Table ───────────────────────────────────────────────────────
 
+const GEN_LOG_BATCH = 30;
+
 function renderGenerationLog(container: HTMLElement, log: GenerationEntry[]): void {
   if (!log || log.length === 0) {
     container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.875rem;">No generation history yet.</p>';
     return;
   }
 
-  const rows = log.map(e => {
-    const color = ISLAND_COLORS[e.island] ?? '#94a3b8';
-    const bestPct = (e.best_fitness * 100).toFixed(1);
-    const avgPct  = (e.avg_fitness  * 100).toFixed(1);
-    const barWidth = Math.round(e.best_fitness * 100);
-    return `
-      <tr>
-        <td>${e.generation}</td>
-        <td><span class="island-dot" style="background-color:${color}"></span>${escapeHtml(e.island)}</td>
-        <td>${e.count}</td>
-        <td>${e.promoted}</td>
-        <td>
-          <div class="fitness-bar-cell">
-            <span style="min-width:42px; color: var(--text-primary)">${bestPct}%</span>
-            <div class="fitness-bar-bg">
-              <div class="fitness-bar-fill" style="width:${barWidth}%; background-color:${color}"></div>
-            </div>
-          </div>
-        </td>
-        <td>${avgPct}%</td>
-        <td style="color: var(--text-muted); font-size: 0.75rem;">${formatTimestamp(e.evaluated_at)}</td>
-      </tr>
-    `;
-  });
+  // Show first batch immediately, paginate the rest
+  const initial = log.slice(0, GEN_LOG_BATCH);
+  const remaining = log.slice(GEN_LOG_BATCH);
 
   container.innerHTML = `
     <table class="gen-log-table">
@@ -976,10 +1000,63 @@ function renderGenerationLog(container: HTMLElement, log: GenerationEntry[]): vo
           <th>Timestamp</th>
         </tr>
       </thead>
-      <tbody>
-        ${rows.join('')}
+      <tbody id="gen-log-tbody">
+        ${initial.map(renderGenRow).join('')}
       </tbody>
     </table>
+  `;
+
+  if (remaining.length > 0) {
+    let offset = 0;
+    const total = remaining.length;
+    const btn = document.createElement('button');
+    btn.className = 'btn secondary show-more-btn';
+    btn.type = 'button';
+
+    function updateBtn(): void {
+      const left = total - offset;
+      if (left <= 0) { btn.remove(); return; }
+      const next = Math.min(GEN_LOG_BATCH, left);
+      btn.textContent = `Show ${next} more generations (${left} remaining)`;
+      btn.setAttribute('aria-label', `Show ${next} more generations, ${left} remaining`);
+    }
+
+    btn.addEventListener('click', () => {
+      const batch = remaining.slice(offset, offset + GEN_LOG_BATCH);
+      const tbody = document.getElementById('gen-log-tbody');
+      if (!tbody) return;
+      tbody.insertAdjacentHTML('beforeend', batch.map(renderGenRow).join(''));
+      offset += batch.length;
+      updateBtn();
+    });
+
+    updateBtn();
+    container.appendChild(btn);
+  }
+}
+
+function renderGenRow(e: GenerationEntry): string {
+  const color = ISLAND_COLORS[e.island] ?? '#94a3b8';
+  const bestPct = (e.best_fitness * 100).toFixed(1);
+  const avgPct  = (e.avg_fitness  * 100).toFixed(1);
+  const barWidth = Math.round(e.best_fitness * 100);
+  return `
+    <tr>
+      <td>${e.generation}</td>
+      <td><span class="island-dot" style="background-color:${color}"></span>${escapeHtml(e.island)}</td>
+      <td>${e.count}</td>
+      <td>${e.promoted}</td>
+      <td>
+        <div class="fitness-bar-cell">
+          <span style="min-width:42px; color: var(--text-primary)">${bestPct}%</span>
+          <div class="fitness-bar-bg">
+            <div class="fitness-bar-fill" style="width:${barWidth}%; background-color:${color}"></div>
+          </div>
+        </div>
+      </td>
+      <td>${avgPct}%</td>
+      <td style="color: var(--text-muted); font-size: 0.75rem;">${formatTimestamp(e.evaluated_at)}</td>
+    </tr>
   `;
 }
 
