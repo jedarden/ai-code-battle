@@ -236,6 +236,134 @@ func TestHTTPBot_ValidateMoves(t *testing.T) {
 	}
 }
 
+func TestHTTPBot_MissingSignature(t *testing.T) {
+	// Server that returns valid moves but omits X-ACB-Signature header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := MoveResponse{Moves: []Move{
+			{Position: Position{Row: 5, Col: 5}, Direction: DirN},
+		}}
+		body, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		// Intentionally no X-ACB-Signature header
+		w.Write(body)
+	}))
+	defer server.Close()
+
+	auth := AuthConfig{
+		BotID:   "b_test",
+		Secret:  "test-secret",
+		MatchID: "m_test",
+	}
+	bot := NewHTTPBot(server.URL, auth)
+
+	state := &VisibleState{
+		MatchID: "m_test",
+		Turn:    1,
+		Config:  DefaultConfig(),
+		You: struct {
+			ID     int `json:"id"`
+			Energy int `json:"energy"`
+			Score  int `json:"score"`
+		}{ID: 0},
+		Bots: []VisibleBot{
+			{Position: Position{Row: 5, Col: 5}, Owner: 0},
+		},
+	}
+
+	_, err := bot.GetMoves(state)
+	if err == nil {
+		t.Fatal("expected error for missing signature, got nil")
+	}
+	if bot.failCount != 1 {
+		t.Errorf("failCount = %d, want 1", bot.failCount)
+	}
+}
+
+func TestHTTPBot_BadSignature(t *testing.T) {
+	// Server that returns moves with a wrong-key signature
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var state VisibleState
+		json.NewDecoder(r.Body).Decode(&state)
+
+		resp := MoveResponse{Moves: []Move{
+			{Position: Position{Row: 5, Col: 5}, Direction: DirN},
+		}}
+		body, _ := json.Marshal(resp)
+
+		// Sign with wrong secret
+		sig := SignResponse("wrong-secret", state.MatchID, state.Turn, body)
+		w.Header().Set("X-ACB-Signature", sig)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body)
+	}))
+	defer server.Close()
+
+	auth := AuthConfig{
+		BotID:   "b_test",
+		Secret:  "test-secret",
+		MatchID: "m_test",
+	}
+	bot := NewHTTPBot(server.URL, auth)
+
+	state := &VisibleState{
+		MatchID: "m_test",
+		Turn:    1,
+		Config:  DefaultConfig(),
+		You: struct {
+			ID     int `json:"id"`
+			Energy int `json:"energy"`
+			Score  int `json:"score"`
+		}{ID: 0},
+		Bots: []VisibleBot{
+			{Position: Position{Row: 5, Col: 5}, Owner: 0},
+		},
+	}
+
+	_, err := bot.GetMoves(state)
+	if err == nil {
+		t.Fatal("expected error for bad signature, got nil")
+	}
+	if bot.failCount != 1 {
+		t.Errorf("failCount = %d, want 1", bot.failCount)
+	}
+}
+
+func TestHTTPBot_BadSignatureCrashes(t *testing.T) {
+	// Verify that 10 consecutive bad-signature responses crashes the bot
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var state VisibleState
+		json.NewDecoder(r.Body).Decode(&state)
+
+		resp := MoveResponse{Moves: []Move{}}
+		body, _ := json.Marshal(resp)
+		sig := SignResponse("wrong-secret", state.MatchID, state.Turn, body)
+		w.Header().Set("X-ACB-Signature", sig)
+		w.Write(body)
+	}))
+	defer server.Close()
+
+	auth := AuthConfig{
+		BotID:   "b_test",
+		Secret:  "test-secret",
+		MatchID: "m_test",
+	}
+	bot := NewHTTPBot(server.URL, auth)
+
+	state := &VisibleState{
+		MatchID: "m_test",
+		Turn:    1,
+		Config:  DefaultConfig(),
+	}
+
+	for i := 0; i < 10; i++ {
+		bot.GetMoves(state)
+	}
+
+	if !bot.IsCrashed() {
+		t.Error("bot should be crashed after 10 consecutive bad-signature failures")
+	}
+}
+
 func TestHTTPBot_Health(t *testing.T) {
 	// Create a server with health endpoint
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

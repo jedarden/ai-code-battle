@@ -149,16 +149,15 @@ func (b *HTTPBot) GetMoves(state *VisibleState) ([]Move, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// Verify response signature
+	// Verify response signature (strict — per §4.4)
 	responseSig := resp.Header.Get("X-ACB-Signature")
 	if responseSig == "" {
-		// Missing signature - accept anyway for now (will be strict in production)
-		// In production, this would be: b.recordFailure(); return nil, fmt.Errorf("missing response signature")
-	} else {
-		if err := VerifyResponse(b.auth.Secret, b.matchID, b.turn, responseSig, responseBody); err != nil {
-			b.recordFailure()
-			return nil, fmt.Errorf("response signature verification failed: %w", err)
-		}
+		b.recordFailure()
+		return nil, fmt.Errorf("missing response signature")
+	}
+	if err := VerifyResponse(b.auth.Secret, b.matchID, b.turn, responseSig, responseBody); err != nil {
+		b.recordFailure()
+		return nil, fmt.Errorf("response signature verification failed: %w", err)
 	}
 
 	// Parse response
