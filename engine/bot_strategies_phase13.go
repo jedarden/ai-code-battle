@@ -21,7 +21,8 @@ func (b *DefenderBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -105,7 +106,8 @@ func (b *ScoutBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -143,7 +145,7 @@ func (b *ScoutBot) GetMoves(state *VisibleState) ([]Move, error) {
 			}
 		}
 
-		dir := b.bestExploreDir(bot.Position, config, claimed, wallSet)
+		dir := b.bestExploreDir(bot.Position, config, state.Turn, claimed, wallSet)
 		if dir == DirNone {
 			dir = randDirection(b.rng)
 		}
@@ -160,7 +162,7 @@ func (b *ScoutBot) GetMoves(state *VisibleState) ([]Move, error) {
 	return moves, nil
 }
 
-func (b *ScoutBot) bestExploreDir(pos Position, config Config, claimed, wallSet map[Position]bool) Direction {
+func (b *ScoutBot) bestExploreDir(pos Position, config Config, turn int, claimed, wallSet map[Position]bool) Direction {
 	bestDir := DirNone
 	bestScore := -1
 
@@ -208,7 +210,8 @@ func (b *FarmerBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -283,7 +286,8 @@ func (b *PacifistBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -354,7 +358,8 @@ func (b *PhalanxBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -432,7 +437,8 @@ func (b *RaiderBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -525,7 +531,8 @@ func (b *NomadBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -612,7 +619,8 @@ func (b *OpportunistBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -734,7 +742,8 @@ func (b *AssassinBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, _ := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots := part.friendly
 	if len(myBots) == 0 {
 		return nil, nil
 	}
@@ -800,7 +809,8 @@ func (b *KamikazeBot) GetMoves(state *VisibleState) ([]Move, error) {
 	myID := state.You.ID
 	config := state.Config
 
-	myBots, enemyBots := partitionBots(state.Bots, myID)
+	part := partitionBots(state.Bots, myID)
+	myBots, enemyBots := part.friendly, part.enemy
 	if len(myBots) == 0 {
 		return nil, nil
 	}

@@ -60,6 +60,7 @@ type KeyMatch struct {
 	TurnCount      int    `json:"turn_count"`
 	Won            bool   `json:"won"`
 	EndCondition   string `json:"end_condition,omitempty"`
+	CriticalMoment string `json:"critical_moment,omitempty"` // §13.2 turning point summary
 }
 
 // HeadToHeadRecord represents the head-to-head record between two bots
@@ -466,6 +467,55 @@ func detectStoryArcs(data *IndexData) []StoryArc {
 	// Comeback: Bot recovered >=150 rating after decline
 	arcs = append(arcs, detectComebackArcs(data)...)
 
+	// Enrich arcs with community tactical hints where available.
+	arcs = attachCommunityHints(arcs, data)
+
+	return arcs
+}
+
+// attachCommunityHints enriches detected story arcs with the highest-upvote
+// community tactical hint associated with the primary bot in each arc.
+// Feedback is expected to be sorted by upvotes DESC (as fetched from the DB).
+func attachCommunityHints(arcs []StoryArc, data *IndexData) []StoryArc {
+	if len(data.Feedback) == 0 {
+		return arcs
+	}
+
+	// Build matchID → participant botIDs map.
+	matchBots := make(map[string][]string, len(data.Matches))
+	for _, m := range data.Matches {
+		ids := make([]string, 0, len(m.Participants))
+		for _, p := range m.Participants {
+			ids = append(ids, p.BotID)
+		}
+		matchBots[m.ID] = ids
+	}
+
+	// Assign the first (highest-upvote) eligible hint per bot.
+	const minHintUpvotes = 3
+	botHint := make(map[string]string)
+	for _, f := range data.Feedback {
+		if f.Type != "idea" && f.Type != "mistake" {
+			continue
+		}
+		if f.Upvotes < minHintUpvotes {
+			break // Sorted DESC; no higher-upvote entries remain.
+		}
+		for _, botID := range matchBots[f.MatchID] {
+			if _, seen := botHint[botID]; !seen {
+				botHint[botID] = f.Body
+			}
+		}
+	}
+
+	for i := range arcs {
+		if arcs[i].CommunityHint != "" {
+			continue
+		}
+		if hint, ok := botHint[arcs[i].BotID]; ok {
+			arcs[i].CommunityHint = hint
+		}
+	}
 	return arcs
 }
 
@@ -575,7 +625,7 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 
 		for i, p1 := range m.Participants {
 			for _, p2 := range m.Participants[i+1:] {
-				key := fmt.Sprintf("%s-%s", minStr(p1.BotID, p2.BotID), maxStr(p1.BotID, p2.BotID))
+				key := fmt.Sprintf("%s|%s", minStr(p1.BotID, p2.BotID), maxStr(p1.BotID, p2.BotID))
 				pairMatches[key] = append(pairMatches[key], m)
 			}
 		}
@@ -587,8 +637,8 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 			continue
 		}
 
-		// Parse bot IDs from key
-		parts := strings.Split(key, "-")
+		// Parse bot IDs from key (separator is "|" to avoid conflicts with UUID hyphens).
+		parts := strings.SplitN(key, "|", 2)
 		if len(parts) != 2 {
 			continue
 		}
