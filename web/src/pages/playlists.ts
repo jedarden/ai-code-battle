@@ -440,7 +440,8 @@ function renderPlaylistMatchHtml(m: PlaylistMatch): string {
     <div class="playlist-match" data-match-id="${m.match_id}">
       <button class="playlist-match-toggle" type="button"
               aria-label="Expand details for ${escapeHtml(m.title || `Match ${m.order + 1}`)}"
-              aria-expanded="false">
+              aria-expanded="false"
+              aria-controls="playlist-match-details-${m.match_id}">
         <span class="match-order">${m.order + 1}</span>
         <div class="match-info">
           <div class="match-title">${escapeHtml(m.title || `Match ${m.order + 1}`)}</div>
@@ -449,7 +450,7 @@ function renderPlaylistMatchHtml(m: PlaylistMatch): string {
         </div>
         <span class="match-expand-icon" aria-hidden="true">▸</span>
       </button>
-      <div class="playlist-match-details">
+      <div class="playlist-match-details" id="playlist-match-details-${m.match_id}">
         <div class="playlist-match-actions">
           <button class="watch-btn" data-match-id="${m.match_id}">Watch</button>
           <button class="embed-btn" data-match-id="${m.match_id}">Embed</button>

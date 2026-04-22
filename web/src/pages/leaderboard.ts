@@ -135,7 +135,7 @@ function renderDesktopRow(entry: LeaderboardEntry, _index: number): string {
   const statusClass = entry.health_status === 'healthy' ? 'status-healthy' :
                       entry.health_status === 'unhealthy' ? 'status-unhealthy' : 'status-unknown';
   return `
-    <div class="lb-row ${rankClass}" data-bot-id="${encodeURIComponent(entry.bot_id)}">
+    <div class="lb-row ${rankClass}" data-bot-id="${encodeURIComponent(entry.bot_id)}" tabindex="0" role="button" aria-expanded="false">
       <span class="lb-rank">${entry.rank}</span>
       <span class="lb-name">
         <a href="#/bot/${encodeURIComponent(entry.bot_id)}">${escapeHtml(entry.name)}</a>
@@ -173,11 +173,24 @@ function initDesktopExpandToggle(container: HTMLElement): void {
     const row = (e.target as HTMLElement).closest('.lb-row') as HTMLElement | null;
     if (!row) return;
     if ((e.target as HTMLElement).closest('a, button')) return;
-    const expanded = row.classList.toggle('row-expanded');
-    row.setAttribute('aria-expanded', String(expanded));
-    const icon = row.querySelector('.lb-expand-icon');
-    if (icon) icon.textContent = expanded ? '▾' : '▸';
+    toggleRowExpand(row);
   });
+
+  // Keyboard support for static table rows
+  container.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = (e.target as HTMLElement).closest('.lb-row') as HTMLElement | null;
+    if (!row) return;
+    e.preventDefault();
+    toggleRowExpand(row);
+  });
+}
+
+function toggleRowExpand(row: HTMLElement): void {
+  const expanded = row.classList.toggle('row-expanded');
+  row.setAttribute('aria-expanded', String(expanded));
+  const icon = row.querySelector('.lb-expand-icon');
+  if (icon) icon.textContent = expanded ? '▾' : '▸';
 }
 
 // ─── Mobile rendering ───────────────────────────────────────────────────────────

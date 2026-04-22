@@ -6,6 +6,7 @@ import { fetchBotDirectory, type BotDirectoryEntry } from '../api-types';
 import { initLazySections, lazySection } from '../lib/lazy-section';
 
 const INITIAL_COUNT = 30;
+const BATCH_SIZE = 30;
 
 export async function renderBotsPage(): Promise<void> {
   const app = document.getElementById('app');
@@ -65,21 +66,82 @@ function renderBotsList(
     return;
   }
 
-  // Use lazySection for below-the-fold bot cards
-  const remainingHtml = remaining.map((bot, i) => renderBotCard(bot, INITIAL_COUNT + i + 1)).join('');
+  // For remaining bots, wrap in a lazy section that shows a "Show more" button
+  // instead of rendering everything at once when revealed
   container.innerHTML = `
     <p class="updated-at">Last updated: ${formatTimestamp(updatedAt)}</p>
-    <div class="bots-grid">
-      ${initialHtml}
-      ${lazySection(
-        'bots-remaining',
-        remainingHtml,
-        { placeholder: '<div class="lazy-placeholder" style="min-height:200px"></div>' }
-      )}
-    </div>
+    <div class="bots-grid" id="bots-grid">${initialHtml}</div>
+    <div id="bots-remaining-anchor"></div>
   `;
 
-  initLazySections(container);
+  const grid = document.getElementById('bots-grid')!;
+  const anchor = document.getElementById('bots-remaining-anchor')!;
+
+  // Use IntersectionObserver to trigger "Show more" batching when user scrolls near bottom
+  let offset = 0;
+  const total = remaining.length;
+
+  function updateShowMoreBtn(btn: HTMLButtonElement): void {
+    const left = total - offset;
+    if (left <= 0) { btn.remove(); return; }
+    const next = Math.min(BATCH_SIZE, left);
+    btn.textContent = `Show ${next} more bots (${left} remaining)`;
+    btn.setAttribute('aria-label', `Show ${next} more bots, ${left} remaining`);
+  }
+
+  if (total > BATCH_SIZE) {
+    // Lazy-load with IntersectionObserver + "Show more" button
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        observer.disconnect();
+
+        // Render first batch of remaining
+        appendBatch();
+      }
+    }, { rootMargin: '300px' });
+    observer.observe(anchor);
+
+    // Cleanup on navigation
+    window.addEventListener('hashchange', () => observer.disconnect(), { once: true });
+  } else {
+    // Small remainder — render in a lazy section
+    const remainingHtml = remaining.map((bot, i) => renderBotCard(bot, INITIAL_COUNT + i + 1)).join('');
+    anchor.innerHTML = lazySection(
+      'bots-remaining',
+      remainingHtml,
+      { placeholder: '<div class="lazy-placeholder" style="min-height:200px"></div>' }
+    );
+    initLazySections(anchor);
+  }
+
+  function appendBatch(): void {
+    const batch = remaining.slice(offset, offset + BATCH_SIZE);
+    if (batch.length === 0) return;
+
+    const html = batch.map((bot, i) => renderBotCard(bot, INITIAL_COUNT + offset + i + 1)).join('');
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    while (temp.firstChild) {
+      grid.appendChild(temp.firstChild);
+    }
+
+    offset += batch.length;
+
+    if (offset < total) {
+      const btn = document.createElement('button');
+      btn.className = 'btn secondary show-more-btn';
+      btn.type = 'button';
+      updateShowMoreBtn(btn);
+      btn.addEventListener('click', () => {
+        btn.remove();
+        appendBatch();
+      });
+      grid.after(btn);
+    } else {
+      anchor.remove();
+    }
+  }
 }
 
 function renderBotCard(bot: BotDirectoryEntry, rank: number): string {

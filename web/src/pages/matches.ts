@@ -293,7 +293,7 @@ function renderMatchCard(match: MatchSummary): string {
 
   return `
     <div class="match-card" data-match-id="${escapeHtml(match.id)}">
-      <button class="match-card-toggle" type="button" aria-label="Expand match details" aria-expanded="false">
+      <button class="match-card-toggle" type="button" aria-label="Expand match details" aria-expanded="false" aria-controls="match-details-${escapeHtml(match.id)}">
         <div class="match-header">
           <span class="match-id">${escapeHtml(match.id.slice(0, 8))}</span>
           <span class="match-time">${completedAt}</span>
@@ -311,7 +311,7 @@ function renderMatchCard(match: MatchSummary): string {
           `).join('')}
         </div>
       </button>
-      <div class="match-card-details">
+      <div class="match-card-details" id="match-details-${escapeHtml(match.id)}">
         <div class="match-footer">
           <span class="match-turns">${match.turns ?? '-'} turns</span>
           <span class="match-reason">${match.end_reason ?? '-'}</span>
@@ -333,7 +333,6 @@ function initMatchCardToggles(root: HTMLElement): void {
       const details = card.querySelector<HTMLElement>('.match-card-details');
       if (!details) return;
       const expanded = details.classList.toggle('expanded');
-      card.setAttribute('aria-expanded', String(expanded));
       toggle.setAttribute('aria-expanded', String(expanded));
       const icon = card.querySelector('.match-expand-icon');
       if (icon) icon.textContent = expanded ? '▾' : '▸';
