@@ -284,7 +284,9 @@ func selectOpponents(rng *rand.Rand, seedMu float64, pool []candidateBot, count 
 }
 
 // bestCandidate picks the best opponent from a pool by secondary criteria:
-// oldest last-pairing (zero = never = most preferred), then fewest 24h games.
+//  1. Never-paired (zero) bots preferred over previously-paired bots
+//  2. Among paired bots: oldest last-pairing is most preferred
+//  3. Ties broken by fewest 24h games
 func bestCandidate(pool []candidateBot) candidateBot {
 	best := pool[0]
 	for _, c := range pool[1:] {
@@ -295,8 +297,10 @@ func bestCandidate(pool []candidateBot) candidateBot {
 			best = c
 		case !cz && !bz && c.LastPairedAt.Before(best.LastPairedAt):
 			best = c
-		case bz == cz && c.Games24h < best.Games24h:
-			best = c
+		case (cz && bz) || (!cz && !bz && c.LastPairedAt.Equal(best.LastPairedAt)):
+			if c.Games24h < best.Games24h {
+				best = c
+			}
 		}
 	}
 	return best
