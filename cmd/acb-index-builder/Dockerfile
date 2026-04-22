@@ -30,6 +30,14 @@ FROM node:22-alpine
 # Install wrangler CLI for Cloudflare Pages deployment
 RUN npm install -g wrangler@3
 
+# Install crane for pulling site build images from container registry
+ARG CRANE_VERSION=v0.20.2
+RUN apk add --no-cache curl && \
+    curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+    | tar -xz -C /usr/local/bin crane && \
+    chmod +x /usr/local/bin/crane && \
+    apk del curl
+
 # Install ca-certificates for HTTPS calls
 RUN apk add --no-cache ca-certificates tzdata
 

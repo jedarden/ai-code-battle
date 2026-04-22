@@ -58,6 +58,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize crane auth for pulling site build images from the registry
+	if err := initCraneAuth(cfg); err != nil {
+		slog.Warn("Failed to initialize crane auth, site builds will use baked-in assets", "error", err)
+	}
+
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
@@ -143,8 +148,9 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		}
 	}
 
-	// Copy web frontend assets into output directory
-	const webDistDir = "/app/web/dist"
+	// Sync site build from registry (if configured) and copy into output directory.
+	// Falls back to baked-in assets when registry is unreachable.
+	webDistDir := syncSiteBuild(ctx, cfg)
 	if _, err := os.Stat(webDistDir); err == nil {
 		if err := copyWebAssets(cfg, webDistDir); err != nil {
 			slog.Error("Failed to copy web assets", "error", err)
