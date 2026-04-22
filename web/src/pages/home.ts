@@ -147,7 +147,7 @@ export async function renderHomePage(): Promise<void> {
     ? `${featuredReplay!.participants.map((p) => `<strong>${esc(p.name)}</strong>`).join(' vs ')}${featuredReplay!.winner_id ? ` — Winner: <strong>${esc(featuredReplay!.participants.find((p) => p.bot_id === featuredReplay!.winner_id)?.name || 'Unknown')}</strong>` : ''}`
     : 'Demo Replay — Watch a sample battle';
   const replayLink = hasLiveReplay
-    ? `#/watch/replay?url=/replays/${featuredReplay!.id}.json`
+    ? `#/watch/replay?url=/replays/${featuredReplay!.id}.json.gz`
     : '#/watch/replays';
 
   // Build lazy-loaded content for below-the-fold sections

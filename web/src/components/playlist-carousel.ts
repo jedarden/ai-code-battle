@@ -370,8 +370,8 @@ export class PlaylistCarousel {
 
   private async fetchReplay(matchId: string): Promise<Replay> {
     const urls = [
-      `${R2_BASE}/replays/${matchId}.json`,
-      `${B2_FALLBACK}/replays/${matchId}.json`,
+      `${R2_BASE}/replays/${matchId}.json.gz`,
+      `${B2_FALLBACK}/replays/${matchId}.json.gz`,
     ];
     for (const url of urls) {
       try {
@@ -379,7 +379,7 @@ export class PlaylistCarousel {
         if (resp.ok) return await resp.json();
       } catch { /* try next */ }
     }
-    const resp = await fetch(`/replays/${matchId}.json`);
+    const resp = await fetch(`/replays/${matchId}.json.gz`);
     if (!resp.ok) throw new Error(`Failed to fetch replay ${matchId}`);
     return resp.json();
   }
@@ -431,7 +431,7 @@ export class PlaylistCarousel {
       btn.addEventListener('click', () => {
         const id = (btn as HTMLElement).dataset.matchId!;
         this.destroy();
-        window.location.hash = `/watch/replay?url=/replays/${id}.json`;
+        window.location.hash = `/watch/replay?url=/replays/${id}.json.gz`;
       });
     }
   }

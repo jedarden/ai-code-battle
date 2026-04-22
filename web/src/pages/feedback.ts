@@ -401,8 +401,7 @@ function initFeedback(): void {
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function replayUrlForMatch(m: MatchSummary): string {
-  // Replays are stored in R2 at /replays/{match_id}.json
-  return `/replays/${m.id}.json`;
+  return `/replays/${m.id}.json.gz`;
 }
 
 function formatDate(s: string | null): string {

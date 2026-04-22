@@ -940,6 +940,10 @@ code {
   .mobile-card-arrow {
     transition: none;
   }
+
+  .leaderboard-mobile-details {
+    transition: none;
+  }
 }
 
 /* ─── Mobile responsive for progressive disclosure ──────────────────────────── */

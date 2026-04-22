@@ -141,14 +141,18 @@
   }
 
   .leaderboard-mobile-details {
-    display: none;
-    padding-top: var(--space-sm);
-    margin-top: var(--space-sm);
-    border-top: 1px solid var(--border);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 250ms ease-out, padding 250ms ease-out;
+    padding: 0;
+    border-top: none;
   }
 
   .leaderboard-mobile-details.expanded {
-    display: block;
+    max-height: 300px;
+    padding-top: var(--space-sm);
+    margin-top: var(--space-sm);
+    border-top: 1px solid var(--border);
   }
 
   .leaderboard-mobile-stat {

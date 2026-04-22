@@ -1,6 +1,8 @@
 // §16.15 Virtual list — renders only visible rows for large datasets.
-// Keeps the DOM small even with 1000+ entries. Each row has a fixed height
+// Keeps the DOM small even with 1000+ entries. Each row has a base height
 // and only rows in the viewport (plus a buffer) are materialised.
+// Expanded rows are tracked with their actual measured height so spacer
+// calculations remain correct.
 
 export interface VirtualListOptions<T> {
   items: T[];
@@ -21,6 +23,7 @@ interface VirtualListState {
   visibleStart: number;
   visibleEnd: number;
   expandedIndex: number | null;
+  expandedHeight: number;
   showMoreCount: number;
 }
 
@@ -44,6 +47,7 @@ export class VirtualList<T> {
       visibleStart: 0,
       visibleEnd: Math.min(initial, opts.items.length),
       expandedIndex: null,
+      expandedHeight: 0,
       showMoreCount: initial,
     };
   }
@@ -119,13 +123,50 @@ export class VirtualList<T> {
     });
   }
 
-  private computeWindow(): void {
+  /** Compute the height of a row at the given index, accounting for expansion. */
+  private rowHeightAt(idx: number): number {
+    if (this.state.expandedIndex === idx && this.state.expandedHeight > 0) {
+      return this.opts.rowHeight + this.state.expandedHeight;
+    }
+    return this.opts.rowHeight;
+  }
+
+  /** Compute the total height of rows from index 0 up to (but not including) `end`. */
+  private totalHeight(end: number): number {
     const { rowHeight } = this.opts;
+    if (this.state.expandedIndex === null || this.state.expandedHeight === 0) {
+      // Fast path: no expanded row, all same height
+      return end * rowHeight;
+    }
+    let h = 0;
+    for (let i = 0; i < end; i++) {
+      h += this.rowHeightAt(i);
+    }
+    return h;
+  }
+
+  /** Find the row index that contains the given scroll offset. */
+  private indexAtOffset(offset: number): number {
+    const { rowHeight, items } = this.opts;
+    const maxIdx = Math.min(this.state.showMoreCount, items.length);
+    if (this.state.expandedIndex === null || this.state.expandedHeight === 0) {
+      // Fast path: uniform row heights
+      return Math.floor(offset / rowHeight);
+    }
+    let acc = 0;
+    for (let i = 0; i < maxIdx; i++) {
+      acc += this.rowHeightAt(i);
+      if (acc > offset) return i;
+    }
+    return maxIdx;
+  }
+
+  private computeWindow(): void {
     const buffer = this.opts.buffer ?? 5;
     const maxIdx = this.state.showMoreCount;
 
-    const rawStart = Math.floor(this.state.scrollTop / rowHeight) - buffer;
-    const rawEnd = Math.ceil((this.state.scrollTop + this.state.viewportHeight) / rowHeight) + buffer;
+    const rawStart = this.indexAtOffset(this.state.scrollTop) - buffer;
+    const rawEnd = this.indexAtOffset(this.state.scrollTop + this.state.viewportHeight) + buffer;
 
     this.state.visibleStart = Math.max(0, rawStart);
     this.state.visibleEnd = Math.min(maxIdx, rawEnd);
@@ -133,7 +174,7 @@ export class VirtualList<T> {
 
   private render(): void {
     if (!this.rowContainer || !this.spacerAbove || !this.spacerBelow) return;
-    const { items, rowHeight, renderRow, renderExpanded } = this.opts;
+    const { items, renderRow, renderExpanded } = this.opts;
     const { visibleStart, visibleEnd, expandedIndex, showMoreCount } = this.state;
 
     const frags: string[] = [];
@@ -150,15 +191,16 @@ export class VirtualList<T> {
     }
 
     this.rowContainer.innerHTML = frags.join('');
-    this.spacerAbove.style.height = `${visibleStart * rowHeight}px`;
-    const belowStart = visibleEnd;
-    const belowCount = showMoreCount - belowStart;
-    this.spacerBelow.style.height = `${Math.max(0, belowCount) * rowHeight}px`;
 
-    // Set total scrollable height hint
-    if (this.scrollEl) {
-      this.scrollEl.style.setProperty('--vl-total-height', `${showMoreCount * rowHeight}px`);
+    // Spacer above = total height of all rows before visibleStart
+    this.spacerAbove.style.height = `${this.totalHeight(visibleStart)}px`;
+
+    // Spacer below = total height of all rows after visibleEnd up to showMoreCount
+    let belowHeight = 0;
+    for (let i = visibleEnd; i < showMoreCount; i++) {
+      belowHeight += this.rowHeightAt(i);
     }
+    this.spacerBelow.style.height = `${Math.max(0, belowHeight)}px`;
 
     // Wire expand toggles
     this.rowContainer.querySelectorAll<HTMLElement>('.virtual-list-row').forEach(row => {
@@ -168,10 +210,38 @@ export class VirtualList<T> {
         this.toggleExpand(idx);
       });
     });
+
+    // Measure expanded row height after DOM update
+    if (expandedIndex !== null) {
+      const expandedRow = this.rowContainer.querySelector(`[data-idx="${expandedIndex}"]`);
+      const expandedEl = expandedRow?.querySelector<HTMLElement>('.virtual-list-expanded');
+      if (expandedEl) {
+        const measured = expandedEl.offsetHeight;
+        if (measured !== this.state.expandedHeight) {
+          this.state.expandedHeight = measured;
+          // Recalculate spacers with the new height
+          this.spacerAbove.style.height = `${this.totalHeight(visibleStart)}px`;
+          let belowHeight2 = 0;
+          for (let i = visibleEnd; i < showMoreCount; i++) {
+            belowHeight2 += this.rowHeightAt(i);
+          }
+          this.spacerBelow.style.height = `${Math.max(0, belowHeight2)}px`;
+        }
+      }
+    }
   }
 
   private toggleExpand(idx: number): void {
-    this.state.expandedIndex = this.state.expandedIndex === idx ? null : idx;
+    const prevExpanded = this.state.expandedIndex;
+    if (prevExpanded === idx) {
+      // Collapse current
+      this.state.expandedIndex = null;
+      this.state.expandedHeight = 0;
+    } else {
+      // Expand new (height measured after render)
+      this.state.expandedIndex = idx;
+      this.state.expandedHeight = 0;
+    }
     this.render();
   }
 

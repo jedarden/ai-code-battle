@@ -61,6 +61,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <canvas id="replay-canvas" style="touch-action:none"></canvas>
             <div id="no-replay" class="no-replay-message">Load a replay file to view</div>
             <button id="theater-btn" class="theater-btn" aria-label="Toggle theater mode" title="Theater mode (F)" style="position:absolute;top:8px;right:8px">&#x26F6;</button>
+            <div id="follow-indicator" class="follow-indicator" style="display:none;position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.75);color:#e5e7eb;font:12px monospace;padding:4px 10px;border-radius:4px;pointer-events:auto;z-index:10;cursor:pointer" role="status" aria-live="polite"></div>
           </div>
 
           <!-- Mobile compact controls bar — CSS hides on tablet+ -->
@@ -1230,6 +1231,30 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     playBtn.textContent = playing ? 'Pause' : 'Play';
     mobilePlayBtn.textContent = playing ? '⏸' : '▶';
   };
+  // Follow camera indicator (§16.12)
+  const followIndicator = document.getElementById('follow-indicator') as HTMLDivElement;
+  viewer.onFollowChange = (player: number | null) => {
+    const replay = viewer.getReplay() as Replay | null;
+    if (player !== null && replay && player < replay.players.length) {
+      const name = replay.players[player].name;
+      followIndicator.innerHTML = `Following: ${name} <span style="color:#94a3b8;margin-left:6px;cursor:pointer" title="Exit follow mode (Esc)">[×]</span>`;
+      followIndicator.style.display = 'block';
+      // Auto-pair fog of war with followed player
+      fogSelect.value = String(player);
+      viewer.setFogOfWar(player);
+    } else {
+      followIndicator.style.display = 'none';
+      followIndicator.innerHTML = '';
+      // Clear auto-paired fog of war
+      fogSelect.value = '';
+      viewer.setFogOfWar(null);
+    }
+  };
+  followIndicator.addEventListener('click', () => {
+    // Click the × or the whole bar to exit follow
+    viewer.setFollowPlayer(null);
+  });
+
   viewer.onCommentaryChange = (entry: { turn: number; text: string; type: string } | null) => {
     if (!entry || !commentaryEnabled) {
       commentaryText.textContent = '';

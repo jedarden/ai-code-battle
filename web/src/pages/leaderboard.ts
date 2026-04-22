@@ -239,19 +239,20 @@ function renderMobileCard(entry: LeaderboardEntry): string {
 }
 
 function initMobileCardToggles(container: HTMLElement): void {
-  container.querySelectorAll<HTMLElement>('.leaderboard-mobile-card').forEach(card => {
-    const toggle = card.querySelector<HTMLButtonElement>('.mobile-card-toggle');
+  // Use event delegation so toggles work even when cards are inside lazy sections
+  container.addEventListener('click', (e) => {
+    const toggle = (e.target as HTMLElement).closest<HTMLButtonElement>('.mobile-card-toggle');
     if (!toggle) return;
-    toggle.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('a')) return;
-      const details = card.querySelector<HTMLElement>('.leaderboard-mobile-details');
-      if (!details) return;
-      const expanded = details.classList.toggle('expanded');
-      card.setAttribute('aria-expanded', String(expanded));
-      const arrow = card.querySelector('.mobile-card-arrow');
-      if (arrow) arrow.textContent = expanded ? '▾' : '▸';
-      toggle.setAttribute('aria-expanded', String(expanded));
-    });
+    if ((e.target as HTMLElement).closest('a')) return;
+    const card = toggle.closest<HTMLElement>('.leaderboard-mobile-card');
+    if (!card) return;
+    const details = card.querySelector<HTMLElement>('.leaderboard-mobile-details');
+    if (!details) return;
+    const expanded = details.classList.toggle('expanded');
+    card.setAttribute('aria-expanded', String(expanded));
+    const arrow = card.querySelector('.mobile-card-arrow');
+    if (arrow) arrow.textContent = expanded ? '▾' : '▸';
+    toggle.setAttribute('aria-expanded', String(expanded));
   });
 }
 
@@ -277,8 +278,6 @@ function addMobileShowMore(
     while (temp.firstChild) {
       container.appendChild(temp.firstChild);
     }
-
-    initMobileCardToggles(container);
 
     const newCount = end;
     if (newCount >= allEntries.length) {
