@@ -82,6 +82,10 @@ type RunConfig struct {
 
 	// Languages to evolve (in priority order)
 	Languages []string
+
+	// PagesBaseURL is the Cloudflare Pages base URL for reading static indexes
+	// such as community_hints.json. Empty disables community hint loading.
+	PagesBaseURL string
 }
 
 // DefaultRunConfig returns production-ready defaults.

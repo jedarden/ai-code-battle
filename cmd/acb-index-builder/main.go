@@ -125,6 +125,45 @@ func main() {
 	}
 }
 
+// uploadMetaJSONToR2 uploads the generated static meta JSON files to R2 so
+// they are available at the R2 CDN URL in addition to the Pages deploy.
+func uploadMetaJSONToR2(ctx context.Context, cfg *Config, outputDir string, data *IndexData) error {
+	if cfg.R2AccessKey == "" || cfg.R2BucketName == "" {
+		return nil
+	}
+
+	static := []string{
+		"data/meta/archetypes.json",
+		"data/evolution/community_hints.json",
+	}
+
+	for _, rel := range static {
+		localPath := fmt.Sprintf("%s/%s", outputDir, rel)
+		if err := uploadFileToR2(ctx, cfg, localPath, rel); err != nil {
+			slog.Error("Failed to upload meta JSON to R2", "path", rel, "error", err)
+		}
+	}
+
+	// Upload per-match feedback files for matches that have annotations.
+	matchIDs := make(map[string]bool)
+	for _, f := range data.Feedback {
+		matchIDs[f.MatchID] = true
+	}
+	for matchID := range matchIDs {
+		rel := fmt.Sprintf("data/matches/%s/feedback.json", matchID)
+		localPath := fmt.Sprintf("%s/%s", outputDir, rel)
+		if err := uploadFileToR2(ctx, cfg, localPath, rel); err != nil {
+			slog.Error("Failed to upload match feedback to R2", "match_id", matchID, "error", err)
+		}
+	}
+
+	slog.Info("Uploaded meta JSON to R2",
+		"static_files", len(static),
+		"match_feedback_files", len(matchIDs),
+	)
+	return nil
+}
+
 // runBuildCycle executes one full index build cycle
 func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	// Create data directories

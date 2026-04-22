@@ -65,6 +65,16 @@ type MetaDescription struct {
 	IslandStats map[string]IslandStat
 }
 
+// CommunityHint is a high-upvote tactical observation from the replay viewer
+// (§13.6), consumed by the evolver to ground prompts in player feedback.
+type CommunityHint struct {
+	MatchID string
+	Turn    int
+	Type    string // "idea" or "mistake"
+	Body    string
+	Upvotes int
+}
+
 // Request bundles everything the prompt builder needs to produce a prompt.
 type Request struct {
 	// Parents are the programs selected as evolutionary parents.
@@ -73,6 +83,8 @@ type Request struct {
 	Replays []MatchSummary
 	// Meta describes the current competitive landscape.
 	Meta MetaDescription
+	// CommunityHints are high-upvote tactical insights from §13.6 feedback.
+	CommunityHints []CommunityHint
 	// Island is the island this candidate will compete on.
 	Island string
 	// TargetLang is the programming language for the evolved bot
@@ -93,6 +105,7 @@ func Assemble(r Request) string {
 	writeIslandContext(&sb, r.Island, r.Generation)
 	writeMetaSection(&sb, r.Meta)
 	writeReplaySection(&sb, r.Replays)
+	writeCommunityHintsSection(&sb, r.CommunityHints)
 	writeParentSection(&sb, r.Parents)
 	if r.TaskOverride != "" {
 		sb.WriteString("## Task\n")
@@ -102,6 +115,17 @@ func Assemble(r Request) string {
 	}
 
 	return sb.String()
+}
+
+func writeCommunityHintsSection(sb *strings.Builder, hints []CommunityHint) {
+	if len(hints) == 0 {
+		return
+	}
+	sb.WriteString("## Community Tactical Insights (from replay annotations)\n\n")
+	for _, h := range hints {
+		fmt.Fprintf(sb, "Replay %s, Turn %d (%d upvotes):\n", h.MatchID, h.Turn, h.Upvotes)
+		fmt.Fprintf(sb, "%q\n\n", h.Body)
+	}
 }
 
 func writeSystemContext(sb *strings.Builder, targetLang string) {

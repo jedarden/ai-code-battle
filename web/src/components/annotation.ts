@@ -53,23 +53,40 @@ export function loadLocalAnnotations(matchId?: string): Annotation[] {
 
 // ─── Fetch feedback from API ─────────────────────────────────────────────────
 
+type FeedbackAPIEntry = { feedback_id: string; match_id: string; turn: number; type: FeedbackType; body: string; author: string; upvotes: number; created_at: string };
+
+function mapFeedbackEntries(entries: FeedbackAPIEntry[]): Annotation[] {
+  return entries.map(f => ({
+    id: f.feedback_id,
+    match_id: f.match_id,
+    turn: f.turn,
+    type: f.type,
+    body: f.body,
+    author: f.author,
+    upvotes: f.upvotes,
+    created_at: f.created_at,
+  }));
+}
+
 export async function fetchFeedback(matchId: string): Promise<Annotation[]> {
+  // Try live API first
   try {
     const resp = await fetch(`${API_BASE}/feedback/${matchId}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.feedback && Array.isArray(data.feedback)) {
+        return mapFeedbackEntries(data.feedback as FeedbackAPIEntry[]);
+      }
+    }
+  } catch { /* fall through to static file */ }
+
+  // Fallback: load from pre-built static index (data/matches/{id}/feedback.json)
+  try {
+    const resp = await fetch(`/data/matches/${matchId}/feedback.json`);
     if (!resp.ok) return [];
     const data = await resp.json();
-    // API returns { match_id, feedback: FeedbackEntry[] } — map to Annotation
     if (!data.feedback || !Array.isArray(data.feedback)) return [];
-    return data.feedback.map((f: { feedback_id: string; match_id: string; turn: number; type: FeedbackType; body: string; author: string; upvotes: number; created_at: string }) => ({
-      id: f.feedback_id,
-      match_id: f.match_id,
-      turn: f.turn,
-      type: f.type,
-      body: f.body,
-      author: f.author,
-      upvotes: f.upvotes,
-      created_at: f.created_at,
-    }));
+    return mapFeedbackEntries(data.feedback as FeedbackAPIEntry[]);
   } catch {
     return [];
   }
