@@ -1,0 +1,19 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS builder
+
+WORKDIR /app
+COPY defender.csproj .
+RUN dotnet restore
+COPY Program.cs Grid.cs Strategy.cs .
+RUN dotnet publish -c Release -o /out
+
+FROM mcr.microsoft.com/dotnet/runtime:9.0-alpine
+
+WORKDIR /app
+COPY --from=builder /out .
+
+ENV BOT_PORT=8080
+ENV BOT_SECRET=""
+
+EXPOSE 8080
+
+CMD ["dotnet", "defender.dll"]
