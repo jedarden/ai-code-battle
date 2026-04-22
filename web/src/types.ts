@@ -13,6 +13,7 @@ export interface Config {
   attack_radius2: number;
   spawn_cost: number;
   energy_interval: number;
+  map_id?: string;
   season_id?: string;
   rules_version?: string;
 }
@@ -165,6 +166,12 @@ export interface EnrichedCommentary {
   generated_at: string;
   criteria: string[];
   entries: CommentaryEntry[];
+}
+
+// Screen reader transcript types (§15.3)
+export interface TranscriptEntry {
+  turn: number;
+  text: string;
 }
 
 // Series types

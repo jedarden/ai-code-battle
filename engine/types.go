@@ -143,6 +143,7 @@ type Config struct {
 	SpawnCost       int    `json:"spawn_cost"`        // energy cost to spawn a bot
 	EnergyInterval  int    `json:"energy_interval"`   // turns between energy spawns
 	CoresPerPlayer  int    `json:"cores_per_player"`  // starting cores per player
+	MapID           string `json:"map_id,omitempty"`
 	SeasonID        string `json:"season_id,omitempty"`
 	RulesVersion    string `json:"rules_version,omitempty"`
 }

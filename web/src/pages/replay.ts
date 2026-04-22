@@ -1,6 +1,6 @@
 // Standalone replay viewer page - lazy loaded from app.ts
 import type { Replay, GameEvent, DebugInfo, Position, ViewMode } from '../types';
-import { fetchCommentary } from '../api-types';
+import { fetchCommentary, submitMapVote, fetchMapVotes } from '../api-types';
 import {
   AnnotationOverlay,
   createAnnotationForm,
@@ -233,6 +233,41 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             </dl>
           </div>
 
+          <div class="panel" id="map-vote-panel" style="display:none">
+            <h2>Map</h2>
+            <dl class="match-info">
+              <dt>Dimensions</dt>
+              <dd id="map-info-dimensions">-</dd>
+              <dt>Wall Density</dt>
+              <dd id="map-info-wall-density">-</dd>
+              <dt>Energy Nodes</dt>
+              <dd id="map-info-energy-count">-</dd>
+            </dl>
+            <div class="map-vote-section" id="map-vote-section">
+              <span class="map-vote-label">Rate this map</span>
+              <div class="map-vote-controls">
+                <button class="map-vote-btn" id="map-vote-up" title="Upvote this map" disabled>&#128077;</button>
+                <span class="map-vote-count" id="map-vote-count">0</span>
+                <button class="map-vote-btn" id="map-vote-down" title="Downvote this map" disabled>&#128078;</button>
+              </div>
+              <div class="map-vote-status" id="map-vote-status"></div>
+            </div>
+          </div>
+
+          <!-- Transcript panel (§15.3) -->
+          <div class="panel transcript-panel" id="transcript-panel">
+            <div class="transcript-panel-header" id="transcript-panel-toggle-btn" role="button" tabindex="0"
+                 aria-expanded="false" aria-controls="transcript-panel-body">
+              <h2 style="margin:0">Transcript</h2>
+              <span id="transcript-panel-chevron" class="transcript-chevron" aria-hidden="true">▾</span>
+            </div>
+            <div id="transcript-panel-body" class="transcript-panel-body">
+              <div id="transcript-content" class="transcript-content">
+                <div class="no-transcript">Load a replay to view transcript</div>
+              </div>
+            </div>
+          </div>
+
           <div class="panel">
             <h2>Events This Turn</h2>
             <div class="event-log" id="event-log">
@@ -254,6 +289,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <kbd>1</kbd>-<kbd>6</kbd> Follow Bot
             <kbd>0</kbd>/<kbd>Esc</kbd> Exit Follow
             <kbd>F</kbd> Theater Mode
+            <kbd>R</kbd> Transcript
           </div>
         </div>
       </div>
@@ -338,6 +374,19 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .commentary-text.type-denouement { color: #94a3b8; font-style: italic; }
       .commentary-toggle { flex-shrink: 0; opacity: 0.6; transition: opacity 0.2s; }
       .commentary-toggle.active { opacity: 1; background-color: var(--accent); color: white; }
+      /* Map voting widget */
+      .map-vote-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--bg-tertiary); }
+      .map-vote-label { display: block; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+      .map-vote-controls { display: flex; align-items: center; gap: 12px; justify-content: center; }
+      .map-vote-btn { background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); font-size: 1.25rem; width: 44px; height: 44px; border-radius: 8px; cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; }
+      .map-vote-btn:hover:not(:disabled) { background: var(--accent); color: white; border-color: var(--accent); }
+      .map-vote-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+      .map-vote-btn.voted-up { background: #22c55e; color: white; border-color: #22c55e; opacity: 1; }
+      .map-vote-btn.voted-down { background: #ef4444; color: white; border-color: #ef4444; opacity: 1; }
+      .map-vote-count { font-size: 1.1rem; font-weight: 600; min-width: 32px; text-align: center; color: var(--text-primary); font-family: monospace; }
+      .map-vote-count.positive { color: #22c55e; }
+      .map-vote-count.negative { color: #ef4444; }
+      .map-vote-status { text-align: center; color: var(--text-muted); font-size: 0.7rem; margin-top: 6px; min-height: 1em; }
       @media (max-width: 900px) {
         .replay-layout { flex-direction: column; }
         .replay-sidebar { width: 100%; }
@@ -363,6 +412,22 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .debug-target-item { font-size: 0.75rem; font-family: monospace; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
       .debug-target-priority { opacity: 0.7; }
       .no-debug-data { color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
+      /* Transcript panel (§15.3) */
+      .transcript-panel { padding: 0; overflow: hidden; }
+      .transcript-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 15px; cursor: pointer; user-select: none; }
+      .transcript-panel-header:hover { background-color: var(--bg-tertiary); }
+      .transcript-panel-header h2 { font-size: 1rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .transcript-chevron { color: var(--text-muted); font-size: 1rem; transition: transform 0.2s; }
+      .transcript-panel.expanded .transcript-chevron { transform: rotate(180deg); }
+      .transcript-panel-body { display: none; padding: 0 15px 15px; }
+      .transcript-panel.expanded .transcript-panel-body { display: block; }
+      .transcript-content { max-height: 400px; overflow-y: auto; font-size: 0.8rem; line-height: 1.6; }
+      .transcript-entry { padding: 8px 0; border-bottom: 1px solid var(--bg-tertiary); }
+      .transcript-entry:last-child { border-bottom: none; }
+      .transcript-entry.turn-current { background-color: var(--accent); color: white; padding: 8px; border-radius: 4px; margin: 4px 0; }
+      .transcript-turn-number { font-weight: 600; color: var(--text-muted); margin-right: 8px; }
+      .transcript-entry.turn-current .transcript-turn-number { color: rgba(255,255,255,0.7); }
+      .no-transcript { color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
       /* Mobile: bottom sheet */
       @media (max-width: 900px) {
         .debug-panel {
@@ -669,6 +734,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     loadCommentary(replay.match_id);
     initDebugPanel(replay);
     initAnnotations(replay);
+    initMapVote(replay);
 
     // §16.13: Register active replay for PIP support
     const pipCanvasWrapper = document.querySelector('.canvas-wrapper') as HTMLElement;
@@ -720,6 +786,87 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     } else {
       viewer.setCommentary(null);
       commentaryBar.style.display = 'none';
+    }
+  }
+
+  // ── Map voting widget (§14.6) ──────────────────────────────────────────────────
+
+  const mapVotePanel = document.getElementById('map-vote-panel') as HTMLDivElement;
+  const mapInfoDimensions = document.getElementById('map-info-dimensions') as HTMLElement;
+  const mapInfoWallDensity = document.getElementById('map-info-wall-density') as HTMLElement;
+  const mapInfoEnergyCount = document.getElementById('map-info-energy-count') as HTMLElement;
+  const mapVoteSection = document.getElementById('map-vote-section') as HTMLDivElement;
+  const mapVoteUp = document.getElementById('map-vote-up') as HTMLButtonElement;
+  const mapVoteDown = document.getElementById('map-vote-down') as HTMLButtonElement;
+  const mapVoteCount = document.getElementById('map-vote-count') as HTMLSpanElement;
+  const mapVoteStatus = document.getElementById('map-vote-status') as HTMLDivElement;
+
+  function initMapVote(replay: Replay): void {
+    // Always show map metadata
+    const totalTiles = replay.map.rows * replay.map.cols;
+    const wallDensity = totalTiles > 0 ? (replay.map.walls.length / totalTiles * 100).toFixed(1) : '0';
+    mapInfoDimensions.textContent = `${replay.map.cols} x ${replay.map.rows}`;
+    mapInfoWallDensity.textContent = `${wallDensity}% (${replay.map.walls.length} tiles)`;
+    mapInfoEnergyCount.textContent = String(replay.map.energy_nodes.length);
+    mapVotePanel.style.display = '';
+
+    // Voting requires a map_id (available in newer replays via config)
+    const mapId = replay.config.map_id;
+    if (!mapId) {
+      mapVoteSection.innerHTML = '<div class="map-vote-status" style="margin-top:0">Voting unavailable (no map ID)</div>';
+      return;
+    }
+
+    // Enable buttons
+    mapVoteUp.disabled = false;
+    mapVoteDown.disabled = false;
+
+    // Load existing votes
+    fetchMapVotes(mapId).then(data => {
+      updateMapVoteUI(data.net_votes, data.my_vote ?? null);
+    }).catch(() => {
+      mapVoteCount.textContent = '0';
+    });
+
+    // Wire up vote buttons
+    mapVoteUp.onclick = () => submitVote(mapId, 1);
+    mapVoteDown.onclick = () => submitVote(mapId, -1);
+  }
+
+  async function submitVote(mapId: string, vote: 1 | -1): Promise<void> {
+    mapVoteUp.disabled = true;
+    mapVoteDown.disabled = true;
+    mapVoteStatus.textContent = 'Submitting...';
+
+    try {
+      const result = await submitMapVote(mapId, vote);
+      updateMapVoteUI(result.net_votes, vote);
+      mapVoteStatus.textContent = vote === 1 ? 'You upvoted this map' : 'You downvoted this map';
+    } catch (err) {
+      mapVoteStatus.textContent = String(err).replace(/^Error:\s*/, '');
+      mapVoteUp.disabled = false;
+      mapVoteDown.disabled = false;
+    }
+  }
+
+  function updateMapVoteUI(netVotes: number, myVote: number | null): void {
+    mapVoteCount.textContent = String(netVotes);
+    mapVoteCount.className = 'map-vote-count' + (netVotes > 0 ? ' positive' : netVotes < 0 ? ' negative' : '');
+
+    // Clear previous vote state
+    mapVoteUp.classList.remove('voted-up');
+    mapVoteDown.classList.remove('voted-down');
+
+    if (myVote === 1) {
+      mapVoteUp.classList.add('voted-up');
+      mapVoteUp.disabled = true;
+      mapVoteDown.disabled = true;
+      mapVoteStatus.textContent = 'You upvoted this map';
+    } else if (myVote === -1) {
+      mapVoteDown.classList.add('voted-down');
+      mapVoteUp.disabled = true;
+      mapVoteDown.disabled = true;
+      mapVoteStatus.textContent = 'You downvoted this map';
     }
   }
 
