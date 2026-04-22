@@ -1,9 +1,46 @@
 // Main SPA entry point with routing
 // Code splitting: all pages are loaded on-demand via dynamic import() to keep
 // the initial bundle small.  The app entry chunk contains only the router,
-// navigation, and lazy-loading wrappers — no page renderers.
+// navigation, lazy-loading wrappers — no page renderers.
+// §16.14: preload-on-hover, skeleton screens, instant back-cache
+
 import { router } from './router';
 import type { RouteHandler } from './router';
+import {
+  initPerformanceFeatures,
+  savePageCache,
+  restorePageFromCache,
+  hasPageCache,
+} from './lib/preload';
+import {
+  skeletonLeaderboard,
+  skeletonBotProfile,
+  skeletonReplay,
+  skeletonPlaylists,
+  skeletonMatches,
+  skeletonEvolution,
+  skeletonBlog,
+  skeletonSeasons,
+  skeletonGeneric,
+} from './components/skeleton';
+
+// ─── Skeleton route mapping ──────────────────────────────────────────────────
+// Returns skeleton HTML for a given path so the user sees layout immediately.
+
+function getSkeletonHtml(path: string): string {
+  if (path === '/leaderboard' || path === '/bots') return skeletonLeaderboard();
+  if (path.startsWith('/bot/') || path.startsWith('/compete/bot/')) return skeletonBotProfile();
+  if (path.startsWith('/watch/replay/') || path.startsWith('/replay/')) return skeletonReplay();
+  if (path.startsWith('/watch/playlists')) return skeletonPlaylists();
+  if (path === '/watch/replays' || path === '/matches') return skeletonMatches();
+  if (path === '/evolution') return skeletonEvolution();
+  if (path.startsWith('/blog')) return skeletonBlog();
+  if (path === '/seasons' || path.startsWith('/season/')) return skeletonSeasons();
+  if (path === '/watch/predictions' || path === '/predictions') return skeletonGeneric('Predictions');
+  if (path === '/watch') return skeletonGeneric('Watch');
+  if (path === '/') return ''; // Home page has its own rich skeleton built in
+  return skeletonGeneric('Loading');
+}
 
 // ─── Lazy loaders for code splitting ─────────────────────────────────────────────
 // Each loader creates its own chunk, loaded only when the route is visited
@@ -50,8 +87,24 @@ const loadDocsApiPage = () => import('./pages/docs-api').then(m => m.renderDocsA
 const loadNotFoundPage = () => import('./pages/not-found').then(m => m.renderNotFoundPage);
 
 // ─── Helper: wrap async page loader in sync RouteHandler ────────────────────────
+// Shows skeleton immediately, then loads the real page async.
 function lazyRoute(loader: () => Promise<(params: Record<string, string>) => void>): RouteHandler {
   return (params: Record<string, string>) => {
+    const targetPath = router.getCurrentPath();
+
+    // Check back-cache for instant restore
+    if (hasPageCache(targetPath)) {
+      restorePageFromCache(targetPath);
+      return;
+    }
+
+    // Show skeleton immediately while loading the chunk
+    const skeleton = getSkeletonHtml(targetPath);
+    if (skeleton) {
+      const app = document.getElementById('app');
+      if (app) app.innerHTML = skeleton;
+    }
+
     loader().then(handler => handler(params));
   };
 }
@@ -121,6 +174,15 @@ router.navigate = (path: string) => {
   updateActiveNavLink();
 };
 
+// ─── Back-cache: save current page before navigating away ──────────────────────
+
+router.beforeNavigate((from: string, _to: string) => {
+  // Only cache pages that have rendered content (not initial load)
+  if (from && from !== '/') {
+    savePageCache(from);
+  }
+});
+
 // ─── Route definitions ─────────────────────────────────────────────────────────────
 
 router
@@ -169,6 +231,8 @@ router
 document.addEventListener('DOMContentLoaded', () => {
   updateActiveNavLink();
   router.start();
+  // §16.14: activate hover preloading
+  initPerformanceFeatures();
 });
 
 window.addEventListener('load', () => {

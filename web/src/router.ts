@@ -1,4 +1,5 @@
 // Simple hash-based router for single-page navigation
+// §16.14: integrated with back-cache for instant back/forward navigation
 
 export type RouteHandler = (params: Record<string, string>) => void | Promise<void>;
 
@@ -11,6 +12,8 @@ interface Route {
 class Router {
   private routes: Route[] = [];
   private notFoundHandler: RouteHandler | null = null;
+  private beforeNavigateHooks: Array<(from: string, to: string) => void> = [];
+  private afterNavigateHooks: Array<(path: string) => void> = [];
 
   /**
    * Register a route with a pattern like "/leaderboard" or "/bot/:id"
@@ -36,6 +39,24 @@ class Router {
    */
   notFound(handler: RouteHandler): this {
     this.notFoundHandler = handler;
+    return this;
+  }
+
+  /**
+   * Register a hook called before each navigation (after hash changes).
+   * Receives (fromPath, toPath).
+   */
+  beforeNavigate(hook: (from: string, to: string) => void): this {
+    this.beforeNavigateHooks.push(hook);
+    return this;
+  }
+
+  /**
+   * Register a hook called after each route handler completes.
+   * Receives the resolved path.
+   */
+  afterNavigate(hook: (path: string) => void): this {
+    this.afterNavigateHooks.push(hook);
     return this;
   }
 
@@ -67,6 +88,12 @@ class Router {
    */
   private async handleRoute(): Promise<void> {
     const path = this.getCurrentPath();
+    const prevPath = (this as any)._lastPath as string | undefined;
+    (this as any)._lastPath = path;
+
+    for (const hook of this.beforeNavigateHooks) {
+      hook(prevPath ?? '/', path);
+    }
 
     for (const route of this.routes) {
       const match = path.match(route.pattern);
@@ -76,12 +103,20 @@ class Router {
           params[name] = decodeURIComponent(match[idx + 1]);
         });
         await route.handler(params);
+
+        for (const hook of this.afterNavigateHooks) {
+          hook(path);
+        }
         return;
       }
     }
 
     if (this.notFoundHandler) {
       await this.notFoundHandler({});
+    }
+
+    for (const hook of this.afterNavigateHooks) {
+      hook(path);
     }
   }
 }

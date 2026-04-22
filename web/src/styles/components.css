@@ -468,3 +468,99 @@ code {
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
 }
+
+/* ─── Skeleton Screens (§16.14) ────────────────────────────────────────────── */
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-bar,
+.skeleton-circle,
+.skeleton-canvas {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    var(--border) 37%,
+    var(--bg-tertiary) 63%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-circle {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skeleton-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+}
+
+.skeleton-table-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  margin-bottom: 2px;
+}
+
+.skeleton-profile-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+}
+
+.skeleton-profile-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.skeleton-profile-stats {
+  display: flex;
+  gap: var(--space-md);
+  margin-left: auto;
+}
+
+.skeleton-card {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-lg);
+}
+
+@media (max-width: 768px) {
+  .skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+  .skeleton-profile-header {
+    flex-direction: column;
+    text-align: center;
+  }
+  .skeleton-profile-stats {
+    margin-left: 0;
+    justify-content: center;
+  }
+}
