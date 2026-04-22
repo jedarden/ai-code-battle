@@ -30,6 +30,7 @@ type Server struct {
 	feedbackLtr  *ratelimit.Limiter // 20/hour per IP
 	predictLtr   *ratelimit.Limiter // 60/hour per IP
 	submitLtr    *ratelimit.Limiter // 5/day per bot_id
+	voteLtr      *ratelimit.Limiter // 10/hour per IP
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
@@ -69,9 +70,12 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	fbMW := s.feedbackLtr.Middleware(ipKey, func() {
 		metrics.RateLimitHits.WithLabelValues("feedback").Inc()
 	})
+	voteMW := s.voteLtr.Middleware(ipKey, func() {
+		metrics.RateLimitHits.WithLabelValues("vote").Inc()
+	})
 	mux.HandleFunc("POST /api/feedback", fbMW(http.HandlerFunc(s.handleUIFeedback)).ServeHTTP)
 	mux.HandleFunc("GET /api/feedback/", s.handleGetFeedback)
-	mux.HandleFunc("POST /api/feedback/", fbMW(http.HandlerFunc(s.handleFeedbackUpvote)).ServeHTTP)
+	mux.HandleFunc("POST /api/feedback/", voteMW(http.HandlerFunc(s.handleFeedbackUpvote)).ServeHTTP)
 
 	// Predictions — 60/hour per IP
 	predMW := s.predictLtr.Middleware(ipKey, func() {
