@@ -1,16 +1,26 @@
 # AI Code Battle - Bot Host Deployment
-# Runs all 6 strategy bots as a single deployable unit
+# Runs all 16 strategy bots as a single deployable unit
 #
 # Usage:
 #   docker-compose -f docker-compose.bots.yml up -d
 #
 # Environment variables (set in .env or pass directly):
-#   BOT_SECRET_RANDOM   - Secret for RandomBot
-#   BOT_SECRET_GATHERER - Secret for GathererBot
-#   BOT_SECRET_RUSHER   - Secret for RusherBot
-#   BOT_SECRET_GUARDIAN - Secret for GuardianBot
-#   BOT_SECRET_SWARM    - Secret for SwarmBot
-#   BOT_SECRET_HUNTER   - Secret for HunterBot
+#   BOT_SECRET_RANDOM      - Secret for RandomBot
+#   BOT_SECRET_GATHERER    - Secret for GathererBot
+#   BOT_SECRET_RUSHER      - Secret for RusherBot
+#   BOT_SECRET_GUARDIAN    - Secret for GuardianBot
+#   BOT_SECRET_SWARM       - Secret for SwarmBot
+#   BOT_SECRET_HUNTER      - Secret for HunterBot
+#   BOT_SECRET_DEFENDER    - Secret for DefenderBot
+#   BOT_SECRET_SCOUT       - Secret for ScoutBot
+#   BOT_SECRET_FARMER      - Secret for FarmerBot
+#   BOT_SECRET_PACIFIST    - Secret for PacifistBot
+#   BOT_SECRET_PHALANX     - Secret for PhalanxBot
+#   BOT_SECRET_RAIDER      - Secret for RaiderBot
+#   BOT_SECRET_NOMAD       - Secret for NomadBot
+#   BOT_SECRET_OPPORTUNIST - Secret for OpportunistBot
+#   BOT_SECRET_ASSASSIN    - Secret for AssassinBot
+#   BOT_SECRET_KAMIKAZE    - Secret for KamikazeBot
 
 services:
   random:
@@ -104,6 +114,168 @@ services:
       - BOT_SECRET=${BOT_SECRET_HUNTER:-dev-secret-hunter}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8085/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ── Phase 13 expansion bots ──────────────────────────────────────────────
+
+  defender:
+    build:
+      context: ./bots/defender
+      dockerfile: Dockerfile
+    ports:
+      - "8087:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_DEFENDER:-dev-secret-defender}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  scout:
+    build:
+      context: ./bots/scout
+      dockerfile: Dockerfile
+    ports:
+      - "8088:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_SCOUT:-dev-secret-scout}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  farmer:
+    build:
+      context: ./bots/farmer
+      dockerfile: Dockerfile
+    ports:
+      - "8089:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_FARMER:-dev-secret-farmer}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  pacifist:
+    build:
+      context: ./bots/pacifist
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_PACIFIST:-dev-secret-pacifist}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  phalanx:
+    build:
+      context: ./bots/phalanx
+      dockerfile: Dockerfile
+    ports:
+      - "8091:8090"
+    environment:
+      - BOT_PORT=8090
+      - BOT_SECRET=${BOT_SECRET_PHALANX:-dev-secret-phalanx}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  raider:
+    build:
+      context: ./bots/raider
+      dockerfile: Dockerfile
+    ports:
+      - "8092:8086"
+    environment:
+      - BOT_PORT=8086
+      - BOT_SECRET=${BOT_SECRET_RAIDER:-dev-secret-raider}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  nomad:
+    build:
+      context: ./bots/nomad
+      dockerfile: Dockerfile
+    ports:
+      - "8093:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_NOMAD:-dev-secret-nomad}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  opportunist:
+    build:
+      context: ./bots/opportunist
+      dockerfile: Dockerfile
+    ports:
+      - "8094:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_OPPORTUNIST:-dev-secret-opportunist}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  assassin:
+    build:
+      context: ./bots/assassin
+      dockerfile: Dockerfile
+    ports:
+      - "8095:8082"
+    environment:
+      - BOT_PORT=8082
+      - BOT_SECRET=${BOT_SECRET_ASSASSIN:-dev-secret-assassin}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  kamikaze:
+    build:
+      context: ./bots/kamikaze
+      dockerfile: Dockerfile
+    ports:
+      - "8096:8080"
+    environment:
+      - BOT_PORT=8080
+      - BOT_SECRET=${BOT_SECRET_KAMIKAZE:-dev-secret-kamikaze}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
