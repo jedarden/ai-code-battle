@@ -14,6 +14,11 @@ import {
   fadeInContent,
 } from './lib/preload';
 import {
+  initAmbient,
+  startAmbientPolling,
+  applyCurrentSeasonTheme,
+} from './lib/ambient';
+import {
   skeletonLeaderboard,
   skeletonBotProfile,
   skeletonReplay,
@@ -184,10 +189,42 @@ router.navigate = (path: string) => {
 
 // ─── Back-cache: save current page before navigating away ──────────────────────
 
-router.beforeNavigate((from: string, _to: string) => {
+router.beforeNavigate((from: string, to: string) => {
   // Only cache pages that have rendered content (not initial load)
   if (from && from !== '/') {
     savePageCache(from);
+  }
+
+  // §16.13: PIP replay — if leaving a replay page with active playback,
+  // activate the mini-player instead of destroying the viewer.
+  const leavingReplay = from.match(/^\/watch\/replay\//) || from.match(/^\/replay\//);
+  const goingToReplay = to.match(/^\/watch\/replay\//) || to.match(/^\/replay\//);
+  if (leavingReplay && !goingToReplay) {
+    import('./components/pip-registry').then(({ getActiveReplay }) => {
+      import('./components/pip').then(({ activatePip, isPipActive }) => {
+        const replay = getActiveReplay();
+        if (replay && replay.canvas && replay.canvasWrapper && !isPipActive()) {
+          activatePip({
+            matchId: replay.matchId,
+            canvas: replay.canvas,
+            originalParent: replay.canvasWrapper,
+            getScoreText: replay.getScoreText,
+            getTurn: replay.getTurn,
+            getTotalTurns: replay.getTotalTurns,
+            getIsPlaying: replay.getIsPlaying,
+            togglePlay: replay.togglePlay,
+            onReturn: () => {
+              router.navigate(from);
+            },
+            onClose: () => {
+              replay.pause();
+              import('./components/pip').then(({ closePip }) => closePip());
+              import('./components/pip-registry').then(({ setActiveReplay }) => setActiveReplay(null));
+            },
+          });
+        }
+      });
+    });
   }
 
   // Cleanup VirtualList instances to prevent leaked ResizeObservers
@@ -250,8 +287,13 @@ document.addEventListener('DOMContentLoaded', () => {
   router.start();
   // §16.14: activate hover preloading
   initPerformanceFeatures();
+  // §16.18: ambient activity awareness (favicon badges, tab title, seasonal theme)
+  initAmbient();
+  applyCurrentSeasonTheme();
 });
 
 window.addEventListener('load', () => {
   updateActiveNavLink();
+  // §16.18: start polling for ambient activity after page fully loaded
+  startAmbientPolling();
 });

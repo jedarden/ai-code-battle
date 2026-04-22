@@ -26,6 +26,8 @@ import {
   type DurationPreset,
 } from '../components/director';
 import { THEATER_STYLES, TheaterMode } from '../components/theater';
+import { setActiveReplay } from '../components/pip-registry';
+import { getPipMatchId, restorePip } from '../components/pip';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -457,7 +459,27 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const viewModeSelect = document.getElementById('view-mode-select') as HTMLSelectElement;
   const mobileViewModeBtn = document.getElementById('mobile-view-mode-btn') as HTMLButtonElement;
 
-  let viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
+  // §16.13: If PIP is active, restore the canvas from the mini-player.
+  // The canvas-wrapper in the DOM is the inline target; we move the PIP canvas
+  // back into it and reuse the viewer instance that's still running.
+  const pipMatch = getPipMatchId();
+  const canvasWrapper = document.querySelector('.canvas-wrapper') as HTMLElement;
+  let viewer: any;
+
+  if (pipMatch && canvasWrapper && (initialUrl?.includes(pipMatch) || !initialUrl)) {
+    const restored = restorePip();
+    if (restored) {
+      // Move canvas back into the inline wrapper
+      canvasWrapper.insertBefore(restored.canvas, canvasWrapper.firstChild);
+      restored.canvas.style.display = 'block';
+      viewer = new ReplayViewerClass(restored.canvas, { cellSize: 10 });
+    } else {
+      viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
+    }
+  } else {
+    viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
+  }
+
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
   let commentaryEnabled = true;
   let debugPanelExpanded = false;
@@ -647,6 +669,28 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     loadCommentary(replay.match_id);
     initDebugPanel(replay);
     initAnnotations(replay);
+
+    // §16.13: Register active replay for PIP support
+    const pipCanvasWrapper = document.querySelector('.canvas-wrapper') as HTMLElement;
+    const pipCanvasEl = (document.getElementById('replay-canvas') as HTMLCanvasElement)
+      ?? document.querySelector('.canvas-wrapper canvas') as HTMLCanvasElement;
+    if (pipCanvasEl && pipCanvasWrapper) {
+      setActiveReplay({
+        matchId: replay.match_id,
+        canvas: pipCanvasEl,
+        canvasWrapper: pipCanvasWrapper,
+        getScoreText: () => {
+          const r = viewer.getReplay() as Replay | null;
+          if (!r) return '';
+          return r.players.map((p: any, i: number) => `${p.name}: ${r.result.scores?.[i] ?? 0}`).join(' ');
+        },
+        getTurn: () => viewer.getTurn(),
+        getTotalTurns: () => viewer.getTotalTurns(),
+        getIsPlaying: () => viewer.getIsPlaying(),
+        togglePlay: () => viewer.togglePlay(),
+        pause: () => viewer.pause(),
+      });
+    }
 
     const hasAnyDebug = replay.turns.some(t => t.debug && Object.keys(t.debug).length > 0);
     if (hasAnyDebug) {
