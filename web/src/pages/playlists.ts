@@ -381,7 +381,7 @@ async function showPlaylistDetail(slug: string): Promise<void> {
     const playlist: Playlist = await fetchPlaylist(slug);
 
     // Mobile: defer to carousel component if available
-    if (isMobile() && playlist.matches.length > 3) {
+    if (isMobile() && playlist.matches.length > 0) {
       try {
         const { PlaylistCarousel } = await import('../components/playlist-carousel');
         new PlaylistCarousel({

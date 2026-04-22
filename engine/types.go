@@ -104,9 +104,11 @@ type Bot struct {
 
 // Core represents a spawn point owned by a player.
 type Core struct {
-	Position Position `json:"position"`
-	Owner    int `json:"owner"`
-	Active   bool `json:"active"` // false if razed
+	Position        Position `json:"position"`
+	Owner           int      `json:"owner"`
+	Active          bool     `json:"active"`           // false if razed
+	ID              int      `json:"id"`               // unique core identifier
+	LastSpawnedTurn int      `json:"last_spawned_turn"` // turn when this core last spawned a bot
 }
 
 // EnergyNode represents an energy spawn location.
@@ -193,12 +195,13 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 
 // MatchResult represents the outcome of a match.
 type MatchResult struct {
-	Winner      int    `json:"winner"`       // -1 for draw
-	Reason      string `json:"reason"`       // "elimination", "dominance", "turns", "draw"
-	Turns       int    `json:"turns"`
-	Scores      []int  `json:"scores"`
-	Energy      []int  `json:"energy"`       // energy collected per player
-	BotsAlive   []int  `json:"bots_alive"`
+	Winner      int      `json:"winner"`       // -1 for draw
+	Reason      string   `json:"reason"`       // "elimination", "dominance", "turns", "draw"
+	Turns       int      `json:"turns"`
+	Scores      []int    `json:"scores"`
+	Energy      []int    `json:"energy"`       // energy collected per player
+	BotsAlive   []int    `json:"bots_alive"`
+	Crashed     []bool   `json:"crashed"`      // per-player: true if bot was marked crashed during match
 }
 
 // BotInterface defines the interface for bot decision-making.

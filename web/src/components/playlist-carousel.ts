@@ -15,6 +15,10 @@ import {
 
 const loadReplayViewer = () => import('../replay-viewer');
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // ── Touch tracking for live 60fps swipe ─────────────────────────────────────
 
 interface TouchTracker {
@@ -306,7 +310,7 @@ export class PlaylistCarousel {
 
     // Update header
     this.headerBar.innerHTML = `
-      <span class="carousel-playlist-name">${this.playlist.title}</span>
+      <span class="carousel-playlist-name">${escapeHtml(this.playlist.title)}</span>
       <span class="carousel-counter">${index + 1} of ${this.playlist.matches.length}</span>
     `;
 
@@ -397,7 +401,7 @@ export class PlaylistCarousel {
     const players = replay.players.map((p, i) => {
       const score = replay.result.scores?.[i] ?? '-';
       const won = replay.result.winner === i;
-      return `<span class="carousel-player${won ? ' carousel-winner' : ''}">${p.name} ${score}</span>`;
+      return `<span class="carousel-player${won ? ' carousel-winner' : ''}">${escapeHtml(p.name)} ${score}</span>`;
     }).join(' <span class="carousel-vs">vs</span> ');
     this.scoreBar.innerHTML = players;
   }
@@ -412,12 +416,12 @@ export class PlaylistCarousel {
 
   private updateMetadataContent(match: PlaylistMatch, replay: Replay | null): void {
     const parts: string[] = [];
-    parts.push(`<div class="carousel-meta-title">${match.title ?? `Match ${match.order + 1}`}</div>`);
-    if (match.curation_tag) parts.push(`<div class="carousel-meta-tag">${match.curation_tag}</div>`);
+    parts.push(`<div class="carousel-meta-title">${escapeHtml(match.title ?? `Match ${match.order + 1}`)}</div>`);
+    if (match.curation_tag) parts.push(`<div class="carousel-meta-tag">${escapeHtml(match.curation_tag)}</div>`);
     if (replay) {
       parts.push(`<div class="carousel-meta-row"><span>Turns</span><span>${replay.turns.length}</span></div>`);
       parts.push(`<div class="carousel-meta-row"><span>Map</span><span>${replay.map.rows}x${replay.map.cols}</span></div>`);
-      if (replay.result.reason) parts.push(`<div class="carousel-meta-row"><span>End</span><span>${replay.result.reason}</span></div>`);
+      if (replay.result.reason) parts.push(`<div class="carousel-meta-row"><span>End</span><span>${escapeHtml(replay.result.reason)}</span></div>`);
     }
     if (match.completed_at) {
       const d = new Date(match.completed_at);

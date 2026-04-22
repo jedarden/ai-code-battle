@@ -187,6 +187,15 @@ router.beforeNavigate((from: string, _to: string) => {
   if (from && from !== '/') {
     savePageCache(from);
   }
+
+  // Cleanup VirtualList instances to prevent leaked ResizeObservers
+  const app = document.getElementById('app');
+  if (app) {
+    app.querySelectorAll<HTMLElement>('[data-virtual-list]').forEach(el => {
+      const vl = (el as any)._virtualList;
+      if (vl && typeof vl.destroy === 'function') vl.destroy();
+    });
+  }
 });
 
 // ─── Route definitions ─────────────────────────────────────────────────────────────

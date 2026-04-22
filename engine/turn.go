@@ -1,5 +1,7 @@
 package engine
 
+import "sort"
+
 // TurnPhase represents a phase of turn execution.
 type TurnPhase int
 
@@ -289,6 +291,8 @@ func (gs *GameState) executeCollection() {
 }
 
 // executeSpawns handles bot spawning at active cores.
+// When multiple cores are eligible, the core idle longest spawns first
+// (deterministic tiebreak: lowest core ID wins).
 func (gs *GameState) executeSpawns() {
 	// For each player, check if they can spawn
 	for _, p := range gs.Players {
@@ -296,13 +300,12 @@ func (gs *GameState) executeSpawns() {
 			continue
 		}
 
-		// Find active cores owned by this player that are unoccupied
+		// Collect eligible cores: active, owned by this player, unoccupied
+		var eligible []*Core
 		for _, c := range gs.Cores {
 			if !c.Active || c.Owner != p.ID {
 				continue
 			}
-
-			// Check if core is occupied
 			occupied := false
 			for _, b := range gs.Bots {
 				if b.Alive && b.Position == c.Position {
@@ -310,12 +313,21 @@ func (gs *GameState) executeSpawns() {
 					break
 				}
 			}
-
-			if !occupied && p.Energy >= gs.Config.SpawnCost {
-				// Spawn a bot
-				gs.SpawnBot(p.ID, c.Position)
-				p.Energy -= gs.Config.SpawnCost
+			if !occupied {
+				eligible = append(eligible, c)
 			}
+		}
+
+		// Sort by (lastSpawnedTurn ASC, core ID ASC) — idle-longest first
+		sortCoresByPriority(eligible)
+
+		for _, c := range eligible {
+			if p.Energy < gs.Config.SpawnCost {
+				break
+			}
+			gs.SpawnBot(p.ID, c.Position)
+			c.LastSpawnedTurn = gs.Turn
+			p.Energy -= gs.Config.SpawnCost
 		}
 	}
 }
@@ -449,4 +461,16 @@ func (gs *GameState) findWinnerByScore() int {
 	}
 
 	return bestPlayer
+}
+
+// sortCoresByPriority sorts cores by (LastSpawnedTurn ASC, ID ASC).
+// The core idle longest (lowest LastSpawnedTurn) spawns first;
+// equal idle time is broken by lower core ID.
+func sortCoresByPriority(cores []*Core) {
+	sort.Slice(cores, func(i, j int) bool {
+		if cores[i].LastSpawnedTurn != cores[j].LastSpawnedTurn {
+			return cores[i].LastSpawnedTurn < cores[j].LastSpawnedTurn
+		}
+		return cores[i].ID < cores[j].ID
+	})
 }

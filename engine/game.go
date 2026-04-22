@@ -15,9 +15,10 @@ type GameState struct {
 	Energy    []*EnergyNode
 	Players   []*Player
 	Turn      int
-	MatchID   string
-	NextBotID int
-	rng       *rand.Rand
+	MatchID    string
+	NextBotID  int
+	NextCoreID int
+	rng        *rand.Rand
 
 	// Turn state
 	Moves       map[int]Move       // bot ID -> move
@@ -96,7 +97,9 @@ func (gs *GameState) AddCore(owner int, pos Position) *Core {
 		Position: gs.Grid.WrapPos(pos),
 		Owner:    owner,
 		Active:   true,
+		ID:       gs.NextCoreID,
 	}
+	gs.NextCoreID++
 	gs.Cores = append(gs.Cores, c)
 	gs.Grid.SetPos(c.Position, TileCore)
 
@@ -319,20 +322,21 @@ func (gs *GameState) ToJSON() ([]byte, error) {
 // Clone creates a deep copy of the game state.
 func (gs *GameState) Clone() *GameState {
 	newGS := &GameState{
-		Config:    gs.Config,
-		Grid:      NewGrid(gs.Config.Rows, gs.Config.Cols),
-		Bots:      make([]*Bot, len(gs.Bots)),
-		Cores:     make([]*Core, len(gs.Cores)),
-		Energy:    make([]*EnergyNode, len(gs.Energy)),
-		Players:   make([]*Player, len(gs.Players)),
-		Turn:      gs.Turn,
-		MatchID:   gs.MatchID,
-		NextBotID: gs.NextBotID,
-		rng:       gs.rng,
-		Moves:     make(map[int]Move),
-		DeadBots:  make([]*Bot, 0),
-		Events:    make([]Event, 0),
-		Dominance: make(map[int]int),
+		Config:     gs.Config,
+		Grid:       NewGrid(gs.Config.Rows, gs.Config.Cols),
+		Bots:       make([]*Bot, len(gs.Bots)),
+		Cores:      make([]*Core, len(gs.Cores)),
+		Energy:     make([]*EnergyNode, len(gs.Energy)),
+		Players:    make([]*Player, len(gs.Players)),
+		Turn:       gs.Turn,
+		MatchID:    gs.MatchID,
+		NextBotID:  gs.NextBotID,
+		NextCoreID: gs.NextCoreID,
+		rng:        gs.rng,
+		Moves:      make(map[int]Move),
+		DeadBots:   make([]*Bot, 0),
+		Events:     make([]Event, 0),
+		Dominance:  make(map[int]int),
 	}
 
 	// Copy grid
@@ -358,9 +362,11 @@ func (gs *GameState) Clone() *GameState {
 	// Copy cores
 	for i, c := range gs.Cores {
 		newGS.Cores[i] = &Core{
-			Position: c.Position,
-			Owner:    c.Owner,
-			Active:   c.Active,
+			Position:        c.Position,
+			Owner:           c.Owner,
+			Active:          c.Active,
+			ID:              c.ID,
+			LastSpawnedTurn: c.LastSpawnedTurn,
 		}
 	}
 

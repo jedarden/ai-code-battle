@@ -277,15 +277,17 @@ func (m *Matchmaker) scheduleNextSeriesGames(ctx context.Context) error {
 			continue
 		}
 
-		// Check that both bots are active
+		// Check that both bots are active and not on crash cooldown (§4.5, §6.1)
 		var aActive, bActive bool
 		err := m.db.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM bots WHERE bot_id = $1 AND status = 'active')`, s.BotAID).Scan(&aActive)
+			`SELECT EXISTS(SELECT 1 FROM bots WHERE bot_id = $1 AND status = 'active'
+			 AND (cooldown_until IS NULL OR cooldown_until < NOW()))`, s.BotAID).Scan(&aActive)
 		if err != nil {
 			continue
 		}
 		err = m.db.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM bots WHERE bot_id = $1 AND status = 'active')`, s.BotBID).Scan(&bActive)
+			`SELECT EXISTS(SELECT 1 FROM bots WHERE bot_id = $1 AND status = 'active'
+			 AND (cooldown_until IS NULL OR cooldown_until < NOW()))`, s.BotBID).Scan(&bActive)
 		if err != nil {
 			continue
 		}
@@ -496,10 +498,11 @@ func (m *Matchmaker) selectSeriesMap(ctx context.Context, gameNum int, rng *rand
 // autoCreateSeries creates best-of-5 series between top-20 active bots,
 // one per bot per day.
 func (m *Matchmaker) autoCreateSeries(ctx context.Context) error {
-	// Find top-20 active bots by rating
+	// Find top-20 active bots by rating (excluding crash-cooldown bots)
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT bot_id FROM bots
 		WHERE status = 'active' AND evolved = false
+		  AND (cooldown_until IS NULL OR cooldown_until < NOW())
 		ORDER BY rating_mu DESC
 		LIMIT 20
 	`)
@@ -542,6 +545,7 @@ func (m *Matchmaker) autoCreateSeries(ctx context.Context) error {
 			SELECT b.bot_id FROM bots b
 			WHERE b.bot_id != $1
 			  AND b.status = 'active'
+			  AND (b.cooldown_until IS NULL OR b.cooldown_until < NOW())
 			  AND NOT EXISTS (
 			    SELECT 1 FROM series s
 			    WHERE ((s.bot_a_id = $1 AND s.bot_b_id = b.bot_id)
@@ -913,10 +917,11 @@ func (m *Matchmaker) createChampionshipBracket(ctx context.Context, seasonID int
 		return nil // already created
 	}
 
-	// Get top 8 active bots by rating
+	// Get top 8 active bots by rating (excluding crash-cooldown bots)
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT bot_id FROM bots
 		WHERE status = 'active'
+		  AND (cooldown_until IS NULL OR cooldown_until < NOW())
 		ORDER BY rating_mu DESC
 		LIMIT 8
 	`)

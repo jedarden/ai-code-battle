@@ -78,10 +78,11 @@ type BotSecret struct {
 
 // MatchResult represents the result of a match for submission.
 type MatchResult struct {
-	WinnerID  string         `json:"winner_id"`
-	Turns     int            `json:"turns"`
-	EndReason string         `json:"end_reason"`
-	Scores    map[string]int `json:"scores"`
+	WinnerID    string          `json:"winner_id"`
+	Turns       int             `json:"turns"`
+	EndReason   string          `json:"end_reason"`
+	Scores      map[string]int  `json:"scores"`
+	CrashedBots map[string]bool `json:"crashed_bots"` // bot_id -> crashed
 }
 
 // ConvertDBJobToJob converts a DBJob to Job type.

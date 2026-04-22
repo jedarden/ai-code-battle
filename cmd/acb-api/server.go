@@ -485,7 +485,7 @@ func (s *Server) fetchReplayFromR2(ctx context.Context, matchID string) ([]byte,
 		r2Endpoint = env
 	}
 
-	url := fmt.Sprintf("%s/replays/%s.json", r2Endpoint, matchID)
+	url := fmt.Sprintf("%s/replays/%s.json.gz", r2Endpoint, matchID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -514,7 +514,7 @@ func (s *Server) fetchReplayFromB2(ctx context.Context, matchID string) ([]byte,
 		b2Endpoint = env
 	}
 
-	url := fmt.Sprintf("%s/replays/%s.json", b2Endpoint, matchID)
+	url := fmt.Sprintf("%s/replays/%s.json.gz", b2Endpoint, matchID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

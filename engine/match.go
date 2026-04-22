@@ -171,6 +171,14 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 	winProbs, criticalMoments := ComputeWinProbability(snapshots, 100, mr.rng)
 	replayWriter.SetWinProbability(winProbs, criticalMoments)
 
+	// Populate crash status per player
+	result.Crashed = make([]bool, len(mr.bots))
+	for i, bot := range mr.bots {
+		if hb, ok := bot.(*HTTPBot); ok {
+			result.Crashed[i] = hb.IsCrashed()
+		}
+	}
+
 	// Finalize replay
 	replayWriter.Finalize(result)
 

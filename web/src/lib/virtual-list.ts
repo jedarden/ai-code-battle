@@ -56,6 +56,7 @@ export class VirtualList<T> {
   mount(container: HTMLElement): void {
     container.innerHTML = '';
     container.classList.add(this.opts.containerClass ?? 'virtual-list');
+    container.setAttribute('data-virtual-list', '');
 
     // Scrollable viewport
     const scrollEl = document.createElement('div');

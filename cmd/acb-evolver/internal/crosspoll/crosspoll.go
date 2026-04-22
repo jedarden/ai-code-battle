@@ -27,10 +27,22 @@ type PollinationResult struct {
 	TargetLang   string
 }
 
+// programStore abstracts the database operations needed by cross-pollination.
+type programStore interface {
+	MaxGenerationByIsland(ctx context.Context) (map[string]int, error)
+	ListTopByIsland(ctx context.Context, island string, limit int) ([]*evolverdb.Program, error)
+	Create(ctx context.Context, p *evolverdb.Program) (int64, error)
+}
+
+// llmGenerator abstracts the LLM client for code translation.
+type llmGenerator interface {
+	Generate(ctx context.Context, req llm.GenerateRequest) (*llm.GenerateResponse, error)
+}
+
 // Checker determines which islands need cross-pollination and executes it.
 type Checker struct {
-	store  *evolverdb.Store
-	client *llm.Client
+	store  programStore
+	client llmGenerator
 	rng    *rand.Rand
 }
 

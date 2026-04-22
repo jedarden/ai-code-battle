@@ -163,7 +163,9 @@ CREATE TABLE IF NOT EXISTS bots (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_active   TIMESTAMPTZ,
     consec_fails  INTEGER NOT NULL DEFAULT 0,
-    archetype     VARCHAR(64)
+    archetype     VARCHAR(64),
+    crash_strikes INTEGER NOT NULL DEFAULT 0,
+    cooldown_until TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS matches (

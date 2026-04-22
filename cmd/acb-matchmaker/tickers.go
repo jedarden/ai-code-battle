@@ -38,10 +38,12 @@ func (m *Matchmaker) runTicker(ctx context.Context, name string, interval time.D
 
 // tickMatchmaker creates matches between active bots and enqueues jobs.
 func (m *Matchmaker) tickMatchmaker(ctx context.Context) {
-	// Get all active bots
+	// Get all active bots not on crash cooldown (§4.5, §6.1)
 	rows, err := m.db.QueryContext(ctx,
 		`SELECT bot_id, endpoint_url, shared_secret, rating_mu, rating_phi
-		 FROM bots WHERE status = 'active' ORDER BY rating_mu DESC`)
+		 FROM bots WHERE status = 'active'
+		 AND (cooldown_until IS NULL OR cooldown_until < NOW())
+		 ORDER BY rating_mu DESC`)
 	if err != nil {
 		log.Printf("matchmaker: query error: %v", err)
 		return

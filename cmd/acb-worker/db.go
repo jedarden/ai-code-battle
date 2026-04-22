@@ -393,6 +393,11 @@ func (c *DBClient) SubmitMatchResult(ctx context.Context, jobID string, result *
 		log.Printf("failed to update series result for match %s: %v", matchID, err)
 	}
 
+	// Update crash strikes and cooldown for each participant
+	if err := updateCrashStrikes(ctx, tx, result.CrashedBots); err != nil {
+		log.Printf("failed to update crash strikes for match %s: %v", matchID, err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -495,6 +500,49 @@ func (c *DBClient) FailJob(ctx context.Context, jobID string, workerID string, e
 		return fmt.Errorf("failed to update match status: %w", err)
 	}
 
+	return nil
+}
+
+// CrashCooldownDuration is the 30-minute cooldown when 3 consecutive crashes are detected.
+const CrashCooldownDuration = 30 * time.Minute
+
+// MaxCrashStrikes is the number of consecutive crashes that triggers cooldown.
+const MaxCrashStrikes = 3
+
+// updateCrashStrikes updates the crash_strikes and cooldown_until columns for
+// match participants. A crashed bot gets its strikes incremented; a non-crashed
+// bot has its strikes reset to 0. When strikes reach MaxCrashStrikes, cooldown
+// is set to now + 30 min.
+func updateCrashStrikes(ctx context.Context, tx *sql.Tx, crashedBots map[string]bool) error {
+	if len(crashedBots) == 0 {
+		return nil
+	}
+
+	for botID, crashed := range crashedBots {
+		if crashed {
+			// Increment strikes; if threshold reached, set cooldown
+			_, err := tx.ExecContext(ctx, `
+				UPDATE bots
+				SET crash_strikes = crash_strikes + 1,
+				    cooldown_until = CASE
+				        WHEN crash_strikes + 1 >= $1 THEN NOW() + $2
+				        ELSE cooldown_until
+				    END
+				WHERE bot_id = $3
+			`, MaxCrashStrikes, CrashCooldownDuration, botID)
+			if err != nil {
+				return fmt.Errorf("failed to increment crash strikes for %s: %w", botID, err)
+			}
+		} else {
+			// Reset strikes on successful match
+			_, err := tx.ExecContext(ctx, `
+				UPDATE bots SET crash_strikes = 0 WHERE bot_id = $1
+			`, botID)
+			if err != nil {
+				return fmt.Errorf("failed to reset crash strikes for %s: %w", botID, err)
+			}
+		}
+	}
 	return nil
 }
 

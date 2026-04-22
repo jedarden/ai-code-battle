@@ -233,6 +233,11 @@ function renderMatchesList(
         }
       }, { rootMargin: '300px' });
       observer.observe(remainingEl);
+
+      // Cleanup on page navigation
+      const cleanup = () => observer.disconnect();
+      container.addEventListener('pageunload', cleanup);
+      window.addEventListener('hashchange', cleanup, { once: true });
     }
   }
 }

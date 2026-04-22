@@ -164,9 +164,11 @@ function renderRecentMatches(matches: BotProfile['recent_matches']): string {
 
   if (rest.length === 0) return html;
 
+  // Render remaining matches but wrap them in a collapsed container
+  const restHtml = rest.map(match => renderMatchItem(match)).join('');
   return `
     ${html}
-    <div class="match-list-rest" data-rest-count="${rest.length}"></div>
+    <div class="match-list-rest" style="display:none">${restHtml}</div>
     <button class="btn small show-more-matches" type="button"
             aria-label="Show ${rest.length} more matches">
       Show ${rest.length} more matches
@@ -231,9 +233,9 @@ function wireShowMoreMatches(contentEl: HTMLElement): void {
   btn.dataset.wired = '1';
 
   btn.addEventListener('click', () => {
-    // In a real implementation, we'd fetch more from the data.
-    // For now, just expand all from the profile data.
-    restEl.remove();
+    // Move hidden match items into the visible list
+    restEl.style.display = '';
+    restEl.classList.add('expanded');
     btn.remove();
   });
 }
