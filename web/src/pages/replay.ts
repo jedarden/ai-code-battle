@@ -181,6 +181,14 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
                 <option value="10" selected>Large (10px)</option>
                 <option value="12">X-Large (12px)</option>
               </select>
+              <label for="follow-zoom-select" style="margin-top: 10px;">Follow Zoom:</label>
+              <select id="follow-zoom-select">
+                <option value="2">2x</option>
+                <option value="3" selected>3x</option>
+                <option value="4">4x</option>
+                <option value="5">5x</option>
+                <option value="6">6x</option>
+              </select>
             </div>
           </div>
 
@@ -753,7 +761,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     }
   }
 
-  // Handle canvas clicks for spatial annotation position
+  // Handle canvas clicks for follow player selection and annotation position
   canvas.addEventListener('click', (e: MouseEvent) => {
     if (!viewer.getReplay()) return;
     const replay = viewer.getReplay();
@@ -764,6 +772,20 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
     const cellSize = viewer.getCellSize();
     const mapRows = replay.map.rows;
+    const mapHeight = mapRows * cellSize;
+    const overlayY = mapHeight + 4;
+    const overlayPadding = 8;
+    const lineHeight = 20;
+
+    // Check if click is on score overlay (follow player selection)
+    if (y >= overlayY + overlayPadding && x < replay.map.cols * cellSize) {
+      const relY = y - overlayY - overlayPadding;
+      const playerIdx = Math.floor(relY / lineHeight);
+      if (playerIdx >= 0 && playerIdx < replay.players.length) {
+        viewer.setFollowPlayer(viewer.getFollowPlayer() === playerIdx ? null : playerIdx);
+        return;
+      }
+    }
 
     // Only accept clicks within the map area (not score overlay)
     const col = Math.floor(x / cellSize);
@@ -1111,6 +1133,11 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       viewer.setTurn(prevTurn);
       updateUI();
     }
+  });
+
+  const followZoomSelect = document.getElementById('follow-zoom-select') as HTMLSelectElement;
+  followZoomSelect.addEventListener('change', () => {
+    viewer.setFollowZoom(parseInt(followZoomSelect.value, 10));
   });
 
   // Accessibility toggle handlers

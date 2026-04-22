@@ -4,7 +4,7 @@
 
 import { fetchLeaderboard, type LeaderboardEntry } from '../api-types';
 import { VirtualList } from '../lib/virtual-list';
-import { initLazySections } from '../lib/lazy-section';
+import { initLazySections, lazySection } from '../lib/lazy-section';
 
 const ROW_HEIGHT = 48;
 
@@ -63,8 +63,22 @@ function renderLeaderboard(
   // Desktop: virtual list or static table depending on size
   renderDesktopList(document.getElementById('lb-desktop')!, entries, useVirtualList);
 
-  // Mobile: always expandable cards (lazy-rendered for large lists)
-  renderMobileCards(document.getElementById('lb-mobile')!, entries);
+  // Mobile: lazy-rendered expandable cards for large lists
+  if (useVirtualList) {
+    // Wrap mobile cards in a lazy section so they don't render until scrolled into view
+    const mobileEl = document.getElementById('lb-mobile')!;
+    mobileEl.innerHTML = lazySection(
+      'lb-mobile-cards',
+      entries.slice(0, 20).map(entry => renderMobileCard(entry)).join(''),
+      { placeholder: '<div class="lazy-placeholder" style="min-height:400px"></div>' }
+    );
+    initMobileCardToggles(mobileEl);
+    if (entries.length > 20) {
+      addMobileShowMore(mobileEl, entries, 20);
+    }
+  } else {
+    renderMobileCards(document.getElementById('lb-mobile')!, entries);
+  }
 
   // Activate lazy sections
   initLazySections(container);

@@ -4,7 +4,7 @@
 
 import { fetchBotProfile, type BotProfile } from '../api-types';
 import { updateOGTags, getBotProfileOGTags, resetOGTags } from '../og-tags';
-import { initLazySections } from '../lib/lazy-section';
+import { initLazySections, lazySection } from '../lib/lazy-section';
 
 export async function renderBotProfilePage(params: Record<string, string>): Promise<void> {
   const app = document.getElementById('app');
@@ -124,15 +124,19 @@ function renderProfile(container: HTMLElement, profile: BotProfile): void {
       </div>
 
       <!-- Lazy-rendered: Recent Matches (below the fold) -->
-      <div class="profile-section history expandable-section" data-section="history">
-        <button class="section-toggle" type="button" aria-expanded="false" aria-controls="profile-history-content">
-          <h2>Recent Matches</h2>
-          <span class="section-toggle-icon" aria-hidden="true">▸</span>
-        </button>
-        <div class="section-content" id="profile-history-content">
-          ${renderRecentMatches(profile.recent_matches)}
-        </div>
-      </div>
+      ${lazySection(
+        'history',
+        `<div class="profile-section history expandable-section" data-section="history">
+          <button class="section-toggle" type="button" aria-expanded="false" aria-controls="profile-history-content">
+            <h2>Recent Matches</h2>
+            <span class="section-toggle-icon" aria-hidden="true">▸</span>
+          </button>
+          <div class="section-content" id="profile-history-content">
+            ${renderRecentMatches(profile.recent_matches)}
+          </div>
+        </div>`,
+        { placeholder: '<div class="lazy-placeholder" style="min-height:80px"></div>' }
+      )}
     </div>
   `;
 
