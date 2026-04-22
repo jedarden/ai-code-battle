@@ -488,3 +488,124 @@ func TestCheckWinConditionsTurns(t *testing.T) {
 		t.Errorf("reason = %s, want turns", result.Reason)
 	}
 }
+
+func TestSpawnPriority_IdleLongestSpawnsFirst(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+
+	// Two cores for same player
+	core0 := gs.AddCore(p0.ID, Position{5, 5})
+	core1 := gs.AddCore(p0.ID, Position{15, 15})
+
+	// Give core0 a higher lastSpawnedTurn (spawned more recently)
+	core0.LastSpawnedTurn = 10
+	core1.LastSpawnedTurn = 3
+
+	// Only enough energy for one spawn
+	gs.Players[p0.ID].Energy = 3
+
+	gs.executeSpawns()
+
+	// core1 should spawn (idle longer: lastSpawnedTurn=3 < 10)
+	bots := gs.GetPlayerBots(p0.ID)
+	if len(bots) != 1 {
+		t.Fatalf("expected 1 spawned bot, got %d", len(bots))
+	}
+	if bots[0].Position != core1.Position {
+		t.Errorf("spawned at %v, want %v (idle-longest core)", bots[0].Position, core1.Position)
+	}
+	if core1.LastSpawnedTurn != gs.Turn {
+		t.Errorf("core1 LastSpawnedTurn = %d, want %d", core1.LastSpawnedTurn, gs.Turn)
+	}
+}
+
+func TestSpawnPriority_LowerIDBreaksTie(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+
+	// Two cores, both idle since turn 0 (equal lastSpawnedTurn)
+	core0 := gs.AddCore(p0.ID, Position{5, 5})
+	core1 := gs.AddCore(p0.ID, Position{15, 15})
+
+	// core0 has lower ID (added first)
+
+	// Only enough energy for one spawn
+	gs.Players[p0.ID].Energy = 3
+
+	gs.executeSpawns()
+
+	// core0 (lower ID) should spawn first
+	bots := gs.GetPlayerBots(p0.ID)
+	if len(bots) != 1 {
+		t.Fatalf("expected 1 spawned bot, got %d", len(bots))
+	}
+	if bots[0].Position != core0.Position {
+		t.Errorf("spawned at %v, want %v (lower ID tiebreak)", bots[0].Position, core0.Position)
+	}
+	if core1.LastSpawnedTurn != 0 {
+		t.Errorf("core1 LastSpawnedTurn = %d, want 0 (no spawn)", core1.LastSpawnedTurn)
+	}
+}
+
+func TestSpawnPriority_MultipleEligibleEnoughEnergy(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+
+	core0 := gs.AddCore(p0.ID, Position{5, 5})
+	core1 := gs.AddCore(p0.ID, Position{15, 15})
+
+	// core1 idle longer
+	core0.LastSpawnedTurn = 5
+	core1.LastSpawnedTurn = 1
+
+	// Enough energy for two spawns
+	gs.Players[p0.ID].Energy = 6
+
+	gs.executeSpawns()
+
+	// Both should spawn (order: core1 first, then core0)
+	bots := gs.GetPlayerBots(p0.ID)
+	if len(bots) != 2 {
+		t.Fatalf("expected 2 spawned bots, got %d", len(bots))
+	}
+	// First bot spawned is at core1 (idle-longest)
+	if bots[0].Position != core1.Position {
+		t.Errorf("first spawn at %v, want %v", bots[0].Position, core1.Position)
+	}
+	if bots[1].Position != core0.Position {
+		t.Errorf("second spawn at %v, want %v", bots[1].Position, core0.Position)
+	}
+	if gs.Players[p0.ID].Energy != 0 {
+		t.Errorf("remaining energy = %d, want 0", gs.Players[p0.ID].Energy)
+	}
+}
+
+func TestSpawnPriority_LastSpawnedTurnUpdatesOnSpawn(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+
+	core0 := gs.AddCore(p0.ID, Position{5, 5})
+	core1 := gs.AddCore(p0.ID, Position{15, 15})
+
+	// Both start idle
+	gs.Players[p0.ID].Energy = 3
+	gs.Turn = 5
+	gs.executeSpawns()
+
+	// core0 (lower ID) should have spawned
+	if core0.LastSpawnedTurn != 5 {
+		t.Errorf("core0 LastSpawnedTurn = %d, want 5", core0.LastSpawnedTurn)
+	}
+	if core1.LastSpawnedTurn != 0 {
+		t.Errorf("core1 LastSpawnedTurn = %d, want 0 (no spawn)", core1.LastSpawnedTurn)
+	}
+
+	// Now give energy again — core1 should spawn (idle since turn 0 < 5)
+	gs.Players[p0.ID].Energy = 3
+	gs.Turn = 10
+	gs.executeSpawns()
+
+	if core1.LastSpawnedTurn != 10 {
+		t.Errorf("core1 LastSpawnedTurn = %d, want 10", core1.LastSpawnedTurn)
+	}
+}
