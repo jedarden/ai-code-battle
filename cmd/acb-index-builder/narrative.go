@@ -874,6 +874,7 @@ func extractKeyMatches(botID string, data *IndexData) []KeyMatch {
 			TurnCount:      m.TurnCount,
 			Won:            botPart.Won,
 			EndCondition:   m.EndCondition,
+			CriticalMoment: summarizeCriticalMoment(m, botPart, oppPart),
 		})
 
 		if len(matches) >= 3 {
@@ -911,6 +912,7 @@ func extractRivalryMatches(botAID, botBID string, data *IndexData) []KeyMatch {
 			Score:          fmt.Sprintf("%d-%d", botAPart.Score, botBPart.Score),
 			TurnCount:      m.TurnCount,
 			Won:            botAPart.Won,
+			CriticalMoment: summarizeCriticalMoment(m, botAPart, botBPart),
 		})
 
 		if len(matches) >= 5 {
@@ -919,6 +921,47 @@ func extractRivalryMatches(botAID, botBID string, data *IndexData) []KeyMatch {
 	}
 
 	return matches
+}
+
+// summarizeCriticalMoment generates a brief turning-point description from
+// match data per plan §13.2. The index builder does not have access to the
+// full replay JSON (stored on B2/R2), so this uses the score, turn count,
+// end condition, and pre-match ELO to synthesize a contextual summary.
+func summarizeCriticalMoment(m MatchData, winner, loser *ParticipantData) string {
+	scoreDelta := winner.Score - loser.Score
+	if scoreDelta < 0 {
+		scoreDelta = -scoreDelta
+	}
+
+	parts := make([]string, 0, 3)
+
+	// Close match indicator
+	if scoreDelta <= 1 {
+		parts = append(parts, "decided by a single point")
+	}
+
+	// ELO upset indicator
+	if winner.PreMatchRating > 0 && loser.PreMatchRating > 0 {
+		eloDelta := loser.PreMatchRating - winner.PreMatchRating
+		if eloDelta >= 150 {
+			parts = append(parts, fmt.Sprintf("upset by %.0f ELO points", eloDelta))
+		}
+	}
+
+	// End condition context
+	if m.EndCondition != "" && m.EndCondition != "turn_limit" {
+		parts = append(parts, m.EndCondition)
+	}
+
+	// Late-game drama
+	if m.TurnCount >= 400 {
+		parts = append(parts, "marathon match")
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ", ")
 }
 
 func getBotRank(botID string, data *IndexData) int {
