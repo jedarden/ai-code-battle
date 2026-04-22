@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/aicodebattle/acb/ratelimit"
 )
 
 // newTestServer creates a Server with no database or redis (for unit tests
@@ -16,6 +18,10 @@ func newTestServer() *Server {
 			BotTimeoutSecs: 5,
 			MaxConsecFails: 3,
 		},
+		regLimiter:   ratelimit.NewLimiter(5, 5.0/3600),
+		feedbackLtr:  ratelimit.NewLimiter(20, 20.0/3600),
+		predictLtr:   ratelimit.NewLimiter(60, 60.0/3600),
+		submitLtr:    ratelimit.NewLimiter(5, 5.0/86400),
 	}
 }
 

@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aicodebattle/acb/metrics"
+	"github.com/aicodebattle/acb/ratelimit"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -20,37 +23,78 @@ import (
 // Provides bot registration, job coordination, replay serving,
 // bot profiles, leaderboards, and UI feedback ingestion.
 type Server struct {
-	cfg Config
-	db  *sql.DB
-	rdb *redis.Client
+	cfg          Config
+	db           *sql.DB
+	rdb          *redis.Client
+	regLimiter   *ratelimit.Limiter // 5/hour per IP
+	feedbackLtr  *ratelimit.Limiter // 20/hour per IP
+	predictLtr   *ratelimit.Limiter // 60/hour per IP
+	submitLtr    *ratelimit.Limiter // 5/day per bot_id
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
-	// Health endpoints
+	// Health endpoints (no rate limit)
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /ready", s.handleReady)
 
-	// Bot registration
-	mux.HandleFunc("POST /api/register", s.handleRegister)
+	// Bot registration — 5/hour per IP
+	regMW := s.regLimiter.Middleware(ipKey, func() {
+		metrics.RateLimitHits.WithLabelValues("register").Inc()
+	})
+	mux.HandleFunc("POST /api/register", regMW(http.HandlerFunc(s.handleRegister)).ServeHTTP)
 
-	// Job coordination (for workers)
+	// Job coordination (for workers — authenticated, no public rate limit)
 	mux.HandleFunc("GET /api/job", s.handleGetJob)
-	mux.HandleFunc("POST /api/job/", s.handleJobResult)
 
-	// Replay serving
+	// Job result submission — per-worker 5/day limit
+	submitMW := s.submitLtr.Middleware(botIDKey(), func() {
+		metrics.RateLimitHits.WithLabelValues("submit").Inc()
+	})
+	mux.HandleFunc("POST /api/job/", submitMW(http.HandlerFunc(s.handleJobResult)).ServeHTTP)
+
+	// Replay serving (read-only, no rate limit)
 	mux.HandleFunc("GET /api/replay/", s.handleGetReplay)
 
-	// Bot profiles and leaderboard
+	// Bot profiles and leaderboard (read-only, no rate limit)
 	mux.HandleFunc("GET /api/bot/", s.handleGetBot)
 	mux.HandleFunc("GET /api/bots", s.handleListBots)
 
-	// Community replay feedback per plan §13.6
-	mux.HandleFunc("POST /api/feedback", s.handleUIFeedback)
+	// Community replay feedback — 20/hour per IP
+	fbMW := s.feedbackLtr.Middleware(ipKey, func() {
+		metrics.RateLimitHits.WithLabelValues("feedback").Inc()
+	})
+	mux.HandleFunc("POST /api/feedback", fbMW(http.HandlerFunc(s.handleUIFeedback)).ServeHTTP)
 
-	// Predictions
-	mux.HandleFunc("POST /api/predict", s.handlePredict)
+	// Predictions — 60/hour per IP
+	predMW := s.predictLtr.Middleware(ipKey, func() {
+		metrics.RateLimitHits.WithLabelValues("predict").Inc()
+	})
+	mux.HandleFunc("POST /api/predict", predMW(http.HandlerFunc(s.handlePredict)).ServeHTTP)
 	mux.HandleFunc("GET /api/predictions/open", s.handleOpenPredictions)
 	mux.HandleFunc("GET /api/predictions/history", s.handlePredictionHistory)
+}
+
+// ipKey extracts the client IP from the request for rate limiting.
+// Respects X-Forwarded-For when present (behind reverse proxy).
+func ipKey(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return host
+}
+
+// botIDKey extracts a rate-limit key for the job submission endpoint.
+// Workers submit results authenticated by API key, so we key by worker IP
+// to enforce the per-worker submission rate limit (max 5/day).
+func botIDKey() func(*http.Request) string {
+	return func(r *http.Request) string {
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		return "worker:" + host
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

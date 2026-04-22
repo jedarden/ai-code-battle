@@ -109,6 +109,12 @@ var (
 		Help:    "Match execution duration in seconds.",
 		Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600},
 	})
+
+	// RateLimitHits counts requests rejected by rate limiting.
+	RateLimitHits = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "acb_rate_limit_hits_total",
+		Help: "Total number of requests rejected by rate limiting.",
+	}, []string{"endpoint"})
 )
 
 func init() {
@@ -128,6 +134,7 @@ func init() {
 		WorkerMatchErrorsTotal,
 		WorkerJobsClaimedTotal,
 		WorkerMatchDuration,
+		RateLimitHits,
 	)
 }
 

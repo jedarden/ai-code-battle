@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/aicodebattle/acb/metrics"
+	"github.com/aicodebattle/acb/ratelimit"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 )
@@ -76,11 +77,26 @@ func main() {
 	defer rdb.Close()
 
 	srv := &Server{
-		cfg: cfg,
-		db:  db,
-		rdb: rdb,
-		// Note: alerter moved to acb-matchmaker deployment
+		cfg:         cfg,
+		db:          db,
+		rdb:         rdb,
+		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),     // 5/hour per IP
+		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600),   // 20/hour per IP
+		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600),   // 60/hour per IP
+		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),    // 5/day per key
 	}
+
+	// Periodically purge stale rate-limit buckets (every 10 min)
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			srv.regLimiter.Cleanup(time.Hour)
+			srv.feedbackLtr.Cleanup(time.Hour)
+			srv.predictLtr.Cleanup(time.Hour)
+			srv.submitLtr.Cleanup(24 * time.Hour)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
