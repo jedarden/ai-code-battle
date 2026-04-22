@@ -531,7 +531,7 @@ function addMatchShowMore(container: HTMLElement, remaining: PlaylistMatch[]): v
 }
 
 function watchMatch(matchId: string): void {
-  window.location.hash = `/watch/replay?url=/replays/${matchId}.json`;
+  window.location.hash = `/watch/replay?url=/replays/${matchId}.json.gz`;
 }
 
 function copyEmbedCode(matchId: string): void {

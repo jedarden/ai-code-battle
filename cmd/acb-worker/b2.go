@@ -49,15 +49,19 @@ func NewB2Client(cfg *Config) *B2Client {
 	}
 }
 
-// Upload uploads data to B2.
-func (c *B2Client) Upload(ctx context.Context, key string, data []byte, contentType string) error {
-	_, err := c.client.PutObject(ctx, &s3.PutObjectInput{
+// Upload uploads data to B2. Pass contentEncoding="" for uncompressed objects.
+func (c *B2Client) Upload(ctx context.Context, key string, data []byte, contentType string, contentEncoding string) error {
+	input := &s3.PutObjectInput{
 		Bucket:       aws.String(c.bucket),
 		Key:          aws.String(key),
 		Body:         bytes.NewReader(data),
 		ContentType:  aws.String(contentType),
 		CacheControl: aws.String("public, max-age=31536000, immutable"),
-	})
+	}
+	if contentEncoding != "" {
+		input.ContentEncoding = aws.String(contentEncoding)
+	}
+	_, err := c.client.PutObject(ctx, input)
 	return err
 }
 

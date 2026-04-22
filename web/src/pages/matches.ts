@@ -311,7 +311,7 @@ function renderMatchCard(match: MatchSummary): string {
           <span class="match-turns">${match.turns ?? '-'} turns</span>
           <span class="match-reason">${match.end_reason ?? '-'}</span>
         </div>
-        <a href="#/watch/replay?url=/replays/${match.id}.json" class="btn small">Watch Replay</a>
+        <a href="#/watch/replay?url=/replays/${match.id}.json.gz" class="btn small">Watch Replay</a>
       </div>
     </div>
   `;

@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"flag"
@@ -224,14 +226,14 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 	replayURL := ""
 	if w.b2 != nil {
 		uploadStart := time.Now()
-		replayData, _ := json.Marshal(replay)
 		replayURL, err = w.uploadReplay(ctx, claimData.Match.ID, replay)
 		if err != nil {
 			w.metrics.RecordReplayUploadError()
 			w.logger.Printf("Failed to upload replay: %v", err)
 			// Continue without replay URL - match result is more important
 		} else {
-			w.metrics.RecordReplayUpload(time.Since(uploadStart), len(replayData))
+			replaySize, _ := json.Marshal(replay)
+			w.metrics.RecordReplayUpload(time.Since(uploadStart), len(replaySize))
 			w.logger.Printf("Uploaded replay to %s", replayURL)
 		}
 	}
@@ -318,10 +320,11 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 
 	// Convert result
 	result := &MatchResult{
-		WinnerID:   "",
-		Turns:      engineResult.Turns,
-		EndReason:  engineResult.Reason,
-		Scores:     make(map[string]int),
+		WinnerID:    "",
+		Turns:       engineResult.Turns,
+		EndReason:   engineResult.Reason,
+		Scores:      make(map[string]int),
+		CrashedBots: make(map[string]bool),
 	}
 
 	// Set winner ID from result (Winner is int, -1 for draw)
@@ -338,6 +341,13 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 	for _, p := range claimData.Participants {
 		if p.PlayerSlot < len(engineResult.Scores) {
 			result.Scores[p.BotID] = engineResult.Scores[p.PlayerSlot]
+		}
+	}
+
+	// Propagate crash status from engine
+	for _, p := range claimData.Participants {
+		if p.PlayerSlot < len(engineResult.Crashed) {
+			result.CrashedBots[p.BotID] = engineResult.Crashed[p.PlayerSlot]
 		}
 	}
 
@@ -364,7 +374,7 @@ func (w *Worker) sendHeartbeats(ctx context.Context, jobID string) {
 	}
 }
 
-// uploadReplay uploads the replay to B2 and returns the URL.
+// uploadReplay uploads the gzipped replay to B2 and returns the URL.
 func (w *Worker) uploadReplay(ctx context.Context, matchID string, replay *engine.Replay) (string, error) {
 	if w.b2 == nil {
 		return "", fmt.Errorf("B2 client not configured")
@@ -376,9 +386,19 @@ func (w *Worker) uploadReplay(ctx context.Context, matchID string, replay *engin
 		return "", fmt.Errorf("failed to serialize replay: %w", err)
 	}
 
+	// Gzip compress
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write(data); err != nil {
+		return "", fmt.Errorf("failed to gzip replay: %w", err)
+	}
+	if err := gw.Close(); err != nil {
+		return "", fmt.Errorf("failed to close gzip writer: %w", err)
+	}
+
 	// Upload to B2
-	key := fmt.Sprintf("replays/%s.json", matchID)
-	if err := w.b2.Upload(ctx, key, data, "application/json"); err != nil {
+	key := fmt.Sprintf("replays/%s.json.gz", matchID)
+	if err := w.b2.Upload(ctx, key, buf.Bytes(), "application/json", "gzip"); err != nil {
 		return "", fmt.Errorf("failed to upload replay to B2: %w", err)
 	}
 

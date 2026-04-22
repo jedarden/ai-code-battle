@@ -184,7 +184,7 @@ function renderMatchItem(match: BotProfile['recent_matches'][number]): string {
       <span class="match-result">${won ? 'W' : 'L'}</span>
       <span class="match-opponent">${opponent ? escapeHtml(opponent.name) : 'Unknown'}</span>
       <span class="match-score">${match.participants.map(p => p.score).join(' - ')}</span>
-      <a href="#/watch/replay?url=/replays/${match.id}.json" class="btn small">Watch</a>
+      <a href="#/watch/replay?url=/replays/${match.id}.json.gz" class="btn small">Watch</a>
     </div>
   `;
 }
