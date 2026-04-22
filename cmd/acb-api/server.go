@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -1137,9 +1138,9 @@ func (s *Server) authenticateWorker(r *http.Request) bool {
 	return parts[1] == s.cfg.WorkerAPIKey
 }
 
-// getEnv gets an environment variable with a default value
 func getEnv(key, defaultValue string) string {
-	// This function is a simple helper - in production use the one from config.go
-	// For now, inline the logic
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return defaultValue
 }
