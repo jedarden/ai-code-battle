@@ -166,6 +166,19 @@ tbody tr:hover {
 .badge.error { background-color: rgba(239, 68, 68, 0.2); color: var(--error); }
 .badge.info { background-color: rgba(59, 130, 246, 0.2); color: var(--accent); }
 
+/* Enriched replay badge (§13.3) */
+.enriched-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-sm);
+  font-size: 0.7rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  background-color: rgba(236, 72, 153, 0.2);
+  color: #ec4899;
+}
+
 /* Loading Spinner */
 .spinner {
   display: inline-block;

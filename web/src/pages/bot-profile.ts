@@ -180,12 +180,14 @@ function renderMatchItem(match: BotProfile['recent_matches'][number]): string {
   const opponent = match.participants.find(p => p.bot_id !== match.winner_id);
   const won = match.participants.some(p => p.won);
   const resultClass = won ? 'match-won' : 'match-lost';
+  const enrichedBadge = match.enriched ? `<span class="enriched-badge" title="Narrated replay with AI commentary">Narrated</span>` : '';
 
   return `
     <div class="match-item ${resultClass}">
       <span class="match-result">${won ? 'W' : 'L'}</span>
       <span class="match-opponent">${opponent ? escapeHtml(opponent.name) : 'Unknown'}</span>
       <span class="match-score">${match.participants.map(p => p.score).join(' - ')}</span>
+      ${enrichedBadge}
       <a href="#/watch/replay?url=/replays/${match.id}.json.gz" class="btn small">Watch</a>
     </div>
   `;
