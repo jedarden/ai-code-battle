@@ -792,9 +792,12 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 	sb.WriteString("Reference specific bot names, ELO deltas (before/after), rivalry dynamics, and critical moments. ")
 	sb.WriteString("Be dramatic but factual. Write in present tense with a punchy, journalistic tone. Do not use emojis.\n\n")
 
-	// Season standings context
-	sb.WriteString(fmt.Sprintf("Season: %s\n", getCurrentSeasonName(data)))
-	sb.WriteString(fmt.Sprintf("Active bots: %d, Matches this week: %d\n\n", len(data.Bots), countWeeklyMatches(data)))
+	// Season standings context with championship positioning
+	seasonName := getCurrentSeasonName(data)
+	sb.WriteString(fmt.Sprintf("Season: %s\n", seasonName))
+	sb.WriteString(fmt.Sprintf("Active bots: %d, Matches this week: %d\n", len(data.Bots), countWeeklyMatches(data)))
+	sb.WriteString(formatSeasonChampionshipContext(data))
+	sb.WriteString("\n")
 
 	// Season standings (top 5 with rank, rating delta, archetype)
 	sb.WriteString("Season standings (top 5):\n")
@@ -864,12 +867,26 @@ func buildSpotlightPrompt(data *IndexData, movers []eloMover, strats []strategyC
 	if bestMatch != nil {
 		sb.WriteString(fmt.Sprintf("\nMatch of the week: %s — score %s in %d turns [match %s]\n",
 			bestMatch.Description, bestMatch.Score, bestMatch.TurnCount, bestMatch.MatchID))
-		// Include pre-match ELO for participants if available
+		// Include pre-match ELO and §13.2 critical moment summary for participants
 		for _, m := range data.Matches {
 			if m.ID == bestMatch.MatchID && len(m.Participants) >= 2 {
 				for _, p := range m.Participants {
 					sb.WriteString(fmt.Sprintf("  %s: pre-match ELO %.0f\n",
 						getBotName(p.BotID, data), p.PreMatchRating))
+				}
+				// §13.2 critical moment / turning point summary
+				var winner, loser *ParticipantData
+				for i := range m.Participants {
+					if m.Participants[i].Won {
+						winner = &m.Participants[i]
+					} else {
+						loser = &m.Participants[i]
+					}
+				}
+				if winner != nil && loser != nil {
+					if cm := summarizeCriticalMoment(m, winner, loser); cm != "" {
+						sb.WriteString(fmt.Sprintf("  Turning point: %s\n", cm))
+					}
 				}
 				break
 			}
@@ -2198,6 +2215,53 @@ func buildBotSpotlight(data *IndexData) *botSpotlight {
 }
 
 // ─── Formatting helpers (meta report specific) ────────────────────────────────
+
+// formatSeasonChampionshipContext returns a human-readable summary of season progress
+// and championship bracket positioning for LLM prompts.
+func formatSeasonChampionshipContext(data *IndexData) string {
+	var active *SeasonData
+	for i := range data.Seasons {
+		if data.Seasons[i].Status == "active" {
+			active = &data.Seasons[i]
+			break
+		}
+	}
+	if active == nil {
+		return ""
+	}
+
+	daysElapsed := data.GeneratedAt.Sub(active.StartsAt).Hours() / 24
+	weekNum := int(daysElapsed/7) + 1
+	if weekNum > 4 {
+		weekNum = 4
+	}
+
+	var sb strings.Builder
+	theme := ""
+	if active.Theme != "" {
+		theme = fmt.Sprintf(" (%s)", active.Theme)
+	}
+	sb.WriteString(fmt.Sprintf("Season progress: Week %d of 4%s", weekNum, theme))
+
+	if weekNum >= 3 {
+		sb.WriteString(". Championship bracket approaching — top 8 qualify")
+	} else {
+		sb.WriteString(". Early season — seeding phase")
+	}
+
+	// Championship seed line
+	topBots := getTopBots(data, 3)
+	if len(topBots) > 0 {
+		sb.WriteString(". Current championship seeds: ")
+		names := make([]string, 0, len(topBots))
+		for i, bot := range topBots {
+			names = append(names, fmt.Sprintf("#%d %s (ELO %d)", i+1, bot.Name, int(bot.Rating)))
+		}
+		sb.WriteString(strings.Join(names, ", "))
+	}
+
+	return sb.String()
+}
 
 func formatMapOfTheWeek(m *mapOfTheWeek) string {
 	if m == nil {
