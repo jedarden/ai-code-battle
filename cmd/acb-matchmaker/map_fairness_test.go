@@ -269,7 +269,7 @@ func TestThreeMonthAgeCheck(t *testing.T) {
 		createdAt := now.Add(-tc.createdAgo)
 		// Use a simpler check: created_at < NOW() - 3 months
 		cutoff := now.AddDate(0, -classicMinMonths, 0)
-		eligibleByDate := createdAt.Before(cutoff)
+		eligibleByDate := !createdAt.After(cutoff)
 		if eligibleByDate != tc.eligible {
 			t.Errorf("created %v ago: eligible=%v, want %v", tc.createdAgo, eligibleByDate, tc.eligible)
 		}

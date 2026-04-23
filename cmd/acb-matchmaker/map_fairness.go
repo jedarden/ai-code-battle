@@ -257,7 +257,7 @@ func (m *Matchmaker) promoteClassicMaps(ctx context.Context) error {
 				WHERE player_count = $1
 				  AND status = 'active'
 				  AND engagement > 0
-				  AND created_at < NOW() - INTERVAL '3 months'
+				  AND created_at <= NOW() - INTERVAL '3 months'
 				ORDER BY engagement DESC
 				LIMIT $2
 			) sub
