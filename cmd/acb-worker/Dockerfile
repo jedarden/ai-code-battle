@@ -12,6 +12,7 @@ RUN go mod download
 
 # Copy engine package
 COPY engine/ ./engine/
+COPY metrics/ ./metrics/
 
 # Copy worker source
 COPY cmd/acb-worker/ ./cmd/acb-worker/

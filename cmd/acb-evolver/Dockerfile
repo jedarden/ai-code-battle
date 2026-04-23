@@ -19,6 +19,7 @@ RUN go mod download
 
 # Copy engine package
 COPY engine/ ./engine/
+COPY metrics/ ./metrics/
 
 # Copy bots (used as seed programs)
 COPY bots/ ./bots/

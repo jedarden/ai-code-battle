@@ -12,6 +12,7 @@ RUN go mod download
 
 # Copy engine package (if needed)
 COPY engine/ ./engine/
+COPY metrics/ ./metrics/
 
 # Copy matchmaker source
 COPY cmd/acb-matchmaker/ ./cmd/acb-matchmaker/

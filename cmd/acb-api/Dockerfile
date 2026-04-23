@@ -13,6 +13,7 @@ RUN go mod download
 
 # Copy engine package (needed for shared types)
 COPY engine/ ./engine/
+COPY metrics/ ./metrics/
 
 # Copy API server source
 COPY cmd/acb-api/ ./cmd/acb-api/
