@@ -565,19 +565,24 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const pipMatch = getPipMatchId();
   const canvasWrapper = document.querySelector('.canvas-wrapper') as HTMLElement;
   let viewer: any;
+  let actualCanvas = canvas; // May be replaced by restored PIP canvas
 
   if (pipMatch && canvasWrapper && (initialUrl?.includes(pipMatch) || !initialUrl)) {
     const restored = restorePip();
     if (restored) {
-      // Move canvas back into the inline wrapper
+      // Remove the placeholder canvas from DOM (PIP canvas has the real content)
+      canvas.remove();
+      // Move the PIP canvas back into the wrapper
       canvasWrapper.insertBefore(restored.canvas, canvasWrapper.firstChild);
       restored.canvas.style.display = 'block';
-      viewer = new ReplayViewerClass(restored.canvas, { cellSize: 10 });
+      restored.canvas.id = 'replay-canvas'; // Ensure ID is set for TheaterMode and other consumers
+      actualCanvas = restored.canvas;
+      viewer = new ReplayViewerClass(actualCanvas, { cellSize: 10 });
     } else {
-      viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
+      viewer = new ReplayViewerClass(actualCanvas, { cellSize: 10 });
     }
   } else {
-    viewer = new ReplayViewerClass(canvas, { cellSize: 10 });
+    viewer = new ReplayViewerClass(actualCanvas, { cellSize: 10 });
   }
 
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
@@ -587,7 +592,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
 
   // Theater mode
   const theaterBtn = document.getElementById('theater-btn') as HTMLButtonElement;
-  const theater = new TheaterMode(canvas, {
+  const theater = new TheaterMode(actualCanvas, {
     getScoreText: () => {
       const replay = viewer.getReplay() as Replay | null;
       if (!replay) return '';
