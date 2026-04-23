@@ -61,6 +61,13 @@ type MetaDescription struct {
 	TopBots []BotSummary
 	// DominantStrategy is a narrative description of the current meta.
 	DominantStrategy string
+	// NashMixture describes the current Nash equilibrium mixture over the
+	// population (per plan §10.3 PSRO). When non-empty, the candidate should
+	// beat this mixture, not just one opponent. Example:
+	//   "40% swarm, 30% hunter, 30% gatherer"
+	NashMixture string
+	// MetaWeaknesses lists known exploitable gaps in the current population.
+	MetaWeaknesses []string
 	// IslandStats summarises each island's population and fitness.
 	IslandStats map[string]IslandStat
 }
@@ -135,12 +142,20 @@ func writeSystemContext(sb *strings.Builder, targetLang string) {
 	sb.WriteString(" based on the parents and match analysis provided.\n\n")
 
 	sb.WriteString("## Game Rules\n")
-	sb.WriteString("- Grid: 60×60 toroidal grid with walls, energy pickups, and player cores\n")
+	sb.WriteString("- Grid: toroidal (wraps horizontally and vertically) with walls, energy pickups, and player cores\n")
 	sb.WriteString("- Bots spawn from your core (costs 3 energy). Spawn whenever energy ≥ 3.\n")
 	sb.WriteString("- Each turn: move each bot one step (N/E/S/W) or stay. Submit all moves as JSON.\n")
-	sb.WriteString("- Collect energy tiles to gain energy. Attack enemy bots by moving onto them.\n")
-	sb.WriteString("- Win by: eliminating all enemy bots, controlling >50% score, or having the most score when turns run out (max 500).\n")
-	sb.WriteString("- Vision radius²=49 (~7 tiles). Attack by moving into an enemy.\n\n")
+	sb.WriteString("- Combat: focus-fire algorithm. A bot dies if ANY enemy within attack radius²=5 has ≤ its own enemy count.\n")
+	sb.WriteString("  - 2v1: the lone bot dies, pair survives. 1v1: both die. Tight formations are defensive.\n")
+	sb.WriteString("- Collect energy tiles (uncontested adjacent bots only) to gain energy.\n")
+	sb.WriteString("- Win by: sole survivor, dominance (≥80% bots for 100 turns), or highest score at turn 500.\n")
+	sb.WriteString("- Vision radius²=49 (~7 tiles). Fog of war: you only see tiles within vision of your bots.\n\n")
+	sb.WriteString("## HTTP Protocol\n")
+	sb.WriteString("- Your bot is an HTTP server listening on port 8080.\n")
+	sb.WriteString("- Engine POSTs game state (JSON) to /turn each turn. You have 3 seconds to respond.\n")
+	sb.WriteString("- Response: {\"moves\": [{\"row\":10,\"col\":15,\"direction\":\"N\"}], \"debug\": {...}}\n")
+	sb.WriteString("- Headers include HMAC-SHA256 signature: X-ACB-Signature, X-ACB-Match-Id, X-ACB-Turn.\n")
+	sb.WriteString("- 10 consecutive failures → bot marked crashed (units hold position for rest of match).\n\n")
 }
 
 func writeIslandContext(sb *strings.Builder, island string, generation int) {
@@ -170,6 +185,11 @@ func writeMetaSection(sb *strings.Builder, meta MetaDescription) {
 	if meta.DominantStrategy != "" {
 		fmt.Fprintf(sb, "Dominant strategy: %s\n", meta.DominantStrategy)
 	}
+	// Nash equilibrium mixture per plan §10.3 ("Beat this mix").
+	if meta.NashMixture != "" {
+		fmt.Fprintf(sb, "Nash equilibrium mixture: %s\n", meta.NashMixture)
+		sb.WriteString("Your candidate must beat this mixture, not just one opponent.\n")
+	}
 	if len(meta.TopBots) > 0 {
 		sb.WriteString("\nTop-rated bots:\n")
 		for i, bot := range meta.TopBots {
@@ -182,6 +202,12 @@ func writeMetaSection(sb *strings.Builder, meta MetaDescription) {
 			}
 			line += ")\n"
 			sb.WriteString(line)
+		}
+	}
+	if len(meta.MetaWeaknesses) > 0 {
+		sb.WriteString("\nKnown weaknesses in current population:\n")
+		for _, w := range meta.MetaWeaknesses {
+			fmt.Fprintf(sb, "  - %s\n", w)
 		}
 	}
 	if len(meta.IslandStats) > 0 {
@@ -237,7 +263,10 @@ func writeParentSection(sb *strings.Builder, parents []*evolverdb.Program) {
 	for i, p := range parents {
 		fmt.Fprintf(sb, "### Parent %d (ID: %d, fitness: %.3f, language: %s)\n",
 			i+1, p.ID, p.Fitness, p.Language)
-		if len(p.BehaviorVector) >= 2 {
+		if len(p.BehaviorVector) >= 4 {
+			fmt.Fprintf(sb, "Behavior: aggression=%.2f economy=%.2f exploration=%.2f formation=%.2f\n",
+				p.BehaviorVector[0], p.BehaviorVector[1], p.BehaviorVector[2], p.BehaviorVector[3])
+		} else if len(p.BehaviorVector) >= 2 {
 			fmt.Fprintf(sb, "Behavior: aggression=%.2f economy=%.2f\n",
 				p.BehaviorVector[0], p.BehaviorVector[1])
 		}
@@ -255,8 +284,9 @@ func writeTaskSection(sb *strings.Builder, targetLang string) {
 	fmt.Fprintf(sb, "Write an **improved** bot strategy in **%s** that:\n", langDisplayName(targetLang))
 	sb.WriteString("1. Addresses the weaknesses and counter-strategies identified in the match analysis.\n")
 	sb.WriteString("2. Builds on the best tactical patterns from the parent programs.\n")
-	sb.WriteString("3. Introduces at least one novel tactical improvement not present in the parents.\n")
-	sb.WriteString("4. Is complete and self-contained (define all required game types inline).\n\n")
+	sb.WriteString("3. Can beat the Nash mixture described above (not just one opponent).\n")
+	sb.WriteString("4. Is complete and self-contained (define all required game types inline).\n")
+	sb.WriteString("5. Fits in a single file under 10 KB.\n\n")
 	sb.WriteString("Return **only** the complete bot code in a single fenced code block with no additional explanation:\n")
 	sb.WriteString("```" + targetLang + "\n")
 	sb.WriteString("// your complete bot code here\n")

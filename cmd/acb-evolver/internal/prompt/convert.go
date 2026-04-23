@@ -47,6 +47,8 @@ func FromMetaDescription(d *meta.Description) MetaDescription {
 	return MetaDescription{
 		TotalBots:        d.TotalBots,
 		DominantStrategy: d.DominantStrategy,
+		NashMixture:      d.NashMixture,
+		MetaWeaknesses:   append([]string(nil), d.MetaWeaknesses...),
 		TopBots:          FromBotInfos(d.TopBots),
 		IslandStats:      FromIslandStatsMap(d.IslandStats),
 	}

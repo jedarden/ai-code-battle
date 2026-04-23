@@ -75,7 +75,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	voteMW := s.voteLtr.Middleware(ipKey, func() {
 		metrics.RateLimitHits.WithLabelValues("vote").Inc()
 	})
-	mux.HandleFunc("POST /api/feedback", fbMW(http.HandlerFunc(s.handleUIFeedback)).ServeHTTP)
+	mux.HandleFunc("POST /api/feedback", fbMW(http.HandlerFunc(s.handleCreateFeedback)).ServeHTTP)
 	mux.HandleFunc("GET /api/feedback/", s.handleGetFeedback)
 	mux.HandleFunc("POST /api/feedback/", voteMW(http.HandlerFunc(s.handleFeedbackUpvote)).ServeHTTP)
 
@@ -1492,10 +1492,10 @@ func (s *Server) handlePredictionHistory(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// handleUIFeedback handles POST /api/feedback
+// handleCreateFeedback handles POST /api/feedback
 // Accepts community replay feedback per plan §13.6.
 // Stores in replay_feedback table with type enum: insight, mistake, idea, highlight.
-func (s *Server) handleUIFeedback(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateFeedback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return

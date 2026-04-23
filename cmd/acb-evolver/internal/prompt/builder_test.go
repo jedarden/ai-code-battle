@@ -14,7 +14,7 @@ func TestAssemble_containsGameRules(t *testing.T) {
 		Generation: 1,
 	}
 	got := Assemble(r)
-	for _, want := range []string{"60×60", "energy", "spawn", "toroidal"} {
+	for _, want := range []string{"toroidal", "energy", "spawn", "focus-fire"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected prompt to contain %q", want)
 		}

@@ -120,6 +120,8 @@ func TestFromMetaDescription_Full(t *testing.T) {
 	desc := &meta.Description{
 		TotalBots:        42,
 		DominantStrategy: "aggressive",
+		NashMixture:      "60% aggressive, 40% economy",
+		MetaWeaknesses:   []string{"No bots exploring defense", "Low diversity in alpha"},
 		TopBots: []meta.BotInfo{
 			{Name: "bot1", Rating: 1600, Island: "alpha", Evolved: true},
 			{Name: "bot2", Rating: 1500, Island: "beta", Evolved: false},
@@ -136,6 +138,12 @@ func TestFromMetaDescription_Full(t *testing.T) {
 	}
 	if got.DominantStrategy != "aggressive" {
 		t.Errorf("expected DominantStrategy 'aggressive', got %q", got.DominantStrategy)
+	}
+	if got.NashMixture != "60% aggressive, 40% economy" {
+		t.Errorf("expected NashMixture, got %q", got.NashMixture)
+	}
+	if len(got.MetaWeaknesses) != 2 || got.MetaWeaknesses[0] != "No bots exploring defense" {
+		t.Errorf("expected 2 MetaWeaknesses, got %v", got.MetaWeaknesses)
 	}
 	if len(got.TopBots) != 2 {
 		t.Errorf("expected 2 TopBots, got %d", len(got.TopBots))

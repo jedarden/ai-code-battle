@@ -141,15 +141,15 @@ func TestCalculateDiversity_IdenticalPrograms(t *testing.T) {
 
 func TestCalculateDiversity_DiversePrograms(t *testing.T) {
 	programs := []*evolverdb.Program{
-		{ID: 1, BehaviorVector: []float64{0.0, 0.0}},
-		{ID: 2, BehaviorVector: []float64{1.0, 1.0}},
+		{ID: 1, BehaviorVector: []float64{0.0, 0.0, 0.0, 0.0}},
+		{ID: 2, BehaviorVector: []float64{1.0, 1.0, 1.0, 1.0}},
 	}
 
 	got := calculateDiversity(programs)
 
-	// Distance between (0,0) and (1,1) is sqrt(2), squared is 2
-	// Normalized by 2 (max squared distance is 2)
-	// Expected: sqrt(2) / sqrt(2) = 1.0
+	// Distance between (0,0,0,0) and (1,1,1,1) is sqrt(4) = 2.0
+	// Normalized by 2.0 (max distance in 4D unit hypercube is sqrt(4) = 2.0)
+	// Expected: 2.0 / 2.0 = 1.0
 	if got < 0.9 || got > 1.1 {
 		t.Errorf("expected diversity close to 1.0 for maximally diverse programs, got %f", got)
 	}
