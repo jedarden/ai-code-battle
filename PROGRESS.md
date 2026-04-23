@@ -1,10 +1,37 @@
 # AI Code Battle - Implementation Progress
 
-## Current Phase: Phase 10 - Ecosystem & Polish
+## Current Phase: Phase 12 - Deep Plan Gap Closure
 
 **Status: ✅ Complete**
 
-**Last Updated: 2026-04-21** (Series/season scheduler verification)
+**Last Updated: 2026-04-23** (Phase 12 gap verification — all items already implemented)
+
+### Phase 12 Gap Verification (2026-04-23)
+Second-pass gap review found all 16 listed items already implemented in prior phases:
+
+| Gap Item | Status | Location |
+|----------|--------|----------|
+| §4.4 HMAC strict verification | ✅ | `engine/bot_http.go` — strict sig check, no lenient fallback |
+| §3.3 Deterministic spawn priority | ✅ | `engine/turn.go` — `LastSpawnedTurn` tracking, `sortCoresByPriority()` |
+| §4.2 Config forward-compat fields | ✅ | `engine/types.go` — `SeasonID`, `RulesVersion` in Config struct |
+| §4.5 Multi-match crash cooldown | ✅ | `cmd/acb-worker/db.go` — 3 strikes, 30-min cooldown |
+| §7.1 Gzip replay upload | ✅ | `cmd/acb-worker/main.go` — gzip + B2 upload |
+| §7.3 Fog-of-war toggle + minimap | ✅ | `web/src/replay-viewer.ts` — `fogOfWarPlayer`, minimap canvas |
+| §10.2 Island cross-pollination | ✅ | `cmd/acb-evolver/internal/crosspoll/` — every 50 generations |
+| §10.2 MAP-Elites 4-D grid | ✅ | `cmd/acb-evolver/internal/mapelites/` — 4 dims, 81 cells |
+| §9.2 K8s manifests | ✅ | `manifests/acb-evolver-deployment.yml`, `acb-api-deployment.yml` |
+| §9.9 Prometheus metrics + alerts | ✅ | `manifests/acb-metrics-monitoring.yml` — 9 alert rules |
+| §13.5 Rivalry detection | ✅ | `cmd/acb-index-builder/generator.go` — `computeRivalries()` |
+| §13.6 /api/feedback naming | ✅ | `cmd/acb-api/server.go` — `/api/feedback`, test rejects old name |
+| §14.1 Debug telemetry visibility | ✅ | `debug_public` column, toggle endpoint, result filtering |
+| §15.1/§15.5 LLM prompt alignment | ✅ | `cmd/acb-evolver/internal/prompt/builder.go` — Nash + meta weaknesses |
+| §15.2 Static JSON meta files | ✅ | Index builder generates archetypes, rivalries, community_hints |
+
+Verification: `go test ./...` pass, `go vet ./...` clean, `npm run build` succeeds.
+
+## Phase 10 - Ecosystem & Polish
+
+**Status: ✅ Complete**
 
 ### Series & Season Scheduler Verification (2026-04-21)
 Verified that series scheduling and seasonal ELO reset (§11) are fully implemented:
