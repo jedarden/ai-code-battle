@@ -473,6 +473,9 @@ export class ReplayViewer {
   // Annotation overlay state (§16.8)
   private annotations: Array<{ turn: number; type: string; position?: Position }> = [];
 
+  // Minimap state (§7.3)
+  private minimapCanvas: HTMLCanvasElement | null = null;
+
   constructor(canvas: HTMLCanvasElement, options: ViewerOptions = {}) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
@@ -640,6 +643,118 @@ export class ReplayViewer {
 
   getFogOfWar(): number | null {
     return this.fogOfWarPlayer;
+  }
+
+  // ── Minimap Controls (§7.3) ──────────────────────────────────────────────────
+
+  setMinimapCanvas(canvas: HTMLCanvasElement): void {
+    this.minimapCanvas = canvas;
+    canvas.addEventListener('click', (e: MouseEvent) => this.handleMinimapClick(e));
+    canvas.style.cursor = 'crosshair';
+    this.renderMinimap();
+  }
+
+  private handleMinimapClick(e: MouseEvent): void {
+    if (!this.replay) return;
+    const canvas = this.minimapCanvas!;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const { rows, cols } = this.replay.map;
+    const mapW = cols * this.cellSize;
+    const mapH = rows * this.cellSize;
+    // Convert click position to map coordinates
+    const mapX = (x / canvas.width) * mapW;
+    const mapY = (y / canvas.height) * mapH;
+    // Pan camera to clicked position (exit follow mode)
+    this.followPlayer = null;
+    this.cameraTargetCenterX = mapX;
+    this.cameraTargetCenterY = mapY;
+    // Zoom in if at 1x
+    if (this.cameraZoom <= 1.1) {
+      this.cameraTargetZoom = 2;
+    }
+    this.render();
+    if (this.onFollowChange) this.onFollowChange(null);
+  }
+
+  renderMinimap(): void {
+    if (!this.minimapCanvas || !this.replay) return;
+    const mCtx = this.minimapCanvas.getContext('2d');
+    if (!mCtx) return;
+    const { rows, cols } = this.replay.map;
+    const turnData = this.replay.turns[this.currentTurn];
+    if (!turnData) return;
+
+    const w = this.minimapCanvas.width;
+    const h = this.minimapCanvas.height;
+    const cellW = w / cols;
+    const cellH = h / rows;
+    const colors = this.getPlayerColors();
+
+    // Background
+    mCtx.fillStyle = '#0a0a1e';
+    mCtx.fillRect(0, 0, w, h);
+
+    // Walls
+    mCtx.fillStyle = '#374151';
+    for (const wall of this.replay.map.walls) {
+      mCtx.fillRect(wall.col * cellW, wall.row * cellH, cellW + 0.5, cellH + 0.5);
+    }
+
+    // Energy
+    for (const e of turnData.energy) {
+      mCtx.fillStyle = '#facc15';
+      mCtx.fillRect(e.col * cellW, e.row * cellH, Math.max(cellW, 2), Math.max(cellH, 2));
+    }
+
+    // Cores
+    for (const core of turnData.cores) {
+      mCtx.fillStyle = core.active ? colors[core.owner] : '#4b5563';
+      mCtx.fillRect(core.position.col * cellW - 1, core.position.row * cellH - 1,
+        Math.max(cellW, 3) + 2, Math.max(cellH, 3) + 2);
+    }
+
+    // Bots
+    for (const bot of turnData.bots) {
+      if (!bot.alive) continue;
+      mCtx.fillStyle = colors[bot.owner];
+      const bx = bot.position.col * cellW;
+      const by = bot.position.row * cellH;
+      const bs = Math.max(cellW, 2);
+      mCtx.fillRect(bx, by, bs, bs);
+    }
+
+    // Fog overlay on minimap
+    if (this.fogOfWarPlayer !== null) {
+      const visible = this.computeVisibility(turnData, this.fogOfWarPlayer);
+      mCtx.fillStyle = 'rgba(10,10,30,0.7)';
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (!visible.has(`${r},${c}`)) {
+            mCtx.fillRect(c * cellW, r * cellH, cellW + 0.5, cellH + 0.5);
+          }
+        }
+      }
+    }
+
+    // Viewport rectangle
+    const mapW = cols * this.cellSize;
+    const mapH = rows * this.cellSize;
+    const canvasW = this.canvas.width;
+    const viewW = canvasW / this.cameraZoom;
+    const viewH = mapH / this.cameraZoom;
+    // Camera center is in world coordinates
+    const vx = this.cameraCenterX - viewW / 2;
+    const vy = this.cameraCenterY - viewH / 2;
+    // Scale to minimap coordinates
+    const sx = vx / mapW * w;
+    const sy = vy / mapH * h;
+    const sw = viewW / mapW * w;
+    const sh = viewH / mapH * h;
+    mCtx.strokeStyle = '#ffffff';
+    mCtx.lineWidth = 1.5;
+    mCtx.strokeRect(sx, sy, sw, sh);
   }
 
   // ── Accessibility Controls ─────────────────────────────────────────────────────
@@ -1651,6 +1766,11 @@ export class ReplayViewer {
         break;
     }
 
+    // Draw fog-of-war overlay on non-visible tiles (§7.3)
+    if (visible) {
+      this.renderFogOverlay(visible);
+    }
+
     // Draw animated particles and effects (if not reduced motion)
     if (!this.accessibility.reducedMotion) {
       drawEffects(ctx);
@@ -1681,6 +1801,9 @@ export class ReplayViewer {
     if (this.winProbCanvas && this.winProbData) {
       this.renderWinProbSparkline();
     }
+
+    // Update minimap each frame (§7.3)
+    this.renderMinimap();
   }
 
   // Standard view with grid
@@ -2232,6 +2355,21 @@ export class ReplayViewer {
     }
 
     return visible;
+  }
+
+  private renderFogOverlay(visible: Set<string>): void {
+    const { ctx, cellSize, replay } = this;
+    if (!replay) return;
+    const { rows, cols } = replay.map;
+    const fogColor = this.accessibility.highContrast ? 'rgba(0,0,0,0.85)' : 'rgba(10,10,30,0.7)';
+    ctx.fillStyle = fogColor;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!visible.has(`${r},${c}`)) {
+          ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+        }
+      }
+    }
   }
 
   private drawCell(row: number, col: number, color: string): void {

@@ -40,6 +40,12 @@ let transcriptViewModeValue: 'all' | 'window' | 'recent' = 'all';
 // Initialize viewer
 let viewer = new ReplayViewer(canvas, { cellSize: 16 });
 
+// Wire up minimap canvas (§7.3)
+const minimapCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
+if (minimapCanvas) {
+  viewer.setMinimapCanvas(minimapCanvas);
+}
+
 // Enable controls when replay is loaded
 function enableControls(): void {
   playBtn.disabled = false;
@@ -92,7 +98,7 @@ function updateMatchInfo(replay: Replay): void {
   }
 
   // Update fog of war options
-  fogSelect.innerHTML = '<option value="">Disabled (full view)</option>';
+  fogSelect.innerHTML = '<option value="">Omniscient</option>';
   replay.players.forEach((player, idx) => {
     const option = document.createElement('option');
     option.value = String(idx);
@@ -196,6 +202,7 @@ cellSizeSelect.addEventListener('change', () => {
     viewer = new ReplayViewer(canvas, { cellSize: size });
     viewer.onTurnChange = () => { updateUI(); updateEventLog(); updateTranscriptHighlight(); };
     viewer.onPlayStateChange = (playing) => { playBtn.textContent = playing ? 'Pause' : 'Play'; };
+    if (minimapCanvas) viewer.setMinimapCanvas(minimapCanvas);
     loadReplay(replay);
   }
 });

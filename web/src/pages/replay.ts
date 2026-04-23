@@ -64,6 +64,9 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
             <div id="no-replay" class="no-replay-message">Load a replay file to view</div>
             <button id="theater-btn" class="theater-btn" aria-label="Toggle theater mode" title="Theater mode (F)" style="position:absolute;top:8px;right:8px">&#x26F6;</button>
             <div id="follow-indicator" class="follow-indicator" style="display:none;position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.75);color:#e5e7eb;font:12px monospace;padding:4px 10px;border-radius:4px;pointer-events:auto;z-index:10;cursor:pointer" role="status" aria-live="polite"></div>
+            <div id="minimap-container" style="position:absolute;bottom:16px;right:16px;border:2px solid var(--border,#475569);border-radius:6px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.5);opacity:0.85;transition:opacity 0.2s;z-index:10">
+              <canvas id="minimap-canvas" width="150" height="150" style="display:block;cursor:crosshair"></canvas>
+            </div>
           </div>
 
           <!-- Mobile compact controls bar — CSS hides on tablet+ -->
@@ -177,7 +180,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
               </select>
               <label for="fog-select" style="margin-top: 10px;">Fog of War:</label>
               <select id="fog-select">
-                <option value="">Disabled (full view)</option>
+                <option value="">Omniscient</option>
               </select>
               <label for="cell-size-select" style="margin-top: 10px;">Cell Size:</label>
               <select id="cell-size-select">
@@ -585,6 +588,12 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     viewer = new ReplayViewerClass(actualCanvas, { cellSize: 10 });
   }
 
+  // Wire up minimap canvas (§7.3)
+  const minimapCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
+  if (minimapCanvas) {
+    viewer.setMinimapCanvas(minimapCanvas);
+  }
+
   let criticalMoments: Array<{turn: number; delta: number; description: string}> = [];
   let commentaryEnabled = true;
   let debugPanelExpanded = false;
@@ -750,7 +759,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       infoWinner.textContent = 'Player ' + replay.result.winner;
     }
 
-    fogSelect.innerHTML = '<option value="">Disabled (full view)</option>';
+    fogSelect.innerHTML = '<option value="">Omniscient</option>';
     replay.players.forEach((player, idx) => {
       const option = document.createElement('option');
       option.value = String(idx);
@@ -1430,6 +1439,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       const prevTurn = viewer.getTurn();
       viewer.destroy();
       viewer = new ReplayViewerClass(canvas, { cellSize: size });
+      if (minimapCanvas) viewer.setMinimapCanvas(minimapCanvas);
       loadReplay(replay);
       viewer.setTurn(prevTurn);
       updateUI();
