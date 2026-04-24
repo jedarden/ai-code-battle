@@ -1,0 +1,182 @@
+# bot-seeder: Registers all 6 strategy bots via POST /api/register and stores
+# the returned shared_secret in each bot's K8s Secret (acb-bot-<name>-secret).
+#
+# Registration flow (idempotent):
+#   1. GET /api/bots — skip bot if name already registered
+#   2. Wait for bot's /health to respond (bot pod must be Running first)
+#   3. POST /api/register → capture shared_secret
+#   4. Create/patch acb-bot-<name>-secret via K8s REST API
+#   5. Reloader detects the secret change and rolling-restarts the bot Deployment
+#
+# After all 6 bots are registered the script sleeps forever (idempotent on restart).
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bot-seeder-script
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-seeder
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: seeder
+data:
+  seed.sh: |
+    #!/bin/sh
+    set -eu
+
+    # Alpine: install required tools (curl for HTTP, jq for JSON parsing)
+    apk add --no-cache curl jq > /dev/null 2>&1
+
+    KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+    KUBE_CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    KUBE_API="https://kubernetes.default.svc"
+    NS="acb-bots"
+    ACB_API="http://acb-api.ai-code-battle.svc.cluster.local"
+
+    # Wait for the ACB API to become available
+    echo "[seeder] waiting for ACB API at ${ACB_API}/health ..."
+    until curl -sf "${ACB_API}/health" > /dev/null 2>&1; do
+      sleep 5
+    done
+    echo "[seeder] ACB API ready"
+
+    # upsert_bot_secret <secret-name> <shared-secret-value>
+    # Creates the K8s Secret if it does not exist, patches the shared-secret key if it does.
+    upsert_bot_secret() {
+      local secret_name="$1"
+      local secret_value="$2"
+      local b64
+      b64=$(printf '%s' "$secret_value" | base64 | tr -d '\n')
+
+      local http_code
+      http_code=$(curl -sk --cacert "$KUBE_CA" \
+        -H "Authorization: Bearer $KUBE_TOKEN" \
+        -o /dev/null -w '%{http_code}' \
+        "${KUBE_API}/api/v1/namespaces/${NS}/secrets/${secret_name}")
+
+      if [ "$http_code" = "200" ]; then
+        curl -sf --cacert "$KUBE_CA" \
+          -H "Authorization: Bearer $KUBE_TOKEN" \
+          -H "Content-Type: application/merge-patch+json" \
+          -X PATCH \
+          "${KUBE_API}/api/v1/namespaces/${NS}/secrets/${secret_name}" \
+          -d "{\"data\":{\"shared-secret\":\"${b64}\"}}" \
+          -o /dev/null
+        echo "[seeder] patched secret ${secret_name}"
+      else
+        curl -sf --cacert "$KUBE_CA" \
+          -H "Authorization: Bearer $KUBE_TOKEN" \
+          -H "Content-Type: application/json" \
+          -X POST \
+          "${KUBE_API}/api/v1/namespaces/${NS}/secrets" \
+          -d "{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"metadata\":{\"name\":\"${secret_name}\",\"namespace\":\"${NS}\"},\"type\":\"Opaque\",\"data\":{\"shared-secret\":\"${b64}\"}}" \
+          -o /dev/null
+        echo "[seeder] created secret ${secret_name}"
+      fi
+    }
+
+    # register_bot <short-name> <DisplayName>
+    # Idempotent: skips if a bot named <DisplayName>Bot is already in /api/bots.
+    register_bot() {
+      local short_name="$1"
+      local display_name="$2"
+      local bot_name="${display_name}Bot"
+      local endpoint="http://bot-${short_name}.${NS}.svc.cluster.local"
+
+      # Idempotency check: skip if already registered
+      local existing
+      existing=$(curl -sf "${ACB_API}/api/bots" \
+        | jq -r ".bots[] | select(.name == \"${bot_name}\") | .bot_id // empty")
+      if [ -n "$existing" ]; then
+        echo "[seeder] ${bot_name} already registered (${existing}), skipping"
+        return 0
+      fi
+
+      # Wait for the bot's /health endpoint
+      echo "[seeder] waiting for ${endpoint}/health ..."
+      local attempts=0
+      until curl -sf "${endpoint}/health" > /dev/null 2>&1; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 72 ]; then
+          echo "[seeder] ERROR: ${endpoint}/health unreachable after 6 minutes, aborting"
+          exit 1
+        fi
+        sleep 5
+      done
+      echo "[seeder] ${bot_name} health OK"
+
+      # Register via ACB API
+      local response
+      response=$(curl -sf -X POST "${ACB_API}/api/register" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"${bot_name}\",\"owner\":\"system\",\"endpoint_url\":\"${endpoint}\"}")
+
+      local bot_id shared_secret
+      bot_id=$(printf '%s' "$response" | jq -r '.bot_id // empty')
+      shared_secret=$(printf '%s' "$response" | jq -r '.shared_secret // empty')
+
+      if [ -z "$bot_id" ]; then
+        echo "[seeder] ERROR: registration failed for ${bot_name}: ${response}"
+        exit 1
+      fi
+
+      echo "[seeder] registered ${bot_name}: bot_id=${bot_id}"
+
+      # Store the shared_secret so the bot pod can validate HMAC on /turn requests.
+      # Reloader detects the secret change and triggers a rolling restart of the bot Deployment.
+      upsert_bot_secret "acb-bot-${short_name}-secret" "$shared_secret"
+    }
+
+    register_bot "random"   "Random"
+    register_bot "gatherer" "Gatherer"
+    register_bot "rusher"   "Rusher"
+    register_bot "guardian" "Guardian"
+    register_bot "swarm"    "Swarm"
+    register_bot "hunter"   "Hunter"
+
+    echo "[seeder] all 6 bots registered successfully, sleeping forever"
+    exec sleep infinity
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot-seeder
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-seeder
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: seeder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bot-seeder
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bot-seeder
+        app.kubernetes.io/part-of: ai-code-battle
+        app.kubernetes.io/component: seeder
+    spec:
+      serviceAccountName: bot-seeder
+      restartPolicy: Always
+      containers:
+        - name: seeder
+          image: alpine:3.21
+          command: ["/bin/sh", "/scripts/seed.sh"]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      volumes:
+        - name: scripts
+          configMap:
+            name: bot-seeder-script
+            defaultMode: 0755

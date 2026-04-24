@@ -18,6 +18,7 @@ metadata:
     argocd-image-updater.argoproj.io/app.update-strategy: name
     argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
     argocd-image-updater.argoproj.io/write-back-method: argocd
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:

@@ -1,0 +1,48 @@
+# bot-seeder-rbac.yml: RBAC for the bot registration seeder
+# ServiceAccount + Role allowing get/create/patch Secrets in the acb-bots namespace.
+# The seeder uses the K8s REST API (via curl + the mounted ServiceAccount token)
+# to upsert acb-bot-<name>-secret with the shared_secret returned by POST /api/register.
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bot-seeder
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-seeder
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: seeder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bot-seeder
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-seeder
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: seeder
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bot-seeder
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-seeder
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: seeder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bot-seeder
+subjects:
+  - kind: ServiceAccount
+    name: bot-seeder
+    namespace: acb-bots
