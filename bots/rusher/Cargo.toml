@@ -16,5 +16,5 @@ tracing-subscriber = "0.3"
 
 [profile.release]
 strip = true
-opt-level = "z"
-lto = true
+opt-level = "s"
+lto = "thin"
