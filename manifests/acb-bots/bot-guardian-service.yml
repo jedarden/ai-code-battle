@@ -1,0 +1,22 @@
+# bot-guardian: Service for GuardianBot
+# DNS: http://bot-guardian.acb-bots.svc.cluster.local
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot-guardian
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-guardian
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+spec:
+  selector:
+    app.kubernetes.io/name: bot-guardian
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

@@ -1,0 +1,72 @@
+# bot-hunter: HunterBot — Java strategy bot
+# Targets isolated enemy bots (2v1), predicts enemy movement, Hungarian algorithm assignment.
+# Higher CPU/memory allocation due to JVM overhead.
+# HTTP server on port 8080, POST /turn, GET /health.
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot-hunter
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-hunter
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-bot-hunter
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bot-hunter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bot-hunter
+        app.kubernetes.io/part-of: ai-code-battle
+        app.kubernetes.io/component: strategy-bot
+    spec:
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: docker-hub-registry
+      containers:
+        - name: bot
+          image: ronaldraygun/acb-bot-hunter:sha-placeholder
+          imagePullPolicy: Always
+          env:
+            - name: BOT_PORT
+              value: "8080"
+            - name: BOT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: acb-bot-hunter-secret
+                  key: shared-secret
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi

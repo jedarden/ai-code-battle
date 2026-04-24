@@ -1,0 +1,71 @@
+# bot-swarm: SwarmBot — TypeScript strategy bot
+# Tight formation advance, cohesion-based movement toward enemy presence.
+# HTTP server on port 8080, POST /turn, GET /health.
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot-swarm
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-swarm
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-bot-swarm
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bot-swarm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bot-swarm
+        app.kubernetes.io/part-of: ai-code-battle
+        app.kubernetes.io/component: strategy-bot
+    spec:
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: docker-hub-registry
+      containers:
+        - name: bot
+          image: ronaldraygun/acb-bot-swarm:sha-placeholder
+          imagePullPolicy: Always
+          env:
+            - name: BOT_PORT
+              value: "8080"
+            - name: BOT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: acb-bot-swarm-secret
+                  key: shared-secret
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

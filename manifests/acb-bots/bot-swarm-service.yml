@@ -1,0 +1,22 @@
+# bot-swarm: Service for SwarmBot
+# DNS: http://bot-swarm.acb-bots.svc.cluster.local
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot-swarm
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-swarm
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+spec:
+  selector:
+    app.kubernetes.io/name: bot-swarm
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

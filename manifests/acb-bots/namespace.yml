@@ -1,0 +1,12 @@
+# acb-bots: Namespace for AI Code Battle strategy bot deployments
+# Separate from ai-code-battle namespace for clean isolation of bot services.
+# Bot endpoints: http://bot-<name>.acb-bots.svc.cluster.local
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acb-bots
+  labels:
+    app.kubernetes.io/part-of: ai-code-battle
