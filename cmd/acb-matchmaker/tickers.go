@@ -560,7 +560,7 @@ func (m *Matchmaker) tickStaleReaper(ctx context.Context) {
 
 	rows, err := m.db.QueryContext(ctx,
 		`SELECT job_id FROM jobs
-		 WHERE status = 'running' AND claimed_at < $1`,
+		 WHERE status = 'claimed' AND claimed_at < $1`,
 		time.Now().Add(-threshold))
 	if err != nil {
 		log.Printf("stale-reaper: query error: %v", err)
@@ -581,7 +581,7 @@ func (m *Matchmaker) tickStaleReaper(ctx context.Context) {
 	for _, jobID := range staleJobs {
 		result, err := m.db.ExecContext(ctx,
 			`UPDATE jobs SET status = 'pending', worker_id = NULL, claimed_at = NULL
-			 WHERE job_id = $1 AND status = 'running'`, jobID)
+			 WHERE job_id = $1 AND status = 'claimed'`, jobID)
 		if err != nil {
 			log.Printf("stale-reaper: update error for %s: %v", jobID, err)
 			continue
