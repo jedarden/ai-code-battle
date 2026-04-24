@@ -169,7 +169,7 @@ func (c *DBClient) ClaimJob(ctx context.Context, jobID string, workerID string) 
 	var match DBMatch
 	err = tx.QueryRowContext(ctx, `
 		SELECT m.match_id, m.status, m.winner, m.map_id, m.created_at, m.completed_at,
-		       COALESCE(s.season_id, ''), COALESCE(s.rules_version::text, '')
+		       COALESCE(s.id::text, ''), COALESCE(s.rules_version::text, '')
 		FROM matches m
 		LEFT JOIN seasons s ON s.status = 'active'
 		WHERE m.match_id = $1
