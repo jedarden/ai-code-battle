@@ -1,115 +1,135 @@
 # Argo Events resources for AI Code Battle CI triggers
-# Sync to: declarative-config/k8s/iad-ci/argo-events/
+# Deployed to: declarative-config/k8s/iad-ci/argo-events/
 #
 # Components:
-#   1. EventBus (Jetstream) — message bus for events
-#   2. EventSource — Forgejo webhook listener for push events
-#   3. Sensor — routes push events to the appropriate WorkflowTemplate
+#   1. forgejo-eventsource.yml  — Forgejo generic webhook listener for push events
+#   2. ai-code-battle-sensor.yml — routes push events to the appropriate WorkflowTemplates
 #
-# The sensor triggers:
-#   - acb-build-images: when Go source or Dockerfiles change
-#   - acb-build-site:   when web/ directory changes
+# The sensor triggers on every push to master:
+#   - acb-images-build: builds all Go service images (matchmaker, worker, evolver, etc.)
+#   - acb-site-build:   builds web SPA and wraps as container image artifact
+#   - acb-bots-build:   builds all 6 strategy bot images, pushes to Docker Hub,
+#                       updates declarative-config deployment tags
+#
+# Webhook to register in Forgejo (jedarden/ai-code-battle):
+#   Settings → Webhooks → Add Webhook → Gitea
+#   URL:          https://webhooks-ci.ardenone.com/ai-code-battle
+#   Content type: application/json
+#   Trigger:      Push events
+#
 ---
-apiVersion: argoproj.io/v1alpha1
-kind: EventBus
-metadata:
-  name: acb-bus
-  namespace: argo-workflows
-spec:
-  nats:
-    native:
-      auth: token
----
-# EventSource: receives Forgejo/GitHub webhook push events
+# EventSource (deployed as forgejo-eventsource.yml in declarative-config)
 apiVersion: argoproj.io/v1alpha1
 kind: EventSource
 metadata:
-  name: acb-webhook
-  namespace: argo-workflows
+  name: forgejo-webhooks
+  namespace: argo-events
 spec:
+  eventBusName: default
   webhook:
-    acb-push:
+    ai-code-battle:
       port: "12000"
-      endpoint: /push
+      endpoint: /ai-code-battle
       method: POST
-      # The webhook URL registered in Forgejo:
-      #   http://acb-webhook-eventsource-svc.argo-workflows.svc:12000/push
-      # Exposed externally via IngressRoute or port-forward.
+  service:
+    ports:
+      - port: 12000
+        targetPort: 12000
 ---
-# Sensor: routes push events to the correct WorkflowTemplate
+# Sensor (deployed as ai-code-battle-sensor.yml in declarative-config)
 apiVersion: argoproj.io/v1alpha1
 kind: Sensor
 metadata:
-  name: acb-ci-trigger
-  namespace: argo-workflows
+  name: ai-code-battle-ci-sensor
+  namespace: argo-events
 spec:
-  template:
-    serviceAccountName: argo-workflow
+  eventBusName: default
   dependencies:
     - name: acb-push
-      eventSourceName: acb-webhook
-      eventName: acb-push
+      eventSourceName: forgejo-webhooks
+      eventName: ai-code-battle
       filters:
-        # Only trigger on push to master branch
         data:
+          - path: headers.X-Forgejo-Event
+            type: string
+            value:
+              - push
           - path: body.ref
             type: string
             value:
-              - "refs/heads/master"
+              - refs/heads/master
   triggers:
-    # Trigger image builds for all pushes to master
     - template:
-        name: build-images-trigger
-        k8s:
-          group: argoproj.io
-          version: v1alpha1
-          resource: workflows
-          operation: create
+        name: acb-images-trigger
+        argoWorkflow:
+          operation: submit
           source:
             resource:
               apiVersion: argoproj.io/v1alpha1
               kind: Workflow
               metadata:
-                generateName: acb-build-images-
+                generateName: acb-images-build-
                 namespace: argo-workflows
               spec:
                 workflowTemplateRef:
-                  name: acb-build-images
+                  name: acb-images-build
                 arguments:
                   parameters:
-                    - name: sha
+                    - name: commit-sha
                       value: ""
-          parameters:
-            - src:
-                dependencyName: acb-push
-                dataKey: body.after
-              dest: spec.arguments.parameters[0].value
-    # Trigger site build for all pushes to master (the site workflow
-    # is lightweight — only rebuilds if web/ actually changed, but we
-    # trigger unconditionally to keep the artifact current)
+      parameters:
+        - src:
+            dependencyName: acb-push
+            dataKey: body.after
+          dest: spec.arguments.parameters.0.value
+      conditions: acb-push
+
     - template:
-        name: build-site-trigger
-        k8s:
-          group: argoproj.io
-          version: v1alpha1
-          resource: workflows
-          operation: create
+        name: acb-site-trigger
+        argoWorkflow:
+          operation: submit
           source:
             resource:
               apiVersion: argoproj.io/v1alpha1
               kind: Workflow
               metadata:
-                generateName: acb-build-site-
+                generateName: acb-site-build-
                 namespace: argo-workflows
               spec:
                 workflowTemplateRef:
-                  name: acb-build-site
+                  name: acb-site-build
                 arguments:
                   parameters:
-                    - name: sha
+                    - name: commit-sha
                       value: ""
-          parameters:
-            - src:
-                dependencyName: acb-push
-                dataKey: body.after
-              dest: spec.arguments.parameters[0].value
+      parameters:
+        - src:
+            dependencyName: acb-push
+            dataKey: body.after
+          dest: spec.arguments.parameters.0.value
+      conditions: acb-push
+
+    - template:
+        name: acb-bots-trigger
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: acb-bots-build-
+                namespace: argo-workflows
+              spec:
+                workflowTemplateRef:
+                  name: acb-bots-build
+                arguments:
+                  parameters:
+                    - name: commit-sha
+                      value: ""
+      parameters:
+        - src:
+            dependencyName: acb-push
+            dataKey: body.after
+          dest: spec.arguments.parameters.0.value
+      conditions: acb-push
