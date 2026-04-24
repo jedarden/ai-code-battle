@@ -452,8 +452,16 @@ func (w *Worker) computeRatingUpdates(claimData *JobClaimData, result *MatchResu
 			Phi:   p.RatingPhiBefore,
 			Sigma: p.RatingSigmaBefore,
 		}
-		// Normalize scores for Glicko-2 (higher is better)
-		scores[i] = float64(result.Scores[p.BotID])
+		// Use winner identity for pairwise Glicko-2 scoring.
+		// Raw game scores (captures) are often tied, so we use the declared
+		// winner as the discriminator: winner=1.0, others=0.0, draw=0.5.
+		if result.WinnerID == "" {
+			scores[i] = 0.5
+		} else if result.WinnerID == p.BotID {
+			scores[i] = 1.0
+		} else {
+			scores[i] = 0.0
+		}
 	}
 
 	// Compute rating updates
