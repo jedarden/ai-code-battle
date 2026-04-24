@@ -1,0 +1,93 @@
+# acb-matchmaker: Internal matchmaking scheduler for AI Code Battle
+# Computes pairings, enqueues job IDs into Valkey, health-checks bots,
+# and reaps stale jobs. No external exposure.
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/ai-code-battle/
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acb-matchmaker
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/component: matchmaker
+    app.kubernetes.io/name: acb-matchmaker
+    app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-matchmaker
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acb-matchmaker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: matchmaker
+        app.kubernetes.io/name: acb-matchmaker
+        app.kubernetes.io/part-of: ai-code-battle
+      annotations:
+        reloader.stakater.com/auto: "true"
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: matchmaker
+          image: ronaldraygun/acb-matchmaker@sha256:1a322b94e32e6cd843abe3c2beb1478f2c4893ce5d963a8d2eeff92cfe7c0e06
+          imagePullPolicy: Always
+          env:
+            - name: ACB_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acb-postgres-credentials
+                  key: username
+            - name: ACB_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acb-postgres-credentials
+                  key: password
+            - name: ACB_DATABASE_URL
+              value: "postgresql://$(ACB_POSTGRES_USER):$(ACB_POSTGRES_PASSWORD)@acb-postgres:5432/ai_code_battle?sslmode=disable"
+            - name: ACB_VALKEY_ADDR
+              value: "valkey:6379"
+            - name: ACB_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-matchmaker-secrets
+                  key: encryption-key
+                  optional: true
+            - name: ACB_DISCORD_WEBHOOK
+              valueFrom:
+                secretKeyRef:
+                  name: acb-alert-webhooks
+                  key: discord
+                  optional: true
+            - name: ACB_SLACK_WEBHOOK
+              valueFrom:
+                secretKeyRef:
+                  name: acb-alert-webhooks
+                  key: slack
+                  optional: true
+            - name: ACB_MATCHMAKER_INTERVAL
+              value: "60"
+            - name: ACB_HEALTHCHECK_INTERVAL
+              value: "900"
+            - name: ACB_REAPER_INTERVAL
+              value: "300"
+            - name: ACB_BOT_TIMEOUT
+              value: "5"
+            - name: ACB_STALE_JOB_MINUTES
+              value: "15"
+            - name: ACB_MAX_CONSEC_FAILS
+              value: "3"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              memory: "256Mi"
+      imagePullSecrets:
+        - name: docker-hub-registry

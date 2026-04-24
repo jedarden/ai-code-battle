@@ -18,6 +18,11 @@ metadata:
   labels:
     app.kubernetes.io/name: acb-evolver
     app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-evolver
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
 spec:
   replicas: 1
   selector:
@@ -33,7 +38,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: evolver
-          image: ronaldraygun/acb-evolver:latest
+          image: ronaldraygun/acb-evolver@sha256:15f72e07037585734a4417f5d7402463ed846c6fc73e55e4e58bc71787c6465d
           imagePullPolicy: Always
           args: ["run", "-continuous"]
           ports:

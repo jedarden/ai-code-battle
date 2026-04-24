@@ -1,0 +1,127 @@
+# acb-index-builder: Static index generation and deployment for AI Code Battle
+# Reads PostgreSQL, generates JSON indexes every 15m, deploys to Cloudflare Pages
+# every ~90m, manages R2 warm cache (promote from armor/B2, prune old).
+# Self-restarts every 4h to prevent memory leaks.
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/ai-code-battle/
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acb-index-builder
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/component: index-builder
+    app.kubernetes.io/name: acb-index-builder
+    app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-index-builder
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acb-index-builder
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: index-builder
+        app.kubernetes.io/name: acb-index-builder
+        app.kubernetes.io/part-of: ai-code-battle
+      annotations:
+        reloader.stakater.com/auto: "true"
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: index-builder
+          image: ronaldraygun/acb-index-builder@sha256:a19c311f0166f2cb969d389a56dc7c9ed4a5c6913c6b4c9a817fb18de078c469
+          imagePullPolicy: Always
+          env:
+            - name: ACB_POSTGRES_HOST
+              value: "acb-postgres"
+            - name: ACB_POSTGRES_PORT
+              value: "5432"
+            - name: ACB_POSTGRES_DATABASE
+              value: "ai_code_battle"
+            - name: ACB_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acb-postgres-credentials
+                  key: username
+            - name: ACB_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acb-postgres-credentials
+                  key: password
+            - name: ACB_BUILD_INTERVAL
+              value: "15m"
+            - name: ACB_DEPLOY_INTERVAL
+              value: "6"
+            - name: ACB_MAX_LIFETIME
+              value: "4h"
+            - name: ACB_BUILD_TIMEOUT
+              value: "10m"
+            - name: ACB_OUTPUT_DIR
+              value: "/data"
+            - name: ACB_CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: acb-cloudflare-api-token
+                  key: token
+            - name: ACB_CLOUDFLARE_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: acb-cloudflare-api-token
+                  key: account-id
+            - name: ACB_PAGES_PROJECT
+              value: "ai-code-battle"
+            - name: ACB_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: endpoint
+            - name: ACB_R2_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: bucket
+            - name: ACB_R2_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: access-key
+            - name: ACB_R2_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: secret-key
+            - name: ACB_B2_ENDPOINT
+              value: "http://armor:9000"
+            - name: ACB_B2_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: acb-armor-credentials
+                  key: bucket
+            - name: ACB_B2_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-armor-credentials
+                  key: auth-access-key
+            - name: ACB_B2_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-armor-credentials
+                  key: auth-secret-key
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "192Mi"
+            limits:
+              memory: "512Mi"
+      imagePullSecrets:
+        - name: docker-hub-registry

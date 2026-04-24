@@ -13,6 +13,11 @@ metadata:
   labels:
     app.kubernetes.io/name: acb-api
     app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-api
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
 spec:
   replicas: 1
   selector:
@@ -27,7 +32,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: api
-          image: ronaldraygun/acb-api:latest
+          image: ronaldraygun/acb-api@sha256:82e20d034f4098442b094bd6590673b09f8bbd78c5c5f5e1f5079c677564dc83
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
