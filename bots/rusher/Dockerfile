@@ -5,7 +5,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-RUN cargo build --release
+RUN apk add --no-cache musl-dev && cargo build --release
 
 # Runtime stage
 FROM alpine:3.21
