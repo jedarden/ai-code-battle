@@ -524,18 +524,23 @@ func updateCrashStrikes(ctx context.Context, tx *sql.Tx, crashedBots map[string]
 		return nil
 	}
 
+	cooldownUntil := time.Now().Add(CrashCooldownDuration)
+
 	for botID, crashed := range crashedBots {
 		if crashed {
-			// Increment strikes; if threshold reached, set cooldown
+			// Increment strikes; if threshold reached, set cooldown.
+			// Pass cooldownUntil as time.Time so pq encodes it as a proper
+			// timestamptz — passing time.Duration directly sends raw nanoseconds
+			// which PostgreSQL interprets as seconds, resulting in a ~57000-year cooldown.
 			_, err := tx.ExecContext(ctx, `
 				UPDATE bots
 				SET crash_strikes = crash_strikes + 1,
 				    cooldown_until = CASE
-				        WHEN crash_strikes + 1 >= $1 THEN NOW() + $2
+				        WHEN crash_strikes + 1 >= $1 THEN $2
 				        ELSE cooldown_until
 				    END
 				WHERE bot_id = $3
-			`, MaxCrashStrikes, CrashCooldownDuration, botID)
+			`, MaxCrashStrikes, cooldownUntil, botID)
 			if err != nil {
 				return fmt.Errorf("failed to increment crash strikes for %s: %w", botID, err)
 			}
