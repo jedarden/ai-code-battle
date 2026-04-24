@@ -84,7 +84,7 @@ func (s *GathererStrategy) computeBotMove(
 	}
 
 	// Try to find nearest untargeted energy
-	nearestEnergy, path := s.findNearestEnergy(bot.Position, energyPositions, usedEnergy, enemyPositions, config)
+	_, path := s.findNearestEnergy(bot.Position, energyPositions, usedEnergy, enemyPositions, config)
 	if path != nil && len(path) > 0 {
 		// Move towards the energy
 		return &Move{
@@ -156,7 +156,7 @@ func (s *GathererStrategy) findNearestEnergy(
 	queue := list.New()
 	queue.PushBack(queueItem{pos: start, path: []Direction{}})
 
-	_ = nearestEnergy // Track found position (unused but semantically meaningful)
+	var nearestEnergy Position
 	var bestPath []Direction
 
 	for queue.Len() > 0 {
