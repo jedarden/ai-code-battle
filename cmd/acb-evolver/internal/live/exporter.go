@@ -187,7 +187,14 @@ func fillIslandStats(ctx context.Context, db *sql.DB, data *LiveData) error {
 		SELECT p.island,
 		       COUNT(*) AS population,
 		       COALESCE(MAX(b.rating_mu - 2*b.rating_phi), 0) AS best_rating,
-		       COALESCE(b.bot_id, '') AS best_bot_id
+		       COALESCE(
+		           (SELECT p2.bot_id FROM programs p2
+		            LEFT JOIN bots b2 ON p2.bot_id = b2.bot_id
+		            WHERE p2.island = p.island
+		            ORDER BY COALESCE(b2.rating_mu - 2*b2.rating_phi, 0) DESC
+		            LIMIT 1),
+		           ''
+		       ) AS best_bot_id
 		FROM programs p
 		LEFT JOIN bots b ON p.bot_id = b.bot_id
 		GROUP BY p.island`)
