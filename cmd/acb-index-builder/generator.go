@@ -66,6 +66,7 @@ type BotProfile struct {
 	Generation       int                    `json:"generation,omitempty"`
 	DebugPublic      bool                   `json:"debug_public"`
 	CreatedAt        string                 `json:"created_at"`
+	UpdatedAt        string                 `json:"updated_at"`
 	RatingHistory    []RatingHistoryEntry   `json:"rating_history"`
 	RecentMatches    []MatchSummary         `json:"recent_matches"`
 }
@@ -76,6 +77,7 @@ type MatchSummary struct {
 	CompletedAt  string               `json:"completed_at"`
 	Participants []MatchParticipantSummary `json:"participants"`
 	WinnerID     string               `json:"winner_id,omitempty"`
+	MapID        string               `json:"map_id,omitempty"`
 	Turns        int                  `json:"turns"`
 	EndReason    string               `json:"end_reason"`
 	Enriched     bool                 `json:"enriched"`
@@ -344,6 +346,7 @@ func matchToSummary(m MatchData, data *IndexData, cfg *Config) MatchSummary {
 		CompletedAt:  m.CompletedAt.Format(time.RFC3339),
 		Participants: participants,
 		WinnerID:     m.WinnerID,
+		MapID:        m.MapID,
 		Turns:        m.TurnCount,
 		EndReason:    m.EndCondition,
 		Enriched:     enriched,

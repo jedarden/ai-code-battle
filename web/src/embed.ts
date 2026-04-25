@@ -24,6 +24,7 @@ interface EmbedConfig {
   speed: number;
   loop: boolean;
   viewMode: 'standard' | 'dots' | 'voronoi' | 'influence';
+  demo: boolean;
 }
 
 class EmbedViewer {
@@ -96,6 +97,7 @@ class EmbedViewer {
       speed: parseInt(params.get('speed') || '100', 10),
       loop: params.get('loop') === 'true',
       viewMode,
+      demo: params.get('demo') === 'true',
     };
   }
 
@@ -110,7 +112,7 @@ class EmbedViewer {
     // Keyboard controls
     document.addEventListener('keydown', (e) => this.handleKeydown(e));
 
-    if (!this.config.matchId) {
+    if (!this.config.matchId && !this.config.demo) {
       this.showError('No match ID specified');
       return;
     }
@@ -124,8 +126,14 @@ class EmbedViewer {
     this.hideEndOverlay();
 
     try {
-      // Try R2 first (warm cache), fall back to B2 (cold archive)
-      const replay = await this.fetchReplay(this.config.matchId);
+      // In demo mode, load bundled demo replay instead of fetching by ID
+      let replay: Replay;
+      if (this.config.demo) {
+        replay = await this.fetchDemoReplay();
+      } else {
+        // Try R2 first (warm cache), fall back to B2 (cold archive)
+        replay = await this.fetchReplay(this.config.matchId);
+      }
       this.replay = replay;
 
       // Update page metadata
@@ -186,6 +194,14 @@ class EmbedViewer {
     }
     const replay = await response.json();
     return replay as Replay;
+  }
+
+  private async fetchDemoReplay(): Promise<Replay> {
+    const response = await fetch('/data/demo-replay-v2.json');
+    if (!response.ok) {
+      throw new Error('Demo replay not found');
+    }
+    return (await response.json()) as Replay;
   }
 
   private updateMetadata(replay: Replay): void {

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Replay Viewer Test</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: sans-serif; }
+        #test-results { margin-top: 20px; padding: 10px; background: #f0f0f0; }
+        .pass { color: green; }
+        .fail { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Replay Viewer Test</h1>
+    <div id="test-results">Loading test...</div>
+    <script type="module">
+        const results = document.getElementById('test-results');
+        let tests = [];
+        
+        function addTest(name, passed, details) {
+            tests.push({ name, passed, details });
+        }
+        
+        try {
+            // Test 1: Fetch demo replay
+            const replayResponse = await fetch('/data/demo-replay-v2.json');
+            addTest('Fetch demo replay', replayResponse.ok, 
+                replayResponse.ok ? 'Status: ' + replayResponse.status : 'Failed to fetch');
+            
+            if (replayResponse.ok) {
+                const replay = await replayResponse.json();
+                
+                // Test 2: Validate replay structure
+                addTest('Replay has match_id', !!replay.match_id, replay.match_id || 'No match_id');
+                addTest('Replay has players', Array.isArray(replay.players) && replay.players.length > 0,
+                    `${replay.players?.length || 0} players`);
+                addTest('Replay has turns', Array.isArray(replay.turns) && replay.turns.length > 0,
+                    `${replay.turns?.length || 0} turns`);
+                addTest('Replay has map', !!replay.map, replay.map ? 'Map present' : 'No map');
+                
+                // Test 3: Validate map structure
+                if (replay.map) {
+                    addTest('Map has dimensions', replay.map.rows > 0 && replay.map.cols > 0,
+                        `${replay.map.rows}x${replay.map.cols}`);
+                    addTest('Map has walls', Array.isArray(replay.map.walls),
+                        `${replay.map.walls?.length || 0} walls`);
+                }
+                
+                // Test 4: Validate turn data
+                if (replay.turns && replay.turns.length > 0) {
+                    const firstTurn = replay.turns[0];
+                    addTest('First turn has bots', Array.isArray(firstTurn.bots),
+                        `${firstTurn.bots?.length || 0} bots`);
+                    addTest('First turn has energy', Array.isArray(firstTurn.energy),
+                        `${firstTurn.energy?.length || 0} energy nodes`);
+                }
+                
+                // Test 5: Validate result
+                if (replay.result) {
+                    addTest('Result has winner', replay.result.winner >= 0,
+                        `Winner: player ${replay.result.winner}`);
+                    addTest('Result has reason', !!replay.result.reason,
+                        `Reason: ${replay.result.reason}`);
+                }
+            }
+            
+        } catch (error) {
+            addTest('Test execution', false, error.message);
+        }
+        
+        // Render results
+        let html = '<h2>Test Results</h2><ul>';
+        let passed = 0;
+        for (const test of tests) {
+            const status = test.passed ? 'PASS' : 'FAIL';
+            const cssClass = test.passed ? 'pass' : 'fail';
+            if (test.passed) passed++;
+            html += `<li class="${cssClass}">${status}: ${test.name} - ${test.details}</li>`;
+        }
+        html += `</ul><p><strong>${passed}/${tests.length} tests passed</strong></p>`;
+        results.innerHTML = html;
+        
+        // Also test the replay viewer module
+        import('./src/replay-viewer.ts').then(module => {
+            console.log('ReplayViewer module loaded:', module);
+            addTest('ReplayViewer module loads', true, 'Module loaded successfully');
+            results.innerHTML = html;
+        }).catch(err => {
+            console.error('Failed to load ReplayViewer:', err);
+            addTest('ReplayViewer module loads', false, err.message);
+            results.innerHTML = html;
+        });
+    </script>
+</body>
+</html>

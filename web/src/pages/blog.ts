@@ -4,14 +4,16 @@ import { router } from '../router';
 interface BlogEntry {
   slug: string;
   title: string;
-  published_at: string;
+  published_at?: string;
+  date?: string; // backward compat
   type: 'meta-report' | 'chronicle';
   summary: string;
   tags: string[];
 }
 
 interface BlogPost extends BlogEntry {
-  body_markdown: string;
+  body_markdown?: string;
+  content_md?: string; // backward compat
 }
 
 interface BlogIndex {
@@ -310,7 +312,7 @@ function renderBlogList(posts: BlogEntry[], filter: string = 'all'): void {
     <div class="blog-card" data-slug="${post.slug}">
       <div class="blog-card-meta">
         <span class="blog-card-type ${post.type}">${formatPostType(post.type)}</span>
-        <span class="blog-card-date">${formatDate(post.published_at)}</span>
+        <span class="blog-card-date">${formatDate(post.published_at || post.date || '')}</span>
       </div>
       <h3 class="blog-card-title">${escapeHtml(post.title)}</h3>
       <p class="blog-card-summary">${escapeHtml(post.summary)}</p>
@@ -581,10 +583,10 @@ function renderPost(post: BlogPost): void {
     <div class="post-header">
       <span class="post-type-badge ${post.type}">${formatPostType(post.type)}</span>
       <h1 class="post-title">${escapeHtml(post.title)}</h1>
-      <div class="post-date">${formatDate(post.published_at)}</div>
+      <div class="post-date">${formatDate(post.published_at || post.date || '')}</div>
     </div>
     <div class="post-body">
-      ${markdownToHtml(post.body_markdown)}
+      ${markdownToHtml(post.body_markdown || post.content_md || '')}
     </div>
     <div class="post-tags">
       ${post.tags.map(tag => `<span class="post-tag">${escapeHtml(tag)}</span>`).join('')}
