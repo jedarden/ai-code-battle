@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Code Battle - Replay Viewer Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0f172a; color: #e2e8f0; padding: 20px; }
+    h1 { margin-bottom: 20px; }
+    .test-section { margin-bottom: 30px; padding: 15px; background-color: #1e293b; border-radius: 8px; }
+    .test-section h2 { font-size: 1.1rem; margin-bottom: 10px; color: #94a3b8; }
+    .test-result { margin: 5px 0; padding: 5px 10px; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
+    .test-result.pass { background-color: #064e3b; color: #86efac; }
+    .test-result.fail { background-color: #7f1d1d; color: #fca5a5; }
+    .test-result.running { background-color: #451a03; color: #fcd34d; }
+    #test-log { max-height: 300px; overflow-y: auto; background-color: #0f172a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.8rem; margin-top: 10px; }
+    .replay-wrapper { position: relative; width: 100%; max-width: 1000px; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <h1>AI Code Battle - Replay Viewer Test Suite</h1>
+
+  <div class="test-section">
+    <h2>Test Controls</h2>
+    <button id="run-all-tests">Run All Tests</button>
+    <button id="clear-results">Clear Results</button>
+  </div>
+
+  <div class="test-section">
+    <h2>Test Results</h2>
+    <div id="test-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>Replay Viewer</h2>
+    <div class="replay-wrapper">
+      <canvas id="replay-canvas" width="890" height="950"></canvas>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>Test Log</h2>
+    <div id="test-log"></div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+  <script type="module">
+    // Test harness - runs after main.ts initializes
+    const testResults = [];
+    const testLog = [];
+
+    function log(message) {
+      testLog.push(`[${new Date().toISOString()}] ${message}`);
+      document.getElementById('test-log').innerHTML = testLog.join('<br>');
+    }
+
+    function addResult(testName, status, details) {
+      testResults.push({ name: testName, status, details });
+      const resultDiv = document.getElementById('test-results');
+      const resultEl = document.createElement('div');
+      resultEl.className = `test-result ${status}`;
+      resultEl.textContent = `[${status.toUpperCase()}] ${testName}: ${details}`;
+      resultDiv.appendChild(resultEl);
+    }
+
+    // Wait for viewer to be initialized
+    setTimeout(() => {
+      window.testViewer = viewer;
+      log('Test harness initialized');
+
+      document.getElementById('run-all-tests').addEventListener('click', runAllTests);
+      document.getElementById('clear-results').addEventListener('click', () => {
+        testResults.length = 0;
+        testLog.length = 0;
+        document.getElementById('test-results').innerHTML = '';
+        document.getElementById('test-log').innerHTML = '';
+      });
+    }, 2000);
+
+    async function runAllTests() {
+      log('Starting test suite...');
+      document.getElementById('test-results').innerHTML = '';
+
+      // Test 1: Load real replay
+      await testLoadRealReplay();
+
+      // Wait for viewer to process
+      await sleep(500);
+
+      // Test 2: Canvas renders elements
+      await testCanvasRendering();
+
+      // Test 3: Playback controls
+      await testPlaybackControls();
+
+      // Test 4: Transcript generation
+      await testTranscriptGeneration();
+
+      // Test 5: Win probability (if available)
+      await testWinProbability();
+
+      log('Test suite completed!');
+    }
+
+    async function testLoadRealReplay() {
+      const testName = 'Load Real Replay';
+      try {
+        const response = await fetch('/data/real-replay.json');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const replay = await response.json();
+
+        window.testViewer.loadReplay(replay);
+        addResult(testName, 'pass', `Loaded match ${replay.match_id} with ${replay.turns.length} turns`);
+        log(`Loaded replay: ${replay.match_id}, players: ${replay.players.map(p => p.name).join(', ')}`);
+      } catch (e) {
+        addResult(testName, 'fail', e.message);
+        log(`Error loading replay: ${e.message}`);
+      }
+    }
+
+    async function testCanvasRendering() {
+      const testName = 'Canvas Renders Elements';
+      const canvas = document.getElementById('replay-canvas');
+      const ctx = canvas.getContext('2d');
+
+      // Check if canvas has content
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hasContent = imageData.data.some((channel, i) => i % 4 !== 3 && channel !== 0);
+
+      if (hasContent) {
+        addResult(testName, 'pass', 'Canvas has rendered content');
+        log('Canvas rendering: OK');
+      } else {
+        addResult(testName, 'fail', 'Canvas appears empty');
+        log('Canvas rendering: FAILED - empty canvas');
+      }
+    }
+
+    async function testPlaybackControls() {
+      const v = window.testViewer;
+
+      // Test turn navigation
+      const initialTurn = v.getTurn();
+      v.setTurn(initialTurn + 5);
+      if (v.getTurn() === initialTurn + 5) {
+        addResult('Turn Navigation', 'pass', 'Turn scrubbing works');
+      } else {
+        addResult('Turn Navigation', 'fail', 'Turn scrubbing failed');
+      }
+
+      // Test play/pause
+      v.play();
+      await sleep(100);
+      if (v.getIsPlaying()) {
+        addResult('Play Control', 'pass', 'Play starts playback');
+        v.pause();
+        if (!v.getIsPlaying()) {
+          addResult('Pause Control', 'pass', 'Pause stops playback');
+        } else {
+          addResult('Pause Control', 'fail', 'Pause did not stop playback');
+        }
+      } else {
+        addResult('Play Control', 'fail', 'Play did not start playback');
+      }
+
+      // Reset
+      v.setTurn(0);
+    }
+
+    async function testTranscriptGeneration() {
+      const v = window.testViewer;
+      try {
+        const transcript = v.generateTranscript();
+        if (transcript.length > 0) {
+          addResult('Transcript Generation', 'pass', `Generated ${transcript.length} transcript entries`);
+          log(`Transcript test: First entry - ${transcript[0].text.substring(0, 50)}...`);
+        } else {
+          addResult('Transcript Generation', 'fail', 'No transcript entries generated');
+        }
+      } catch (e) {
+        addResult('Transcript Generation', 'fail', e.message);
+      }
+    }
+
+    async function testWinProbability() {
+      const v = window.testViewer;
+      const replay = v.getReplay();
+
+      if (!replay.win_prob || replay.win_prob.length === 0) {
+        addResult('Win Probability', 'pass', 'No win_prob data in replay (skipped)');
+        log('Win probability: Not available in this replay');
+        return;
+      }
+
+      addResult('Win Probability', 'pass', `Has win_prob data for ${replay.win_prob.length} turns`);
+      log(`Win probability: Available for ${replay.win_prob.length} turns`);
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+  </script>
+</body>
+</html>
