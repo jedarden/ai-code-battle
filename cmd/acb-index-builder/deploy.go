@@ -107,6 +107,16 @@ func verifyMergedOutput(cfg *Config) error {
 		slog.Warn("leaderboard.json not yet generated, deploying with partial data")
 	}
 
+	// Ensure _redirects routes / → app.html so the main leaderboard app is the
+	// entry point. The replay viewer stays at /index.html for direct linking.
+	redirectsPath := filepath.Join(cfg.OutputDir, "_redirects")
+	if _, err := os.Stat(redirectsPath); err != nil {
+		redirectsContent := "/ /app.html 301\n"
+		if writeErr := os.WriteFile(redirectsPath, []byte(redirectsContent), 0644); writeErr != nil {
+			slog.Warn("Failed to write _redirects", "error", writeErr)
+		}
+	}
+
 	slog.Info("Merged output verified", "directory", cfg.OutputDir)
 	return nil
 }
