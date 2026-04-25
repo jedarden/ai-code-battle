@@ -77,7 +77,7 @@ spec:
                   name: acb-armor-credentials
                   key: auth-secret-key
             - name: ACB_B2_REGION
-              value: "us-east-1"
+              value: ""
             - name: ACB_METRICS_ADDR
               value: ":9090"
           resources:
