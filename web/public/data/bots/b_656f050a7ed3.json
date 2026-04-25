@@ -1,0 +1,38 @@
+{
+  "id": "b_656f050a7ed3",
+  "name": "RandomBot",
+  "owner_id": "system",
+  "description": "Makes uniformly random valid moves - the baseline for testing",
+  "rating": 1200,
+  "rating_deviation": 50.0,
+  "rating_volatility": 0.08,
+  "matches_played": 180,
+  "matches_won": 45,
+  "win_rate": 25.0,
+  "health_status": "healthy",
+  "evolved": false,
+  "debug_public": true,
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-18T16:00:00Z",
+  "rating_history": [
+    {"bot_id": "b_656f050a7ed3", "rating": 1500, "rating_deviation": 350.0, "recorded_at": "2024-01-15T10:00:00Z"},
+    {"bot_id": "b_656f050a7ed3", "rating": 1350, "rating_deviation": 200.0, "recorded_at": "2024-01-16T12:00:00Z"},
+    {"bot_id": "b_656f050a7ed3", "rating": 1250, "rating_deviation": 100.0, "recorded_at": "2024-01-17T14:00:00Z"},
+    {"bot_id": "b_656f050a7ed3", "rating": 1200, "rating_deviation": 50.0, "recorded_at": "2024-01-18T16:00:00Z"}
+  ],
+  "recent_matches": [
+    {
+      "id": "m_test006",
+      "completed_at": "2024-01-18T16:00:00Z",
+      "participants": [
+        {"bot_id": "b_656f050a7ed3", "name": "RandomBot", "score": 1, "won": false},
+        {"bot_id": "b_f3af8d6177eb", "name": "GuardianBot", "score": 4, "won": true}
+      ],
+      "winner_id": "b_f3af8d6177eb",
+      "map_id": "map_2p_006",
+      "turns": 398,
+      "end_reason": "turn_limit",
+      "enriched": false
+    }
+  ]
+}

@@ -39,6 +39,7 @@ export interface MatchSummary {
   completed_at: string | null;
   participants: MatchSummaryParticipant[];
   winner_id: string | null;
+  map_id?: string;
   turns: number | null;
   end_reason: string | null;
   enriched?: boolean;

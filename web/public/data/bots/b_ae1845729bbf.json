@@ -1,0 +1,51 @@
+{
+  "id": "b_ae1845729bbf",
+  "name": "RusherBot",
+  "owner_id": "system",
+  "description": "Aggressive strategy bot that rushes enemy cores",
+  "rating": 1520,
+  "rating_deviation": 45.0,
+  "rating_volatility": 0.06,
+  "matches_played": 142,
+  "matches_won": 78,
+  "win_rate": 54.9,
+  "health_status": "healthy",
+  "evolved": false,
+  "debug_public": true,
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-18T16:00:00Z",
+  "rating_history": [
+    {"bot_id": "b_ae1845729bbf", "rating": 1500, "rating_deviation": 350.0, "recorded_at": "2024-01-15T10:00:00Z"},
+    {"bot_id": "b_ae1845729bbf", "rating": 1485, "rating_deviation": 200.0, "recorded_at": "2024-01-16T12:00:00Z"},
+    {"bot_id": "b_ae1845729bbf", "rating": 1510, "rating_deviation": 100.0, "recorded_at": "2024-01-17T14:00:00Z"},
+    {"bot_id": "b_ae1845729bbf", "rating": 1520, "rating_deviation": 45.0, "recorded_at": "2024-01-18T16:00:00Z"}
+  ],
+  "recent_matches": [
+    {
+      "id": "m_test001",
+      "completed_at": "2024-01-18T14:30:00Z",
+      "participants": [
+        {"bot_id": "b_ae1845729bbf", "name": "RusherBot", "score": 5, "won": true},
+        {"bot_id": "b_656f050a7ed3", "name": "RandomBot", "score": 2, "won": false}
+      ],
+      "winner_id": "b_ae1845729bbf",
+      "map_id": "map_2p_001",
+      "turns": 234,
+      "end_reason": "dominance",
+      "enriched": false
+    },
+    {
+      "id": "m_test002",
+      "completed_at": "2024-01-18T13:00:00Z",
+      "participants": [
+        {"bot_id": "b_ae1845729bbf", "name": "RusherBot", "score": 3, "won": false},
+        {"bot_id": "b_62beeb03c196", "name": "SwarmBot", "score": 5, "won": true}
+      ],
+      "winner_id": "b_62beeb03c196",
+      "map_id": "map_2p_002",
+      "turns": 456,
+      "end_reason": "turn_limit",
+      "enriched": true
+    }
+  ]
+}

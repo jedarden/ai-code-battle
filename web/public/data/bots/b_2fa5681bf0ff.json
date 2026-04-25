@@ -1,0 +1,51 @@
+{
+  "id": "b_2fa5681bf0ff",
+  "name": "GathererBot",
+  "owner_id": "system",
+  "description": "Economic strategy bot that maximizes energy collection while avoiding combat",
+  "rating": 1640,
+  "rating_deviation": 42.0,
+  "rating_volatility": 0.05,
+  "matches_played": 148,
+  "matches_won": 89,
+  "win_rate": 60.1,
+  "health_status": "healthy",
+  "evolved": false,
+  "debug_public": true,
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-18T16:00:00Z",
+  "rating_history": [
+    {"bot_id": "b_2fa5681bf0ff", "rating": 1500, "rating_deviation": 350.0, "recorded_at": "2024-01-15T10:00:00Z"},
+    {"bot_id": "b_2fa5681bf0ff", "rating": 1530, "rating_deviation": 180.0, "recorded_at": "2024-01-16T12:00:00Z"},
+    {"bot_id": "b_2fa5681bf0ff", "rating": 1590, "rating_deviation": 90.0, "recorded_at": "2024-01-17T14:00:00Z"},
+    {"bot_id": "b_2fa5681bf0ff", "rating": 1640, "rating_deviation": 42.0, "recorded_at": "2024-01-18T16:00:00Z"}
+  ],
+  "recent_matches": [
+    {
+      "id": "m_test003",
+      "completed_at": "2024-01-18T12:00:00Z",
+      "participants": [
+        {"bot_id": "b_2fa5681bf0ff", "name": "GathererBot", "score": 4, "won": true},
+        {"bot_id": "b_656f050a7ed3", "name": "RandomBot", "score": 1, "won": false}
+      ],
+      "winner_id": "b_2fa5681bf0ff",
+      "map_id": "map_2p_003",
+      "turns": 312,
+      "end_reason": "turn_limit",
+      "enriched": false
+    },
+    {
+      "id": "m_test004",
+      "completed_at": "2024-01-18T11:00:00Z",
+      "participants": [
+        {"bot_id": "b_2fa5681bf0ff", "name": "GathererBot", "score": 3, "won": false},
+        {"bot_id": "b_62beeb03c196", "name": "SwarmBot", "score": 5, "won": true}
+      ],
+      "winner_id": "b_62beeb03c196",
+      "map_id": "map_2p_004",
+      "turns": 489,
+      "end_reason": "turn_limit",
+      "enriched": true
+    }
+  ]
+}

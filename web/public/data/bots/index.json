@@ -1,5 +1,47 @@
 {
-  "$comment": "Placeholder file - replaced by index builder",
-  "updated_at": null,
-  "bots": []
+  "updated_at": "2024-01-18T16:00:00Z",
+  "bots": [
+    {
+      "id": "b_457b876ca1c4",
+      "name": "HunterBot",
+      "rating": 1710,
+      "matches_played": 162,
+      "win_rate": 66.7
+    },
+    {
+      "id": "b_62beeb03c196",
+      "name": "SwarmBot",
+      "rating": 1680,
+      "matches_played": 156,
+      "win_rate": 62.8
+    },
+    {
+      "id": "b_2fa5681bf0ff",
+      "name": "GathererBot",
+      "rating": 1640,
+      "matches_played": 148,
+      "win_rate": 60.1
+    },
+    {
+      "id": "b_f3af8d6177eb",
+      "name": "GuardianBot",
+      "rating": 1590,
+      "matches_played": 155,
+      "win_rate": 56.8
+    },
+    {
+      "id": "b_ae1845729bbf",
+      "name": "RusherBot",
+      "rating": 1520,
+      "matches_played": 142,
+      "win_rate": 54.9
+    },
+    {
+      "id": "b_656f050a7ed3",
+      "name": "RandomBot",
+      "rating": 1200,
+      "matches_played": 180,
+      "win_rate": 25.0
+    }
+  ]
 }

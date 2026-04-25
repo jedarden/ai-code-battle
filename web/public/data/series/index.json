@@ -1,0 +1,1075 @@
+{
+  "updated_at": "2026-04-25T14:18:06Z",
+  "series": [
+    {
+      "id": 35,
+      "bot1_id": "b_f3af8d6177eb",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "GuardianBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 0,
+      "bot2_wins": 0,
+      "status": "active",
+      "created_at": "2026-04-24T22:07:13.368868Z",
+      "updated_at": "2026-04-24T22:07:13.368868Z",
+      "games": null
+    },
+    {
+      "id": 34,
+      "bot1_id": "b_f3af8d6177eb",
+      "bot2_id": "b_457b876ca1c4",
+      "bot1_name": "GuardianBot",
+      "bot2_name": "HunterBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_f3af8d6177eb",
+      "created_at": "2026-04-24T21:51:13.378503Z",
+      "updated_at": "2026-04-24T22:09:13.302415Z",
+      "games": [
+        {
+          "match_id": "m_9548b196eb171123",
+          "game_number": 1,
+          "winner_id": "b_f3af8d6177eb",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T22:07:24.435822Z"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "bot1_id": "b_ae1845729bbf",
+      "bot2_id": "b_f3af8d6177eb",
+      "bot1_name": "RusherBot",
+      "bot2_name": "GuardianBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_ae1845729bbf",
+      "created_at": "2026-04-24T21:51:13.371701Z",
+      "updated_at": "2026-04-24T22:09:13.310554Z",
+      "games": [
+        {
+          "match_id": "m_5a5491a574e801c1",
+          "game_number": 1,
+          "winner_id": "b_ae1845729bbf",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T22:07:29.39786Z"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_ae1845729bbf",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "RusherBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:51:13.366413Z",
+      "updated_at": "2026-04-24T22:09:13.306971Z",
+      "games": [
+        {
+          "match_id": "m_4e2e543c59d156d2",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T22:07:18.955475Z"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "GathererBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:51:13.358494Z",
+      "updated_at": "2026-04-24T22:09:13.308919Z",
+      "games": [
+        {
+          "match_id": "m_8e94a4f351b40542",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T22:07:34.206697Z"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "bot1_id": "b_457b876ca1c4",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "HunterBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_457b876ca1c4",
+      "created_at": "2026-04-24T21:43:13.399845Z",
+      "updated_at": "2026-04-24T21:51:13.330347Z",
+      "games": [
+        {
+          "match_id": "m_9753d876d9c455b8",
+          "game_number": 1,
+          "winner_id": "b_457b876ca1c4",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:50:34.26508Z"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "bot1_id": "b_ae1845729bbf",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "RusherBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_ae1845729bbf",
+      "created_at": "2026-04-24T21:43:13.395073Z",
+      "updated_at": "2026-04-24T21:51:13.324307Z",
+      "games": [
+        {
+          "match_id": "m_061fcc4921e30829",
+          "game_number": 1,
+          "winner_id": "b_ae1845729bbf",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:50:25.338508Z"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:43:13.389717Z",
+      "updated_at": "2026-04-24T21:51:13.331758Z",
+      "games": [
+        {
+          "match_id": "m_41178115cb15bb7a",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:50:30.509529Z"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "GathererBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:43:13.384129Z",
+      "updated_at": "2026-04-24T21:51:13.333239Z",
+      "games": [
+        {
+          "match_id": "m_6686e424dc1888b2",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:50:19.782374Z"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "bot1_id": "b_656f050a7ed3",
+      "bot2_id": "b_f3af8d6177eb",
+      "bot1_name": "RandomBot",
+      "bot2_name": "GuardianBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_656f050a7ed3",
+      "created_at": "2026-04-24T21:43:13.377854Z",
+      "updated_at": "2026-04-24T21:51:13.328831Z",
+      "games": [
+        {
+          "match_id": "m_47071429f7964aeb",
+          "game_number": 1,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:50:16.882157Z"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "bot1_id": "b_f3af8d6177eb",
+      "bot2_id": "b_2fa5681bf0ff",
+      "bot1_name": "GuardianBot",
+      "bot2_name": "GathererBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_f3af8d6177eb",
+      "created_at": "2026-04-24T21:39:13.336545Z",
+      "updated_at": "2026-04-24T21:43:13.348551Z",
+      "games": [
+        {
+          "match_id": "m_6235028c8d863fb4",
+          "game_number": 1,
+          "winner_id": "b_f3af8d6177eb",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:41:19.150487Z"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_ae1845729bbf",
+      "bot1_name": "GathererBot",
+      "bot2_name": "RusherBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:39:13.331613Z",
+      "updated_at": "2026-04-24T21:43:13.355619Z",
+      "games": [
+        {
+          "match_id": "m_65b38d149c1b846c",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:41:14.120803Z"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "GathererBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:39:13.326319Z",
+      "updated_at": "2026-04-24T21:43:13.357033Z",
+      "games": [
+        {
+          "match_id": "m_ff26ae99199b8999",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:41:23.763596Z"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_2fa5681bf0ff",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "GathererBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:39:13.320498Z",
+      "updated_at": "2026-04-24T21:43:13.358602Z",
+      "games": [
+        {
+          "match_id": "m_3ede2fec80929823",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:41:24.120441Z"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_457b876ca1c4",
+      "bot1_name": "GathererBot",
+      "bot2_name": "HunterBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:39:13.313415Z",
+      "updated_at": "2026-04-24T21:43:13.352775Z",
+      "games": [
+        {
+          "match_id": "m_b8bbfe9495da2227",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:41:18.741177Z"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_457b876ca1c4",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "HunterBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:34:20.060176Z",
+      "updated_at": "2026-04-24T21:39:13.297171Z",
+      "games": [
+        {
+          "match_id": "m_4cbd9f142e89c5aa",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:37:24.134931Z"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "bot1_id": "b_f3af8d6177eb",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "GuardianBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_f3af8d6177eb",
+      "created_at": "2026-04-24T21:34:20.054908Z",
+      "updated_at": "2026-04-24T21:39:13.303092Z",
+      "games": [
+        {
+          "match_id": "m_60a729bba32dc82f",
+          "game_number": 1,
+          "winner_id": "b_f3af8d6177eb",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:37:18.753695Z"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "bot1_id": "b_656f050a7ed3",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "RandomBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_656f050a7ed3",
+      "created_at": "2026-04-24T21:34:20.050086Z",
+      "updated_at": "2026-04-24T21:39:13.301422Z",
+      "games": [
+        {
+          "match_id": "m_5ad234bc78e4b798",
+          "game_number": 1,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:37:23.751226Z"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_ae1845729bbf",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "RusherBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:34:20.043767Z",
+      "updated_at": "2026-04-24T21:39:13.299839Z",
+      "games": [
+        {
+          "match_id": "m_86fe4a2356fc0299",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:37:19.109761Z"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "GathererBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:34:20.036806Z",
+      "updated_at": "2026-04-24T21:39:13.304462Z",
+      "games": [
+        {
+          "match_id": "m_165226d3bb5d8527",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:37:13.745377Z"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "bot1_id": "b_ae1845729bbf",
+      "bot2_id": "b_2fa5681bf0ff",
+      "bot1_name": "RusherBot",
+      "bot2_name": "GathererBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_ae1845729bbf",
+      "created_at": "2026-04-24T21:30:20.092483Z",
+      "updated_at": "2026-04-24T21:34:20.023073Z",
+      "games": [
+        {
+          "match_id": "m_097afdfaa937ff82",
+          "game_number": 1,
+          "winner_id": "b_ae1845729bbf",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:32:24.128367Z"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "GathererBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:30:20.085844Z",
+      "updated_at": "2026-04-24T21:34:20.02729Z",
+      "games": [
+        {
+          "match_id": "m_6c1bb69a45684566",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:32:33.756811Z"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "bot1_id": "b_457b876ca1c4",
+      "bot2_id": "b_2fa5681bf0ff",
+      "bot1_name": "HunterBot",
+      "bot2_name": "GathererBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_457b876ca1c4",
+      "created_at": "2026-04-24T21:30:20.080469Z",
+      "updated_at": "2026-04-24T21:34:20.025242Z",
+      "games": [
+        {
+          "match_id": "m_ba352ade57f2641d",
+          "game_number": 1,
+          "winner_id": "b_457b876ca1c4",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:32:29.129103Z"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "bot1_id": "b_656f050a7ed3",
+      "bot2_id": "b_2fa5681bf0ff",
+      "bot1_name": "RandomBot",
+      "bot2_name": "GathererBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_656f050a7ed3",
+      "created_at": "2026-04-24T21:30:20.075466Z",
+      "updated_at": "2026-04-24T21:34:20.021514Z",
+      "games": [
+        {
+          "match_id": "m_b82892f81ca17e9e",
+          "game_number": 1,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:32:34.113518Z"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "bot1_id": "b_f3af8d6177eb",
+      "bot2_id": "b_2fa5681bf0ff",
+      "bot1_name": "GuardianBot",
+      "bot2_name": "GathererBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_f3af8d6177eb",
+      "created_at": "2026-04-24T21:30:20.069889Z",
+      "updated_at": "2026-04-24T21:34:20.019373Z",
+      "games": [
+        {
+          "match_id": "m_5418f94d032d467d",
+          "game_number": 1,
+          "winner_id": "b_f3af8d6177eb",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:32:28.742852Z"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_f3af8d6177eb",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "GuardianBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:26:20.141676Z",
+      "updated_at": "2026-04-24T21:30:20.042239Z",
+      "games": [
+        {
+          "match_id": "m_922472697ba4755f",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:28:34.132903Z"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "bot1_id": "b_656f050a7ed3",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "RandomBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_656f050a7ed3",
+      "created_at": "2026-04-24T21:26:20.136799Z",
+      "updated_at": "2026-04-24T21:30:20.050778Z",
+      "games": [
+        {
+          "match_id": "m_7ac443ec2045d06f",
+          "game_number": 1,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:28:33.760474Z"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_ae1845729bbf",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "RusherBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:26:20.131942Z",
+      "updated_at": "2026-04-24T21:30:20.047195Z",
+      "games": [
+        {
+          "match_id": "m_32ade615e5d6ef0d",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:28:29.128534Z"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "bot1_id": "b_62beeb03c196",
+      "bot2_id": "b_457b876ca1c4",
+      "bot1_name": "SwarmBot",
+      "bot2_name": "HunterBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_62beeb03c196",
+      "created_at": "2026-04-24T21:26:20.126506Z",
+      "updated_at": "2026-04-24T21:30:20.052462Z",
+      "games": [
+        {
+          "match_id": "m_13819fcd8ee89d74",
+          "game_number": 1,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:28:28.757417Z"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "GathererBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 1,
+      "bot2_wins": 0,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T21:26:20.120491Z",
+      "updated_at": "2026-04-24T21:30:20.048802Z",
+      "games": [
+        {
+          "match_id": "m_0521e8a8fae8109a",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:28:24.133956Z"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "bot1_id": "b_656f050a7ed3",
+      "bot2_id": "b_457b876ca1c4",
+      "bot1_name": "RandomBot",
+      "bot2_name": "HunterBot",
+      "best_of": 7,
+      "bot1_wins": 4,
+      "bot2_wins": 3,
+      "status": "completed",
+      "winner_id": "b_656f050a7ed3",
+      "created_at": "2026-04-24T20:54:20.018137Z",
+      "updated_at": "2026-04-24T21:26:20.112201Z",
+      "games": [
+        {
+          "match_id": "m_4e42c2fb37ac9405",
+          "game_number": 1,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:13.755646Z"
+        },
+        {
+          "match_id": "m_06c27b988abb67ca",
+          "game_number": 2,
+          "winner_id": "b_457b876ca1c4",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:44.131916Z"
+        },
+        {
+          "match_id": "m_c0eaec1ec717434c",
+          "game_number": 3,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:25:03.758627Z"
+        },
+        {
+          "match_id": "m_a48586e98f9db8bd",
+          "game_number": 4,
+          "winner_id": "b_457b876ca1c4",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:25:19.137965Z"
+        },
+        {
+          "match_id": "m_612c0a71197fe0b2",
+          "game_number": 5,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:16:34.137158Z"
+        },
+        {
+          "match_id": "m_94e858661ca49d38",
+          "game_number": 6,
+          "winner_id": "b_457b876ca1c4",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:18:34.128048Z"
+        },
+        {
+          "match_id": "m_76683b0a2ddb3be9",
+          "game_number": 7,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:20:34.146266Z"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "bot1_id": "b_656f050a7ed3",
+      "bot2_id": "b_62beeb03c196",
+      "bot1_name": "RandomBot",
+      "bot2_name": "SwarmBot",
+      "best_of": 7,
+      "bot1_wins": 4,
+      "bot2_wins": 3,
+      "status": "completed",
+      "winner_id": "b_656f050a7ed3",
+      "created_at": "2026-04-24T20:54:20.010757Z",
+      "updated_at": "2026-04-24T21:26:20.110944Z",
+      "games": [
+        {
+          "match_id": "m_7de7a590017b4b5a",
+          "game_number": 1,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:09.140307Z"
+        },
+        {
+          "match_id": "m_a0490646b75c03b1",
+          "game_number": 2,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:43.765499Z"
+        },
+        {
+          "match_id": "m_373fea9a4e680dc8",
+          "game_number": 3,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:59.144593Z"
+        },
+        {
+          "match_id": "m_51ca5662499a3f9b",
+          "game_number": 4,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:25:18.75133Z"
+        },
+        {
+          "match_id": "m_3e2cab5ff8b30c6d",
+          "game_number": 5,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:16:33.741329Z"
+        },
+        {
+          "match_id": "m_fe47ac7c6fcf27c9",
+          "game_number": 6,
+          "winner_id": "b_62beeb03c196",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:18:33.755695Z"
+        },
+        {
+          "match_id": "m_f1d7b69a8e45c7a4",
+          "game_number": 7,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:20:33.744094Z"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "bot1_id": "b_656f050a7ed3",
+      "bot2_id": "b_f3af8d6177eb",
+      "bot1_name": "RandomBot",
+      "bot2_name": "GuardianBot",
+      "best_of": 7,
+      "bot1_wins": 4,
+      "bot2_wins": 3,
+      "status": "completed",
+      "winner_id": "b_656f050a7ed3",
+      "created_at": "2026-04-24T20:54:20.004268Z",
+      "updated_at": "2026-04-24T21:26:20.109729Z",
+      "games": [
+        {
+          "match_id": "m_d09647b52e895c44",
+          "game_number": 1,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:08.744586Z"
+        },
+        {
+          "match_id": "m_a6d64a952000f56e",
+          "game_number": 2,
+          "winner_id": "b_f3af8d6177eb",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:39.127331Z"
+        },
+        {
+          "match_id": "m_ebfe00bc0d76397a",
+          "game_number": 3,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:58.750139Z"
+        },
+        {
+          "match_id": "m_eef0e1d18296a4a4",
+          "game_number": 4,
+          "winner_id": "b_f3af8d6177eb",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:25:14.120631Z"
+        },
+        {
+          "match_id": "m_e51b9057422ce09c",
+          "game_number": 5,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:16:29.123858Z"
+        },
+        {
+          "match_id": "m_75698b7d9c62b58d",
+          "game_number": 6,
+          "winner_id": "b_f3af8d6177eb",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:18:29.13131Z"
+        },
+        {
+          "match_id": "m_de6de2abfabf0d11",
+          "game_number": 7,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:20:29.139673Z"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "bot1_id": "b_ae1845729bbf",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "RusherBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 4,
+      "bot2_wins": 3,
+      "status": "completed",
+      "winner_id": "b_ae1845729bbf",
+      "created_at": "2026-04-24T20:54:19.998298Z",
+      "updated_at": "2026-04-24T21:26:20.108364Z",
+      "games": [
+        {
+          "match_id": "m_15b3db0879c38f83",
+          "game_number": 1,
+          "winner_id": "b_ae1845729bbf",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:04.107163Z"
+        },
+        {
+          "match_id": "m_52ff9f8b987a8bfb",
+          "game_number": 2,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:38.721796Z"
+        },
+        {
+          "match_id": "m_cbfee78f41616c1c",
+          "game_number": 3,
+          "winner_id": "b_ae1845729bbf",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:54.12934Z"
+        },
+        {
+          "match_id": "m_f0f314a5c4838dd9",
+          "game_number": 4,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:25:13.730894Z"
+        },
+        {
+          "match_id": "m_8dc35aaff029a34f",
+          "game_number": 5,
+          "winner_id": "b_ae1845729bbf",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:16:28.721499Z"
+        },
+        {
+          "match_id": "m_2d92c2b154e3d411",
+          "game_number": 6,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:18:28.7179Z"
+        },
+        {
+          "match_id": "m_30b67c3fcc0edfe3",
+          "game_number": 7,
+          "winner_id": "b_ae1845729bbf",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:20:28.723855Z"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "bot1_id": "b_2fa5681bf0ff",
+      "bot2_id": "b_656f050a7ed3",
+      "bot1_name": "GathererBot",
+      "bot2_name": "RandomBot",
+      "best_of": 7,
+      "bot1_wins": 4,
+      "bot2_wins": 3,
+      "status": "completed",
+      "winner_id": "b_2fa5681bf0ff",
+      "created_at": "2026-04-24T20:54:19.989186Z",
+      "updated_at": "2026-04-24T21:26:20.106357Z",
+      "games": [
+        {
+          "match_id": "m_ce51f757053b4f4d",
+          "game_number": 1,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:03.736141Z"
+        },
+        {
+          "match_id": "m_dd16649b469e332e",
+          "game_number": 2,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 500,
+          "completed_at": "2026-04-24T21:24:34.209788Z"
+        },
+        {
+          "match_id": "m_e446a8f698c68b57",
+          "game_number": 3,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:24:53.760652Z"
+        },
+        {
+          "match_id": "m_6b79ebb9a9bc1981",
+          "game_number": 4,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:25:09.131822Z"
+        },
+        {
+          "match_id": "m_8d88348c783f550c",
+          "game_number": 5,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:16:24.12994Z"
+        },
+        {
+          "match_id": "m_119abbf1798ce0e9",
+          "game_number": 6,
+          "winner_id": "b_656f050a7ed3",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:18:24.139792Z"
+        },
+        {
+          "match_id": "m_7254ec479efd7ee7",
+          "game_number": 7,
+          "winner_id": "b_2fa5681bf0ff",
+          "winner_slot": 0,
+          "turns": 51,
+          "completed_at": "2026-04-24T21:20:24.141458Z"
+        }
+      ]
+    }
+  ]
+}

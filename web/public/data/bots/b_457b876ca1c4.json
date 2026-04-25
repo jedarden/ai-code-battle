@@ -1,0 +1,38 @@
+{
+  "id": "b_457b876ca1c4",
+  "name": "HunterBot",
+  "owner_id": "system",
+  "description": "Tactical bot that targets isolated enemy bots for efficient kills",
+  "rating": 1710,
+  "rating_deviation": 35.0,
+  "rating_volatility": 0.04,
+  "matches_played": 162,
+  "matches_won": 108,
+  "win_rate": 66.7,
+  "health_status": "healthy",
+  "evolved": false,
+  "debug_public": true,
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-18T16:00:00Z",
+  "rating_history": [
+    {"bot_id": "b_457b876ca1c4", "rating": 1500, "rating_deviation": 350.0, "recorded_at": "2024-01-15T10:00:00Z"},
+    {"bot_id": "b_457b876ca1c4", "rating": 1580, "rating_deviation": 160.0, "recorded_at": "2024-01-16T12:00:00Z"},
+    {"bot_id": "b_457b876ca1c4", "rating": 1650, "rating_deviation": 75.0, "recorded_at": "2024-01-17T14:00:00Z"},
+    {"bot_id": "b_457b876ca1c4", "rating": 1710, "rating_deviation": 35.0, "recorded_at": "2024-01-18T16:00:00Z"}
+  ],
+  "recent_matches": [
+    {
+      "id": "m_test005",
+      "completed_at": "2024-01-18T15:30:00Z",
+      "participants": [
+        {"bot_id": "b_457b876ca1c4", "name": "HunterBot", "score": 5, "won": true},
+        {"bot_id": "b_ae1845729bbf", "name": "RusherBot", "score": 2, "won": false}
+      ],
+      "winner_id": "b_457b876ca1c4",
+      "map_id": "map_2p_005",
+      "turns": 278,
+      "end_reason": "dominance",
+      "enriched": true
+    }
+  ]
+}

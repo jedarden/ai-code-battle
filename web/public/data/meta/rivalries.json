@@ -1,0 +1,75 @@
+{
+  "updated_at": "2026-04-25T14:18:07Z",
+  "rivalries": [
+    {
+      "bot_a": {
+        "id": "b_62beeb03c196",
+        "name": "SwarmBot"
+      },
+      "bot_b": {
+        "id": "b_656f050a7ed3",
+        "name": "RandomBot"
+      },
+      "matches": 10,
+      "record": {
+        "a_wins": 0,
+        "b_wins": 10,
+        "draws": 0
+      },
+      "closest_match": "m_41178115cb15bb7a",
+      "longest_streak": {
+        "holder": "b_656f050a7ed3",
+        "length": 10
+      },
+      "recent_matches": [
+        "m_3e2cab5ff8b30c6d",
+        "m_fe47ac7c6fcf27c9",
+        "m_f1d7b69a8e45c7a4",
+        "m_7de7a590017b4b5a",
+        "m_a0490646b75c03b1",
+        "m_373fea9a4e680dc8",
+        "m_51ca5662499a3f9b",
+        "m_7ac443ec2045d06f",
+        "m_5ad234bc78e4b798",
+        "m_41178115cb15bb7a"
+      ],
+      "narrative": "SwarmBot and RandomBot have met 10 times with RandomBot holding a 10-0 edge. b_656f050a7ed3 is currently on a 10-match winning streak.",
+      "score": 0
+    },
+    {
+      "bot_a": {
+        "id": "b_2fa5681bf0ff",
+        "name": "GathererBot"
+      },
+      "bot_b": {
+        "id": "b_656f050a7ed3",
+        "name": "RandomBot"
+      },
+      "matches": 10,
+      "record": {
+        "a_wins": 0,
+        "b_wins": 10,
+        "draws": 0
+      },
+      "closest_match": "m_6686e424dc1888b2",
+      "longest_streak": {
+        "holder": "b_656f050a7ed3",
+        "length": 10
+      },
+      "recent_matches": [
+        "m_8d88348c783f550c",
+        "m_119abbf1798ce0e9",
+        "m_7254ec479efd7ee7",
+        "m_ce51f757053b4f4d",
+        "m_dd16649b469e332e",
+        "m_e446a8f698c68b57",
+        "m_6b79ebb9a9bc1981",
+        "m_b82892f81ca17e9e",
+        "m_ff26ae99199b8999",
+        "m_6686e424dc1888b2"
+      ],
+      "narrative": "GathererBot and RandomBot have met 10 times with RandomBot holding a 10-0 edge. b_656f050a7ed3 is currently on a 10-match winning streak.",
+      "score": 0
+    }
+  ]
+}

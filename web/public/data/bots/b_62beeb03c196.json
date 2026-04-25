@@ -1,0 +1,37 @@
+{
+  "id": "b_62beeb03c196",
+  "name": "SwarmBot",
+  "owner_id": "system",
+  "description": "Formation-based strategy bot that keeps units together",
+  "rating": 1680,
+  "rating_deviation": 38.0,
+  "rating_volatility": 0.05,
+  "matches_played": 156,
+  "matches_won": 98,
+  "win_rate": 62.8,
+  "health_status": "healthy",
+  "evolved": false,
+  "debug_public": true,
+  "created_at": "2024-01-15T10:00:00Z",
+  "rating_history": [
+    {"bot_id": "b_62beeb03c196", "rating": 1500, "rating_deviation": 350.0, "recorded_at": "2024-01-15T10:00:00Z"},
+    {"bot_id": "b_62beeb03c196", "rating": 1550, "rating_deviation": 150.0, "recorded_at": "2024-01-16T12:00:00Z"},
+    {"bot_id": "b_62beeb03c196", "rating": 1620, "rating_deviation": 80.0, "recorded_at": "2024-01-17T14:00:00Z"},
+    {"bot_id": "b_62beeb03c196", "rating": 1680, "rating_deviation": 38.0, "recorded_at": "2024-01-18T16:00:00Z"}
+  ],
+  "recent_matches": [
+    {
+      "id": "m_test002",
+      "completed_at": "2024-01-18T13:00:00Z",
+      "participants": [
+        {"bot_id": "b_62beeb03c196", "name": "SwarmBot", "score": 5, "won": true},
+        {"bot_id": "b_ae1845729bbf", "name": "RusherBot", "score": 3, "won": false}
+      ],
+      "winner_id": "b_62beeb03c196",
+      "map_id": "map_2p_002",
+      "turns": 456,
+      "end_reason": "turn_limit",
+      "enriched": true
+    }
+  ]
+}

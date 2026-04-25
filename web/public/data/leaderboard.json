@@ -1,6 +1,77 @@
 {
-  "$comment": "Placeholder file - replaced by index builder",
-  "updated_at": null,
-  "season": null,
-  "entries": []
+  "updated_at": "2024-01-18T16:00:00Z",
+  "entries": [
+    {
+      "rank": 1,
+      "bot_id": "b_457b876ca1c4",
+      "name": "HunterBot",
+      "owner_id": "system",
+      "rating": 1710,
+      "rating_deviation": 35.0,
+      "matches_played": 162,
+      "matches_won": 108,
+      "win_rate": 66.7,
+      "health_status": "healthy"
+    },
+    {
+      "rank": 2,
+      "bot_id": "b_62beeb03c196",
+      "name": "SwarmBot",
+      "owner_id": "system",
+      "rating": 1680,
+      "rating_deviation": 38.0,
+      "matches_played": 156,
+      "matches_won": 98,
+      "win_rate": 62.8,
+      "health_status": "healthy"
+    },
+    {
+      "rank": 3,
+      "bot_id": "b_2fa5681bf0ff",
+      "name": "GathererBot",
+      "owner_id": "system",
+      "rating": 1640,
+      "rating_deviation": 42.0,
+      "matches_played": 148,
+      "matches_won": 89,
+      "win_rate": 60.1,
+      "health_status": "healthy"
+    },
+    {
+      "rank": 4,
+      "bot_id": "b_f3af8d6177eb",
+      "name": "GuardianBot",
+      "owner_id": "system",
+      "rating": 1590,
+      "rating_deviation": 40.0,
+      "matches_played": 155,
+      "matches_won": 88,
+      "win_rate": 56.8,
+      "health_status": "healthy"
+    },
+    {
+      "rank": 5,
+      "bot_id": "b_ae1845729bbf",
+      "name": "RusherBot",
+      "owner_id": "system",
+      "rating": 1520,
+      "rating_deviation": 45.0,
+      "matches_played": 142,
+      "matches_won": 78,
+      "win_rate": 54.9,
+      "health_status": "healthy"
+    },
+    {
+      "rank": 6,
+      "bot_id": "b_656f050a7ed3",
+      "name": "RandomBot",
+      "owner_id": "system",
+      "rating": 1200,
+      "rating_deviation": 50.0,
+      "matches_played": 180,
+      "matches_won": 45,
+      "win_rate": 25.0,
+      "health_status": "healthy"
+    }
+  ]
 }

@@ -1,0 +1,51 @@
+{
+  "id": "b_f3af8d6177eb",
+  "name": "GuardianBot",
+  "owner_id": "system",
+  "description": "Defensive strategy bot that protects its core and gathers nearby energy",
+  "rating": 1590,
+  "rating_deviation": 40.0,
+  "rating_volatility": 0.05,
+  "matches_played": 155,
+  "matches_won": 88,
+  "win_rate": 56.8,
+  "health_status": "healthy",
+  "evolved": false,
+  "debug_public": true,
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-18T16:00:00Z",
+  "rating_history": [
+    {"bot_id": "b_f3af8d6177eb", "rating": 1500, "rating_deviation": 350.0, "recorded_at": "2024-01-15T10:00:00Z"},
+    {"bot_id": "b_f3af8d6177eb", "rating": 1540, "rating_deviation": 170.0, "recorded_at": "2024-01-16T12:00:00Z"},
+    {"bot_id": "b_f3af8d6177eb", "rating": 1570, "rating_deviation": 85.0, "recorded_at": "2024-01-17T14:00:00Z"},
+    {"bot_id": "b_f3af8d6177eb", "rating": 1590, "rating_deviation": 40.0, "recorded_at": "2024-01-18T16:00:00Z"}
+  ],
+  "recent_matches": [
+    {
+      "id": "m_test007",
+      "completed_at": "2024-01-18T14:00:00Z",
+      "participants": [
+        {"bot_id": "b_f3af8d6177eb", "name": "GuardianBot", "score": 4, "won": true},
+        {"bot_id": "b_656f050a7ed3", "name": "RandomBot", "score": 1, "won": false}
+      ],
+      "winner_id": "b_f3af8d6177eb",
+      "map_id": "map_2p_007",
+      "turns": 398,
+      "end_reason": "turn_limit",
+      "enriched": false
+    },
+    {
+      "id": "m_test008",
+      "completed_at": "2024-01-18T13:00:00Z",
+      "participants": [
+        {"bot_id": "b_f3af8d6177eb", "name": "GuardianBot", "score": 3, "won": false},
+        {"bot_id": "b_457b876ca1c4", "name": "HunterBot", "score": 5, "won": true}
+      ],
+      "winner_id": "b_457b876ca1c4",
+      "map_id": "map_2p_008",
+      "turns": 423,
+      "end_reason": "turn_limit",
+      "enriched": true
+    }
+  ]
+}
