@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Replay Viewer Test - Demo Replay</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background: #0f172a; color: #e2e8f0; }
+    h1 { font-size: 1.2rem; margin-bottom: 10px; }
+    .test-container { display: flex; gap: 20px; }
+    .viewer-section { flex: 1; }
+    .results-section { width: 300px; background: #1e293b; padding: 15px; border-radius: 8px; }
+    .canvas-wrapper { background: #1e293b; border-radius: 8px; padding: 10px; }
+    canvas { display: block; }
+    .test-result { padding: 8px; margin: 5px 0; border-radius: 4px; }
+    .pass { background: #22c55e; color: white; }
+    .fail { background: #ef4444; color: white; }
+    .info { background: #3b82f6; color: white; }
+    .controls { margin-top: 15px; }
+    button { padding: 8px 16px; margin-right: 5px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>Replay Viewer Test - Demo Replay</h1>
+  <div class="test-container">
+    <div class="viewer-section">
+      <div class="canvas-wrapper">
+        <canvas id="replay-canvas"></canvas>
+      </div>
+      <div class="controls">
+        <button id="play-btn">Play</button>
+        <button id="pause-btn">Pause</button>
+        <button id="next-btn">Next Turn</button>
+        <button id="reset-btn">Reset</button>
+        <span id="turn-info">Turn: 0</span>
+      </div>
+    </div>
+    <div class="results-section">
+      <h2>Test Results</h2>
+      <div id="test-results"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ReplayViewer } from './src/replay-viewer.ts';
+
+    const results = document.getElementById('test-results');
+    const canvas = document.getElementById('replay-canvas');
+    const turnInfo = document.getElementById('turn-info');
+    const playBtn = document.getElementById('play-btn');
+    const pauseBtn = document.getElementById('pause-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const resetBtn = document.getElementById('reset-btn');
+
+    let viewer;
+    let testsPassed = 0;
+    let testsFailed = 0;
+
+    function addResult(name, passed, message) {
+      const div = document.createElement('div');
+      div.className = `test-result ${passed ? 'pass' : 'fail'}`;
+      div.textContent = `${passed ? '✓' : '✗'} ${name}: ${message}`;
+      results.appendChild(div);
+      if (passed) testsPassed++;
+      else testsFailed++;
+    }
+
+    function addInfo(message) {
+      const div = document.createElement('div');
+      div.className = 'test-result info';
+      div.textContent = message;
+      results.appendChild(div);
+    }
+
+    async function runTests() {
+      addInfo('Loading demo replay...');
+      try {
+        const response = await fetch('/data/demo-replay-v2.json');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const replay = await response.json();
+        addResult('Fetch demo replay', true, `Loaded ${replay.match_id}`);
+
+        // Test replay structure
+        addResult('Replay has match_id', !!replay.match_id, replay.match_id);
+        addResult('Replay has players', Array.isArray(replay.players) && replay.players.length > 0, `${replay.players.length} players`);
+        addResult('Replay has turns', Array.isArray(replay.turns) && replay.turns.length > 0, `${replay.turns.length} turns`);
+        addResult('Replay has map', !!replay.map, `${replay.map.rows}x${replay.map.cols}`);
+        addResult('Replay has result', !!replay.result, `Winner: ${replay.result.winner}`);
+
+        // Create viewer
+        addInfo('Creating ReplayViewer...');
+        viewer = new ReplayViewer(canvas, { cellSize: 10 });
+        addResult('Create ReplayViewer', true, 'Viewer instance created');
+
+        // Load replay
+        addInfo('Loading replay into viewer...');
+        viewer.loadReplay(replay);
+        addResult('Load replay into viewer', true, `Loaded ${replay.turns.length} turns`);
+
+        // Test viewer state
+        addResult('Get total turns', viewer.getTotalTurns() === replay.turns.length, `${viewer.getTotalTurns()} turns`);
+        addResult('Get current turn', viewer.getTurn() === 0, `Turn ${viewer.getTurn()}`);
+
+        // Test turn navigation
+        addInfo('Testing turn navigation...');
+        viewer.setTurn(10);
+        addResult('Set turn to 10', viewer.getTurn() === 10, `Turn ${viewer.getTurn()}`);
+        viewer.setTurn(0);
+        addResult('Reset to turn 0', viewer.getTurn() === 0, `Turn ${viewer.getTurn()}`);
+
+        // Test playback
+        addInfo('Testing playback controls...');
+        viewer.play();
+        addResult('Start playback', viewer.getIsPlaying(), 'Playing');
+        await new Promise(r => setTimeout(r, 200));
+        viewer.pause();
+        addResult('Pause playback', !viewer.getIsPlaying(), 'Paused');
+
+        // Test win probability
+        if (replay.win_prob && replay.win_prob.length > 0) {
+          addResult('Replay has win probability', true, `${replay.win_prob.length} turns`);
+        } else {
+          addResult('Replay has win probability', false, 'No win_prob data');
+        }
+
+        // Test events
+        const events = viewer.getTurnEvents();
+        addResult('Get turn events', Array.isArray(events), `${events.length} events at turn 0`);
+
+        // Test transcript generation
+        const transcript = viewer.generateTranscript();
+        addResult('Generate transcript', Array.isArray(transcript) && transcript.length > 0, `${transcript.length} entries`);
+
+        addInfo(`Tests completed: ${testsPassed} passed, ${testsFailed} failed`);
+
+        // Enable controls
+        playBtn.disabled = false;
+        pauseBtn.disabled = false;
+        nextBtn.disabled = false;
+        resetBtn.disabled = false;
+
+        // Set up turn change callback
+        viewer.onTurnChange = (turn) => {
+          turnInfo.textContent = `Turn: ${turn}/${viewer.getTotalTurns() - 1}`;
+        };
+
+      } catch (error) {
+        addResult('Test execution', false, error.message);
+        console.error(error);
+      }
+    }
+
+    // Wire up controls
+    playBtn.addEventListener('click', () => viewer.play());
+    pauseBtn.addEventListener('click', () => viewer.pause());
+    nextBtn.addEventListener('click', () => {
+      if (viewer.getTurn() < viewer.getTotalTurns() - 1) {
+        viewer.setTurn(viewer.getTurn() + 1);
+      }
+    });
+    resetBtn.addEventListener('click', () => {
+      viewer.pause();
+      viewer.setTurn(0);
+    });
+
+    // Run tests
+    runTests();
+  </script>
+</body>
+</html>
