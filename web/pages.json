@@ -10,8 +10,8 @@
     "root_dir": "web"
   },
   "routes": {
-    "app": "app.html",
-    "replay_viewer": "index.html"
+    "app": "index.html",
+    "replay_viewer": "replay.html"
   },
   "data_paths": {
     "pages_data": "https://aicodebattle.com/data",

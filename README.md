@@ -30,12 +30,12 @@ go build ./cmd/acb-mapgen
 
 # Start web development server
 cd web && npm install && npm run dev
-# Open http://localhost:3000/app.html
+# Open http://localhost:3000/
 ```
 
 ### Viewing Replays
 
-1. Open the web app at `http://localhost:3000/app.html`
+1. Open the web app at `http://localhost:3000/`
 2. Navigate to "Replay Viewer" in the menu
 3. Load a replay JSON file or enter a URL
 

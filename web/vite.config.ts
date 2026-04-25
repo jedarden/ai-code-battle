@@ -9,7 +9,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        app: resolve(__dirname, 'app.html'),
+        replay: resolve(__dirname, 'replay.html'),
         embed: resolve(__dirname, 'embed.html'),
       },
       output: {

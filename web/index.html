@@ -3,498 +3,923 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Code Battle - Replay Viewer</title>
+  <title>AI Code Battle</title>
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://aicodebattle.com/">
+  <meta property="og:title" content="AI Code Battle">
+  <meta property="og:description" content="Competitive bot programming platform - write HTTP servers that control units on a grid world">
+  <meta property="og:image" content="https://aicodebattle.com/img/og-default.png">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://aicodebattle.com/">
+  <meta name="twitter:title" content="AI Code Battle">
+  <meta name="twitter:description" content="Competitive bot programming platform - write HTTP servers that control units on a grid world">
+  <meta name="twitter:image" content="https://aicodebattle.com/img/og-default.png">
   <style>
+    /* Reset and base styles */
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
 
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --border: #475569;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background-color: #0f172a;
-      color: #e2e8f0;
+      background-color: var(--bg-primary);
+      color: var(--text-secondary);
       min-height: 100vh;
-      padding: 20px;
+      line-height: 1.5;
     }
 
-    .container {
+    /* Navigation - Desktop Top Bar */
+    nav {
+      background-color: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-container {
       max-width: 1200px;
       margin: 0 auto;
-    }
-
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 20px;
-      color: #f8fafc;
-    }
-
-    .main-layout {
       display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
     }
 
-    .viewer-container {
-      flex: 1;
-      min-width: 300px;
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 1.25rem;
     }
 
-    .canvas-wrapper {
-      background-color: #1e293b;
-      border-radius: 8px;
+    .nav-brand:hover {
+      color: var(--accent);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 8px;
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .nav-link:hover {
+      color: var(--text-primary);
+      background-color: var(--bg-tertiary);
+    }
+
+    .nav-link.active {
+      color: var(--text-primary);
+      background-color: var(--accent);
+    }
+
+    /* Primary nav links (Watch, Compete, Leaderboard) */
+    .nav-link.primary {
+      font-weight: 600;
+    }
+
+    /* Mobile hamburger menu */
+    .mobile-menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 8px;
+    }
+
+    /* Mobile dropdown menu */
+    .mobile-menu {
+      display: none;
+      position: absolute;
+      top: 60px;
+      left: 0;
+      right: 0;
+      background-color: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
       padding: 10px;
+      z-index: 99;
     }
 
-    #replay-canvas {
+    .mobile-menu.open {
       display: block;
     }
 
-    .sidebar {
-      width: 300px;
-      display: flex;
+    .mobile-menu a {
+      display: block;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 12px 16px;
+      border-radius: 6px;
+    }
+
+    .mobile-menu a:hover {
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .mobile-menu a.active {
+      color: var(--accent);
+    }
+
+    /* Mobile bottom tab bar */
+    .mobile-bottom-nav {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 8px 0;
+      z-index: 100;
+    }
+
+    .mobile-bottom-nav .nav-links {
+      justify-content: space-around;
+      width: 100%;
+    }
+
+    .mobile-bottom-nav .nav-link {
       flex-direction: column;
-      gap: 15px;
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      text-align: center;
     }
 
-    .panel {
-      background-color: #1e293b;
+    /* Skip link for screen reader users */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--accent);
+      color: white;
+      padding: 8px 16px;
+      text-decoration: none;
+      z-index: 1000;
+      transition: top 0.2s;
+    }
+
+    .skip-link:focus {
+      top: 0;
+    }
+
+    /* Main content area - adjust padding for mobile bottom nav */
+    #app {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      min-height: calc(100vh - 60px);
+    }
+
+    /* Responsive Navigation */
+    @media (max-width: 639px) {
+      .nav-container {
+        height: 50px;
+      }
+
+      .nav-brand {
+        font-size: 1rem;
+      }
+
+      /* Hide desktop nav links */
+      .desktop-nav {
+        display: none;
+      }
+
+      /* Show mobile hamburger */
+      .mobile-menu-toggle {
+        display: block;
+      }
+
+      /* Show bottom tab bar */
+      .mobile-bottom-nav {
+        display: block;
+      }
+
+      /* Add padding to bottom of main content for bottom nav */
+      #app {
+        padding-bottom: 70px;
+      }
+
+      /* Adjust top nav for mobile */
+      .nav-container {
+        justify-content: space-between;
+      }
+    }
+
+    /* Main content area */
+    #app {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      min-height: calc(100vh - 60px);
+    }
+
+    /* Common page styles */
+    .page-title {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+
+    .error {
+      background-color: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--error);
       border-radius: 8px;
-      padding: 15px;
+      padding: 20px;
+      color: var(--error);
     }
 
-    .panel h2 {
-      font-size: 1rem;
+    .error .hint {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-top: 10px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+
+    .updated-at {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-bottom: 16px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-block;
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: background-color 0.2s;
+    }
+
+    .btn:hover {
+      background-color: var(--border);
+    }
+
+    .btn.primary {
+      background-color: var(--accent);
+    }
+
+    .btn.primary:hover {
+      background-color: var(--accent-hover);
+    }
+
+    .btn.secondary {
+      background-color: var(--bg-tertiary);
+    }
+
+    .btn.small {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    /* Home page */
+    .home-page .hero {
+      text-align: center;
+      padding: 60px 20px;
+      background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+      border-radius: 12px;
+      margin-bottom: 40px;
+    }
+
+    .home-page .hero h1 {
+      font-size: 3rem;
+      color: var(--text-primary);
       margin-bottom: 10px;
-      color: #94a3b8;
+    }
+
+    .home-page .tagline {
+      font-size: 1.5rem;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }
+
+    .home-page .description {
+      font-size: 1.125rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto 30px;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .features, .quick-links {
+      margin-bottom: 40px;
+    }
+
+    .features h2, .quick-links h2 {
+      font-size: 1.5rem;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+    }
+
+    .feature-grid, .link-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+    }
+
+    .feature, .link-card {
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .feature h3, .link-card h3 {
+      color: var(--text-primary);
+      margin-bottom: 10px;
+    }
+
+    .feature p, .link-card p {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    .link-card {
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .link-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Leaderboard */
+    .leaderboard-table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .leaderboard-table th,
+    .leaderboard-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--bg-tertiary);
+    }
+
+    .leaderboard-table th {
+      background-color: var(--bg-tertiary);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
-    .controls {
+    .leaderboard-table tr:hover {
+      background-color: var(--bg-tertiary);
+    }
+
+    .leaderboard-table .rank {
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .leaderboard-table tr.rank-1 .rank { color: #fbbf24; }
+    .leaderboard-table tr.rank-2 .rank { color: #94a3b8; }
+    .leaderboard-table tr.rank-3 .rank { color: #cd7f32; }
+
+    .leaderboard-table .bot-name a {
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .leaderboard-table .bot-name a:hover {
+      color: var(--accent);
+    }
+
+    .rating-value {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .rating-dev {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-left: 4px;
+    }
+
+    .status-healthy { color: var(--success); }
+    .status-unhealthy { color: var(--error); }
+    .status-unknown { color: var(--text-muted); }
+
+    /* Bot cards grid */
+    .bots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .bot-card {
       display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    button {
-      background-color: #3b82f6;
-      color: white;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: background-color 0.2s;
-    }
-
-    button:hover {
-      background-color: #2563eb;
-    }
-
-    button:disabled {
-      background-color: #475569;
-      cursor: not-allowed;
-    }
-
-    .slider-group {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-
-    .slider-group label {
-      font-size: 12px;
-      color: #94a3b8;
-    }
-
-    input[type="range"] {
-      width: 100%;
-    }
-
-    .file-input-wrapper {
-      position: relative;
-    }
-
-    input[type="file"] {
-      display: none;
-    }
-
-    .file-label {
-      display: inline-block;
-      background-color: #475569;
-      color: white;
-      padding: 8px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: background-color 0.2s;
-    }
-
-    .file-label:hover {
-      background-color: #64748b;
-    }
-
-    .url-input-group {
-      display: flex;
-      gap: 5px;
-    }
-
-    input[type="text"] {
-      flex: 1;
-      background-color: #0f172a;
-      border: 1px solid #334155;
-      color: #e2e8f0;
-      padding: 8px;
-      border-radius: 6px;
-      font-size: 14px;
-    }
-
-    select {
-      background-color: #0f172a;
-      border: 1px solid #334155;
-      color: #e2e8f0;
-      padding: 8px;
-      border-radius: 6px;
-      font-size: 14px;
-    }
-
-    .match-info {
-      font-size: 13px;
-    }
-
-    .match-info dt {
-      color: #94a3b8;
-      font-size: 11px;
-      text-transform: uppercase;
-      margin-top: 8px;
-    }
-
-    .match-info dd {
-      color: #f1f5f9;
-    }
-
-    .event-log {
-      max-height: 200px;
-      overflow-y: auto;
-      font-size: 12px;
-      font-family: monospace;
-    }
-
-    .event-log .event {
-      padding: 4px 0;
-      border-bottom: 1px solid #334155;
-    }
-
-    .event-log .event:last-child {
-      border-bottom: none;
-    }
-
-    .event-type {
-      color: #fbbf24;
-    }
-
-    .no-replay {
-      color: #64748b;
-      text-align: center;
-      padding: 20px;
-    }
-
-    .keyboard-shortcuts {
-      font-size: 12px;
-      color: #64748b;
-      margin-top: 10px;
-    }
-
-    .keyboard-shortcuts kbd {
-      background-color: #334155;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: monospace;
-    }
-
-    /* Minimap (§7.3) */
-    .minimap-container {
-      position: absolute;
-      bottom: 16px;
-      right: 16px;
-      border: 2px solid #475569;
-      border-radius: 6px;
-      overflow: hidden;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-      opacity: 0.85;
-      transition: opacity 0.2s;
-      z-index: 10;
-    }
-    .minimap-container:hover {
-      opacity: 1;
-    }
-    #minimap-canvas {
-      display: block;
-      cursor: crosshair;
-    }
-
-    /* Transcript panel styles (§15.3) */
-    .transcript-panel {
-      position: fixed;
-      top: 0;
-      right: -400px;
-      width: 400px;
-      height: 100vh;
-      background-color: #1e293b;
-      border-left: 1px solid #334155;
-      box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3);
-      transition: right 0.3s ease-in-out;
-      display: flex;
-      flex-direction: column;
-      z-index: 100;
-    }
-
-    .transcript-panel.open {
-      right: 0;
-    }
-
-    .transcript-header {
-      padding: 15px;
-      border-bottom: 1px solid #334155;
-      display: flex;
-      justify-content: space-between;
       align-items: center;
+      gap: 16px;
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 16px;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
 
-    .transcript-header h2 {
-      font-size: 1rem;
-      margin: 0;
-      color: #f8fafc;
+    .bot-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
-    .transcript-close {
-      background: none;
-      border: none;
-      color: #94a3b8;
+    .bot-rank {
       font-size: 1.5rem;
-      cursor: pointer;
-      padding: 0;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 4px;
+      font-weight: 700;
+      color: var(--text-muted);
+      min-width: 50px;
     }
 
-    .transcript-close:hover {
-      background-color: #334155;
-      color: #f8fafc;
-    }
-
-    .transcript-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 15px;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .transcript-content select {
-      width: 100%;
-      margin-bottom: 15px;
-      background-color: #0f172a;
-      border: 1px solid #334155;
-      color: #e2e8f0;
-      padding: 8px;
-      border-radius: 6px;
-      font-size: 13px;
-    }
-
-    .transcript-entry {
-      padding: 10px;
-      margin-bottom: 10px;
-      background-color: #0f172a;
-      border-radius: 6px;
-      border-left: 3px solid #334155;
-      cursor: pointer;
-      user-select: text;
-    }
-
-    .transcript-entry:hover {
-      background-color: #1a2436;
-    }
-
-    .transcript-entry.current {
-      border-left-color: #3b82f6;
-      background-color: #1e3a5f;
-    }
-
-    .transcript-entry .turn-number {
-      font-weight: bold;
-      color: #94a3b8;
-      font-size: 11px;
-      text-transform: uppercase;
+    .bot-info .bot-name {
+      color: var(--text-primary);
+      font-weight: 600;
       margin-bottom: 4px;
     }
 
-    .transcript-entry .text {
-      color: #e2e8f0;
+    .bot-stats {
+      display: flex;
+      gap: 12px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
     }
 
-    .transcript-toggle-btn {
-      position: fixed;
-      top: 50%;
-      right: 0;
-      transform: translateY(-50%);
-      background-color: #3b82f6;
+    /* Match cards */
+    .matches-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .match-card {
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .match-header {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-bottom: 12px;
+    }
+
+    .match-id {
+      font-family: monospace;
+    }
+
+    .match-participants {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .participant {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .participant-name {
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .participant-name:hover {
+      color: var(--accent);
+    }
+
+    .participant-score {
+      color: var(--text-muted);
+    }
+
+    .winner-badge {
+      background-color: var(--success);
       color: white;
-      border: none;
-      padding: 10px 6px;
-      border-radius: 6px 0 0 6px;
-      cursor: pointer;
-      font-size: 12px;
-      writing-mode: vertical-rl;
-      text-orientation: mixed;
-      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.2);
-      z-index: 99;
-      transition: background-color 0.2s;
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
     }
 
-    .transcript-toggle-btn:hover {
-      background-color: #2563eb;
+    .match-footer {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      color: var(--text-muted);
+      font-size: 0.875rem;
     }
 
-    .transcript-panel.open .transcript-toggle-btn {
-      display: none;
+    .match-footer .btn {
+      margin-left: auto;
     }
 
-    /* Responsive: on smaller screens, make panel wider */
-    @media (max-width: 768px) {
-      .transcript-panel {
-        width: 100%;
-        right: -100%;
+    /* Bot profile */
+    .breadcrumb {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-bottom: 20px;
+    }
+
+    .breadcrumb a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .profile-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 30px;
+    }
+
+    .profile-header h1 {
+      font-size: 2rem;
+      color: var(--text-primary);
+    }
+
+    .profile-status {
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .profile-status.status-healthy {
+      background-color: rgba(34, 197, 94, 0.2);
+      color: var(--success);
+    }
+
+    .profile-status.status-unhealthy {
+      background-color: rgba(239, 68, 68, 0.2);
+      color: var(--error);
+    }
+
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .profile-section {
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .profile-section h2 {
+      font-size: 1rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+
+    .rating-display {
+      margin-bottom: 16px;
+    }
+
+    .rating-main {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      text-align: center;
+    }
+
+    .stat-value {
+      display: block;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .meta-list dt {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-top: 12px;
+    }
+
+    .meta-list dd {
+      color: var(--text-primary);
+    }
+
+    .rating-sparkline {
+      width: 100%;
+      height: 60px;
+    }
+
+    .rating-range {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+
+    /* Registration form */
+    .register-intro {
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+
+    .register-intro p {
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .register-form {
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 30px;
+      max-width: 500px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      color: var(--text-primary);
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .form-group input {
+      width: 100%;
+      background-color: var(--bg-primary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    /* Accessibility: Focus indicators for keyboard navigation */
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .nav-link:focus-visible {
+      outline-offset: -2px;
+      background-color: var(--bg-tertiary);
+    }
+
+    .btn:focus-visible {
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+    }
+
+    .bot-card:focus-visible,
+    .link-card:focus-visible {
+      outline-offset: 4px;
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+    }
+
+    /* Skip link for screen reader users */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--accent);
+      color: white;
+      padding: 8px 16px;
+      text-decoration: none;
+      z-index: 1000;
+      transition: top 0.2s;
+    }
+
+    .skip-link:focus {
+      top: 0;
+    }
+
+    /* High contrast focus for accessibility mode */
+    @media (prefers-contrast: more) {
+      :focus-visible {
+        outline-width: 3px;
+        outline-style: solid;
       }
+    }
+
+    .form-group .hint {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-top: 6px;
+    }
+
+    .error-message {
+      background-color: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--error);
+      border-radius: 6px;
+      padding: 12px;
+      color: var(--error);
+      margin-bottom: 20px;
+    }
+
+    .register-success {
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 30px;
+      max-width: 500px;
+    }
+
+    .register-success h2 {
+      color: var(--success);
+      margin-bottom: 10px;
+    }
+
+    .api-key-display {
+      background-color: var(--bg-primary);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+
+    .api-key-display .warning {
+      color: var(--warning);
+      margin-bottom: 10px;
+    }
+
+    .api-key {
+      display: block;
+      background-color: var(--bg-tertiary);
+      padding: 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      word-break: break-all;
+      margin-bottom: 12px;
+    }
+
+    .next-steps {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .register-help {
+      margin-top: 30px;
+    }
+
+    .register-help h2 {
+      color: var(--text-primary);
+      margin-bottom: 12px;
+    }
+
+    .register-help ul {
+      list-style: none;
+      color: var(--text-muted);
+    }
+
+    .register-help li {
+      padding: 8px 0;
+      padding-left: 20px;
+      position: relative;
+    }
+
+    .register-help li::before {
+      content: '•';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>AI Code Battle - Replay Viewer</h1>
+  <a href="#app" class="skip-link">Skip to main content</a>
+  <nav>
+    <div class="nav-container">
+      <a href="#/" class="nav-brand">⚔️ AI Code Battle</a>
 
-    <div class="main-layout">
-      <div class="viewer-container">
-        <div class="canvas-wrapper" style="position:relative">
-          <canvas id="replay-canvas"></canvas>
-          <div id="no-replay" class="no-replay">Load a replay file to view</div>
-          <div class="minimap-container" id="minimap-container">
-            <canvas id="minimap-canvas" width="150" height="150"></canvas>
-          </div>
-        </div>
+      <!-- Desktop navigation -->
+      <div class="nav-links desktop-nav">
+        <a href="#/watch" class="nav-link primary">Watch</a>
+        <a href="#/compete" class="nav-link primary">Compete</a>
+        <a href="#/leaderboard" class="nav-link primary">Leaderboard</a>
+        <a href="#/evolution" class="nav-link">Evolution</a>
+        <a href="#/blog" class="nav-link">Blog</a>
+        <a href="#/season/1" class="nav-link" id="current-season-link">Season 1</a>
       </div>
 
-      <div class="sidebar">
-        <div class="panel">
-          <h2>Load Replay</h2>
-          <div class="controls" style="margin-bottom: 10px;">
-            <div class="file-input-wrapper">
-              <label class="file-label" for="file-input">Choose File</label>
-              <input type="file" id="file-input" accept=".json">
-            </div>
-          </div>
-          <div class="url-input-group">
-            <input type="text" id="url-input" placeholder="Or enter URL...">
-            <button id="load-url-btn">Load</button>
-          </div>
-        </div>
+      <!-- Mobile hamburger menu toggle -->
+      <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Toggle menu">☰</button>
+    </div>
 
-        <div class="panel">
-          <h2>Playback</h2>
-          <div class="controls">
-            <button id="play-btn" disabled>Play</button>
-            <button id="prev-btn" disabled>Prev</button>
-            <button id="next-btn" disabled>Next</button>
-            <button id="reset-btn" disabled>Reset</button>
-          </div>
-          <div class="slider-group" style="margin-top: 10px;">
-            <label>Turn: <span id="turn-display">0</span> / <span id="total-turns">0</span></label>
-            <input type="range" id="turn-slider" min="0" max="0" value="0" disabled>
-          </div>
-          <div class="slider-group" style="margin-top: 10px;">
-            <label>Speed: <span id="speed-display">100</span>ms/turn</label>
-            <input type="range" id="speed-slider" min="20" max="1000" value="100">
-          </div>
-        </div>
+    <!-- Mobile dropdown menu -->
+    <div class="mobile-menu" id="mobile-menu">
+      <a href="#/evolution">Evolution</a>
+      <a href="#/blog">Blog</a>
+      <a href="#/season/1" id="mobile-season-link">Season 1</a>
+    </div>
+  </nav>
 
-        <div class="panel">
-          <h2>View Options</h2>
-          <div class="slider-group">
-            <label for="fog-select">Fog of War:</label>
-            <select id="fog-select">
-              <option value="">Disabled (full view)</option>
-            </select>
-          </div>
-          <div class="slider-group" style="margin-top: 10px;">
-            <label for="cell-size-select">Cell Size:</label>
-            <select id="cell-size-select">
-              <option value="8">Small (8px)</option>
-              <option value="12">Medium (12px)</option>
-              <option value="16" selected>Large (16px)</option>
-              <option value="20">X-Large (20px)</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2>Match Info</h2>
-          <dl class="match-info" id="match-info">
-            <dt>Match ID</dt>
-            <dd id="info-match-id">-</dd>
-            <dt>Winner</dt>
-            <dd id="info-winner">-</dd>
-            <dt>Turns</dt>
-            <dd id="info-turns">-</dd>
-            <dt>Reason</dt>
-            <dd id="info-reason">-</dd>
-          </dl>
-        </div>
-
-        <div class="panel">
-          <h2>Events This Turn</h2>
-          <div class="event-log" id="event-log">
-            <div class="no-replay">No events</div>
-          </div>
-        </div>
-
-        <div class="keyboard-shortcuts">
-          <kbd>Space</kbd> Play/Pause
-          <kbd>←</kbd><kbd>→</kbd> Step
-          <kbd>Home</kbd><kbd>End</kbd> First/Last
-        </div>
-      </div>
+  <!-- Mobile bottom tab bar -->
+  <div class="mobile-bottom-nav">
+    <div class="nav-links">
+      <a href="#/" class="nav-link">
+        <span>🏠</span>
+        <span>Home</span>
+      </a>
+      <a href="#/watch" class="nav-link">
+        <span>👀</span>
+        <span>Watch</span>
+      </a>
+      <a href="#/compete" class="nav-link">
+        <span>⚔️</span>
+        <span>Compete</span>
+      </a>
+      <a href="#/leaderboard" class="nav-link">
+        <span>🏆</span>
+        <span>Board</span>
+      </a>
     </div>
   </div>
 
-  <!-- Transcript panel (§15.3) -->
-  <button id="transcript-toggle" class="transcript-toggle-btn" title="Toggle Transcript (T)">
-    Transcript
-  </button>
-  <div id="transcript-panel" class="transcript-panel">
-    <div class="transcript-header">
-      <h2>Turn-by-Turn Transcript</h2>
-      <button id="transcript-close" class="transcript-close" title="Close transcript">&times;</button>
-    </div>
-    <div class="transcript-content">
-      <select id="transcript-view-mode">
-        <option value="all">All Turns</option>
-        <option value="window">±10 Turns from Current</option>
-        <option value="recent">Recent 20 Turns</option>
-      </select>
-      <div id="transcript-entries">
-        <p style="color: #64748b; text-align: center; padding: 20px;">
-          Load a replay to view the transcript.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <script type="module" src="/src/main.ts"></script>
+  <div id="app"></div>
+  <!-- Go WASM runtime — needed for uploaded Go-compiled .wasm bots in sandbox -->
+  <script src="/wasm/wasm_exec.js"></script>
+  <script type="module" src="/src/app.ts"></script>
 </body>
 </html>
