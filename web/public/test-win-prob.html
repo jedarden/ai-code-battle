@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Win Probability Sparkline Test</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background: #0f172a; color: #e2e8f0; }
+    h1 { font-size: 1.2rem; margin-bottom: 10px; }
+    .test-container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .viewer-section { flex: 1; min-width: 500px; }
+    .sparkline-section { width: 100%; background: #1e293b; padding: 15px; border-radius: 8px; margin-top: 15px; }
+    .canvas-wrapper { background: #1e293b; border-radius: 8px; padding: 10px; }
+    canvas { display: block; }
+    .controls { margin-top: 15px; display: flex; gap: 8px; }
+    button { padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    #turn-info { font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>Win Probability Sparkline Test - Enriched Demo Replay</h1>
+  <div class="test-container">
+    <div class="viewer-section">
+      <div class="canvas-wrapper">
+        <canvas id="replay-canvas"></canvas>
+      </div>
+      <div class="controls">
+        <button id="play-btn">Play</button>
+        <button id="pause-btn">Pause</button>
+        <button id="next-btn">+1 Turn</button>
+        <button id="prev-btn">-1 Turn</button>
+        <button id="reset-btn">Reset</button>
+        <span id="turn-info">Turn: 0</span>
+      </div>
+      <div class="sparkline-section">
+        <h2>Win Probability Sparkline</h2>
+        <div id="win-prob-container"></div>
+        <div id="win-prob-legend" style="margin-top: 10px; font-family: monospace; font-size: 12px;"></div>
+        <div style="margin-top: 10px;">
+          <h3>Critical Moments</h3>
+          <div id="critical-moments-info" style="font-size: 13px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ReplayViewer } from './src/replay-viewer.ts';
+
+    const canvas = document.getElementById('replay-canvas');
+    const turnInfo = document.getElementById('turn-info');
+    const winProbContainer = document.getElementById('win-prob-container');
+    const winProbLegend = document.getElementById('win-prob-legend');
+    const criticalMomentsInfo = document.getElementById('critical-moments-info');
+
+    let viewer;
+
+    async function init() {
+      const response = await fetch('/data/demo-replay-v2-enriched.json');
+      const replay = await response.json();
+
+      console.log('Loaded replay:', replay.match_id);
+      console.log('Win prob entries:', replay.win_prob?.length || 0);
+      console.log('Critical moments:', replay.critical_moments?.length || 0);
+
+      // Create viewer
+      viewer = new ReplayViewer(canvas, { cellSize: 10 });
+
+      viewer.onTurnChange = (turn) => {
+        turnInfo.textContent = `Turn: ${turn}/${viewer.getTotalTurns() - 1}`;
+        viewer.refreshWinProbSparkline();
+      };
+
+      viewer.loadReplay(replay);
+
+      // Set up win probability data
+      if (replay.win_prob && replay.win_prob.length > 0) {
+        const points = replay.win_prob.map((probs, turn) => ({
+          turn,
+          probs: probs.slice()
+        }));
+
+        const playerColors = ['#332288', '#88ccee', '#44aa99', '#117733'];
+        viewer.setWinProbPlayerColors(playerColors);
+        viewer.setWinProbabilityData(points);
+
+        if (replay.critical_moments) {
+          viewer.setCriticalMoments(replay.critical_moments);
+          criticalMomentsInfo.innerHTML = replay.critical_moments.map(m =>
+            `<div>Turn ${m.turn}: ${m.description} (Δ: ${(m.delta * 100).toFixed(0)}%)</div>`
+          ).join('');
+        }
+
+        viewer.createWinProbSparkline(winProbContainer, 800, 100, (turn) => {
+          viewer.setTurn(turn);
+        });
+
+        // Create legend
+        winProbLegend.innerHTML = replay.players.map((p, i) =>
+          `<span style="color: ${playerColors[i]}">${playerColors[i] === '#332288' ? '—' : '--'} ${p.name}</span>`
+        ).join(' ');
+      }
+    }
+
+    // Wire up controls
+    document.getElementById('play-btn').addEventListener('click', () => viewer.play());
+    document.getElementById('pause-btn').addEventListener('click', () => viewer.pause());
+    document.getElementById('next-btn').addEventListener('click', () => {
+      if (viewer.getTurn() < viewer.getTotalTurns() - 1) viewer.setTurn(viewer.getTurn() + 1);
+    });
+    document.getElementById('prev-btn').addEventListener('click', () => {
+      if (viewer.getTurn() > 0) viewer.setTurn(viewer.getTurn() - 1);
+    });
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      viewer.pause();
+      viewer.setTurn(0);
+    });
+
+    init();
+  </script>
+</body>
+</html>
