@@ -21,29 +21,28 @@ type B2Client struct {
 
 // NewB2Client creates a new B2 client.
 func NewB2Client(cfg *Config) *B2Client {
-	// Create custom endpoint resolver for B2 (S3-compatible)
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			URL:           cfg.B2Endpoint,
-			SigningRegion: cfg.B2Region,
-		}, nil
-	})
-
 	// Load AWS config with B2 credentials
+	// Use region "auto" for custom S3-compatible endpoints (ARMOR/B2)
 	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.B2AccessKey,
 			cfg.B2SecretKey,
 			"",
 		)),
-		config.WithEndpointResolverWithOptions(customResolver),
+		config.WithRegion("auto"),
 	)
 	if err != nil {
 		panic(fmt.Sprintf("failed to load AWS config: %v", err))
 	}
 
+	// Create S3 client with custom endpoint (ARMOR proxy wrapping B2)
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(cfg.B2Endpoint)
+		o.UsePathStyle = true // Required for ARMOR/B2 S3-compatible API
+	})
+
 	return &B2Client{
-		client:   s3.NewFromConfig(awsCfg),
+		client:   client,
 		bucket:   cfg.B2Bucket,
 		endpoint: cfg.B2Endpoint,
 	}
