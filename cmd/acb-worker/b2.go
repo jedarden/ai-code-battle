@@ -22,14 +22,15 @@ type B2Client struct {
 // NewB2Client creates a new B2 client.
 func NewB2Client(cfg *Config) *B2Client {
 	// Load AWS config with B2 credentials
-	// Use region "auto" for custom S3-compatible endpoints (ARMOR/B2)
+	// For S3-compatible endpoints (ARMOR/B2), use us-east-1 as a placeholder region
+	// The actual endpoint is overridden via BaseEndpoint in the S3 client
 	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.B2AccessKey,
 			cfg.B2SecretKey,
 			"",
 		)),
-		config.WithRegion("auto"),
+		config.WithRegion("us-east-1"),
 	)
 	if err != nil {
 		panic(fmt.Sprintf("failed to load AWS config: %v", err))

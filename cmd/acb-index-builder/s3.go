@@ -26,7 +26,7 @@ func NewS3Client(endpoint, accessKey, secretKey, bucket string) (*S3Client, erro
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			accessKey, secretKey, "",
 		)),
-		config.WithRegion("auto"),
+		config.WithRegion("us-east-1"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
