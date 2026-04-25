@@ -1,10 +1,225 @@
 {
-  "$comment": "Placeholder file - replaced by index builder",
-  "updated_at": null,
-  "matches": [],
-  "pagination": {
-    "page": 1,
-    "per_page": 50,
-    "total": 0
-  }
+  "updated_at": "2026-04-25T10:00:00Z",
+  "matches": [
+    {
+      "id": "m_test_6p_v1",
+      "completed_at": "2026-04-25T09:45:00Z",
+      "participants": [
+        {
+          "bot_id": "b_swarm_001",
+          "name": "SwarmBot",
+          "score": 7,
+          "won": true
+        },
+        {
+          "bot_id": "b_hunter_001",
+          "name": "HunterBot",
+          "score": 3,
+          "won": false
+        },
+        {
+          "bot_id": "b_gatherer_001",
+          "name": "GathererBot",
+          "score": 2,
+          "won": false
+        },
+        {
+          "bot_id": "b_rusher_001",
+          "name": "RusherBot",
+          "score": 1,
+          "won": false
+        },
+        {
+          "bot_id": "b_guardian_001",
+          "name": "GuardianBot",
+          "score": 4,
+          "won": false
+        },
+        {
+          "bot_id": "b_random_001",
+          "name": "RandomBot",
+          "score": 0,
+          "won": false
+        }
+      ],
+      "winner_id": "b_swarm_001",
+      "map_id": "map_six_corners_v1",
+      "turns": 487,
+      "end_reason": "turn_limit",
+      "enriched": true
+    },
+    {
+      "id": "m_test_close_v1",
+      "completed_at": "2026-04-25T09:30:00Z",
+      "participants": [
+        {
+          "bot_id": "b_hunter_001",
+          "name": "HunterBot",
+          "score": 5,
+          "won": true
+        },
+        {
+          "bot_id": "b_gatherer_001",
+          "name": "GathererBot",
+          "score": 4,
+          "won": false
+        }
+      ],
+      "winner_id": "b_hunter_001",
+      "map_id": "map_open_field_v2",
+      "turns": 500,
+      "end_reason": "turn_limit",
+      "enriched": false
+    },
+    {
+      "id": "m_test_upset_v1",
+      "completed_at": "2026-04-25T09:15:00Z",
+      "participants": [
+        {
+          "bot_id": "b_random_001",
+          "name": "RandomBot",
+          "score": 3,
+          "won": true
+        },
+        {
+          "bot_id": "b_guardian_001",
+          "name": "GuardianBot",
+          "score": 2,
+          "won": false
+        }
+      ],
+      "winner_id": "b_random_001",
+      "map_id": "map_the_labyrinth",
+      "turns": 234,
+      "end_reason": "sole_survivor",
+      "enriched": false
+    },
+    {
+      "id": "m_test_domination_v1",
+      "completed_at": "2026-04-25T09:00:00Z",
+      "participants": [
+        {
+          "bot_id": "b_swarm_001",
+          "name": "SwarmBot",
+          "score": 7,
+          "won": true
+        },
+        {
+          "bot_id": "b_rusher_001",
+          "name": "RusherBot",
+          "score": 0,
+          "won": false
+        }
+      ],
+      "winner_id": "b_swarm_001",
+      "map_id": "map_narrow_corridors",
+      "turns": 156,
+      "end_reason": "annihilation",
+      "enriched": true
+    },
+    {
+      "id": "m_test_4p_v1",
+      "completed_at": "2026-04-25T08:45:00Z",
+      "participants": [
+        {
+          "bot_id": "b_hunter_001",
+          "name": "HunterBot",
+          "score": 6,
+          "won": true
+        },
+        {
+          "bot_id": "b_swarm_001",
+          "name": "SwarmBot",
+          "score": 4,
+          "won": false
+        },
+        {
+          "bot_id": "b_guardian_001",
+          "name": "GuardianBot",
+          "score": 3,
+          "won": false
+        },
+        {
+          "bot_id": "b_gatherer_001",
+          "name": "GathererBot",
+          "score": 2,
+          "won": false
+        }
+      ],
+      "winner_id": "b_hunter_001",
+      "map_id": "map_cross_v1",
+      "turns": 412,
+      "end_reason": "turn_limit",
+      "enriched": false
+    },
+    {
+      "id": "m_test_comeback_v1",
+      "completed_at": "2026-04-25T08:30:00Z",
+      "participants": [
+        {
+          "bot_id": "b_gatherer_001",
+          "name": "GathererBot",
+          "score": 4,
+          "won": true
+        },
+        {
+          "bot_id": "b_rusher_001",
+          "name": "RusherBot",
+          "score": 3,
+          "won": false
+        }
+      ],
+      "winner_id": "b_gatherer_001",
+      "map_id": "map_energy_rush",
+      "turns": 398,
+      "end_reason": "turn_limit",
+      "enriched": false
+    },
+    {
+      "id": "m_test_marathon_v1",
+      "completed_at": "2026-04-25T08:15:00Z",
+      "participants": [
+        {
+          "bot_id": "b_guardian_001",
+          "name": "GuardianBot",
+          "score": 3,
+          "won": true
+        },
+        {
+          "bot_id": "b_random_001",
+          "name": "RandomBot",
+          "score": 2,
+          "won": false
+        }
+      ],
+      "winner_id": "b_guardian_001",
+      "map_id": "map_wall_maze",
+      "turns": 500,
+      "end_reason": "turn_limit",
+      "enriched": false
+    },
+    {
+      "id": "m_test_quick_v1",
+      "completed_at": "2026-04-25T08:00:00Z",
+      "participants": [
+        {
+          "bot_id": "b_rusher_001",
+          "name": "RusherBot",
+          "score": 3,
+          "won": true
+        },
+        {
+          "bot_id": "b_random_001",
+          "name": "RandomBot",
+          "score": 0,
+          "won": false
+        }
+      ],
+      "winner_id": "b_rusher_001",
+      "map_id": "map_small_open",
+      "turns": 89,
+      "end_reason": "annihilation",
+      "enriched": false
+    }
+  ]
 }

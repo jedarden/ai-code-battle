@@ -6,40 +6,40 @@
       "title": "Closest Finishes",
       "description": "Matches decided by the thinnest margins — nail-biters to the very end",
       "category": "close_games",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 2,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "biggest-upsets",
       "title": "Biggest Upsets",
       "description": "Lower-rated bots triumph against higher-rated opponents",
       "category": "upsets",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 1,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "best-comebacks",
       "title": "Best Comebacks",
       "description": "Bots that were down but never out — dramatic turnarounds and improbable victories",
       "category": "comebacks",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 1,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "marathon-matches",
       "title": "Marathon Matches",
       "description": "The longest, most grueling matches — endurance-tested battles",
       "category": "long_games",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 2,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "highest-rated",
       "title": "Clash of Titans",
       "description": "Matches between the highest-rated opponents on the ladder",
       "category": "featured",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 1,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "evolution-breakthroughs",
@@ -47,7 +47,7 @@
       "description": "Evolved bots defeating top-rated opponents — AI strategy milestones",
       "category": "featured",
       "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "rivalry-classics",
@@ -55,15 +55,15 @@
       "description": "The most closely contested matchups between frequent opponents",
       "category": "rivalry",
       "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "domination",
       "title": "Total Domination",
       "description": "One-sided victories where the winner crushed all opposition",
       "category": "domination",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 1,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "new-bot-debuts",
@@ -71,31 +71,31 @@
       "description": "First matches of newly registered bots — watch their opening games",
       "category": "tutorial",
       "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "season-highlights",
       "title": "Season Highlights",
       "description": "Top matches from the current season ranked by excitement",
       "category": "season",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 3,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "featured",
       "title": "Featured Matches",
       "description": "Recent highlights from the ladder",
       "category": "featured",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 8,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     },
     {
       "slug": "best-of-week",
       "title": "Best of the Week",
       "description": "This week's top matches ranked by excitement: close finishes, upsets, marathon battles, and elite clashes",
       "category": "weekly",
-      "match_count": 0,
-      "updated_at": "2026-04-21T00:00:00.000Z"
+      "match_count": 8,
+      "updated_at": "2026-04-25T10:00:00.000Z"
     }
   ]
 }
