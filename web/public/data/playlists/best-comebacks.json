@@ -3,8 +3,22 @@
   "title": "Best Comebacks",
   "description": "Bots that were down but never out — dramatic turnarounds and improbable victories",
   "category": "comebacks",
-  "match_count": 0,
+  "match_count": 1,
   "created_at": "2026-04-21T00:00:00.000Z",
-  "updated_at": "2026-04-21T00:00:00.000Z",
-  "matches": []
+  "updated_at": "2026-04-25T10:00:00.000Z",
+  "matches": [
+    {
+      "match_id": "m_test_comeback_v1",
+      "order": 1,
+      "title": "GathererBot rallies late to defeat RusherBot",
+      "curation_tag": "Economic victory through persistence",
+      "participants": [
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 4, "won": true},
+        {"bot_id": "b_rusher_001", "name": "RusherBot", "score": 3, "won": false}
+      ],
+      "turns": 398,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T08:30:00Z"
+    }
+  ]
 }

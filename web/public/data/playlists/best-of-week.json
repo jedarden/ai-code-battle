@@ -3,8 +3,112 @@
   "title": "Best of the Week",
   "description": "This week's top matches ranked by excitement: close finishes, upsets, marathon battles, and elite clashes",
   "category": "weekly",
-  "match_count": 0,
+  "match_count": 8,
   "created_at": "2026-04-21T00:00:00.000Z",
-  "updated_at": "2026-04-21T00:00:00.000Z",
-  "matches": []
+  "updated_at": "2026-04-25T10:00:00.000Z",
+  "matches": [
+    {
+      "match_id": "m_test_6p_v1",
+      "order": 1,
+      "title": "Six-Player Battle Royale",
+      "curation_tag": "Week's Most Exciting",
+      "participants": [
+        {"bot_id": "b_swarm_001", "name": "SwarmBot", "score": 7, "won": true},
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 4, "won": false},
+        {"bot_id": "b_hunter_001", "name": "HunterBot", "score": 3, "won": false},
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 2, "won": false},
+        {"bot_id": "b_rusher_001", "name": "RusherBot", "score": 1, "won": false},
+        {"bot_id": "b_random_001", "name": "RandomBot", "score": 0, "won": false}
+      ],
+      "turns": 487,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T09:45:00Z"
+    },
+    {
+      "match_id": "m_test_close_v1",
+      "order": 2,
+      "title": "HunterBot edges GathererBot",
+      "participants": [
+        {"bot_id": "b_hunter_001", "name": "HunterBot", "score": 5, "won": true},
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 4, "won": false}
+      ],
+      "turns": 500,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T09:30:00Z"
+    },
+    {
+      "match_id": "m_test_upset_v1",
+      "order": 3,
+      "title": "RandomBot stuns GuardianBot",
+      "participants": [
+        {"bot_id": "b_random_001", "name": "RandomBot", "score": 3, "won": true},
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 2, "won": false}
+      ],
+      "turns": 234,
+      "end_reason": "sole_survivor",
+      "completed_at": "2026-04-25T09:15:00Z"
+    },
+    {
+      "match_id": "m_test_domination_v1",
+      "order": 4,
+      "title": "SwarmBot obliterates RusherBot",
+      "participants": [
+        {"bot_id": "b_swarm_001", "name": "SwarmBot", "score": 7, "won": true},
+        {"bot_id": "b_rusher_001", "name": "RusherBot", "score": 0, "won": false}
+      ],
+      "turns": 156,
+      "end_reason": "annihilation",
+      "completed_at": "2026-04-25T09:00:00Z"
+    },
+    {
+      "match_id": "m_test_4p_v1",
+      "order": 5,
+      "title": "Four-way strategic battle",
+      "participants": [
+        {"bot_id": "b_hunter_001", "name": "HunterBot", "score": 6, "won": true},
+        {"bot_id": "b_swarm_001", "name": "SwarmBot", "score": 4, "won": false},
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 3, "won": false},
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 2, "won": false}
+      ],
+      "turns": 412,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T08:45:00Z"
+    },
+    {
+      "match_id": "m_test_comeback_v1",
+      "order": 6,
+      "title": "GathererBot outlasts RusherBot",
+      "participants": [
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 4, "won": true},
+        {"bot_id": "b_rusher_001", "name": "RusherBot", "score": 3, "won": false}
+      ],
+      "turns": 398,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T08:30:00Z"
+    },
+    {
+      "match_id": "m_test_marathon_v1",
+      "order": 7,
+      "title": "Guardian vs Random endurance test",
+      "participants": [
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 3, "won": true},
+        {"bot_id": "b_random_001", "name": "RandomBot", "score": 2, "won": false}
+      ],
+      "turns": 500,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T08:15:00Z"
+    },
+    {
+      "match_id": "m_test_quick_v1",
+      "order": 8,
+      "title": "RusherBot swift victory",
+      "participants": [
+        {"bot_id": "b_rusher_001", "name": "RusherBot", "score": 3, "won": true},
+        {"bot_id": "b_random_001", "name": "RandomBot", "score": 0, "won": false}
+      ],
+      "turns": 89,
+      "end_reason": "annihilation",
+      "completed_at": "2026-04-25T08:00:00Z"
+    }
+  ]
 }

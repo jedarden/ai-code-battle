@@ -3,8 +3,24 @@
   "title": "Clash of Titans",
   "description": "Matches between the highest-rated opponents on the ladder",
   "category": "featured",
-  "match_count": 0,
+  "match_count": 1,
   "created_at": "2026-04-21T00:00:00.000Z",
-  "updated_at": "2026-04-21T00:00:00.000Z",
-  "matches": []
+  "updated_at": "2026-04-25T10:00:00.000Z",
+  "matches": [
+    {
+      "match_id": "m_test_4p_v1",
+      "order": 1,
+      "title": "Four elite bots battle for supremacy",
+      "curation_tag": "Top-tier competition",
+      "participants": [
+        {"bot_id": "b_hunter_001", "name": "HunterBot", "score": 6, "won": true},
+        {"bot_id": "b_swarm_001", "name": "SwarmBot", "score": 4, "won": false},
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 3, "won": false},
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 2, "won": false}
+      ],
+      "turns": 412,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T08:45:00Z"
+    }
+  ]
 }

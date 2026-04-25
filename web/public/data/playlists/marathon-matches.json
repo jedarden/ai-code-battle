@@ -3,8 +3,33 @@
   "title": "Marathon Matches",
   "description": "The longest, most grueling matches — endurance-tested battles",
   "category": "long_games",
-  "match_count": 0,
+  "match_count": 2,
   "created_at": "2026-04-21T00:00:00.000Z",
-  "updated_at": "2026-04-21T00:00:00.000Z",
-  "matches": []
+  "updated_at": "2026-04-25T10:00:00.000Z",
+  "matches": [
+    {
+      "match_id": "m_test_close_v1",
+      "order": 1,
+      "title": "500 turns of tactical warfare",
+      "participants": [
+        {"bot_id": "b_hunter_001", "name": "HunterBot", "score": 5, "won": true},
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 4, "won": false}
+      ],
+      "turns": 500,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T09:30:00Z"
+    },
+    {
+      "match_id": "m_test_marathon_v1",
+      "order": 2,
+      "title": "Defensive grind to the limit",
+      "participants": [
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 3, "won": true},
+        {"bot_id": "b_random_001", "name": "RandomBot", "score": 2, "won": false}
+      ],
+      "turns": 500,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T08:15:00Z"
+    }
+  ]
 }

@@ -1488,7 +1488,7 @@ func computeRivalries(data *IndexData, botNameMap map[string]string) []RivalryEn
 			ClosestMatch: closestMatch,
 			LongestStreak: streak,
 			RecentMatches: recentMatches,
-			Narrative: buildRivalryNarrative(aName, bName, total, rec.aWins, rec.bWins, rec.draws, streak),
+			Narrative: buildRivalryNarrative(aName, bName, rec.botAID, rec.botBID, total, rec.aWins, rec.bWins, rec.draws, streak),
 			Score: score,
 		})
 	}
@@ -1541,7 +1541,7 @@ func longestStreak(winners []string, botA, botB string) *RivalryStreak {
 }
 
 // buildRivalryNarrative generates a template-based narrative from rivalry stats.
-func buildRivalryNarrative(aName, bName string, total, aWins, bWins, draws int, streak *RivalryStreak) string {
+func buildRivalryNarrative(aName, bName, aID, bID string, total, aWins, bWins, draws int, streak *RivalryStreak) string {
 	leading := aName
 	trailing := bName
 	leadWins := aWins
@@ -1556,8 +1556,14 @@ func buildRivalryNarrative(aName, bName string, total, aWins, bWins, draws int, 
 		return fmt.Sprintf("%s and %s have met %d times — the series is dead even at %d-%d%s. Every match shifts the balance.",
 			aName, bName, total, aWins, bWins, drawSuffix(draws))
 	case streak != nil && streak.Length >= 3:
+		holderName := streak.Holder
+		if streak.Holder == aID {
+			holderName = aName
+		} else if streak.Holder == bID {
+			holderName = bName
+		}
 		return fmt.Sprintf("%s and %s have met %d times with %s holding a %d-%d edge. %s is currently on a %d-match winning streak.",
-			aName, bName, total, leading, leadWins, trailWins, streak.Holder, streak.Length)
+			aName, bName, total, leading, leadWins, trailWins, holderName, streak.Length)
 	default:
 		return fmt.Sprintf("%s and %s have met %d times — %s leads the series %d-%d%s. A rivalry defined by closely contested grid battles.",
 			aName, bName, total, leading, leadWins, trailWins, drawSuffix(draws))

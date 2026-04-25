@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Replay Viewer Test - Real Replay</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background: #0f172a; color: #e2e8f0; }
+    h1 { font-size: 1.2rem; margin-bottom: 10px; }
+    .test-container { display: flex; gap: 20px; }
+    .viewer-section { flex: 1; }
+    .results-section { width: 350px; background: #1e293b; padding: 15px; border-radius: 8px; max-height: 90vh; overflow-y: auto; }
+    .canvas-wrapper { background: #1e293b; border-radius: 8px; padding: 10px; }
+    canvas { display: block; }
+    .test-result { padding: 8px; margin: 5px 0; border-radius: 4px; font-size: 0.9rem; }
+    .pass { background: #22c55e; color: white; }
+    .fail { background: #ef4444; color: white; }
+    .info { background: #3b82f6; color: white; }
+    .warn { background: #f59e0b; color: white; }
+    .controls { margin-top: 15px; }
+    button { padding: 8px 16px; margin-right: 5px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    .replay-info { background: #334155; padding: 10px; border-radius: 4px; margin: 10px 0; font-size: 0.85rem; }
+    .replay-info pre { margin: 0; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Replay Viewer Test - Real Replay (m_tprjf4ij)</h1>
+  <div class="test-container">
+    <div class="viewer-section">
+      <div class="canvas-wrapper">
+        <canvas id="replay-canvas"></canvas>
+      </div>
+      <div class="controls">
+        <button id="play-btn">Play</button>
+        <button id="pause-btn">Pause</button>
+        <button id="next-btn">Next Turn</button>
+        <button id="reset-btn">Reset</button>
+        <span id="turn-info">Turn: 0</span>
+      </div>
+      <div class="replay-info">
+        <strong>Match Info:</strong>
+        <div id="match-details">Loading...</div>
+      </div>
+    </div>
+    <div class="results-section">
+      <h2>Test Results</h2>
+      <div id="test-results"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ReplayViewer } from './src/replay-viewer.ts';
+
+    const results = document.getElementById('test-results');
+    const canvas = document.getElementById('replay-canvas');
+    const turnInfo = document.getElementById('turn-info');
+    const playBtn = document.getElementById('play-btn');
+    const pauseBtn = document.getElementById('pause-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const matchDetails = document.getElementById('match-details');
+
+    let viewer;
+    let testsPassed = 0;
+    let testsFailed = 0;
+    let testsWarned = 0;
+
+    function addResult(name, passed, message) {
+      const div = document.createElement('div');
+      const status = passed ? 'pass' : 'fail';
+      div.className = `test-result ${status}`;
+      div.textContent = `${passed ? '✓' : '✗'} ${name}: ${message}`;
+      results.appendChild(div);
+      if (passed) testsPassed++;
+      else testsFailed++;
+    }
+
+    function addWarn(name, message) {
+      const div = document.createElement('div');
+      div.className = 'test-result warn';
+      div.textContent = `⚠ ${name}: ${message}`;
+      results.appendChild(div);
+      testsWarned++;
+    }
+
+    function addInfo(message) {
+      const div = document.createElement('div');
+      div.className = 'test-result info';
+      div.textContent = message;
+      results.appendChild(div);
+    }
+
+    async function runTests() {
+      addInfo('Loading real replay from /data/real-replay.json...');
+      const startTime = performance.now();
+
+      try {
+        const response = await fetch('/data/real-replay.json');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const replay = await response.json();
+        const loadTime = performance.now() - startTime;
+        addResult('Fetch real replay', true, `Loaded ${replay.match_id} (${(loadTime/1000).toFixed(2)}s)`);
+
+        // Test replay structure
+        addResult('Replay has match_id', !!replay.match_id, replay.match_id);
+        addResult('Replay has format_version', !!replay.format_version, replay.format_version);
+        addResult('Replay has players', Array.isArray(replay.players) && replay.players.length > 0, `${replay.players.length} players`);
+        addResult('Replay has turns', Array.isArray(replay.turns) && replay.turns.length > 0, `${replay.turns.length} turns`);
+        addResult('Replay has map', !!replay.map, `${replay.map.rows}x${replay.map.cols}`);
+        addResult('Replay has result', !!replay.result, `Winner: P${replay.result.winner}, Reason: ${replay.result.reason}`);
+
+        // Display match info
+        matchDetails.innerHTML = `<pre>{
+  Match ID: ${replay.match_id}
+  Players: ${replay.players.map(p => p.name).join(', ')}
+  Turns: ${replay.result.turns}
+  Winner: Player ${replay.result.winner}
+  Map: ${replay.map.rows}x${replay.map.cols}
+  Walls: ${replay.map.walls?.length || 0}
+}</pre>`;
+
+        // Test map structure
+        if (replay.map) {
+          addResult('Map has valid dimensions', replay.map.rows > 0 && replay.map.cols > 0, `${replay.map.rows}x${replay.map.cols}`);
+          addResult('Map has walls array', Array.isArray(replay.map.walls), `${replay.map.walls?.length || 0} walls`);
+          addResult('Map has cores', Array.isArray(replay.map.cores), `${replay.map.cores?.length || 0} cores`);
+        }
+
+        // Test turn data structure
+        if (replay.turns && replay.turns.length > 0) {
+          const firstTurn = replay.turns[0];
+          const lastTurn = replay.turns[replay.turns.length - 1];
+          addResult('First turn has bots', Array.isArray(firstTurn.bots), `${firstTurn.bots?.length || 0} bots`);
+          addResult('First turn has energy', Array.isArray(firstTurn.energy), `${firstTurn.energy?.length || 0} energy nodes`);
+          addResult('Last turn has bots', Array.isArray(lastTurn.bots), `${lastTurn.bots?.length || 0} bots`);
+          addResult('Turns have events', replay.turns.every(t => Array.isArray(t.events)), 'All turns have events array');
+        }
+
+        // Test win probability
+        if (replay.win_prob && replay.win_prob.length > 0) {
+          addResult('Replay has win probability', true, `${replay.win_prob.length} data points`);
+        } else {
+          addWarn('Win probability', 'No win_prob data in replay');
+        }
+
+        // Test critical moments
+        if (replay.critical_moments && replay.critical_moments.length > 0) {
+          addResult('Replay has critical moments', true, `${replay.critical_moments.length} moments`);
+        } else {
+          addWarn('Critical moments', 'No critical_moments data in replay');
+        }
+
+        // Create viewer
+        addInfo('Creating ReplayViewer...');
+        viewer = new ReplayViewer(canvas, { cellSize: 10 });
+        addResult('Create ReplayViewer', true, 'Viewer instance created');
+
+        // Load replay
+        addInfo('Loading replay into viewer...');
+        viewer.loadReplay(replay);
+        addResult('Load replay into viewer', true, `Loaded ${replay.turns.length} turns`);
+
+        // Test viewer state
+        addResult('Get total turns', viewer.getTotalTurns() === replay.turns.length, `${viewer.getTotalTurns()} turns`);
+        addResult('Get current turn', viewer.getTurn() === 0, `Turn ${viewer.getTurn()}`);
+
+        // Test turn navigation
+        addInfo('Testing turn navigation...');
+        viewer.setTurn(10);
+        addResult('Set turn to 10', viewer.getTurn() === 10, `Turn ${viewer.getTurn()}`);
+        viewer.setTurn(0);
+        addResult('Reset to turn 0', viewer.getTurn() === 0, `Turn ${viewer.getTurn()}`);
+
+        // Test playback
+        addInfo('Testing playback controls...');
+        viewer.play();
+        addResult('Start playback', viewer.getIsPlaying(), 'Playing');
+        await new Promise(r => setTimeout(r, 200));
+        viewer.pause();
+        addResult('Pause playback', !viewer.getIsPlaying(), 'Paused');
+
+        // Test events
+        const events = viewer.getTurnEvents();
+        addResult('Get turn events', Array.isArray(events), `${events.length} events at turn 0`);
+
+        // Test transcript generation
+        const transcript = viewer.generateTranscript();
+        addResult('Generate transcript', Array.isArray(transcript) && transcript.length > 0, `${transcript.length} entries`);
+
+        // Test cell size adjustment
+        addInfo('Testing rendering...');
+        viewer.setTurn(Math.floor(replay.turns.length / 2));
+        await new Promise(r => setTimeout(r, 100));
+        addResult('Render mid-game turn', true, `Turn ${viewer.getTurn()} rendered`);
+
+        addInfo(`Tests completed: ${testsPassed} passed, ${testsWarned} warnings, ${testsFailed} failed`);
+
+        // Enable controls
+        playBtn.disabled = false;
+        pauseBtn.disabled = false;
+        nextBtn.disabled = false;
+        resetBtn.disabled = false;
+
+        // Set up turn change callback
+        viewer.onTurnChange = (turn) => {
+          turnInfo.textContent = `Turn: ${turn}/${viewer.getTotalTurns() - 1}`;
+        };
+
+      } catch (error) {
+        addResult('Test execution', false, error.message);
+        console.error('Test error:', error);
+      }
+    }
+
+    // Wire up controls
+    playBtn.addEventListener('click', () => viewer.play());
+    pauseBtn.addEventListener('click', () => viewer.pause());
+    nextBtn.addEventListener('click', () => {
+      if (viewer && viewer.getTurn() < viewer.getTotalTurns() - 1) {
+        viewer.setTurn(viewer.getTurn() + 1);
+      }
+    });
+    resetBtn.addEventListener('click', () => {
+      if (viewer) {
+        viewer.pause();
+        viewer.setTurn(0);
+      }
+    });
+
+    // Run tests
+    runTests();
+  </script>
+</body>
+</html>

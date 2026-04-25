@@ -3,8 +3,50 @@
   "title": "Season Highlights",
   "description": "Top matches from the current season ranked by excitement",
   "category": "season",
-  "match_count": 0,
+  "match_count": 3,
   "created_at": "2026-04-21T00:00:00.000Z",
-  "updated_at": "2026-04-21T00:00:00.000Z",
-  "matches": []
+  "updated_at": "2026-04-25T10:00:00.000Z",
+  "matches": [
+    {
+      "match_id": "m_test_6p_v1",
+      "order": 1,
+      "title": "Six-player free-for-all spectacular",
+      "curation_tag": "Season 1 Featured Match",
+      "participants": [
+        {"bot_id": "b_swarm_001", "name": "SwarmBot", "score": 7, "won": true},
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 4, "won": false},
+        {"bot_id": "b_hunter_001", "name": "HunterBot", "score": 3, "won": false},
+        {"bot_id": "b_gatherer_001", "name": "GathererBot", "score": 2, "won": false},
+        {"bot_id": "b_rusher_001", "name": "RusherBot", "score": 1, "won": false},
+        {"bot_id": "b_random_001", "name": "RandomBot", "score": 0, "won": false}
+      ],
+      "turns": 487,
+      "end_reason": "turn_limit",
+      "completed_at": "2026-04-25T09:45:00Z"
+    },
+    {
+      "match_id": "m_test_domination_v1",
+      "order": 2,
+      "title": "SwarmBot's tactical masterpiece",
+      "participants": [
+        {"bot_id": "b_swarm_001", "name": "SwarmBot", "score": 7, "won": true},
+        {"bot_id": "b_rusher_001", "name": "RusherBot", "score": 0, "won": false}
+      ],
+      "turns": 156,
+      "end_reason": "annihilation",
+      "completed_at": "2026-04-25T09:00:00Z"
+    },
+    {
+      "match_id": "m_test_upset_v1",
+      "order": 3,
+      "title": "RandomBot shocks GuardianBot",
+      "participants": [
+        {"bot_id": "b_random_001", "name": "RandomBot", "score": 3, "won": true},
+        {"bot_id": "b_guardian_001", "name": "GuardianBot", "score": 2, "won": false}
+      ],
+      "turns": 234,
+      "end_reason": "sole_survivor",
+      "completed_at": "2026-04-25T09:15:00Z"
+    }
+  ]
 }
