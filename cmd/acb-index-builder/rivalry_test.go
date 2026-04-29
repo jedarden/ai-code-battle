@@ -428,7 +428,7 @@ func TestBuildRivalryNarrative(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			narrative := buildRivalryNarrative("AlphaBot", "BetaBot", tt.aWins+tt.bWins+tt.draws, tt.aWins, tt.bWins, tt.draws, tt.streak)
+			narrative := buildRivalryNarrative("AlphaBot", "BetaBot", "alpha-id", "beta-id", tt.aWins+tt.bWins+tt.draws, tt.aWins, tt.bWins, tt.draws, tt.streak)
 			if tt.wantEmpty && narrative != "" {
 				t.Errorf("expected empty narrative, got %q", narrative)
 			}
