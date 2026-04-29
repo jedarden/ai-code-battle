@@ -61,6 +61,13 @@ DO $$ BEGIN
     END IF;
 END $$;
 
+-- Add missing foreign key constraints (CREATE TABLE IF NOT EXISTS doesn't add FKs to existing tables)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'replay_feedback_match_id_fkey') THEN
+        ALTER TABLE replay_feedback ADD CONSTRAINT replay_feedback_match_id_fkey FOREIGN KEY (match_id) REFERENCES matches(match_id);
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS series_games (
     id        BIGSERIAL PRIMARY KEY,
     series_id BIGINT NOT NULL REFERENCES series(id),
