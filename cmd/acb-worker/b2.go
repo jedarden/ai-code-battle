@@ -22,8 +22,8 @@ type B2Client struct {
 // NewB2Client creates a new B2 client.
 func NewB2Client(cfg *Config) *B2Client {
 	// Load AWS config with B2 credentials
-	// For S3-compatible endpoints (ARMOR/B2), use us-east-1 as a placeholder region
-	// The actual endpoint is overridden via BaseEndpoint in the S3 client
+	// For S3-compatible endpoints (ARMOR/B2), the region is not used
+	// but must be set to a valid value for the SDK
 	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.B2AccessKey,
