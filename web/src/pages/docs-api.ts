@@ -17,7 +17,7 @@ interface Section {
 }
 
 const PAGES_BASE = 'https://ai-code-battle.pages.dev';
-const R2_BASE = 'https://r2.aicodebattle.com';
+const R2_BASE = '/r2';
 const B2_BASE = 'https://b2.aicodebattle.com';
 
 const sections: Section[] = [
@@ -497,7 +497,7 @@ export function renderDocsApiPage(): void {
         <p>For replays and match metadata, always try R2 first and fall back to B2:</p>
         <pre><code>async function fetchReplay(matchId: string): Promise<Replay> {
   // Try R2 warm cache first
-  const r2Url = \`https://r2.aicodebattle.com/replays/\${matchId}.json.gz\`;
+  const r2Url = \`/r2/replays/\${matchId}.json.gz\`;
   const r2Resp = await fetch(r2Url);
   if (r2Resp.ok) {
     return decompress(await r2Resp.arrayBuffer());

@@ -43,7 +43,7 @@ export interface CarouselOptions {
 const DEFAULT_AUTO_ADVANCE_DELAY = 3000;
 const METADATA_PANEL_WIDTH = 280;
 const TRANSITION_MS = 300;
-const R2_BASE = 'https://r2.aicodebattle.com';
+const R2_BASE = '/r2';
 const B2_FALLBACK = 'https://b2.aicodebattle.com';
 const SWIPE_THRESHOLD = 50; // min px to trigger advance
 const VELOCITY_THRESHOLD = 0.3; // px/ms — fast flick triggers even below threshold

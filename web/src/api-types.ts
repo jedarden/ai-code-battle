@@ -243,7 +243,7 @@ export async function registerBot(request: RegisterRequest): Promise<RegisterRes
 
 // R2_BASE_URL is the Cloudflare R2 bucket custom domain for live data.
 // The evolver writes live.json here every cycle with Cache-Control: max-age=10.
-const R2_BASE_URL = 'https://r2.aicodebattle.com';
+const R2_BASE_URL = '/r2';
 
 export async function fetchEvolutionData(): Promise<EvolutionLiveData> {
   // Evolution data changes every ~10s — bypass SWR, always fetch fresh
@@ -500,7 +500,7 @@ export interface EnrichedIndex {
   entries: EnrichedMatchEntry[];
 }
 
-const R2_COMMENTARY_BASE = 'https://r2.aicodebattle.com';
+const R2_COMMENTARY_BASE = '/r2';
 
 export async function fetchCommentary(matchId: string): Promise<EnrichedCommentary | null> {
   try {

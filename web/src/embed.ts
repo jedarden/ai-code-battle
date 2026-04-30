@@ -14,7 +14,7 @@ const PLAYER_COLORS = [
 ];
 
 // Configuration
-const R2_BASE = 'https://r2.aicodebattle.com';
+const R2_BASE = '/r2';
 const B2_BASE = 'https://b2.aicodebattle.com';
 const PAGES_BASE = 'https://ai-code-battle.pages.dev';
 

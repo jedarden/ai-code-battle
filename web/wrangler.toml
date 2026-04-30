@@ -1,0 +1,6 @@
+name = "ai-code-battle"
+pages_build_output_dir = "dist"
+
+[[r2_buckets]]
+binding = "ACB_BUCKET"
+bucket_name = "acb-data"
