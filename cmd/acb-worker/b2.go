@@ -19,6 +19,32 @@ type B2Client struct {
 	endpoint string
 }
 
+// NewR2Client creates a new Cloudflare R2 client using the same B2Client type.
+func NewR2Client(cfg *Config) *B2Client {
+	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			cfg.R2AccessKey,
+			cfg.R2SecretKey,
+			"",
+		)),
+		config.WithRegion("auto"),
+	)
+	if err != nil {
+		panic(fmt.Sprintf("failed to load R2 AWS config: %v", err))
+	}
+
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(cfg.R2Endpoint)
+		o.UsePathStyle = true
+	})
+
+	return &B2Client{
+		client:   client,
+		bucket:   cfg.R2Bucket,
+		endpoint: cfg.R2Endpoint,
+	}
+}
+
 // NewB2Client creates a new B2 client.
 func NewB2Client(cfg *Config) *B2Client {
 	// Load AWS config with B2 credentials
