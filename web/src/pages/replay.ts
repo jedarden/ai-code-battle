@@ -61,7 +61,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
         <div class="replay-main">
           <div class="canvas-wrapper" style="position:relative">
             <canvas id="replay-canvas" style="touch-action:none"></canvas>
-            <div id="no-replay" class="no-replay-message">Load a replay file to view</div>
+            <div id="no-replay" class="no-replay-message">${initialUrl ? 'Loading replay…' : 'Enter a replay URL to load'}</div>
             <button id="theater-btn" class="theater-btn" aria-label="Toggle theater mode" title="Theater mode (F)" style="position:absolute;top:8px;right:8px">&#x26F6;</button>
             <div id="follow-indicator" class="follow-indicator" style="display:none;position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.75);color:#e5e7eb;font:12px monospace;padding:4px 10px;border-radius:4px;pointer-events:auto;z-index:10;cursor:pointer" role="status" aria-live="polite"></div>
             <div id="minimap-container" style="position:absolute;bottom:16px;right:16px;border:2px solid var(--border,#475569);border-radius:6px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.5);opacity:0.85;transition:opacity 0.2s;z-index:10">
@@ -85,7 +85,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
 
           <!-- Mobile event timeline ribbon — CSS hides on tablet+ -->
           <div class="mobile-event-timeline" id="mobile-timeline" aria-label="Event timeline">
-            <span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">Load a replay</span>
+            <span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">${initialUrl ? 'Loading…' : 'Enter a URL to load'}</span>
           </div>
 
           <!-- Desktop event timeline with annotation badges (hidden on mobile) -->
@@ -113,19 +113,17 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
         </div>
 
         <div class="replay-sidebar">
-          <div class="panel">
+          <div class="panel"${initialUrl ? ' style="display:none"' : ''}>
             <h2>Load Replay</h2>
             <div class="load-controls">
-              <div class="file-input-wrapper">
-                <label class="btn secondary" for="file-input">Choose File</label>
-                <input type="file" id="file-input" accept=".json" style="display: none;">
-              </div>
               <div class="url-input-group">
-                <input type="text" id="url-input" placeholder="Or enter URL...">
+                <input type="text" id="url-input" placeholder="Enter replay URL...">
                 <button id="load-url-btn" class="btn primary">Load</button>
               </div>
             </div>
           </div>
+          <!-- Hidden inputs always present so JS references resolve -->
+          <input type="file" id="file-input" accept=".json" style="display:none">
 
           <div class="panel">
             <h2>Playback</h2>
@@ -514,7 +512,6 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
 function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const canvas = document.getElementById('replay-canvas') as HTMLCanvasElement;
   const noReplayDiv = document.getElementById('no-replay') as HTMLDivElement;
-  const fileInput = document.getElementById('file-input') as HTMLInputElement;
   const urlInput = document.getElementById('url-input') as HTMLInputElement;
   const loadUrlBtn = document.getElementById('load-url-btn') as HTMLButtonElement;
   const playBtn = document.getElementById('play-btn') as HTMLButtonElement;
@@ -1353,18 +1350,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     noReplayDiv.style.display = '';
     noReplayDiv.innerHTML = `<span style="color:#f87171">${escapeHtml(String(msg))}</span>`;
   }
-
-  fileInput.addEventListener('change', async (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const replay = JSON.parse(text) as Replay;
-      loadReplay(replay);
-    } catch (err) {
-      showLoadError('Failed to load replay: ' + err);
-    }
-  });
 
   loadUrlBtn.addEventListener('click', async () => {
     const url = urlInput.value.trim();
