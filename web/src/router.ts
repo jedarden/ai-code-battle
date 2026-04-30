@@ -68,11 +68,24 @@ class Router {
   }
 
   /**
-   * Get current path from hash
+   * Get current path from hash (strips query string if present)
    */
   getCurrentPath(): string {
     const hash = window.location.hash.slice(1); // Remove #
-    return hash || '/';
+    const path = hash.split('?')[0];
+    return path || '/';
+  }
+
+  /**
+   * Get query params from the current hash URL
+   */
+  private getHashQueryParams(): Record<string, string> {
+    const hash = window.location.hash.slice(1);
+    const qIdx = hash.indexOf('?');
+    if (qIdx < 0) return {};
+    const params: Record<string, string> = {};
+    new URLSearchParams(hash.slice(qIdx + 1)).forEach((v, k) => { params[k] = v; });
+    return params;
   }
 
   /**
@@ -95,10 +108,13 @@ class Router {
       hook(prevPath ?? '/', path);
     }
 
+    // Merge hash query params so handlers can read e.g. ?url= or ?id=
+    const queryParams = this.getHashQueryParams();
+
     for (const route of this.routes) {
       const match = path.match(route.pattern);
       if (match) {
-        const params: Record<string, string> = {};
+        const params: Record<string, string> = { ...queryParams };
         route.paramNames.forEach((name, idx) => {
           params[name] = decodeURIComponent(match[idx + 1]);
         });

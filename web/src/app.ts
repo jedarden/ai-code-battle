@@ -36,7 +36,7 @@ import {
 function getSkeletonHtml(path: string): string {
   if (path === '/leaderboard' || path === '/bots') return skeletonLeaderboard();
   if (path.startsWith('/bot/') || path.startsWith('/compete/bot/')) return skeletonBotProfile();
-  if (path.startsWith('/watch/replay/') || path.startsWith('/replay/')) return skeletonReplay();
+  if (path.startsWith('/watch/replay') || path.startsWith('/replay/')) return skeletonReplay();
   if (path.startsWith('/watch/playlists')) return skeletonPlaylists();
   if (path === '/watch/replays' || path === '/matches') return skeletonMatches();
   if (path === '/evolution') return skeletonEvolution();
@@ -197,8 +197,8 @@ router.beforeNavigate((from: string, to: string) => {
 
   // §16.13: PIP replay — if leaving a replay page with active playback,
   // activate the mini-player instead of destroying the viewer.
-  const leavingReplay = from.match(/^\/watch\/replay\//) || from.match(/^\/replay\//);
-  const goingToReplay = to.match(/^\/watch\/replay\//) || to.match(/^\/replay\//);
+  const leavingReplay = from.match(/^\/watch\/replay/) || from.match(/^\/replay\//);
+  const goingToReplay = to.match(/^\/watch\/replay/) || to.match(/^\/replay\//);
   if (leavingReplay && !goingToReplay) {
     import('./components/pip-registry').then(({ getActiveReplay }) => {
       import('./components/pip').then(({ activatePip, isPipActive }) => {
@@ -246,6 +246,7 @@ router
   .on('/watch/replays', lazyRoute(loadMatchesPage))
   .on('/watch/playlists', lazyRoute(loadPlaylistsPage))
   .on('/watch/playlists/:slug', lazyRoute(loadPlaylistsPage))
+  .on('/watch/replay', lazyRoute(loadReplayPage))
   .on('/watch/replay/:id', lazyRoute(loadReplayPage))
   .on('/watch/series/:id', lazyRoute(loadSeriesPage))
   .on('/watch/predictions', lazyRoute(loadPredictionsPage))

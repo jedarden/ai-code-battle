@@ -131,8 +131,14 @@ class EmbedViewer {
       if (this.config.demo) {
         replay = await this.fetchDemoReplay();
       } else {
-        // Try R2 first (warm cache), fall back to B2 (cold archive)
-        replay = await this.fetchReplay(this.config.matchId);
+        try {
+          // Try R2 first (warm cache), fall back to B2 (cold archive)
+          replay = await this.fetchReplay(this.config.matchId);
+        } catch {
+          // Replay not found in R2 or B2 — fall back to demo so the viewer
+          // still shows something (e.g. when the match index has test IDs)
+          replay = await this.fetchDemoReplay();
+        }
       }
       this.replay = replay;
 
