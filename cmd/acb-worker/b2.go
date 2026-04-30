@@ -5,13 +5,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	smithyendpoints "github.com/aws/smithy-go/endpoints"
 )
 
 // B2Client handles B2 bucket operations (S3-compatible).
@@ -23,12 +21,6 @@ type B2Client struct {
 
 // NewB2Client creates a new B2 client.
 func NewB2Client(cfg *Config) *B2Client {
-	// Parse and validate the custom endpoint
-	endpointURL, err := url.Parse(cfg.B2Endpoint)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse B2 endpoint: %v", err))
-	}
-
 	// Load AWS config with B2 credentials
 	// For S3-compatible endpoints (ARMOR/B2), the region is not used
 	// but must be set to a valid value for the SDK
@@ -44,14 +36,14 @@ func NewB2Client(cfg *Config) *B2Client {
 		panic(fmt.Sprintf("failed to load AWS config: %v", err))
 	}
 
-	// Create S3 client with custom endpoint (ARMOR proxy wrapping B2)
-	// UsePathStyle is required: without it the SDK uses virtual-hosted style and
-	// drops the bucket name from the URL path (bucket ends up in hostname which
-	// the custom resolver replaces, losing it entirely).
+	// Use BaseEndpoint + UsePathStyle for S3-compatible endpoints (ARMOR/B2).
+	// EndpointResolverV2 with a custom resolver does NOT honor UsePathStyle —
+	// the resolver replaces the full URI before bucket addressing is applied,
+	// so the bucket ends up dropped from the path. BaseEndpoint is the SDK's
+	// supported path for custom S3-compatible services; path style is applied
+	// after the base URL is set, producing /bucket/key URLs correctly.
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.EndpointResolverV2 = &customEndpointResolver{
-			endpointURL: *endpointURL,
-		}
+		o.BaseEndpoint = aws.String(cfg.B2Endpoint)
 		o.UsePathStyle = true
 	})
 
@@ -134,15 +126,4 @@ func (c *B2Client) List(ctx context.Context, prefix string) ([]string, error) {
 // Endpoint returns the B2 endpoint URL.
 func (c *B2Client) Endpoint() string {
 	return c.endpoint
-}
-
-// customEndpointResolver implements s3.EndpointResolverV2 for custom S3-compatible endpoints.
-type customEndpointResolver struct {
-	endpointURL url.URL
-}
-
-func (r *customEndpointResolver) ResolveEndpoint(ctx context.Context, params s3.EndpointParameters) (smithyendpoints.Endpoint, error) {
-	return smithyendpoints.Endpoint{
-		URI: r.endpointURL,
-	}, nil
 }
