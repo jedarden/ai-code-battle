@@ -145,7 +145,10 @@ func deployToPages(cfg *Config) error {
 
 	cmd := exec.CommandContext(ctx, "wrangler", args...)
 	cmd.Env = env
-	cmd.Dir = "/tmp" // wrangler creates .wrangler/tmp relative to CWD; /app is root-owned
+	// Run from /app/web so wrangler discovers /app/web/functions/ and uploads it as
+	// the Pages Functions bundle. /tmp was the old CWD but it has no functions/ dir,
+	// causing every deploy to strip the R2 proxy function from the production site.
+	cmd.Dir = "/app/web"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

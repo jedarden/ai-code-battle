@@ -5,9 +5,6 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ .
 RUN npm run build
-# Bundle Pages Functions (functions/ dir) into dist/_worker.js so the
-# wrangler deploy from the index-builder runtime includes the R2 proxy function.
-RUN npx wrangler pages functions build --outfile dist/_worker.js
 
 # Go binary build stage
 FROM golang:1.25-alpine AS builder
@@ -51,6 +48,8 @@ COPY --from=builder /acb-index-builder /usr/local/bin/acb-index-builder
 
 # Copy pre-built web frontend
 COPY --from=web-builder /web/dist /app/web/dist
+# Copy Pages Functions so wrangler can discover them at deploy time
+COPY --from=web-builder /web/functions /app/web/functions
 
 # Create data directory
 RUN mkdir -p /data
