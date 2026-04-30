@@ -1349,6 +1349,11 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   prevCriticalBtn.addEventListener('click', navigateToPrevCriticalMoment);
   nextCriticalBtn.addEventListener('click', navigateToNextCriticalMoment);
 
+  function showLoadError(msg: string): void {
+    noReplayDiv.style.display = '';
+    noReplayDiv.innerHTML = `<span style="color:#f87171">${escapeHtml(String(msg))}</span>`;
+  }
+
   fileInput.addEventListener('change', async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
@@ -1357,7 +1362,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       const replay = JSON.parse(text) as Replay;
       loadReplay(replay);
     } catch (err) {
-      alert('Failed to load replay: ' + err);
+      showLoadError('Failed to load replay: ' + err);
     }
   });
 
@@ -1370,7 +1375,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       const replay = await response.json() as Replay;
       loadReplay(replay);
     } catch (err) {
-      alert('Failed to load replay from URL: ' + err);
+      showLoadError('Failed to load replay from URL: ' + err);
     }
   });
 

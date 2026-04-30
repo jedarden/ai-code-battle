@@ -4994,6 +4994,7 @@ smoothly between grid positions instead of teleporting.
 | Bot idle | Subtle 2% scale pulse, 2s cycle. Stops on movement. | Continuous |
 | Bot movement | 1-tile motion trail fading behind the bot, indicates direction of travel. At high speed, trails create visible flow patterns. | 150ms fade |
 | Combat threat | Thin dashed line between bots within attack range (red). Shows who threatens whom. | 1 turn |
+| Attack event | Directed arrows from each attacker to the dying bot's tile on the turn a combat kill lands. The Go engine's `executeCombat()` needs to emit a `combat_death` event (type constant already exists: `EventCombatDeath`) alongside each `bot_died`, listing `killers: [{bot_id, owner, position}]` — the enemies within attack radius that triggered the outnumbering condition. The web viewer reads `combat_death` events and draws a solid line (attacker player color, arrowhead) from each killer's tile center to the defender's tile center, fading over 300ms. Old replays lacking `combat_death` events keep the existing proximity-inference lines. Distinct from the ambient threat dashes — these fire only on actual kills and encode exact participants rather than spatial proximity. | 300ms fade |
 | Bot death | Burst of 6–8 particles scattering outward from death position, fading to transparent. | 400ms |
 | Energy collection | 4-line starburst radiating from the energy node + small "+1" text floating upward. | 200ms |
 | Core capture | Radial shockwave ring expanding from the core. Core color transitions from loser to capturer. | 500ms |
