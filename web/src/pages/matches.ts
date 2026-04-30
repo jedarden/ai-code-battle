@@ -319,7 +319,7 @@ function renderMatchCard(match: MatchSummary): string {
           <span class="match-reason">${match.end_reason ?? '-'}</span>
           ${match.map_id ? `<span class="match-map">Map: ${escapeHtml(match.map_id)}</span>` : ''}
         </div>
-        <a href="#/watch/replay?url=/replays/${match.id}.json.gz" class="btn small">Watch Replay</a>
+        <a href="#/watch/replay?url=/r2/replays/${match.id}.json.gz" class="btn small">Watch Replay</a>
       </div>
     </div>
   `;
