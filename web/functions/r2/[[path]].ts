@@ -26,11 +26,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		headers.set('Cache-Control', 'public, max-age=60');
 		headers.set('Access-Control-Allow-Origin', '*');
 
-		// R2 binding strips Content-Encoding when serving object body, even when
-		// the object was stored with ContentEncoding metadata. Re-apply it so
-		// browsers know to decompress gzipped objects (.json.gz, .gz).
-		if (key.endsWith('.gz') && !headers.has('Content-Encoding')) {
-			headers.set('Content-Encoding', 'gzip');
+		// Cloudflare CDN strips Content-Encoding: gzip from Worker responses even
+		// when we set it, causing browsers to receive raw gzip bytes as JSON.
+		// Decompress .gz objects inside the Worker instead so the response body is
+		// always plain, browser-parseable content (no Content-Encoding needed).
+		if (key.endsWith('.gz')) {
+			headers.delete('Content-Encoding');
+			const decompressed = object.body.pipeThrough(new DecompressionStream('gzip'));
+			return new Response(decompressed, { headers });
 		}
 
 		return new Response(object.body, { headers });
