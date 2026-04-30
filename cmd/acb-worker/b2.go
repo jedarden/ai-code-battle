@@ -36,6 +36,11 @@ func NewR2Client(cfg *Config) *B2Client {
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(cfg.R2Endpoint)
 		o.UsePathStyle = true
+		// R2 rejects STREAMING-UNSIGNED-PAYLOAD-TRAILER (SDK default for PutObject).
+		// WhenRequired disables automatic checksum calculation so the SDK sends a
+		// standard signed payload instead.
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 
 	return &B2Client{
