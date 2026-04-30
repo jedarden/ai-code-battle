@@ -399,9 +399,14 @@ func (c *DBClient) SubmitMatchResult(ctx context.Context, jobID string, result *
 		log.Printf("failed to update series result for match %s: %v", matchID, err)
 	}
 
-	// Update crash strikes and cooldown for each participant
-	if err := updateCrashStrikes(ctx, tx, result.CrashedBots); err != nil {
-		log.Printf("failed to update crash strikes for match %s: %v", matchID, err)
+	// Update crash strikes only for technical failures, not for normal game
+	// endings. In snake-style games every bot eventually "crashes" (hits a wall
+	// or another snake) — that is the normal end condition, not an error.
+	// "stalemate" and "turns" are the expected EndReason values for normal play.
+	if result.EndReason != "stalemate" && result.EndReason != "turns" {
+		if err := updateCrashStrikes(ctx, tx, result.CrashedBots); err != nil {
+			log.Printf("failed to update crash strikes for match %s: %v", matchID, err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

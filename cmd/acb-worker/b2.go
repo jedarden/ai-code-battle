@@ -45,11 +45,14 @@ func NewB2Client(cfg *Config) *B2Client {
 	}
 
 	// Create S3 client with custom endpoint (ARMOR proxy wrapping B2)
-	// Use custom EndpointResolverV2 to bypass endpoint rules entirely
+	// UsePathStyle is required: without it the SDK uses virtual-hosted style and
+	// drops the bucket name from the URL path (bucket ends up in hostname which
+	// the custom resolver replaces, losing it entirely).
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.EndpointResolverV2 = &customEndpointResolver{
 			endpointURL: *endpointURL,
 		}
+		o.UsePathStyle = true
 	})
 
 	return &B2Client{
