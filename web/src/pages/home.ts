@@ -82,7 +82,7 @@ function renderPlaylistCards(playlists: any[]): string {
       <a href="#/watch/playlists/${pl.slug}" class="home-pl-card">
         <div class="home-pl-thumb">
           ${pl.thumbnail_match_id
-            ? `<img src="/replays/${pl.thumbnail_match_id}.jpg" alt="${esc(pl.title)}" loading="lazy">`
+            ? `<img src="/r2/thumbnails/${pl.thumbnail_match_id}.png" alt="${esc(pl.title)}" loading="lazy">`
             : '<div class="home-pl-placeholder">&#9876;</div>'}
         </div>
         <div class="home-pl-info">
