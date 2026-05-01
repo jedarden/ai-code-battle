@@ -23,7 +23,7 @@ async function findFeaturedReplay(
   if (completed.length === 0) return { match: null, enriched: false };
 
   // Prefer matches with a winner (no stalemates on the home page)
-  const withWinner = completed.filter((m) => !!m.winner_id);
+  const withWinner = completed.filter((m) => !!m.winner_id && m.winner_id !== '0');
   const pool = withWinner.length > 0 ? withWinner : completed;
 
   const sorted = [...pool].sort(

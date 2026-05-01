@@ -31,11 +31,13 @@ type RequestAuth struct {
 }
 
 // SignRequest generates the HMAC signature for an outgoing request.
-// signing_string = "{match_id}.{turn}.{timestamp}.{sha256(request_body)}"
+// signing_string = "{match_id}.{turn}.{sha256(request_body)}"
 // signature = HMAC-SHA256(shared_secret, signing_string)
+// Note: timestamp is sent as a header (X-ACB-Timestamp) for clock-skew checks but is NOT
+// included in the signing string, matching the bot-side verifySignature implementation.
 func SignRequest(secret, matchID string, turn int, timestamp int64, requestBody []byte) string {
 	bodyHash := sha256.Sum256(requestBody)
-	signingString := fmt.Sprintf("%s.%d.%d.%s", matchID, turn, timestamp, hex.EncodeToString(bodyHash[:]))
+	signingString := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(signingString))
@@ -56,6 +58,7 @@ func SignResponse(secret, matchID string, turn int, responseBody []byte) string 
 
 // VerifyRequest verifies an incoming request's signature.
 // Returns an error if verification fails.
+// Timestamp is validated separately for clock-skew; it is not included in the signing string.
 func VerifyRequest(secret string, auth RequestAuth, requestBody []byte) error {
 	// Check timestamp is within tolerance
 	now := time.Now().Unix()

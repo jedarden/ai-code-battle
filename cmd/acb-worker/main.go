@@ -25,27 +25,29 @@ import (
 )
 // Config holds worker configuration.
 type Config struct {
-	DatabaseURL  string        // PostgreSQL connection URL
-	B2Endpoint   string        // B2 endpoint URL (ARMOR proxy)
-	B2Bucket     string        // B2 bucket name
-	B2AccessKey  string        // B2 access key ID
-	B2SecretKey  string        // B2 secret access key
-	B2Region     string        // B2 region (e.g., "us-west-004")
-	R2Endpoint   string        // R2 endpoint URL (Cloudflare R2 S3 API)
-	R2Bucket     string        // R2 bucket name
-	R2AccessKey  string        // R2 access key ID
-	R2SecretKey  string        // R2 secret access key
-	WorkerID     string        // Unique worker identifier
-	PollPeriod   time.Duration // How often to poll for jobs
-	Heartbeat    time.Duration // How often to send heartbeat during match
-	TurnTimeout  time.Duration // Per-turn timeout for bots
-	MaxRetries   int           // Max retries for transient errors
-	Verbose      bool          // Enable verbose logging
+	DatabaseURL   string        // PostgreSQL connection URL
+	EncryptionKey string        // AES-256-GCM key for decrypting bot shared secrets
+	B2Endpoint    string        // B2 endpoint URL (ARMOR proxy)
+	B2Bucket      string        // B2 bucket name
+	B2AccessKey   string        // B2 access key ID
+	B2SecretKey   string        // B2 secret access key
+	B2Region      string        // B2 region (e.g., "us-west-004")
+	R2Endpoint    string        // R2 endpoint URL (Cloudflare R2 S3 API)
+	R2Bucket      string        // R2 bucket name
+	R2AccessKey   string        // R2 access key ID
+	R2SecretKey   string        // R2 secret access key
+	WorkerID      string        // Unique worker identifier
+	PollPeriod    time.Duration // How often to poll for jobs
+	Heartbeat     time.Duration // How often to send heartbeat during match
+	TurnTimeout   time.Duration // Per-turn timeout for bots
+	MaxRetries    int           // Max retries for transient errors
+	Verbose       bool          // Enable verbose logging
 }
 
 func main() {
 	// Parse command-line flags
 	databaseURL := flag.String("db", getEnv("ACB_DATABASE_URL", ""), "PostgreSQL connection URL")
+	encryptionKey := flag.String("encryption-key", getEnv("ACB_ENCRYPTION_KEY", ""), "AES-256-GCM key for decrypting bot secrets")
 	b2Endpoint := flag.String("b2-endpoint", getEnv("ACB_B2_ENDPOINT", ""), "B2 endpoint URL")
 	b2Bucket := flag.String("b2-bucket", getEnv("ACB_B2_BUCKET", "acb-data"), "B2 bucket name")
 	b2AccessKey := flag.String("b2-access-key", getEnv("ACB_B2_ACCESS_KEY", ""), "B2 access key ID")
@@ -69,8 +71,9 @@ func main() {
 	}
 
 	cfg := &Config{
-		DatabaseURL:  *databaseURL,
-		B2Endpoint:   *b2Endpoint,
+		DatabaseURL:   *databaseURL,
+		EncryptionKey: *encryptionKey,
+		B2Endpoint:    *b2Endpoint,
 		B2Bucket:     *b2Bucket,
 		B2AccessKey:  *b2AccessKey,
 		B2SecretKey:  *b2SecretKey,
@@ -311,10 +314,22 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 		p := participantMap[slot]
 		botInfo := botInfoMap[p.BotID]
 
+		// Decrypt the bot's shared secret if an encryption key is configured.
+		// The API stores secrets AES-GCM encrypted; bots use the plaintext key.
+		secret := botInfo.Secret
+		if w.cfg.EncryptionKey != "" {
+			plaintext, err := decryptSecret(botInfo.Secret, w.cfg.EncryptionKey)
+			if err != nil {
+				w.logger.Printf("Warning: failed to decrypt secret for bot %s: %v — using raw value", p.BotID, err)
+			} else {
+				secret = plaintext
+			}
+		}
+
 		// Create auth config for HTTP bot
 		auth := engine.AuthConfig{
 			BotID:   p.BotID,
-			Secret:  botInfo.Secret,
+			Secret:  secret,
 			MatchID: claimData.Match.ID,
 		}
 
