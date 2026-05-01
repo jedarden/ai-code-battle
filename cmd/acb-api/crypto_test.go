@@ -103,3 +103,23 @@ func TestEncrypt_InvalidKeyLength(t *testing.T) {
 		t.Error("short key should produce error")
 	}
 }
+
+func TestEncryptDecrypt_Base64Key(t *testing.T) {
+	// Base64-encoded 32-byte key (as stored in OpenBao/K8s secrets)
+	key := "TWHJiNNgJ4qCFeK56mQ4HWee7JVuOgddXW0T3UkiX3M="
+	plaintext := "base64-key-test-secret"
+
+	encrypted, err := encryptSecret(plaintext, key)
+	if err != nil {
+		t.Fatalf("encrypt with base64 key failed: %v", err)
+	}
+
+	decrypted, err := decryptSecret(encrypted, key)
+	if err != nil {
+		t.Fatalf("decrypt with base64 key failed: %v", err)
+	}
+
+	if decrypted != plaintext {
+		t.Errorf("decrypted = %q, want %q", decrypted, plaintext)
+	}
+}
