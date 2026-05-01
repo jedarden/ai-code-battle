@@ -253,25 +253,28 @@ func TestEngagementPruneSkipTierWithFewMaps(t *testing.T) {
 
 func TestThreeMonthAgeCheck(t *testing.T) {
 	// created_at must be >= 3 months ago for classic promotion.
+	// Use calendar-relative anchors (AddDate) rather than fixed durations
+	// to avoid day-count ambiguity across month boundaries.
 	now := time.Now()
+	cutoff := now.AddDate(0, -classicMinMonths, 0)
+
 	tests := []struct {
-		createdAgo time.Duration
-		eligible   bool
+		createdAt time.Time
+		eligible  bool
+		label     string
 	}{
-		{30 * 24 * time.Hour, false},          // 1 month
-		{89 * 24 * time.Hour, false},          // ~3 months minus 1 day
-		{90 * 24 * time.Hour, true},           // 3 months
-		{180 * 24 * time.Hour, true},          // 6 months
-		{365 * 24 * time.Hour, true},          // 1 year
+		{now.AddDate(0, -1, 0), false, "1 month ago"},
+		{cutoff.Add(time.Hour), false, "1 hour before cutoff"},
+		{cutoff, true, "exactly at cutoff"},
+		{cutoff.Add(-time.Hour), true, "1 hour past cutoff"},
+		{now.AddDate(0, -6, 0), true, "6 months ago"},
+		{now.AddDate(-1, 0, 0), true, "1 year ago"},
 	}
 
 	for _, tc := range tests {
-		createdAt := now.Add(-tc.createdAgo)
-		// Use a simpler check: created_at < NOW() - 3 months
-		cutoff := now.AddDate(0, -classicMinMonths, 0)
-		eligibleByDate := !createdAt.After(cutoff)
+		eligibleByDate := !tc.createdAt.After(cutoff)
 		if eligibleByDate != tc.eligible {
-			t.Errorf("created %v ago: eligible=%v, want %v", tc.createdAgo, eligibleByDate, tc.eligible)
+			t.Errorf("%s: eligible=%v, want %v", tc.label, eligibleByDate, tc.eligible)
 		}
 	}
 }
