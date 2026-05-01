@@ -87,9 +87,9 @@ func TestVerifyRequest(t *testing.T) {
 		t.Error("wrong secret should fail verification")
 	}
 
-	// Wrong signature should fail
+	// Wrong signature should fail — use a fixed garbage value that is never a valid HMAC
 	auth2 := auth
-	auth2.Signature = "0" + auth.Signature[1:]
+	auth2.Signature = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	if err := VerifyRequest(secret, auth2, body); err == nil {
 		t.Error("wrong signature should fail verification")
 	}
