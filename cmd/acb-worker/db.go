@@ -185,8 +185,8 @@ func (c *DBClient) ClaimJob(ctx context.Context, jobID string, workerID string) 
 	// Get map data
 	var mapData DBMapData
 	err = tx.QueryRowContext(ctx, `
-		SELECT map_id, grid_width, grid_height, map_json->>'walls' as walls,
-		       map_json->>'spawns' as spawns, map_json->>'cores' as cores
+		SELECT map_id, grid_width, grid_height, COALESCE(map_json->>'walls', '') as walls,
+		       COALESCE(map_json->>'spawns', '') as spawns, COALESCE(map_json->>'cores', '') as cores
 		FROM maps WHERE map_id = $1
 	`, match.MapID).Scan(
 		&mapData.ID, &mapData.Width, &mapData.Height,
