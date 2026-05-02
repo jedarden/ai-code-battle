@@ -1,7 +1,11 @@
 // Package engine implements the AI Code Battle game simulation.
 package engine
 
-import "math"
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+)
 
 // Position represents a coordinate on the toroidal grid.
 type Position struct {
@@ -76,6 +80,26 @@ func ParseDirection(s string) Direction {
 	default:
 		return DirNone
 	}
+}
+
+// MarshalJSON serializes Direction as a string ("N", "E", "S", "W", or "").
+func (d Direction) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.String())
+}
+
+// UnmarshalJSON accepts both string ("N") and integer (1) representations.
+func (d *Direction) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*d = ParseDirection(s)
+		return nil
+	}
+	var i int
+	if err := json.Unmarshal(data, &i); err != nil {
+		return fmt.Errorf("direction must be a string or integer: %w", err)
+	}
+	*d = Direction(i)
+	return nil
 }
 
 // Delta returns the row and column delta for a direction.
