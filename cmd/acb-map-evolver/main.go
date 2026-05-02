@@ -26,6 +26,8 @@ type Config struct {
 	MinEngagement   float64
 	MaxAttempts     int
 	ValidateSmoke   bool
+	MinSeedCount    int
+	EvolutionPeriod time.Duration
 }
 
 // Map represents a game map.
@@ -62,6 +64,9 @@ type ParentMap struct {
 	VoteMult   float64
 }
 
+// allPlayerCounts are the valid player counts the matchmaker supports.
+var allPlayerCounts = []int{2, 3, 4, 6}
+
 func main() {
 	cfg := parseConfig()
 	if cfg == nil {
@@ -74,30 +79,57 @@ func main() {
 	}
 	defer db.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	// Run evolution
 	evolver := NewMapEvolver(db, cfg)
-	results, err := evolver.Run(ctx)
-	if err != nil {
-		log.Fatalf("Evolution failed: %v", err)
-	}
 
-	log.Printf("Evolution complete: %d new maps created", len(results))
-	for _, m := range results {
-		log.Printf("  - %s (engagement: %.2f)", m.ID, m.WallDensity)
+	// Seed the maps table on startup before entering the evolution loop.
+	// This is idempotent: it only generates maps when the count for a given
+	// player count is below MinSeedCount.
+	seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	for _, pc := range allPlayerCounts {
+		if err := evolver.seedIfEmpty(seedCtx, pc); err != nil {
+			log.Printf("warn: seed player_count=%d: %v", pc, err)
+		}
+	}
+	seedCancel()
+
+	log.Printf("map-evolver: entering continuous evolution loop (period=%s)", cfg.EvolutionPeriod)
+
+	for {
+		for _, pc := range allPlayerCounts {
+			cfg.PlayerCount = pc
+			iterCtx, iterCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			results, err := evolver.Run(iterCtx)
+			iterCancel()
+			if err != nil {
+				log.Printf("evolution error player_count=%d: %v", pc, err)
+				continue
+			}
+			log.Printf("player_count=%d: %d new maps created", pc, len(results))
+		}
+		time.Sleep(cfg.EvolutionPeriod)
 	}
 }
 
 func parseConfig() *Config {
 	cfg := &Config{
-		DatabaseURL:   os.Getenv("ACB_DATABASE_URL"),
-		PlayerCount:   2,
-		NumOffspring:  5,
-		MinEngagement: 5.0,
-		MaxAttempts:   10,
-		ValidateSmoke: true,
+		DatabaseURL:     os.Getenv("ACB_DATABASE_URL"),
+		PlayerCount:     2,
+		NumOffspring:    5,
+		MinEngagement:   5.0,
+		MaxAttempts:     10,
+		ValidateSmoke:   true,
+		MinSeedCount:    20,
+		EvolutionPeriod: 30 * time.Minute,
+	}
+
+	// Allow env var overrides before flag parsing.
+	if v := os.Getenv("ACB_MIN_SEED_COUNT"); v != "" {
+		fmt.Sscanf(v, "%d", &cfg.MinSeedCount)
+	}
+	if v := os.Getenv("ACB_EVOLUTION_PERIOD"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.EvolutionPeriod = d
+		}
 	}
 
 	for i, arg := range os.Args[1:] {
@@ -114,6 +146,16 @@ func parseConfig() *Config {
 			if i+1 < len(os.Args[1:]) {
 				fmt.Sscanf(os.Args[1:][i+1], "%f", &cfg.MinEngagement)
 			}
+		case "--min-seed-count":
+			if i+1 < len(os.Args[1:]) {
+				fmt.Sscanf(os.Args[1:][i+1], "%d", &cfg.MinSeedCount)
+			}
+		case "--evolution-period":
+			if i+1 < len(os.Args[1:]) {
+				if d, err := time.ParseDuration(os.Args[1:][i+1]); err == nil {
+					cfg.EvolutionPeriod = d
+				}
+			}
 		case "--dry-run":
 			cfg.DryRun = true
 		case "--no-smoke":
@@ -122,12 +164,14 @@ func parseConfig() *Config {
 			fmt.Println("Usage: acb-map-evolver [options]")
 			fmt.Println("")
 			fmt.Println("Options:")
-			fmt.Println("  --player-count N    Player count tier (2, 3, 4, or 6) [default: 2]")
-			fmt.Println("  --num-offspring N   Number of maps to create [default: 5]")
-			fmt.Println("  --min-engagement F  Minimum engagement threshold for parents [default: 5.0]")
-			fmt.Println("  --dry-run           Generate maps but don't save to database")
-			fmt.Println("  --no-smoke          Skip smoke-test validation")
-			fmt.Println("  --help              Show this help")
+			fmt.Println("  --player-count N      Player count tier (2, 3, 4, or 6) [default: 2]")
+			fmt.Println("  --num-offspring N     Number of maps to breed per iteration [default: 5]")
+			fmt.Println("  --min-engagement F    Minimum engagement threshold for parents [default: 5.0]")
+			fmt.Println("  --min-seed-count N    Seed this many maps per player count on startup [default: 20]")
+			fmt.Println("  --evolution-period D  Sleep duration between evolution cycles [default: 30m]")
+			fmt.Println("  --dry-run             Generate maps but don't save to database")
+			fmt.Println("  --no-smoke            Skip smoke-test validation")
+			fmt.Println("  --help                Show this help")
 			return nil
 		}
 	}
@@ -155,15 +199,22 @@ func NewMapEvolver(db *sql.DB, cfg *Config) *MapEvolver {
 	}
 }
 
-// Run executes the evolution pipeline.
+// Run executes the evolution pipeline for cfg.PlayerCount.
 func (e *MapEvolver) Run(ctx context.Context) ([]*Map, error) {
+	// Ensure the table is seeded before attempting to select parents.
+	if err := e.seedIfEmpty(ctx, e.cfg.PlayerCount); err != nil {
+		return nil, fmt.Errorf("seeding player_count=%d: %w", e.cfg.PlayerCount, err)
+	}
+
 	// 1. Select parent maps
 	parents, err := e.selectParents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("selecting parents: %w", err)
 	}
 	if len(parents) < 2 {
-		return nil, fmt.Errorf("need at least 2 parent maps, found %d", len(parents))
+		log.Printf("player_count=%d: only %d parent maps available, skipping evolution cycle",
+			e.cfg.PlayerCount, len(parents))
+		return nil, nil
 	}
 
 	log.Printf("Selected %d parent maps", len(parents))
@@ -837,6 +888,58 @@ func (e *MapEvolver) canReach(m *Map, start, end Position) bool {
 }
 
 // saveMap stores a map in the database.
+// seedIfEmpty generates MinSeedCount random maps for playerCount if the table
+// has fewer than that many active/probation rows. Idempotent: safe to call on
+// every startup regardless of current state.
+func (e *MapEvolver) seedIfEmpty(ctx context.Context, playerCount int) error {
+	var count int
+	err := e.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM maps WHERE player_count = $1 AND status != 'retired'`,
+		playerCount,
+	).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("counting maps: %w", err)
+	}
+	if count >= e.cfg.MinSeedCount {
+		return nil
+	}
+
+	needed := e.cfg.MinSeedCount - count
+	log.Printf("seeding %d maps for player_count=%d (have %d, want %d)",
+		needed, playerCount, count, e.cfg.MinSeedCount)
+
+	rows, cols := gridForPlayers(playerCount)
+	inserted := 0
+	for inserted < needed {
+		m := generateMap(playerCount, rows, cols, 0.15, 20, e.rng)
+		if m == nil || !e.validate(m) {
+			continue
+		}
+		m.ID = generateMapID(e.rng)
+		if err := e.saveMapIdempotent(ctx, m); err != nil {
+			log.Printf("warn: failed to seed map: %v", err)
+		} else {
+			inserted++
+		}
+	}
+	return nil
+}
+
+// saveMapIdempotent inserts a map, ignoring conflicts on map_id.
+func (e *MapEvolver) saveMapIdempotent(ctx context.Context, m *Map) error {
+	mapJSON, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	_, err = e.db.ExecContext(ctx, `
+		INSERT INTO maps (map_id, player_count, status, engagement, wall_density, energy_count, grid_width, grid_height, map_json)
+		VALUES ($1, $2, 'active', 0, $3, $4, $5, $6, $7)
+		ON CONFLICT (map_id) DO NOTHING`,
+		m.ID, m.Players, m.WallDensity, len(m.EnergyNodes), m.Cols, m.Rows, mapJSON,
+	)
+	return err
+}
+
 func (e *MapEvolver) saveMap(ctx context.Context, m *Map) error {
 	mapJSON, err := json.Marshal(m)
 	if err != nil {
@@ -859,6 +962,195 @@ func (e *MapEvolver) saveMap(ctx context.Context, m *Map) error {
 	)
 
 	return err
+}
+
+// gridForPlayers returns default grid dimensions for a given player count.
+func gridForPlayers(n int) (rows, cols int) {
+	if n <= 2 {
+		return 60, 60
+	}
+	side := int(math.Sqrt(float64(2000 * n)))
+	if side < 40 {
+		side = 40
+	}
+	if side > 200 {
+		side = 200
+	}
+	return side, side
+}
+
+// generateMap creates a random symmetric map using cellular-automata wall generation.
+// Returns nil if a connected map cannot be produced within maxAttempts tries.
+func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes int, rng *rand.Rand) *Map {
+	const maxAttempts = 20
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		m := generateMapOnce(numPlayers, rows, cols, wallDensity, numEnergyNodes, rng)
+		if m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
+func generateMapOnce(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes int, rng *rand.Rand) *Map {
+	m := &Map{
+		Players:     numPlayers,
+		Rows:        rows,
+		Cols:        cols,
+		WallDensity: wallDensity,
+		Walls:       make([]Position, 0),
+		Cores:       make([]Core, 0),
+		EnergyNodes: make([]Position, 0),
+	}
+
+	wrap := func(r, c int) Position {
+		return Position{Row: ((r % rows) + rows) % rows, Col: ((c % cols) + cols) % cols}
+	}
+
+	centerRow, centerCol := rows/2, cols/2
+
+	// Place cores with rotational symmetry.
+	for p := 0; p < numPlayers; p++ {
+		angle := float64(p) * 2.0 * math.Pi / float64(numPlayers)
+		r := centerRow + int(float64(centerRow)*0.35*math.Cos(angle))
+		c := centerCol + int(float64(centerCol)*0.35*math.Sin(angle))
+		m.Cores = append(m.Cores, Core{Position: wrap(r, c), Owner: p})
+	}
+
+	// Place energy nodes with rotational symmetry.
+	used := make(PositionSet)
+	for _, core := range m.Cores {
+		used[core.Position] = true
+	}
+	nodesPerSector := numEnergyNodes / numPlayers
+	for i := 0; i < nodesPerSector; i++ {
+		for attempt := 0; attempt < 100; attempt++ {
+			angle := rng.Float64() * 2.0 * math.Pi / float64(numPlayers)
+			radius := 0.2 + rng.Float64()*0.5
+			r := centerRow + int(float64(centerRow)*radius*math.Cos(angle))
+			c := centerCol + int(float64(centerCol)*radius*math.Sin(angle))
+			pos := wrap(r, c)
+			if used[pos] {
+				continue
+			}
+			used[pos] = true
+			for p := 0; p < numPlayers; p++ {
+				rotAngle := angle + float64(p)*2.0*math.Pi/float64(numPlayers)
+				rr := centerRow + int(float64(centerRow)*radius*math.Cos(rotAngle))
+				rc := centerCol + int(float64(centerCol)*radius*math.Sin(rotAngle))
+				m.EnergyNodes = append(m.EnergyNodes, wrap(rr, rc))
+			}
+			break
+		}
+	}
+
+	// Build protected set around cores and energy nodes.
+	protected := make(PositionSet)
+	for _, core := range m.Cores {
+		for dr := -3; dr <= 3; dr++ {
+			for dc := -3; dc <= 3; dc++ {
+				protected[wrap(core.Position.Row+dr, core.Position.Col+dc)] = true
+			}
+		}
+	}
+	for _, en := range m.EnergyNodes {
+		for dr := -1; dr <= 1; dr++ {
+			for dc := -1; dc <= 1; dc++ {
+				protected[wrap(en.Row+dr, en.Col+dc)] = true
+			}
+		}
+	}
+
+	// Seed grid at ~40% random fill.
+	grid := make([][]bool, rows)
+	for r := 0; r < rows; r++ {
+		grid[r] = make([]bool, cols)
+		for c := 0; c < cols; c++ {
+			if !protected[Position{Row: r, Col: c}] && rng.Float64() < 0.40 {
+				grid[r][c] = true
+			}
+		}
+	}
+
+	// Cellular automata smoothing (4 iterations).
+	for iter := 0; iter < 4; iter++ {
+		next := make([][]bool, rows)
+		for r := 0; r < rows; r++ {
+			next[r] = make([]bool, cols)
+			for c := 0; c < cols; c++ {
+				if protected[Position{Row: r, Col: c}] {
+					continue
+				}
+				n := 0
+				for nr := -1; nr <= 1; nr++ {
+					for nc := -1; nc <= 1; nc++ {
+						if nr == 0 && nc == 0 {
+							continue
+						}
+						rr := ((r+nr)%rows + rows) % rows
+						cc := ((c+nc)%cols + cols) % cols
+						if grid[rr][cc] {
+							n++
+						}
+					}
+				}
+				if grid[r][c] {
+					next[r][c] = n >= 4
+				} else {
+					next[r][c] = n >= 5
+				}
+			}
+		}
+		grid = next
+	}
+
+	// Enforce rotational symmetry from sector 0.
+	sectorAngle := 2.0 * math.Pi / float64(numPlayers)
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			if protected[Position{Row: r, Col: c}] {
+				continue
+			}
+			dr := float64(r - centerRow)
+			dc := float64(c - centerCol)
+			angle := math.Atan2(dc, dr)
+			if angle < 0 {
+				angle += 2.0 * math.Pi
+			}
+			sector := int(angle / sectorAngle)
+			if sector >= numPlayers {
+				sector = numPlayers - 1
+			}
+			if sector != 0 {
+				rotAngle := -float64(sector) * sectorAngle
+				cosA, sinA := math.Cos(rotAngle), math.Sin(rotAngle)
+				srcR := int(math.Round(float64(centerRow) + dr*cosA - dc*sinA))
+				srcC := int(math.Round(float64(centerCol) + dr*sinA + dc*cosA))
+				sr := ((srcR % rows) + rows) % rows
+				sc := ((srcC % cols) + cols) % cols
+				grid[r][c] = grid[sr][sc]
+			}
+		}
+	}
+
+	// Collect wall positions and thin to target density.
+	totalTiles := rows * cols
+	targetWalls := int(float64(totalTiles) * wallDensity)
+	var walls []Position
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			if grid[r][c] {
+				walls = append(walls, Position{Row: r, Col: c})
+			}
+		}
+	}
+	if len(walls) > targetWalls {
+		rng.Shuffle(len(walls), func(i, j int) { walls[i], walls[j] = walls[j], walls[i] })
+		walls = walls[:targetWalls]
+	}
+	m.Walls = walls
+
+	return m
 }
 
 // generateMapID creates a random map ID.

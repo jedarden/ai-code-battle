@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acb-map-evolver
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-map-evolver
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: map-evolver
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-map-evolver
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^[0-9a-f]{7,}$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acb-map-evolver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: acb-map-evolver
+        app.kubernetes.io/part-of: ai-code-battle
+        app.kubernetes.io/component: map-evolver
+      annotations:
+        reloader.stakater.com/auto: "true"
+    spec:
+      imagePullSecrets:
+        - name: docker-hub-registry
+      containers:
+        - name: map-evolver
+          image: ronaldraygun/acb-map-evolver:e5dc3bc
+          env:
+            - name: ACB_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acb-app-credentials-acb-app
+                  key: username
+            - name: ACB_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acb-app-credentials-acb-app
+                  key: password
+            - name: ACB_DATABASE_URL
+              value: postgresql://$(ACB_POSTGRES_USER):$(ACB_POSTGRES_PASSWORD)@acb-postgres:5432/ai_code_battle?sslmode=disable
+            - name: ACB_MIN_SEED_COUNT
+              value: "20"
+            - name: ACB_EVOLUTION_PERIOD
+              value: "30m"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            exec:
+              command:
+                - pgrep
+                - -x
+                - acb-map-evolver
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 3

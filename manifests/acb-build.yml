@@ -79,6 +79,17 @@ spec:
                   value: cmd/acb-evolver/Dockerfile
                 - name: context
                   value: .
+          - name: build-map-evolver
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-map-evolver
+                - name: dockerfile
+                  value: cmd/acb-map-evolver/Dockerfile
+                - name: context
+                  value: .
           - name: build-index-builder
             template: kaniko-build
             dependencies: [test]
