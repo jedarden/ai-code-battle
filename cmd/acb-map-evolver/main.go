@@ -1026,7 +1026,17 @@ func generateMapOnce(numPlayers, rows, cols int, wallDensity float64, numEnergyN
 	for i := 0; i < nodesPerSector; i++ {
 		for attempt := 0; attempt < 100; attempt++ {
 			angle := rng.Float64() * 2.0 * math.Pi / float64(numPlayers)
-			radius := 0.2 + rng.Float64()*0.5
+			// Tiered radius: bias toward center to force contested energy collection.
+			// 30% central (forces both players to midfield), 40% mid, 30% home.
+			var radius float64
+			switch {
+			case i < nodesPerSector*3/10:
+				radius = 0.05 + rng.Float64()*0.15 // 0.05–0.20: contested central zone
+			case i < nodesPerSector*7/10:
+				radius = 0.20 + rng.Float64()*0.20 // 0.20–0.40: mid-zone
+			default:
+				radius = 0.40 + rng.Float64()*0.20 // 0.40–0.60: home zone
+			}
 			r := centerRow + int(float64(centerRow)*radius*math.Cos(angle))
 			c := centerCol + int(float64(centerCol)*radius*math.Sin(angle))
 			pos := wrap(r, c)
@@ -1133,6 +1143,20 @@ func generateMapOnce(numPlayers, rows, cols int, wallDensity float64, numEnergyN
 		}
 	}
 
+	// Carve corridors from each core to the map center.
+	// Creates 3-wide lanes that funnel bots into contact at midfield.
+	for _, core := range m.Cores {
+		carveCorridor(grid, core.Position.Row, core.Position.Col, centerRow, centerCol, rows, cols)
+	}
+	// Open a 5×5 arena at the center so all corridors connect.
+	for dr := -2; dr <= 2; dr++ {
+		for dc := -2; dc <= 2; dc++ {
+			rr := ((centerRow+dr)%rows + rows) % rows
+			cc := ((centerCol+dc)%cols + cols) % cols
+			grid[rr][cc] = false
+		}
+	}
+
 	// Collect wall positions and thin to target density.
 	totalTiles := rows * cols
 	targetWalls := int(float64(totalTiles) * wallDensity)
@@ -1151,6 +1175,53 @@ func generateMapOnce(numPlayers, rows, cols int, wallDensity float64, numEnergyN
 	m.Walls = walls
 
 	return m
+}
+
+// carveCorridor opens a 3-wide path from (r0,c0) to (r1,c1) using integer stepping.
+// Perpendicular width is 1 tile on each side of the center line.
+func carveCorridor(grid [][]bool, r0, c0, r1, c1, rows, cols int) {
+	dr := r1 - r0
+	dc := c1 - c0
+	steps := dr
+	if steps < 0 {
+		steps = -steps
+	}
+	if dc < 0 && -dc > steps {
+		steps = -dc
+	} else if dc > steps {
+		steps = dc
+	}
+	if steps == 0 {
+		return
+	}
+	horizontal := dc < 0 && -dc > (dr+1) || dc > 0 && dc > (dr+1) // wider in col direction
+	if dr < 0 {
+		dr = -dr
+	}
+	// recompute: use originals
+	origDR := r1 - r0
+	origDC := c1 - c0
+	for step := 0; step <= steps; step++ {
+		r := r0 + origDR*step/steps
+		c := c0 + origDC*step/steps
+		// Widen perpendicular to primary movement direction
+		if !horizontal {
+			// Mostly vertical: widen horizontally
+			for wc := -1; wc <= 1; wc++ {
+				rr := ((r)%rows + rows) % rows
+				cc := ((c+wc)%cols + cols) % cols
+				grid[rr][cc] = false
+			}
+		} else {
+			// Mostly horizontal: widen vertically
+			for wr := -1; wr <= 1; wr++ {
+				rr := ((r+wr)%rows + rows) % rows
+				cc := ((c)%cols + cols) % cols
+				grid[rr][cc] = false
+			}
+		}
+	}
+	_ = dr // suppress unused warning
 }
 
 // generateMapID creates a random map ID.
