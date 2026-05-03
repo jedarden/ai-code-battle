@@ -262,6 +262,13 @@ CREATE TABLE IF NOT EXISTS playlist_matches (
 );
 CREATE INDEX IF NOT EXISTS idx_playlist_matches_playlist ON playlist_matches(playlist_slug, sort_order);
 
+-- Add combat_turns column to matches if it doesn't exist (idempotent migration)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'matches' AND column_name = 'combat_turns') THEN
+        ALTER TABLE matches ADD COLUMN combat_turns INTEGER NOT NULL DEFAULT 0;
+    END IF;
+END $$;
+
 -- Community replay feedback (plan §13.6, §8.3)
 CREATE TABLE IF NOT EXISTS replay_feedback (
     feedback_id   VARCHAR(32) PRIMARY KEY,

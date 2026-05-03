@@ -38,6 +38,7 @@ type MatchData struct {
 	WinnerID     string             `json:"winner_id,omitempty"`
 	TurnCount    int                `json:"turn_count"`
 	EndCondition string             `json:"end_condition"`
+	CombatTurns  int                `json:"combat_turns"`  // turns with ≥1 enemy-kill combat death
 	Participants []ParticipantData  `json:"participants"`
 	CreatedAt    time.Time          `json:"created_at"`
 	CompletedAt  time.Time          `json:"completed_at"`
@@ -341,6 +342,7 @@ func getBotMatchStats(ctx context.Context, db *sql.DB, botID string) (played, wo
 func fetchMatches(ctx context.Context, db *sql.DB) ([]MatchData, error) {
 	query := `
 		SELECT m.match_id, m.map_id, m.winner, m.turn_count, m.condition,
+		       COALESCE(m.combat_turns, 0),
 		       m.created_at, m.completed_at,
 		       COALESCE(
 		           json_agg(
@@ -364,7 +366,7 @@ func fetchMatches(ctx context.Context, db *sql.DB) ([]MatchData, error) {
 		LEFT JOIN match_participants mp ON m.match_id = mp.match_id
 		WHERE m.status = 'completed'
 		GROUP BY m.match_id, m.map_id, m.winner, m.turn_count, m.condition,
-		         m.created_at, m.completed_at
+		         m.combat_turns, m.created_at, m.completed_at
 		ORDER BY m.completed_at DESC
 		LIMIT 1000
 	`
@@ -383,6 +385,7 @@ func fetchMatches(ctx context.Context, db *sql.DB) ([]MatchData, error) {
 
 		err := rows.Scan(
 			&m.ID, &m.MapID, &winnerID, &m.TurnCount, &m.EndCondition,
+			&m.CombatTurns,
 			&m.CreatedAt, &m.CompletedAt, &participantsJSON,
 		)
 		if err != nil {

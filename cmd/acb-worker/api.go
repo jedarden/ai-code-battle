@@ -83,6 +83,7 @@ type MatchResult struct {
 	EndReason   string          `json:"end_reason"`
 	Scores      map[string]int  `json:"scores"`
 	CrashedBots map[string]bool `json:"crashed_bots"` // bot_id -> crashed
+	CombatTurns int             `json:"combat_turns"`  // turns with ≥1 enemy-kill combat death
 }
 
 // ConvertDBJobToJob converts a DBJob to Job type.

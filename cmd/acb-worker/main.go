@@ -389,7 +389,37 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 		}
 	}
 
+	// Compute combat_turns: count distinct turns where ≥1 bot died from "combat" (enemy kill)
+	result.CombatTurns = computeCombatTurns(replay)
+
 	return result, replay, nil
+}
+
+// computeCombatTurns counts the number of distinct turns in a replay where at
+// least one bot was killed by an enemy (reason == "combat"). Deaths from
+// self-collision or other causes are excluded.
+func computeCombatTurns(replay *engine.Replay) int {
+	if replay == nil {
+		return 0
+	}
+	combatTurnSet := make(map[int]struct{})
+	for _, turn := range replay.Turns {
+		for _, event := range turn.Events {
+			if event.Type != engine.EventBotDied {
+				continue
+			}
+			details, ok := event.Details.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			reason, _ := details["reason"].(string)
+			if reason == "combat" {
+				combatTurnSet[turn.Turn] = struct{}{}
+				break // one combat death is enough to count this turn
+			}
+		}
+	}
+	return len(combatTurnSet)
 }
 
 // sendHeartbeats sends periodic heartbeats while a match is running.

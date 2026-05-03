@@ -145,8 +145,8 @@ export async function renderHomePage(): Promise<void> {
   // Featured replay: use demo replay as fallback when no live matches
   const hasLiveReplay = !!featuredReplay;
   const replayEmbedSrc = hasLiveReplay
-    ? `/embed.html?match_id=${featuredReplay!.id}&autoplay=true&speed=150&loop=true&view=influence`
-    : '/embed.html?demo=true&autoplay=true&speed=150&loop=true&view=influence';
+    ? `/embed.html?match_id=${featuredReplay!.id}&autoplay=true&speed=150&loop=true&view=standard`
+    : '/embed.html?demo=true&autoplay=true&speed=150&loop=true&view=standard';
   const replayTitle = hasLiveReplay
     ? `${featuredReplay!.participants.map((p) => `<strong>${esc(p.name)}</strong>`).join(' vs ')}${featuredReplay!.winner_id ? ` — Winner: <strong>${esc(featuredReplay!.participants.find((p) => p.bot_id === featuredReplay!.winner_id)?.name || 'Unknown')}</strong>` : ''}`
     : 'Demo Replay — Watch a sample battle';

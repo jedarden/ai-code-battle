@@ -336,9 +336,10 @@ func (c *DBClient) SubmitMatchResult(ctx context.Context, jobID string, result *
 	_, err = tx.ExecContext(ctx, `
 		UPDATE matches
 		SET status = 'completed', winner = $1, condition = $2,
-		    turn_count = $3, scores_json = $4, completed_at = $5
+		    turn_count = $3, scores_json = $4, completed_at = $5,
+		    combat_turns = $7
 		WHERE match_id = $6
-	`, winnerIndex, result.EndReason, result.Turns, scoresJSON, now, matchID)
+	`, winnerIndex, result.EndReason, result.Turns, scoresJSON, now, matchID, result.CombatTurns)
 	if err != nil {
 		return fmt.Errorf("failed to update match: %w", err)
 	}

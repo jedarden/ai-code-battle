@@ -81,6 +81,7 @@ type MatchSummary struct {
 	Turns        int                  `json:"turns"`
 	EndReason    string               `json:"end_reason"`
 	Enriched     bool                 `json:"enriched"`
+	CombatTurns  int                  `json:"combat_turns"` // turns with ≥1 enemy-kill combat death
 }
 
 // MatchParticipantSummary represents a bot in a match summary
@@ -313,6 +314,12 @@ func generateMatchIndex(data *IndexData, outputDir string, botNameMap map[string
 		summaries = append(summaries, matchToSummary(m, data, cfg))
 	}
 
+	// Sort matches by combat_turns descending so the most combat-heavy
+	// matches surface first in the UI.
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].CombatTurns > summaries[j].CombatTurns
+	})
+
 	index := MatchIndex{
 		UpdatedAt: data.GeneratedAt.Format(time.RFC3339),
 		Matches:   summaries,
@@ -350,6 +357,7 @@ func matchToSummary(m MatchData, data *IndexData, cfg *Config) MatchSummary {
 		Turns:        m.TurnCount,
 		EndReason:    m.EndCondition,
 		Enriched:     enriched,
+		CombatTurns:  m.CombatTurns,
 	}
 }
 
@@ -640,6 +648,18 @@ func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]
 			},
 			sort: func(matches []MatchData) {
 				sortByInterestScore(matches)
+			},
+		},
+		{
+			slug:        "most-combat",
+			title:       "Most Combat",
+			description: "Matches with the most turns featuring enemy kills — the bloodiest battles on the grid",
+			category:    "featured",
+			filter: func(m MatchData) bool {
+				return m.WinnerID != "" && m.CombatTurns > 0
+			},
+			sort: func(matches []MatchData) {
+				sortByCombatTurns(matches)
 			},
 		},
 		{
@@ -1046,6 +1066,12 @@ func interestScore(m MatchData) float64 {
 	} else if cr >= 3200 {
 		score += 1.0
 	}
+	// Combat-heavy matches are exciting
+	if m.CombatTurns >= 30 {
+		score += 2.0
+	} else if m.CombatTurns >= 15 {
+		score += 1.0
+	}
 	return score
 }
 
@@ -1070,6 +1096,12 @@ func sortByTurnCount(matches []MatchData) {
 func sortByCombinedRating(matches []MatchData) {
 	sortSlice(matches, func(i, j int) bool {
 		return combinedRating(matches[i]) > combinedRating(matches[j])
+	})
+}
+
+func sortByCombatTurns(matches []MatchData) {
+	sortSlice(matches, func(i, j int) bool {
+		return matches[i].CombatTurns > matches[j].CombatTurns
 	})
 }
 
