@@ -330,7 +330,7 @@ class ScoutBotHandler(BaseHTTPRequestHandler):
     def verify_signature(self, body: bytes, match_id: str, turn: str,
                          timestamp: str, signature: str) -> bool:
         body_hash = hashlib.sha256(body).hexdigest()
-        signing_string = f"{match_id}.{turn}.{timestamp}.{body_hash}"
+        signing_string = f"{match_id}.{turn}.{body_hash}"
         expected = hmac.new(
             self.secret.encode("utf-8"),
             signing_string.encode("utf-8"),

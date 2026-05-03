@@ -136,7 +136,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func verifySignature(secret, matchID, turnStr, timestamp string, body []byte, signature string) bool {
 	bodyHash := sha256.Sum256(body)
-	signingString := fmt.Sprintf("%s.%s.%s.%s", matchID, turnStr, timestamp, hex.EncodeToString(bodyHash[:]))
+	signingString := fmt.Sprintf("%s.%s.%s", matchID, turnStr, hex.EncodeToString(bodyHash[:]))
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(signingString))
 	expected := hex.EncodeToString(mac.Sum(nil))

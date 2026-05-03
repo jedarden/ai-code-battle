@@ -136,7 +136,7 @@ function handle_turn($conn, string $secret, GuardianStrategy $strategy, array $h
  */
 function verify_signature(string $secret, string $matchId, string $turn, string $timestamp, string $body, string $signature): bool {
     $bodyHash = hash('sha256', $body);
-    $signingString = "$matchId.$turn.$timestamp.$bodyHash";
+    $signingString = "$matchId.$turn.$bodyHash";
     $expected = hash_hmac('sha256', $signingString, $secret);
     return hash_equals($expected, $signature);
 }

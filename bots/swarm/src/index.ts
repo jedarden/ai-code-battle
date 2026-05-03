@@ -103,7 +103,7 @@ function verifySignature(
   signature: string
 ): boolean {
   const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
-  const signingString = `${matchId}.${turn}.${timestamp}.${bodyHash}`;
+  const signingString = `${matchId}.${turn}.${bodyHash}`;
   const expected = crypto.createHmac('sha256', secret).update(signingString).digest('hex');
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 }

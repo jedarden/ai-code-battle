@@ -68,7 +68,7 @@ class RandomBotHandler(BaseHTTPRequestHandler):
                          timestamp: str, signature: str) -> bool:
         """Verify HMAC signature of incoming request."""
         body_hash = hashlib.sha256(body).hexdigest()
-        signing_string = f"{match_id}.{turn}.{timestamp}.{body_hash}"
+        signing_string = f"{match_id}.{turn}.{body_hash}"
         expected_sig = hmac.new(
             self.secret.encode("utf-8"),
             signing_string.encode("utf-8"),

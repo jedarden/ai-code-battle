@@ -86,7 +86,7 @@ public class App {
                                            String timestamp, String body, String signature) {
         try {
             String bodyHash = sha256Hex(body);
-            String signingString = matchId + "." + turn + "." + timestamp + "." + bodyHash;
+            String signingString = matchId + "." + turn + "." + bodyHash;
 
             Mac mac = Mac.getInstance("HmacSHA256");
             SecretKeySpec keySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");

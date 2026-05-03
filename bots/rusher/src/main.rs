@@ -133,7 +133,7 @@ fn verify_signature(
     let body_hash = sha2::Sha256::digest(body.as_bytes());
     let body_hash_hex = hex::encode(body_hash);
 
-    let signing_string = format!("{}.{}.{}.{}", match_id, turn, timestamp, body_hash_hex);
+    let signing_string = format!("{}.{}.{}", match_id, turn, body_hash_hex);
 
     let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
         Ok(m) => m,
