@@ -19,12 +19,13 @@ func TestMapEngagement_WinProbDependency(t *testing.T) {
 			{0.4, 0.6}, // Player 1 leading - 3rd crossing
 		},
 		Turns: []ReplayTurn{
-			{Turn: 0, Bots: []ReplayBot{{Position: Position{Row: 0, Col: 0}, Alive: true}}},
-			{Turn: 1, Bots: []ReplayBot{{Position: Position{Row: 1, Col: 1}, Alive: true}}},
+			{Turn: 0, Bots: []ReplayBot{{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0}}},
+			{Turn: 1, Bots: []ReplayBot{{Position: Position{Row: 1, Col: 1}, Alive: true, Owner: 0}}},
 		},
 		Map: ReplayMap{
 			Walls: []Position{{Row: 10, Col: 10}},
 		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
 	}
 
 	score := CalculateMapEngagement(replay)
@@ -51,11 +52,12 @@ func TestMapEngagement_CriticalMomentsDependency(t *testing.T) {
 			{Turn: 25, Delta: -0.25, Player: 1, Description: "Player 1 fights back"},
 		},
 		Turns: []ReplayTurn{
-			{Turn: 0, Bots: []ReplayBot{{Position: Position{Row: 0, Col: 0}, Alive: true}}},
+			{Turn: 0, Bots: []ReplayBot{{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0}}},
 		},
 		Map: ReplayMap{
 			Walls: []Position{{Row: 10, Col: 10}},
 		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
 	}
 
 	score := CalculateMapEngagement(replay)
@@ -72,6 +74,84 @@ func TestMapEngagement_CriticalMomentsDependency(t *testing.T) {
 	}
 }
 
+// TestMapEngagement_ResourceContestTurns verifies that contested energy turns are counted.
+func TestMapEngagement_ResourceContestTurns(t *testing.T) {
+	replay := &Replay{
+		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Turns: []ReplayTurn{
+			{
+				Turn: 0,
+				Energy: []Position{{Row: 5, Col: 5}},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 5, Col: 4}, Alive: true, Owner: 0}, // Adjacent to energy
+					{Position: Position{Row: 5, Col: 6}, Alive: true, Owner: 1}, // Adjacent to energy
+				},
+			},
+			{
+				Turn: 1,
+				Energy: []Position{{Row: 10, Col: 10}},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 10, Col: 9}, Alive: true, Owner: 0}, // Only player 0 adjacent
+				},
+			},
+		},
+		Map: ReplayMap{
+			Walls: []Position{{Row: 15, Col: 15}},
+		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
+	}
+
+	score := CalculateMapEngagement(replay)
+
+	// Turn 0 is contested (both players adjacent), turn 1 is not
+	if score.ResourceContestTurns != 1 {
+		t.Errorf("Expected 1 resource contest turn, got %d", score.ResourceContestTurns)
+	}
+}
+
+// TestMapEngagement_SurvivalTurns verifies that survival turns are counted correctly.
+func TestMapEngagement_SurvivalTurns(t *testing.T) {
+	replay := &Replay{
+		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Turns: []ReplayTurn{
+			{
+				Turn: 0,
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: true, Owner: 1},
+				},
+			},
+			{
+				Turn: 1,
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: false, Owner: 1}, // Player 1 bot died
+				},
+			},
+			{
+				Turn: 2,
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: true, Owner: 1},
+				},
+			},
+		},
+		Map: ReplayMap{
+			Walls: []Position{{Row: 15, Col: 15}},
+		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
+	}
+
+	score := CalculateMapEngagement(replay)
+
+	// Turns 0 and 2 have all players alive, turn 1 does not
+	if score.SurvivalTurns != 2 {
+		t.Errorf("Expected 2 survival turns, got %d", score.SurvivalTurns)
+	}
+}
+
 // TestMapEngagement_EmptyReplay handles empty/nil replays gracefully.
 func TestMapEngagement_EmptyReplay(t *testing.T) {
 	score1 := CalculateMapEngagement(nil)
@@ -80,6 +160,158 @@ func TestMapEngagement_EmptyReplay(t *testing.T) {
 	// Both should return zero scores without panicking
 	if score1.Engagement != 0 || score2.Engagement != 0 {
 		t.Error("Empty replay should return zero engagement")
+	}
+}
+
+// TestMapEngagement_Formula verifies the engagement score uses the correct formula:
+// score = win_prob_crossings * 3.0 + critical_moments * 2.0 + resource_contest_turns * 1.5 + survival_turns * 0.5
+func TestMapEngagement_Formula(t *testing.T) {
+	replay := &Replay{
+		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		WinProb: []WinProbEntry{
+			{0.6, 0.4}, // Player 0 leading
+			{0.4, 0.6}, // Player 1 leading - 1st crossing
+		},
+		CriticalMoments: []CriticalMoment{
+			{Turn: 10, Delta: 0.20, Player: 0, Description: "Player 0 scores"},
+		},
+		Turns: []ReplayTurn{
+			{
+				Turn: 0,
+				Energy: []Position{{Row: 5, Col: 5}},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 5, Col: 4}, Alive: true, Owner: 0},
+					{Position: Position{Row: 5, Col: 6}, Alive: true, Owner: 1},
+				},
+			},
+			{
+				Turn: 1,
+				Energy: []Position{{Row: 10, Col: 10}},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: true, Owner: 1},
+				},
+			},
+		},
+		Map: ReplayMap{
+			Walls: []Position{{Row: 15, Col: 15}},
+		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
+	}
+
+	score := CalculateMapEngagement(replay)
+
+	// Count each metric
+	winProbCrossings := 1.0  // One lead change
+	criticalMoments := 1      // One critical moment
+	resourceContestTurns := 1 // Turn 0 has contested energy
+	survivalTurns := 2        // Both turns have all players alive
+
+	// Expected formula: 1.0*3.0 + 1*2.0 + 1*1.5 + 2*0.5 = 3.0 + 2.0 + 1.5 + 1.0 = 7.5
+	expectedEngagement := winProbCrossings*3.0 + float64(criticalMoments)*2.0 + float64(resourceContestTurns)*1.5 + float64(survivalTurns)*0.5
+
+	if score.Engagement != expectedEngagement {
+		t.Errorf("Expected engagement %.2f, got %.2f", expectedEngagement, score.Engagement)
+	}
+
+	if score.WinProbCrossings != winProbCrossings {
+		t.Errorf("Expected win_prob_crossings %.0f, got %.0f", winProbCrossings, score.WinProbCrossings)
+	}
+
+	if score.CriticalMoments != criticalMoments {
+		t.Errorf("Expected critical_moments %d, got %d", criticalMoments, score.CriticalMoments)
+	}
+
+	if score.ResourceContestTurns != resourceContestTurns {
+		t.Errorf("Expected resource_contest_turns %d, got %d", resourceContestTurns, score.ResourceContestTurns)
+	}
+
+	if score.SurvivalTurns != survivalTurns {
+		t.Errorf("Expected survival_turns %d, got %d", survivalTurns, score.SurvivalTurns)
+	}
+}
+
+// TestMapEngagement_NoContestedEnergy verifies that energy contested by only one player is not counted.
+func TestMapEngagement_NoContestedEnergy(t *testing.T) {
+	replay := &Replay{
+		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Turns: []ReplayTurn{
+			{
+				Turn: 0,
+				Energy: []Position{{Row: 5, Col: 5}},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 5, Col: 4}, Alive: true, Owner: 0}, // Only player 0 adjacent
+				},
+			},
+			{
+				Turn: 1,
+				Energy: []Position{}, // No energy
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+				},
+			},
+		},
+		Map: ReplayMap{
+			Walls: []Position{{Row: 15, Col: 15}},
+		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
+	}
+
+	score := CalculateMapEngagement(replay)
+
+	if score.ResourceContestTurns != 0 {
+		t.Errorf("Expected 0 resource contest turns, got %d", score.ResourceContestTurns)
+	}
+}
+
+// TestMapEngagement_PlayerElimination verifies survival turns count decreases when a player is eliminated.
+func TestMapEngagement_PlayerElimination(t *testing.T) {
+	replay := &Replay{
+		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Turns: []ReplayTurn{
+			{
+				Turn: 0,
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: true, Owner: 1},
+				},
+			},
+			{
+				Turn: 1,
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: true, Owner: 1},
+				},
+			},
+			{
+				Turn: 2,
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: false, Owner: 1}, // Eliminated
+				},
+			},
+			{
+				Turn: 3,
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+					{Position: Position{Row: 10, Col: 10}, Alive: false, Owner: 1}, // Still dead
+				},
+			},
+		},
+		Map: ReplayMap{
+			Walls: []Position{{Row: 15, Col: 15}},
+		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
+	}
+
+	score := CalculateMapEngagement(replay)
+
+	// Only turns 0 and 1 have all players alive
+	if score.SurvivalTurns != 2 {
+		t.Errorf("Expected 2 survival turns, got %d", score.SurvivalTurns)
 	}
 }
 

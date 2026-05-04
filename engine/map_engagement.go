@@ -4,17 +4,16 @@ import "math"
 
 // MapEngagementScore represents the engagement metrics for a map from a single match.
 type MapEngagementScore struct {
-	WinProbCrossings float64 // Number of times win prob crossed 50%
-	CriticalMoments  int     // Count of critical moments
-	MapCoveragePct   float64 // Percentage of map tiles visited
-	Closeness        float64 // 1.0 - (score_diff / max_possible_score)
-	TurnPct          float64 // Actual turns / max_turns
-	Engagement       float64 // Combined engagement score
+	WinProbCrossings     float64 // Number of times win prob crossed 50%
+	CriticalMoments      int     // Count of critical moments (bot deaths/captures)
+	ResourceContestTurns int     // Turns where energy was contested (multiple players adjacent)
+	SurvivalTurns        int     // Turns where all players had at least one bot alive
+	Engagement           float64 // Combined engagement score
 }
 
 // CalculateMapEngagement computes the engagement score for a map based on replay data.
-// The engagement formula is:
-// engagement = win_prob_crossings * 3.0 + critical_moments * 2.0 + map_coverage_pct * 1.0 + closeness * 2.0 + turn_pct * 1.0
+// The engagement formula (from plan §14.6) is:
+// score = win_prob_crossings * 3.0 + critical_moments * 2.0 + resource_contest_turns * 1.5 + survival_turns * 0.5
 func CalculateMapEngagement(replay *Replay) MapEngagementScore {
 	if replay == nil || len(replay.Turns) == 0 {
 		return MapEngagementScore{}
@@ -23,32 +22,27 @@ func CalculateMapEngagement(replay *Replay) MapEngagementScore {
 	// Count win probability crossings (times the leader changed)
 	winProbCrossings := countWinProbCrossings(replay.WinProb)
 
-	// Count critical moments
+	// Count critical moments (bot deaths/captures with significant win prob shifts)
 	criticalMoments := len(replay.CriticalMoments)
 
-	// Calculate map coverage (percentage of unique tiles visited)
-	mapCoveragePct := calculateMapCoverage(replay)
+	// Count resource contest turns (turns where energy was contested)
+	resourceContestTurns := countResourceContestTurns(replay)
 
-	// Calculate closeness (how close the final score was)
-	closeness := calculateCloseness(replay)
+	// Count survival turns (turns where all players had at least one bot alive)
+	survivalTurns := countSurvivalTurns(replay)
 
-	// Calculate turn percentage
-	turnPct := float64(replay.Result.Turns) / float64(replay.Config.MaxTurns)
-
-	// Calculate combined engagement score
+	// Calculate combined engagement score per plan §14.6
 	engagement := float64(winProbCrossings)*3.0 +
 		float64(criticalMoments)*2.0 +
-		mapCoveragePct*1.0 +
-		closeness*2.0 +
-		turnPct*1.0
+		float64(resourceContestTurns)*1.5 +
+		float64(survivalTurns)*0.5
 
 	return MapEngagementScore{
-		WinProbCrossings: winProbCrossings,
-		CriticalMoments:  criticalMoments,
-		MapCoveragePct:   mapCoveragePct,
-		Closeness:        closeness,
-		TurnPct:          turnPct,
-		Engagement:       engagement,
+		WinProbCrossings:     winProbCrossings,
+		CriticalMoments:      criticalMoments,
+		ResourceContestTurns: resourceContestTurns,
+		SurvivalTurns:        survivalTurns,
+		Engagement:           engagement,
 	}
 }
 
@@ -177,4 +171,115 @@ func calculateCloseness(replay *Replay) float64 {
 	}
 
 	return 1.0 - normalizedDiff
+}
+
+// countResourceContestTurns counts turns where energy was contested by multiple players.
+// A turn is contested if at least one energy tile has bots from two or more different players
+// adjacent to it (meaning they could both collect it, but contested energy is destroyed).
+func countResourceContestTurns(replay *Replay) int {
+	if replay == nil || len(replay.Turns) == 0 {
+		return 0
+	}
+
+	contestedTurns := 0
+
+	for _, turn := range replay.Turns {
+		if isEnergyContested(turn) {
+			contestedTurns++
+		}
+	}
+
+	return contestedTurns
+}
+
+// isEnergyContested checks if any energy in this turn is contested by multiple players.
+// Energy is contested when two or more players have bots adjacent to the same energy node.
+func isEnergyContested(turn ReplayTurn) bool {
+	if len(turn.Energy) == 0 {
+		return false
+	}
+
+	// For each energy tile, check which players have adjacent bots
+	for _, energyPos := range turn.Energy {
+		playersAdjacent := make(map[int]struct{})
+
+		for _, bot := range turn.Bots {
+			if !bot.Alive {
+				continue
+			}
+
+			// Check if bot is adjacent to this energy (including being on it)
+			dist := toroidalDistance(bot.Position, energyPos, int(turn.Bots[0].Position.Row), int(turn.Bots[0].Position.Col))
+			if dist <= 1.5 { // Adjacent or on the tile (using sqrt(2) ~ 1.41 for diagonal)
+				playersAdjacent[bot.Owner] = struct{}{}
+			}
+		}
+
+		// If 2+ players are adjacent to this energy, it's contested
+		if len(playersAdjacent) >= 2 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// countSurvivalTurns counts turns where all players had at least one bot alive.
+// This indicates the match was still competitive with all participants active.
+func countSurvivalTurns(replay *Replay) int {
+	if replay == nil || len(replay.Turns) == 0 {
+		return 0
+	}
+
+	numPlayers := len(replay.Players)
+	if numPlayers == 0 {
+		return 0
+	}
+
+	survivalTurns := 0
+
+	for _, turn := range replay.Turns {
+		if allPlayersAlive(turn, numPlayers) {
+			survivalTurns++
+		}
+	}
+
+	return survivalTurns
+}
+
+// allPlayersAlive checks if every player has at least one living bot.
+func allPlayersAlive(turn ReplayTurn, numPlayers int) bool {
+	playersWithBots := make(map[int]struct{})
+
+	for _, bot := range turn.Bots {
+		if bot.Alive {
+			playersWithBots[bot.Owner] = struct{}{}
+		}
+	}
+
+	// All players must have at least one living bot
+	return len(playersWithBots) == numPlayers
+}
+
+// toroidalDistance computes the toroidal distance between two positions.
+func toroidalDistance(a, b Position, rows, cols int) float64 {
+	dr := float64(a.Row - b.Row)
+	dc := float64(a.Col - b.Col)
+
+	// Handle toroidal wrapping
+	if dr < 0 {
+		dr = -dr
+	}
+	if dr > float64(rows)/2 {
+		dr = float64(rows) - dr
+	}
+
+	if dc < 0 {
+		dc = -dc
+	}
+	if dc > float64(cols)/2 {
+		dc = float64(cols) - dc
+	}
+
+	return dr*dr + dc*dc // Return squared distance for comparison
 }
