@@ -1,0 +1,14 @@
+{
+    "name": "acb-starter-php",
+    "description": "PHP starter kit for AI Code Battle",
+    "type": "project",
+    "require": {
+        "php": ">=8.4"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "AcbStarter\\": "src/"
+        }
+    }
+}
