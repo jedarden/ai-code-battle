@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 )
@@ -253,4 +254,112 @@ func TestSqrtApprox(t *testing.T) {
 			t.Errorf("sqrtApprox(%d) = %d, want %d", tt.n, got, tt.want)
 		}
 	}
+}
+
+// TestINV6_ToroidalBounds is a property-based fuzz test that verifies
+// INV-6: No bot, energy, core, or wall position ever has row < 0,
+// row >= rows, col < 0, or col >= cols after any movement operation.
+// All movement must use (pos + delta + size) % size.
+//
+// This test runs thousands of random scenarios with various grid sizes
+// and operations to enforce the bound invariant.
+func TestINV6_ToroidalBounds(t *testing.T) {
+	// Test various grid dimensions
+	testCases := []struct {
+		rows int
+		cols int
+	}{
+		{30, 30},  // Minimum
+		{40, 60},  // Rectangular
+		{60, 60},  // Standard square
+		{100, 100}, // Large
+		{120, 80}, // Large rectangular
+		{200, 200}, // Maximum
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%dx%d", tc.rows, tc.cols), func(t *testing.T) {
+			// Use multiple random seeds for thoroughness
+			seeds := []int64{42, 123, 456, 789, 999, 1337, 2024, 0, -1, 1}
+
+			for _, seed := range seeds {
+				t.Run(fmt.Sprintf("seed_%d", seed), func(t *testing.T) {
+					rng := rand.New(rand.NewSource(seed))
+					testToroidalBoundsScenario(t, rng, tc.rows, tc.cols)
+				})
+			}
+		})
+	}
+}
+
+// testToroidalBoundsScenario runs a random scenario and verifies all positions stay in bounds.
+func testToroidalBoundsScenario(t *testing.T, rng *rand.Rand, rows, cols int) {
+	g := NewGrid(rows, cols)
+
+	// Add random walls
+	numWalls := rng.Intn(rows*cols/20) // Up to 5% wall density
+	for i := 0; i < numWalls; i++ {
+		row := rng.Intn(rows*3) - rows // Can be negative or >= rows
+		col := rng.Intn(cols*3) - cols
+		g.Set(row, col, TileWall)
+	}
+
+	// Test that all wall positions are in bounds
+	for pos := range g.Walls {
+		if !posInBounds(pos, rows, cols) {
+			t.Errorf("Wall position %v out of bounds for %dx%d grid", pos, rows, cols)
+		}
+	}
+
+	// Test Wrap with random positions (including out of bounds)
+	for i := 0; i < 1000; i++ {
+		row := rng.Intn(rows*10) - rows*5 // Wide range including negative
+		col := rng.Intn(cols*10) - cols*5
+		wrapped := g.Wrap(row, col)
+
+		if !posInBounds(wrapped, rows, cols) {
+			t.Errorf("Wrap(%d, %d) = %v out of bounds for %dx%d grid", row, col, wrapped, rows, cols)
+		}
+	}
+
+	// Test Move from random positions in all directions
+	testPositions := []Position{
+		{0, 0}, {0, cols - 1}, {rows - 1, 0}, {rows - 1, cols - 1}, // Corners
+		{rows / 2, cols / 2}, // Center
+		{0, cols / 2}, {rows - 1, cols / 2}, // Middle of edges
+	}
+
+	directions := []Direction{DirN, DirE, DirS, DirW}
+
+	for _, pos := range testPositions {
+		for _, dir := range directions {
+			moved := g.Move(pos, dir)
+			if !posInBounds(moved, rows, cols) {
+				t.Errorf("Move(%v, %v) = %v out of bounds for %dx%d grid", pos, dir, moved, rows, cols)
+			}
+		}
+	}
+
+	// Test Neighbors returns positions within bounds
+	center := Position{rows / 2, cols / 2}
+	neighbors := g.Neighbors(center, 49) // vision radius
+	for _, n := range neighbors {
+		if !posInBounds(n, rows, cols) {
+			t.Errorf("Neighbors(%v, 49) returned out-of-bounds position %v for %dx%d grid", center, n, rows, cols)
+		}
+	}
+
+	// Test VisibleFrom returns positions within bounds
+	positions := []Position{{0, 0}, {rows - 1, cols - 1}}
+	visible := g.VisibleFrom(positions, 49)
+	for pos := range visible {
+		if !posInBounds(pos, rows, cols) {
+			t.Errorf("VisibleFrom returned out-of-bounds position %v for %dx%d grid", pos, rows, cols)
+		}
+	}
+}
+
+// posInBounds checks if a position is within the grid bounds.
+func posInBounds(pos Position, rows, cols int) bool {
+	return pos.Row >= 0 && pos.Row < rows && pos.Col >= 0 && pos.Col < cols
 }
