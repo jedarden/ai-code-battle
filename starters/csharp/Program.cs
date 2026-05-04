@@ -25,6 +25,9 @@ var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok("OK"));
 
+// --- Constants ---
+string[] Directions = ["N", "E", "S", "W"];
+
 app.MapPost("/turn", (HttpContext ctx) =>
 {
     var signature = ctx.Request.Headers["X-ACB-Signature"].FirstOrDefault() ?? "";
@@ -72,8 +75,6 @@ app.Run();
 
 // --- Strategy ---
 // Replace this with your own logic!
-
-string[] Directions = ["N", "E", "S", "W"];
 
 List<Move> ComputeMoves(GameState state)
 {

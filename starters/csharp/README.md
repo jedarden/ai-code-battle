@@ -53,6 +53,27 @@ Dockerfile                    # Container build
 - `Grid.Neighbors(p, rows, cols)` — 8-directional neighbors with wrap
 - `Grid.Bfs(start, goal, passable, rows, cols)` — BFS pathfinding, returns path or `null`
 
+## Testing
+
+Unit tests for the Grid helper methods are provided in the `tests/GridTests/` directory.
+
+```bash
+# Run tests locally
+cd tests/GridTests
+dotnet restore
+dotnet test
+
+# Run tests with Docker
+docker build --target test -t my-bot-tests .
+docker run --rm my-bot-tests
+```
+
+The test suite covers:
+- Toroidal distance calculations (Manhattan and Chebyshev)
+- Wrap-around behavior at grid boundaries
+- 8-directional neighbor enumeration
+- BFS pathfinding with obstacles
+
 ## Customization
 
 Edit `ComputeMoves()` in `Program.cs` to implement your strategy. The `GameState` record provides:

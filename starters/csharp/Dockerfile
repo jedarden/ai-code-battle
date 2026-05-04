@@ -1,3 +1,4 @@
+# Build stage
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS builder
 
 WORKDIR /app
@@ -6,7 +7,17 @@ RUN dotnet restore
 COPY Program.cs Grid.cs .
 RUN dotnet publish -c Release -o /out
 
-FROM mcr.microsoft.com/dotnet/runtime:9.0-alpine
+# Test stage
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS test
+WORKDIR /app/tests/GridTests
+COPY tests/GridTests/GridTests.csproj .
+RUN dotnet restore
+COPY tests/GridTests/GridTests.cs .
+COPY tests/GridTests/Grid.cs .
+RUN dotnet test
+
+# Runtime stage - use ASP.NET Core runtime for web apps
+FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
 
 WORKDIR /app
 COPY --from=builder /out .
