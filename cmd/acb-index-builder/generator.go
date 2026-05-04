@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"math"
 	"os"
@@ -182,6 +183,15 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB, cfg *Conf
 	// Generate per-match feedback (data/matches/{id}/feedback.json)
 	if err := generateMatchFeedback(data, outputDir); err != nil {
 		return fmt.Errorf("match feedback: %w", err)
+	}
+
+	// Generate sitemap.xml (final pass, written alongside leaderboard.json)
+	siteURL := cfg.SiteURL
+	if siteURL == "" {
+		siteURL = "https://aicodebattle.com"
+	}
+	if err := generateSitemap(data, outputDir, siteURL); err != nil {
+		return fmt.Errorf("sitemap: %w", err)
 	}
 
 	return nil
@@ -2042,6 +2052,166 @@ func generateMatchFeedback(data *IndexData, outputDir string) error {
 		if err := writeJSON(filepath.Join(matchDir, "feedback.json"), file); err != nil {
 			return fmt.Errorf("write feedback for match %s: %w", matchID, err)
 		}
+	}
+
+	return nil
+}
+
+// ─── Sitemap Generation ───────────────────────────────────────────────────────────
+
+// SitemapURL represents a single URL entry in the sitemap
+type SitemapURL struct {
+	Loc        string `xml:"loc"`
+	LastMod    string `xml:"lastmod,omitempty"`
+	ChangeFreq string `xml:"changefreq,omitempty"`
+	Priority   string `xml:"priority,omitempty"`
+}
+
+// Sitemap represents the root sitemap XML structure
+type Sitemap struct {
+	XMLName xml.Name    `xml:"urlset"`
+	Xmlns   string      `xml:"xmlns,attr"`
+	URLs    []SitemapURL `xml:"url"`
+}
+
+// generateSitemap creates sitemap.xml covering all public pages
+func generateSitemap(data *IndexData, outputDir string, siteURL string) error {
+	now := data.GeneratedAt.Format("2006-01-02")
+
+	urls := []SitemapURL{
+		// Core pages
+		{Loc: siteURL + "/", LastMod: now, ChangeFreq: "hourly", Priority: "1.0"},
+		{Loc: siteURL + "/leaderboard", LastMod: now, ChangeFreq: "hourly", Priority: "0.9"},
+		{Loc: siteURL + "/watch", LastMod: now, ChangeFreq: "hourly", Priority: "0.9"},
+		{Loc: siteURL + "/watch/replays", LastMod: now, ChangeFreq: "hourly", Priority: "0.8"},
+		{Loc: siteURL + "/compete", LastMod: now, ChangeFreq: "daily", Priority: "0.7"},
+		{Loc: siteURL + "/compete/register", LastMod: now, ChangeFreq: "monthly", Priority: "0.5"},
+		{Loc: siteURL + "/compete/sandbox", LastMod: now, ChangeFreq: "monthly", Priority: "0.5"},
+		{Loc: siteURL + "/compete/docs", LastMod: now, ChangeFreq: "weekly", Priority: "0.6"},
+		{Loc: siteURL + "/evolution", LastMod: now, ChangeFreq: "hourly", Priority: "0.8"},
+		{Loc: siteURL + "/blog", LastMod: now, ChangeFreq: "daily", Priority: "0.7"},
+		{Loc: siteURL + "/watch/predictions", LastMod: now, ChangeFreq: "hourly", Priority: "0.7"},
+	}
+
+	// Bot list page
+	urls = append(urls, SitemapURL{
+		Loc: siteURL + "/bots",
+		LastMod: now,
+		ChangeFreq: "daily",
+		Priority: "0.8",
+	})
+
+	// Individual bot profiles (limit to 1000 for sitemap size)
+	for i, bot := range data.Bots {
+		if i >= 1000 {
+			break
+		}
+		priority := "0.6"
+		if i < 10 {
+			priority = "0.8" // Top bots get higher priority
+		}
+		urls = append(urls, SitemapURL{
+			Loc: siteURL + "/bot/" + bot.ID,
+			LastMod: bot.UpdatedAt.Format("2006-01-02"),
+			ChangeFreq: "daily",
+			Priority: priority,
+		})
+	}
+
+	// Individual match replay pages (limit to 500 most recent)
+	for i, m := range data.Matches {
+		if i >= 500 {
+			break
+		}
+		priority := "0.5"
+		if m.WinnerID != "" && m.CombatTurns > 0 {
+			priority = "0.7" // Completed matches with combat get priority
+		}
+		var lastMod string
+		if !m.CompletedAt.IsZero() {
+			lastMod = m.CompletedAt.Format("2006-01-02")
+		} else {
+			lastMod = m.CreatedAt.Format("2006-01-02")
+		}
+		urls = append(urls, SitemapURL{
+			Loc: siteURL + "/watch/replay/" + m.ID,
+			LastMod: lastMod,
+			ChangeFreq: "monthly",
+			Priority: priority,
+		})
+	}
+
+	// Series pages
+	for _, s := range data.Series {
+		urls = append(urls, SitemapURL{
+			Loc: siteURL + "/watch/series/" + fmt.Sprintf("%d", s.ID),
+			LastMod: s.UpdatedAt.Format("2006-01-02"),
+			ChangeFreq: "weekly",
+			Priority: "0.6",
+		})
+	}
+
+	// Seasons list page
+	urls = append(urls, SitemapURL{
+		Loc: siteURL + "/season",
+		LastMod: now,
+		ChangeFreq: "weekly",
+		Priority: "0.7",
+	})
+
+	// Individual season pages
+	for _, s := range data.Seasons {
+		urls = append(urls, SitemapURL{
+			Loc: siteURL + "/season/" + fmt.Sprintf("%d", s.ID),
+			LastMod: s.StartsAt.Format("2006-01-02"),
+			ChangeFreq: "weekly",
+			Priority: "0.7",
+		})
+	}
+
+	// Rivalries page
+	urls = append(urls, SitemapURL{
+		Loc: siteURL + "/rivalries",
+		LastMod: now,
+		ChangeFreq: "weekly",
+		Priority: "0.6",
+	})
+
+	// Docs pages
+	docsPages := []string{"protocol", "replay-format", "getting-started", "starter-kits"}
+	for _, doc := range docsPages {
+		urls = append(urls, SitemapURL{
+			Loc: siteURL + "/compete/docs/" + doc,
+			LastMod: now,
+			ChangeFreq: "monthly",
+			Priority: "0.5",
+		})
+	}
+
+	// Build XML sitemap
+	sitemap := Sitemap{
+		Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9",
+		URLs:  urls,
+	}
+
+	// Write sitemap.xml to output directory (alongside leaderboard.json in the Pages deploy)
+	outputPath := filepath.Join(outputDir, "sitemap.xml")
+	f, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("create sitemap.xml: %w", err)
+	}
+	defer f.Close()
+
+	// Write XML header
+	if _, err := f.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n"); err != nil {
+		return fmt.Errorf("write xml header: %w", err)
+	}
+
+	// Write sitemap content
+	enc := xml.NewEncoder(f)
+	enc.Indent("", "  ")
+	if err := enc.Encode(sitemap); err != nil {
+		return fmt.Errorf("encode sitemap: %w", err)
 	}
 
 	return nil

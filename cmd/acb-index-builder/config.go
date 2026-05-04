@@ -41,6 +41,9 @@ type Config struct {
 	// Output directory for generated files
 	OutputDir string
 
+	// Site URL for sitemap generation
+	SiteURL string
+
 	// Site build image — when set, the index builder pulls the latest SPA
 	// shell from the container registry instead of using baked-in assets.
 	SiteBuildImage   string // e.g. forgejo.ardenone.com/ai-code-battle/acb-site-build:latest
@@ -82,6 +85,7 @@ func LoadConfig() *Config {
 		B2BucketName: os.Getenv("ACB_B2_BUCKET"),
 
 		OutputDir: getEnv("ACB_OUTPUT_DIR", "/tmp/acb-index"),
+		SiteURL:   getEnv("ACB_SITE_URL", "https://aicodebattle.com"),
 
 		SiteBuildImage:   os.Getenv("ACB_SITE_BUILD_IMAGE"),
 		SiteBuildPath:    getEnv("ACB_SITE_BUILD_PATH", "dist"),
