@@ -68,6 +68,31 @@ func TestIntegration_HTTPMatch(t *testing.T) {
 	}
 
 	t.Logf("Match completed: Winner=%d, Turns=%d", result.Winner, result.Turns)
+
+	// Verify win_prob array is populated (task: bf-qps)
+	if len(replay.WinProb) == 0 {
+		t.Error("Replay WinProb array is empty - ComputeWinProbability was not called")
+	}
+
+	// Verify WinProb entries have correct length (should equal number of players)
+	if len(replay.WinProb) > 0 && len(replay.WinProb[0]) != len(replay.Players) {
+		t.Errorf("WinProb entries have %d values, want %d (number of players)", len(replay.WinProb[0]), len(replay.Players))
+	}
+
+	// Verify WinProb values are in valid range [0, 1]
+	for i, entry := range replay.WinProb {
+		for j, prob := range entry {
+			if prob < 0 || prob > 1 {
+				t.Errorf("WinProb entry %d player %d has invalid probability %.2f (want 0-1)", i, j, prob)
+			}
+		}
+	}
+
+	// Verify critical moments are populated
+	t.Logf("Critical moments detected: %d", len(replay.CriticalMoments))
+	for _, m := range replay.CriticalMoments {
+		t.Logf("  Turn %d: delta=%.2f, player=%d, desc=%s", m.Turn, m.Delta, m.Player, m.Description)
+	}
 }
 
 // TestIntegration_HMACAuthentication verifies HMAC signing works end-to-end.

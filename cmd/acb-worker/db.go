@@ -652,3 +652,40 @@ func updateSeriesResult(ctx context.Context, tx *sql.Tx, matchID string, winnerB
 	log.Printf("series: game %d result recorded — series %d, winner=%s", gameNum, seriesID, winnerBotID)
 	return nil
 }
+
+// UpdateMapEngagement updates the engagement score for a map using a rolling average.
+// The new engagement score is computed as: (old_engagement * match_count + new_engagement) / (match_count + 1)
+func (c *DBClient) UpdateMapEngagement(ctx context.Context, mapID string, engagementScore float64, turns int) error {
+	// Use a transaction to safely read and update the engagement score
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get current engagement and match count
+	var currentEngagement float64
+	var matchCount int
+	err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(engagement, 0.0), COALESCE(match_count, 0)
+		FROM maps WHERE map_id = $1
+	`, mapID).Scan(&currentEngagement, &matchCount)
+	if err != nil {
+		return fmt.Errorf("failed to get current map stats: %w", err)
+	}
+
+	// Compute rolling average
+	newEngagement := (currentEngagement*float64(matchCount) + engagementScore) / float64(matchCount+1)
+
+	// Update engagement and match count
+	_, err = tx.ExecContext(ctx, `
+		UPDATE maps
+		SET engagement = $1, match_count = match_count + 1, last_used_at = NOW()
+		WHERE map_id = $2
+	`, newEngagement, mapID)
+	if err != nil {
+		return fmt.Errorf("failed to update map engagement: %w", err)
+	}
+
+	return tx.Commit()
+}

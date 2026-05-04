@@ -392,6 +392,17 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 	// Compute combat_turns: count distinct turns where ≥1 bot died from "combat" (enemy kill)
 	result.CombatTurns = computeCombatTurns(replay)
 
+	// Calculate map engagement score from replay
+	engagement := engine.CalculateMapEngagement(replay)
+	w.logger.Printf("Map engagement: crossings=%.0f, critical_moments=%d, coverage=%.2f%%, closeness=%.2f, score=%.2f",
+		engagement.WinProbCrossings, engagement.CriticalMoments, engagement.MapCoveragePct*100, engagement.Closeness, engagement.Engagement)
+
+	// Update map engagement in database
+	if err := w.db.UpdateMapEngagement(ctx, claimData.Match.MapID, engagement.Engagement, result.Turns); err != nil {
+		// Log but don't fail the match — map engagement is non-critical
+		w.logger.Printf("Warning: failed to update map engagement: %v", err)
+	}
+
 	return result, replay, nil
 }
 
