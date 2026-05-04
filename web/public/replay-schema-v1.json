@@ -1,0 +1,605 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicodebattle.com/replay-schema-v1.json",
+  "title": "AI Code Battle Replay Format",
+  "description": "Complete replay format for AI Code Battle matches. Documents the full game state for each turn, enabling third-party tooling and replay viewers.",
+  "type": "object",
+  "required": [
+    "format_version",
+    "match_id",
+    "config",
+    "start_time",
+    "end_time",
+    "result",
+    "players",
+    "map",
+    "turns"
+  ],
+  "properties": {
+    "format_version": {
+      "type": "string",
+      "description": "Schema format version (semver). Current version is '1.0'. Additive changes only in future versions.",
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$"
+    },
+    "match_id": {
+      "type": "string",
+      "description": "Unique match identifier (format: m_ + 8 hex chars).",
+      "pattern": "^m_[a-f0-9]+$"
+    },
+    "config": {
+      "$ref": "#/$defs/Config"
+    },
+    "start_time": {
+      "type": "string",
+      "description": "Match start timestamp (RFC3339 UTC).",
+      "format": "date-time",
+      "examples": ["2026-03-29T20:07:12.514110787Z"]
+    },
+    "end_time": {
+      "type": "string",
+      "description": "Match end timestamp (RFC3339 UTC).",
+      "format": "date-time",
+      "examples": ["2026-03-29T20:07:12.520460415Z"]
+    },
+    "result": {
+      "$ref": "#/$defs/MatchResult"
+    },
+    "players": {
+      "type": "array",
+      "description": "Player information for all participants.",
+      "items": {
+        "$ref": "#/$defs/ReplayPlayer"
+      }
+    },
+    "map": {
+      "$ref": "#/$defs/ReplayMap"
+    },
+    "turns": {
+      "type": "array",
+      "description": "Turn-by-turn game state snapshots. Array length equals number of turns played.",
+      "items": {
+        "$ref": "#/$defs/ReplayTurn"
+      }
+    },
+    "win_prob": {
+      "type": "array",
+      "description": "Win probability per turn from Monte Carlo rollouts. Optional; may be computed post-match.",
+      "items": {
+        "type": "array",
+        "description": "Array of win probabilities [0.0-1.0] per player. Length equals player count.",
+        "items": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "critical_moments": {
+      "type": "array",
+      "description": "Significant turns where win probability shifted dramatically. Optional.",
+      "items": {
+        "$ref": "#/$defs/CriticalMoment"
+      }
+    }
+  },
+  "$defs": {
+    "Config": {
+      "type": "object",
+      "description": "Game configuration parameters.",
+      "required": [
+        "rows",
+        "cols",
+        "max_turns",
+        "vision_radius2",
+        "attack_radius2",
+        "spawn_cost",
+        "energy_interval",
+        "cores_per_player"
+      ],
+      "properties": {
+        "rows": {
+          "type": "integer",
+          "description": "Grid height (number of rows).",
+          "minimum": 30,
+          "maximum": 120,
+          "default": 60
+        },
+        "cols": {
+          "type": "integer",
+          "description": "Grid width (number of columns).",
+          "minimum": 30,
+          "maximum": 120,
+          "default": 60
+        },
+        "max_turns": {
+          "type": "integer",
+          "description": "Maximum number of turns before match ends.",
+          "minimum": 100,
+          "maximum": 1000,
+          "default": 500
+        },
+        "vision_radius2": {
+          "type": "integer",
+          "description": "Squared vision distance for fog of war. Actual vision radius is sqrt(vision_radius2).",
+          "minimum": 1,
+          "default": 49
+        },
+        "attack_radius2": {
+          "type": "integer",
+          "description": "Squared attack distance for combat. Actual attack radius is sqrt(attack_radius2).",
+          "minimum": 1,
+          "default": 5
+        },
+        "spawn_cost": {
+          "type": "integer",
+          "description": "Energy cost to spawn a new bot.",
+          "minimum": 1,
+          "default": 3
+        },
+        "energy_interval": {
+          "type": "integer",
+          "description": "Number of turns between energy spawns at energy nodes.",
+          "minimum": 1,
+          "default": 10
+        },
+        "cores_per_player": {
+          "type": "integer",
+          "description": "Number of starting cores per player.",
+          "minimum": 1,
+          "maximum": 2,
+          "default": 1
+        },
+        "map_id": {
+          "type": "string",
+          "description": "Map identifier from the map library.",
+          "pattern": "^map_[a-f0-9]+$"
+        },
+        "season_id": {
+          "type": "string",
+          "description": "Season identifier if this is a seasonal match.",
+          "pattern": "^s\\d+$"
+        },
+        "rules_version": {
+          "type": "string",
+          "description": "Rules version for seasonal rule variations.",
+          "pattern": "^\\d+$"
+        }
+      }
+    },
+    "MatchResult": {
+      "type": "object",
+      "description": "Final match outcome.",
+      "required": [
+        "winner",
+        "reason",
+        "turns",
+        "scores",
+        "energy",
+        "bots_alive"
+      ],
+      "properties": {
+        "winner": {
+          "type": "integer",
+          "description": "Winning player ID (0-indexed), or -1 for a draw.",
+          "minimum": -1
+        },
+        "reason": {
+          "type": "string",
+          "description": "How the match ended.",
+          "enum": [
+            "elimination",
+            "dominance",
+            "turns",
+            "draw",
+            "annihilation"
+          ]
+        },
+        "turns": {
+          "type": "integer",
+          "description": "Number of turns played.",
+          "minimum": 1
+        },
+        "scores": {
+          "type": "array",
+          "description": "Final score per player.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "energy": {
+          "type": "array",
+          "description": "Total energy collected per player (tiebreaker stat).",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "bots_alive": {
+          "type": "array",
+          "description": "Number of living bots per player at match end.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "crashed": {
+          "type": "array",
+          "description": "Per-player crash status. True if player's bot crashed during match.",
+          "items": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "ReplayPlayer": {
+      "type": "object",
+      "description": "Player information in a replay.",
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Player ID (0-indexed).",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string",
+          "description": "Player/bot name.",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "Position": {
+      "type": "object",
+      "description": "Grid position with toroidal (wraparound) topology.",
+      "required": ["row", "col"],
+      "properties": {
+        "row": {
+          "type": "integer",
+          "description": "Row coordinate (0-indexed). Wraps around grid height.",
+          "minimum": 0
+        },
+        "col": {
+          "type": "integer",
+          "description": "Column coordinate (0-indexed). Wraps around grid width.",
+          "minimum": 0
+        }
+      }
+    },
+    "ReplayCore": {
+      "type": "object",
+      "description": "Core position and ownership in the map definition.",
+      "required": ["position", "owner"],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "owner": {
+          "type": "integer",
+          "description": "Owning player ID (0-indexed).",
+          "minimum": 0
+        }
+      }
+    },
+    "ReplayMap": {
+      "type": "object",
+      "description": "Static map data.",
+      "required": ["rows", "cols", "walls", "cores", "energy_nodes"],
+      "properties": {
+        "rows": {
+          "type": "integer",
+          "description": "Map height (should match config.rows).",
+          "minimum": 30
+        },
+        "cols": {
+          "type": "integer",
+          "description": "Map width (should match config.cols).",
+          "minimum": 30
+        },
+        "walls": {
+          "type": "array",
+          "description": "All wall tile positions.",
+          "items": {
+            "$ref": "#/$defs/Position"
+          }
+        },
+        "cores": {
+          "type": "array",
+          "description": "All core positions and ownership.",
+          "items": {
+            "$ref": "#/$defs/ReplayCore"
+          }
+        },
+        "energy_nodes": {
+          "type": "array",
+          "description": "All energy node positions (where energy spawns periodically).",
+          "items": {
+            "$ref": "#/$defs/Position"
+          }
+        }
+      }
+    },
+    "ReplayBot": {
+      "type": "object",
+      "description": "Bot state at a specific turn.",
+      "required": ["id", "owner", "position", "alive"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Unique bot identifier within the match.",
+          "minimum": 0
+        },
+        "owner": {
+          "type": "integer",
+          "description": "Owning player ID (0-indexed).",
+          "minimum": 0
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "alive": {
+          "type": "boolean",
+          "description": "True if bot is alive, false if dead (dead bots persist for one turn for death animation)."
+        }
+      }
+    },
+    "ReplayCoreState": {
+      "type": "object",
+      "description": "Core state at a specific turn.",
+      "required": ["position", "owner", "active"],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "owner": {
+          "type": "integer",
+          "description": "Owning player ID (0-indexed).",
+          "minimum": 0
+        },
+        "active": {
+          "type": "boolean",
+          "description": "True if core can spawn bots, false if razed (captured by enemy)."
+        }
+      }
+    },
+    "Event": {
+      "type": "object",
+      "description": "Game event that occurred during a turn.",
+      "required": ["type", "turn", "details"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Event type.",
+          "enum": [
+            "bot_spawned",
+            "bot_died",
+            "energy_collected",
+            "core_captured",
+            "combat_death",
+            "collision_death"
+          ]
+        },
+        "turn": {
+          "type": "integer",
+          "description": "Turn number when event occurred.",
+          "minimum": 0
+        },
+        "details": {
+          "description": "Event-specific details. Structure depends on event type.",
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Details for bot_spawned event.",
+              "properties": {
+                "bot_id": { "type": "integer" },
+                "owner": { "type": "integer" },
+                "position": { "$ref": "#/$defs/Position" }
+              },
+              "required": ["bot_id", "owner", "position"]
+            },
+            {
+              "type": "object",
+              "description": "Details for bot_died event.",
+              "properties": {
+                "bot_id": { "type": "integer" },
+                "owner": { "type": "integer" },
+                "position": { "$ref": "#/$defs/Position" }
+              },
+              "required": ["bot_id", "owner", "position"]
+            },
+            {
+              "type": "object",
+              "description": "Details for energy_collected event.",
+              "properties": {
+                "owner": { "type": "integer" },
+                "position": { "$ref": "#/$defs/Position" }
+              },
+              "required": ["owner", "position"]
+            },
+            {
+              "type": "object",
+              "description": "Details for core_captured event.",
+              "properties": {
+                "position": { "$ref": "#/$defs/Position" },
+                "previous_owner": { "type": "integer" },
+                "captured_by": { "type": "integer" }
+              },
+              "required": ["position", "previous_owner", "captured_by"]
+            },
+            {
+              "type": "object",
+              "description": "Details for combat_death event.",
+              "properties": {
+                "bot_id": { "type": "integer" },
+                "owner": { "type": "integer" },
+                "position": { "$ref": "#/$defs/Position" },
+                "killers": {
+                  "type": "array",
+                  "description": "Enemy bots that contributed to the kill (within attack radius).",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "bot_id": { "type": "integer" },
+                      "owner": { "type": "integer" },
+                      "position": { "$ref": "#/$defs/Position" }
+                    },
+                    "required": ["bot_id", "owner", "position"]
+                  }
+                }
+              },
+              "required": ["bot_id", "owner", "position", "killers"]
+            },
+            {
+              "type": "object",
+              "description": "Details for collision_death event (two friendly bots moved to same tile).",
+              "properties": {
+                "bot_id": { "type": "integer" },
+                "owner": { "type": "integer" },
+                "position": { "$ref": "#/$defs/Position" }
+              },
+              "required": ["bot_id", "owner", "position"]
+            }
+          ]
+        }
+      }
+    },
+    "DebugTarget": {
+      "type": "object",
+      "description": "Debug target marker for bot telemetry visualization.",
+      "required": ["position", "label", "priority"],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "label": {
+          "type": "string",
+          "description": "Label for the target (e.g., 'energy', 'threat').",
+          "maxLength": 64
+        },
+        "priority": {
+          "type": "number",
+          "description": "Priority value for visual encoding (e.g., 0.0-1.0).",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "DebugInfo": {
+      "type": "object",
+      "description": "Optional bot debug telemetry (stored if bot provides debug field in move response).",
+      "properties": {
+        "reasoning": {
+          "type": "string",
+          "description": "Bot's reasoning for this turn's decisions.",
+          "maxLength": 1000
+        },
+        "targets": {
+          "type": "array",
+          "description": "Target markers for visualization.",
+          "items": {
+            "$ref": "#/$defs/DebugTarget"
+          }
+        }
+      }
+    },
+    "ReplayTurn": {
+      "type": "object",
+      "description": "Complete game state at the end of a turn.",
+      "required": [
+        "turn",
+        "bots",
+        "cores",
+        "energy",
+        "scores",
+        "energy_held"
+      ],
+      "properties": {
+        "turn": {
+          "type": "integer",
+          "description": "Turn number (0-indexed; turn 0 is initial state before any moves).",
+          "minimum": 0
+        },
+        "bots": {
+          "type": "array",
+          "description": "All bots in the match (including dead ones for death animation).",
+          "items": {
+            "$ref": "#/$defs/ReplayBot"
+          }
+        },
+        "cores": {
+          "type": "array",
+          "description": "All cores and their states.",
+          "items": {
+            "$ref": "#/$defs/ReplayCoreState"
+          }
+        },
+        "energy": {
+          "type": "array",
+          "description": "Positions where energy is currently available.",
+          "items": {
+            "$ref": "#/$defs/Position"
+          }
+        },
+        "scores": {
+          "type": "array",
+          "description": "Current score per player.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "energy_held": {
+          "type": "array",
+          "description": "Current energy held per player.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "events": {
+          "type": "array",
+          "description": "Events that occurred this turn. Optional for turns with no events.",
+          "items": {
+            "$ref": "#/$defs/Event"
+          }
+        },
+        "debug": {
+          "type": "object",
+          "description": "Per-player debug telemetry. Keys are player IDs.",
+          "additionalProperties": {
+            "$ref": "#/$defs/DebugInfo"
+          }
+        }
+      }
+    },
+    "CriticalMoment": {
+      "type": "object",
+      "description": "A turn where win probability shifted significantly.",
+      "required": ["turn", "delta", "player", "description"],
+      "properties": {
+        "turn": {
+          "type": "integer",
+          "description": "Turn number of the critical moment.",
+          "minimum": 0
+        },
+        "delta": {
+          "type": "number",
+          "description": "Change in win probability (absolute value).",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "player": {
+          "type": "integer",
+          "description": "Player whose win probability changed.",
+          "minimum": 0
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what happened.",
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}
