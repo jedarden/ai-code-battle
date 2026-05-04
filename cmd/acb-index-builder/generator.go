@@ -1977,16 +1977,18 @@ type CommunityHintsFile struct {
 	Hints       []CommunityHint `json:"hints"`
 }
 
-const communityHintMinUpvotes = 3
+const communityHintMinUpvotes = 10
 const communityHintMaxHints = 50
 
 // generateCommunityHints builds data/evolution/community_hints.json from
-// high-upvote 'idea' and 'mistake' feedback entries. The evolver reads this
-// file to include tactical community insights in LLM prompts.
+// high-upvote 'insight' and 'idea' feedback entries (mapping to 'hint' and
+// 'strategy' from plan §13.6). The evolver reads this file to include
+// tactical community insights in LLM prompts.
 func generateCommunityHints(data *IndexData, outputDir string) error {
 	var hints []CommunityHint
 	for _, f := range data.Feedback {
-		if f.Type != "idea" && f.Type != "mistake" {
+		// Filter for 'insight' (hint/tactical insight) and 'idea' (strategy idea)
+		if f.Type != "insight" && f.Type != "idea" {
 			continue
 		}
 		if f.Upvotes < communityHintMinUpvotes {
