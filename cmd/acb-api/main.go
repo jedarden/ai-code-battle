@@ -85,11 +85,12 @@ func main() {
 		cfg:         cfg,
 		db:          db,
 		rdb:         rdb,
-		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),   // 5/hour per IP
-		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600), // 20/hour per IP
-		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600), // 60/hour per IP
-		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),  // 5/day per key
-		voteLtr:     ratelimit.NewLimiter(10, 10.0/3600), // 10/hour per IP
+		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),    // 5/hour per IP
+		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600),  // 20/hour per IP
+		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600),  // 60/hour per IP
+		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),   // 5/day per key
+		enrichLtr:   ratelimit.NewLimiter(5, 5.0/86400),   // 5/day per bot
+		voteLtr:     ratelimit.NewLimiter(10, 10.0/3600),  // 10/hour per IP
 	}
 
 	// Initialize spam filter with configurable block-list
@@ -113,6 +114,7 @@ func main() {
 			srv.feedbackLtr.Cleanup(time.Hour)
 			srv.predictLtr.Cleanup(time.Hour)
 			srv.submitLtr.Cleanup(24 * time.Hour)
+			srv.enrichLtr.Cleanup(24 * time.Hour)
 			srv.voteLtr.Cleanup(time.Hour)
 		}
 	}()

@@ -274,6 +274,13 @@ DO $$ BEGIN
     END IF;
 END $$;
 
+-- Add enrichment_requested_at column to matches for idempotency (§13.3)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'matches' AND column_name = 'enrichment_requested_at') THEN
+        ALTER TABLE matches ADD COLUMN enrichment_requested_at TIMESTAMPTZ;
+    END IF;
+END $$;
+
 -- Community replay feedback (plan §13.6, §8.3)
 CREATE TABLE IF NOT EXISTS replay_feedback (
     feedback_id   VARCHAR(32) PRIMARY KEY,
@@ -294,6 +301,20 @@ CREATE TABLE IF NOT EXISTS feedback_upvotes (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (feedback_id, voter_id)
 );
+
+-- User-requested replay enrichment (plan §13.3)
+CREATE TABLE IF NOT EXISTS enrichment_requests (
+    request_id   VARCHAR(32) PRIMARY KEY,
+    match_id     VARCHAR(32) NOT NULL REFERENCES matches(match_id),
+    bot_id       VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
+    status       VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending, processing, completed, failed
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+    error_msg    TEXT,
+    UNIQUE(match_id, bot_id)
+);
+CREATE INDEX IF NOT EXISTS idx_enrichment_requests_status ON enrichment_requests(status, requested_at);
+CREATE INDEX IF NOT EXISTS idx_enrichment_requests_bot ON enrichment_requests(bot_id, requested_at);
 `
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {

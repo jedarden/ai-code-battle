@@ -32,6 +32,7 @@ type Server struct {
 	feedbackLtr  *ratelimit.Limiter // 20/hour per IP
 	predictLtr   *ratelimit.Limiter // 60/hour per IP
 	submitLtr    *ratelimit.Limiter // 5/day per bot_id
+	enrichLtr    *ratelimit.Limiter // 5/day per bot_id for enrichment requests
 	voteLtr      *ratelimit.Limiter // 10/hour per IP
 	spamFilter   *SpamFilter        // word/spam filter for feedback
 }
@@ -94,6 +95,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("POST /api/vote/map", mapVoteMW(http.HandlerFunc(s.handleMapVote)).ServeHTTP)
 	mux.HandleFunc("GET /api/vote/map/", s.handleGetMapVotes)
+
+	// User-requested replay enrichment — 5/day per bot (§13.3)
+	// Rate limiting is handled inside the handler after bot authentication
+	mux.HandleFunc("POST /api/request-enrichment", s.handleRequestEnrichment)
 }
 
 // ipKey extracts the client IP from the request for rate limiting.
@@ -1839,6 +1844,251 @@ func (s *Server) handleGetMapVotes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleRequestEnrichment handles POST /api/request-enrichment
+// Allows bot owners to request AI commentary for a specific match replay.
+// Requires bot authentication via shared_secret.
+// Rate limited to 5 requests/day per bot.
+// Returns 202 Accepted with estimated wait time.
+func (s *Server) handleRequestEnrichment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		MatchID string `json:"match_id"`
+		Secret  string `json:"shared_secret"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.MatchID == "" || req.Secret == "" {
+		writeError(w, http.StatusBadRequest, "match_id and shared_secret are required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// First, find the bot by matching the shared_secret
+	// We need to iterate since secrets are encrypted and we can't query by them
+	var botID string
+	var found bool
+
+	rows, err := s.db.QueryContext(ctx, `SELECT bot_id, shared_secret FROM bots WHERE shared_secret IS NOT NULL`)
+	if err != nil {
+		log.Printf("[ENRICHMENT] database error querying bots: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, encrypted string
+		if err := rows.Scan(&id, &encrypted); err != nil {
+			continue
+		}
+
+		// Decrypt and compare
+		var storedSecret string
+		if s.cfg.EncryptionKey != "" {
+			storedSecret, err = decryptSecret(encrypted, s.cfg.EncryptionKey)
+			if err != nil {
+				// If decryption fails, try treating it as plaintext
+				storedSecret = encrypted
+			}
+		} else {
+			storedSecret = encrypted
+		}
+
+		if storedSecret == req.Secret {
+			botID = id
+			found = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("[ENRICHMENT] error iterating bots: %v", err)
+	}
+
+	if !found {
+		writeError(w, http.StatusUnauthorized, "invalid shared_secret")
+		return
+	}
+
+	// Check rate limit: 5 requests per day per bot
+	_, allowed := s.enrichLtr.AllowN(botID, 1)
+	if !allowed {
+		metrics.RateLimitHits.WithLabelValues("enrichment").Inc()
+		writeError(w, http.StatusTooManyRequests, "rate limit exceeded: 5 enrichment requests per day per bot")
+		return
+	}
+
+	// Check if match exists and is completed
+	var matchStatus string
+	var enrichmentRequestedAt sql.NullTime
+	err = s.db.QueryRowContext(ctx, `
+		SELECT status, enrichment_requested_at FROM matches WHERE match_id = $1
+	`, req.MatchID).Scan(&matchStatus, &enrichmentRequestedAt)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "match not found")
+		return
+	} else if err != nil {
+		log.Printf("[ENRICHMENT] database error checking match: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	if matchStatus != "completed" {
+		writeError(w, http.StatusConflict, "match must be completed before requesting enrichment")
+		return
+	}
+
+	// Idempotency check: if enrichment was already requested for this match, return success
+	if enrichmentRequestedAt.Valid {
+		// Check if there's an existing enrichment request record
+		var existingRequestID sql.NullString
+		var existingStatus sql.NullString
+		err := s.db.QueryRowContext(ctx, `
+			SELECT request_id, status FROM enrichment_requests
+			WHERE match_id = $1 ORDER BY requested_at DESC LIMIT 1
+		`, req.MatchID).Scan(&existingRequestID, &existingStatus)
+
+		if err == nil {
+			status := existingStatus.String
+			waitSeconds := estimateWaitTime(status)
+
+			respStatus := http.StatusAccepted
+			if status == "completed" {
+				respStatus = http.StatusOK
+			}
+
+			writeJSON(w, respStatus, map[string]interface{}{
+				"status":           status,
+				"request_id":       existingRequestID.String,
+				"match_id":         req.MatchID,
+				"estimated_wait_s": waitSeconds,
+			})
+			return
+		} else if err != sql.ErrNoRows {
+			log.Printf("[ENRICHMENT] database error checking existing request: %v", err)
+		}
+	}
+
+	// Check if there's already a pending request for this match/bot combination
+	var existingRequestID sql.NullString
+	var existingStatus sql.NullString
+	err = s.db.QueryRowContext(ctx, `
+		SELECT request_id, status FROM enrichment_requests
+		WHERE match_id = $1 AND bot_id = $2
+	`, req.MatchID, botID).Scan(&existingRequestID, &existingStatus)
+	if err == nil {
+		// Request already exists from this bot
+		status := existingStatus.String
+		waitSeconds := estimateWaitTime(status)
+		writeJSON(w, http.StatusAccepted, map[string]interface{}{
+			"status":           status,
+			"request_id":       existingRequestID.String,
+			"match_id":         req.MatchID,
+			"estimated_wait_s": waitSeconds,
+		})
+		return
+	} else if err != sql.ErrNoRows {
+		log.Printf("[ENRICHMENT] database error checking existing request: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	// Create new enrichment request
+	requestID, err := generateID("req_", 6)
+	if err != nil {
+		log.Printf("[ENRICHMENT] failed to generate request ID: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to generate request ID")
+		return
+	}
+
+	// Insert the request and update the match's enrichment_requested_at timestamp
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("[ENRICHMENT] failed to begin transaction: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO enrichment_requests (request_id, match_id, bot_id, status, requested_at)
+		VALUES ($1, $2, $3, 'pending', NOW())
+	`, requestID, req.MatchID, botID)
+	if err != nil {
+		log.Printf("[ENRICHMENT] failed to insert enrichment request: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to create enrichment request")
+		return
+	}
+
+	// Mark the match as having enrichment requested (for idempotency)
+	_, err = tx.ExecContext(ctx, `
+		UPDATE matches SET enrichment_requested_at = NOW() WHERE match_id = $1
+	`, req.MatchID)
+	if err != nil {
+		log.Printf("[ENRICHMENT] failed to update match enrichment_requested_at: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to update match")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("[ENRICHMENT] failed to commit transaction: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to create enrichment request")
+		return
+	}
+
+	log.Printf("[ENRICHMENT] request created: id=%s match=%s bot=%s", requestID, req.MatchID, botID)
+
+	// Enqueue the match for acb-enrichment service by pushing to Valkey
+	if s.rdb != nil {
+		if err := s.enqueueForEnrichment(ctx, req.MatchID); err != nil {
+			log.Printf("[ENRICHMENT] failed to enqueue match for enrichment: %v", err)
+			// Don't fail the request - the enrichment service polls the database anyway
+		}
+	} else {
+		log.Printf("[ENRICHMENT] no Valkey connection, skipping queue enqueue")
+	}
+
+	waitSeconds := estimateWaitTime("pending")
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"status":           "pending",
+		"request_id":       requestID,
+		"match_id":         req.MatchID,
+		"estimated_wait_s": waitSeconds,
+	})
+}
+
+// enqueueForEnrichment pushes the match ID to a Valkey queue for the enrichment service.
+func (s *Server) enqueueForEnrichment(ctx context.Context, matchID string) error {
+	// Push to the enrichment queue in Valkey
+	// The enrichment service will BRPOP from this queue
+	return s.rdb.LPush(ctx, "acb:enrichment:queue", matchID).Err()
+}
+
+// estimateWaitTime returns an estimated wait time in seconds based on request status.
+func estimateWaitTime(status string) int {
+	switch status {
+	case "pending":
+		return 300  // 5 minutes for new requests
+	case "processing":
+		return 60   // 1 minute if already being processed
+	case "completed":
+		return 0    // Already done
+	case "failed":
+		return -1   // Failed - will retry
+	default:
+		return 300  // Default to 5 minutes
+	}
 }
 
 func getEnv(key, defaultValue string) string {

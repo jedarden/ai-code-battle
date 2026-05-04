@@ -30,6 +30,11 @@ func NewBucket(max, refillPerSec float64) *Bucket {
 
 // Allow consumes one token. Returns true if a token was available.
 func (b *Bucket) Allow() bool {
+	return b.AllowN(1)
+}
+
+// AllowN consumes n tokens. Returns true if n tokens were available.
+func (b *Bucket) AllowN(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -40,10 +45,10 @@ func (b *Bucket) Allow() bool {
 	if b.tokens > b.max {
 		b.tokens = b.max
 	}
-	if b.tokens < 1 {
+	if b.tokens < float64(n) {
 		return false
 	}
-	b.tokens--
+	b.tokens -= float64(n)
 	return true
 }
 
@@ -84,6 +89,11 @@ func NewLimiter(max, refillPerSec float64) *Limiter {
 
 // Allow checks the bucket for the given key. Creates one if needed.
 func (l *Limiter) Allow(key string) (*Bucket, bool) {
+	return l.AllowN(key, 1)
+}
+
+// AllowN checks if n tokens are available for the given key. Creates a bucket if needed.
+func (l *Limiter) AllowN(key string, n int) (*Bucket, bool) {
 	l.mu.Lock()
 	b, ok := l.buckets[key]
 	if !ok {
@@ -92,7 +102,7 @@ func (l *Limiter) Allow(key string) (*Bucket, bool) {
 	}
 	l.mu.Unlock()
 
-	return b, b.Allow()
+	return b, b.AllowN(n)
 }
 
 // Cleanup removes buckets that haven't been used in the given duration.
