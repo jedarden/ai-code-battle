@@ -635,7 +635,7 @@ func recalcRatings(ctx context.Context, db *DBClient, logger *log.Logger, verbos
 				currentRatings[p.BotID] = Glicko2Rating{
 					Mu:    glicko2DefaultMu,
 					Phi:   glicko2DefaultRD,
-					Sigma: glicko2Tau, // default sigma
+					Sigma: glicko2DefaultSigma, // default sigma
 				}
 			}
 		}

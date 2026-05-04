@@ -710,7 +710,7 @@ func (c *DBClient) ResetAllRatings(ctx context.Context) error {
 	_, err := c.db.ExecContext(ctx, `
 		UPDATE bots
 		SET rating_mu = $1, rating_phi = $2, rating_sigma = $3
-	`, glicko2DefaultMu, glicko2DefaultRD, glicko2Tau)
+	`, glicko2DefaultMu, glicko2DefaultRD, glicko2DefaultSigma)
 	if err != nil {
 		return fmt.Errorf("failed to reset ratings: %w", err)
 	}
