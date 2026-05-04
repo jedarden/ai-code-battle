@@ -33,6 +33,7 @@ type Server struct {
 	predictLtr   *ratelimit.Limiter // 60/hour per IP
 	submitLtr    *ratelimit.Limiter // 5/day per bot_id
 	voteLtr      *ratelimit.Limiter // 10/hour per IP
+	spamFilter   *SpamFilter        // word/spam filter for feedback
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
@@ -1495,6 +1496,7 @@ func (s *Server) handlePredictionHistory(w http.ResponseWriter, r *http.Request)
 // handleCreateFeedback handles POST /api/feedback
 // Accepts community replay feedback per plan §13.6.
 // Stores in replay_feedback table with type enum: insight, mistake, idea, highlight.
+// Applies spam filtering: minimum length check and blocked term detection.
 func (s *Server) handleCreateFeedback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -1526,6 +1528,13 @@ func (s *Server) handleCreateFeedback(w http.ResponseWriter, r *http.Request) {
 
 	if req.Author == "" {
 		req.Author = "Anonymous"
+	}
+
+	// Apply spam filter: check minimum length and blocked terms
+	if err := s.spamFilter.Check(req.Body); err != nil {
+		log.Printf("[FEEDBACK] spam filter rejected: match=%s turn=%d type=%s: %v", req.MatchID, req.Turn, req.Type, err)
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
 	}
 
 	feedbackID, err := generateID("fb_", 6)

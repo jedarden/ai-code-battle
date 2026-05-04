@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,6 +37,8 @@ type Config struct {
 	BotTimeoutSecs   int
 	StaleJobMinutes  int
 	MaxConsecFails   int
+	SpamBlockList    string // Comma-separated list of blocked terms (env: ACB_SPAM_BLOCK_LIST)
+	SpamMinLength    int    // Minimum feedback content length (env: ACB_SPAM_MIN_LENGTH)
 }
 
 func loadConfig() Config {
@@ -54,6 +57,8 @@ func loadConfig() Config {
 		BotTimeoutSecs:  envInt("ACB_BOT_TIMEOUT", 5),
 		StaleJobMinutes: envInt("ACB_STALE_JOB_MINUTES", 15),
 		MaxConsecFails:  envInt("ACB_MAX_CONSEC_FAILS", 3),
+		SpamBlockList:   os.Getenv("ACB_SPAM_BLOCK_LIST"),
+		SpamMinLength:   envInt("ACB_SPAM_MIN_LENGTH", 10),
 	}
 }
 
@@ -80,12 +85,24 @@ func main() {
 		cfg:         cfg,
 		db:          db,
 		rdb:         rdb,
-		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),     // 5/hour per IP
-		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600),   // 20/hour per IP
-		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600),   // 60/hour per IP
-		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),    // 5/day per key
-		voteLtr:     ratelimit.NewLimiter(10, 10.0/3600),   // 10/hour per IP
+		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),   // 5/hour per IP
+		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600), // 20/hour per IP
+		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600), // 60/hour per IP
+		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),  // 5/day per key
+		voteLtr:     ratelimit.NewLimiter(10, 10.0/3600), // 10/hour per IP
 	}
+
+	// Initialize spam filter with configurable block-list
+	var blockList []string
+	if cfg.SpamBlockList != "" {
+		blockList = strings.Split(cfg.SpamBlockList, ",")
+		for i := range blockList {
+			blockList[i] = strings.TrimSpace(blockList[i])
+		}
+	}
+	srv.spamFilter = NewSpamFilter(blockList, cfg.SpamMinLength)
+	log.Printf("[SPAMFILTER] initialized with %d blocked terms, min length %d",
+		srv.spamFilter.BlockedCount(), cfg.SpamMinLength)
 
 	// Periodically purge stale rate-limit buckets (every 10 min)
 	go func() {
