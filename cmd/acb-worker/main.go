@@ -23,6 +23,7 @@ import (
 	"github.com/aicodebattle/acb/metrics"
 	"image/png"
 )
+
 // Config holds worker configuration.
 type Config struct {
 	DatabaseURL   string        // PostgreSQL connection URL
@@ -63,6 +64,7 @@ func main() {
 	turnTimeout := flag.Duration("timeout", 3*time.Second, "Per-turn bot timeout")
 	maxRetries := flag.Int("retries", 3, "Max retries for transient errors")
 	verbose := flag.Bool("verbose", getEnv("ACB_VERBOSE", "false") == "true", "Enable verbose logging")
+	mode := flag.String("mode", "worker", "Operation mode: 'worker' (normal polling) or 'recalc-ratings' (disaster recovery)")
 	flag.Parse()
 
 	// Validate required config
@@ -96,6 +98,20 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer dbClient.Close()
+
+	// Handle different operation modes
+	switch *mode {
+	case "recalc-ratings":
+		// Disaster recovery: recompute all ratings from match history
+		logger := log.New(os.Stdout, "[recalc-ratings] ", log.LstdFlags)
+		if err := recalcRatings(context.Background(), dbClient, logger, *verbose); err != nil {
+			log.Fatalf("Rating recalculation failed: %v", err)
+		}
+		logger.Println("Rating recalculation completed successfully")
+		return
+	}
+
+	// Normal worker mode (default)
 
 	// Create B2 client (optional - if not configured, replays won't be uploaded to cold archive)
 	var b2Client *B2Client
@@ -236,6 +252,7 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 	metrics.MatchThroughput.Inc()
 	metrics.WorkerMatchesTotal.Inc()
 	metrics.WorkerMatchDuration.Observe(time.Since(matchStart).Seconds())
+
 	// Upload replay to B2
 	replayURL := ""
 	if w.b2 != nil {
@@ -577,4 +594,97 @@ func (w *Worker) computeRatingUpdates(claimData *JobClaimData, result *MatchResu
 
 	// Compute rating updates
 	return ComputeRatingUpdates(botIDs, ratings, scores)
+}
+
+// recalcRatings recalculates all Glicko-2 ratings from scratch by replaying
+// all completed matches in chronological order. Used for disaster recovery
+// when ratings are corrupted or lost.
+func recalcRatings(ctx context.Context, db *DBClient, logger *log.Logger, verbose bool) error {
+	logger.Println("Starting rating recalculation...")
+	logger.Println("Step 1: Resetting all bot ratings to defaults")
+
+	// Step 1: Reset all bot ratings to defaults
+	if err := db.ResetAllRatings(ctx); err != nil {
+		return fmt.Errorf("failed to reset ratings: %w", err)
+	}
+	logger.Println("  All ratings reset to defaults (mu=1500, phi=350, sigma=0.06)")
+
+	// Step 2: Fetch all completed matches in chronological order
+	logger.Println("Step 2: Fetching completed matches in chronological order")
+	matches, err := db.GetAllCompletedMatches(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch matches: %w", err)
+	}
+	logger.Printf("  Found %d completed matches to process", len(matches))
+
+	if len(matches) == 0 {
+		logger.Println("No matches to process, ratings remain at defaults")
+		return nil
+	}
+
+	// Step 3: Track current ratings in memory
+	currentRatings := make(map[string]Glicko2Rating)
+
+	// Step 4: Process each match in order
+	logger.Println("Step 3: Replaying matches to recompute ratings")
+	processed := 0
+	for _, match := range matches {
+		// Ensure all participants have default ratings initialized
+		for _, p := range match.Participants {
+			if _, exists := currentRatings[p.BotID]; !exists {
+				currentRatings[p.BotID] = Glicko2Rating{
+					Mu:    glicko2DefaultMu,
+					Phi:   glicko2DefaultRD,
+					Sigma: glicko2Tau, // default sigma
+				}
+			}
+		}
+
+		// Build arrays for rating computation
+		n := len(match.Participants)
+		botIDs := make([]string, n)
+		ratings := make([]Glicko2Rating, n)
+		scores := make([]float64, n)
+
+		for i, p := range match.Participants {
+			botIDs[i] = p.BotID
+			ratings[i] = currentRatings[p.BotID]
+
+			// Determine score based on match result
+			// If winner is a player slot, convert to bot_id and score accordingly
+			if match.Winner == nil {
+				// Draw or no winner
+				scores[i] = 0.5
+			} else if match.WinnerBotID != nil && *match.WinnerBotID == p.BotID {
+				scores[i] = 1.0
+			} else {
+				scores[i] = 0.0
+			}
+		}
+
+		// Compute new ratings using Glicko-2
+		newRatings := UpdateRatings(ratings, scores)
+
+		// Update stored ratings
+		for i, botID := range botIDs {
+			currentRatings[botID] = newRatings[i]
+		}
+
+		processed++
+		if processed%1000 == 0 || verbose {
+			logger.Printf("  Processed %d/%d matches (match_id=%s)", processed, len(matches), match.ID)
+		}
+	}
+
+	logger.Printf("  Processed all %d matches", processed)
+
+	// Step 5: Write final ratings back to database
+	logger.Println("Step 4: Writing recalculated ratings to database")
+	if err := db.UpdateAllRatings(ctx, currentRatings); err != nil {
+		return fmt.Errorf("failed to write ratings: %w", err)
+	}
+
+	logger.Printf("  Updated ratings for %d bots", len(currentRatings))
+	logger.Println("Rating recalculation complete")
+	return nil
 }

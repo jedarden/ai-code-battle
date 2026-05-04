@@ -689,3 +689,132 @@ func (c *DBClient) UpdateMapEngagement(ctx context.Context, mapID string, engage
 
 	return tx.Commit()
 }
+
+// CompletedMatchForRecalc represents a completed match with participants for rating recalculation.
+type CompletedMatchForRecalc struct {
+	ID          string
+	CompletedAt time.Time
+	Winner      *int      // player_slot of winner, nil for draw
+	WinnerBotID *string   // bot_id of winner (derived from winner player_slot)
+	Participants []MatchParticipantForRecalc
+}
+
+// MatchParticipantForRecalc represents a match participant for rating recalculation.
+type MatchParticipantForRecalc struct {
+	BotID string
+	PlayerSlot int
+}
+
+// ResetAllRatings resets all bot ratings to Glicko-2 default values.
+func (c *DBClient) ResetAllRatings(ctx context.Context) error {
+	_, err := c.db.ExecContext(ctx, `
+		UPDATE bots
+		SET rating_mu = $1, rating_phi = $2, rating_sigma = $3
+	`, glicko2DefaultMu, glicko2DefaultRD, glicko2Tau)
+	if err != nil {
+		return fmt.Errorf("failed to reset ratings: %w", err)
+	}
+	return nil
+}
+
+// GetAllCompletedMatches fetches all completed matches with their participants
+// in chronological order (by completed_at). Used for rating recovery.
+func (c *DBClient) GetAllCompletedMatches(ctx context.Context) ([]CompletedMatchForRecalc, error) {
+	// First, get all completed matches in order
+	rows, err := c.db.QueryContext(ctx, `
+		SELECT match_id, winner, completed_at
+		FROM matches
+		WHERE status = 'completed' AND completed_at IS NOT NULL
+		ORDER BY completed_at ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query completed matches: %w", err)
+	}
+	defer rows.Close()
+
+	var matches []CompletedMatchForRecalc
+	for rows.Next() {
+		var m CompletedMatchForRecalc
+		err := rows.Scan(&m.ID, &m.Winner, &m.CompletedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan match: %w", err)
+		}
+		matches = append(matches, m)
+	}
+
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("error iterating matches: %w", rows.Err())
+	}
+
+	// For each match, get participants
+	for i := range matches {
+		partRows, err := c.db.QueryContext(ctx, `
+			SELECT bot_id, player_slot
+			FROM match_participants
+			WHERE match_id = $1
+			ORDER BY player_slot
+		`, matches[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query participants for match %s: %w", matches[i].ID, err)
+		}
+
+		var participants []MatchParticipantForRecalc
+		for partRows.Next() {
+			var p MatchParticipantForRecalc
+			err := partRows.Scan(&p.BotID, &p.PlayerSlot)
+			if err != nil {
+				partRows.Close()
+				return nil, fmt.Errorf("failed to scan participant: %w", err)
+			}
+			participants = append(participants, p)
+		}
+		partRows.Close()
+
+		if partRows.Err() != nil {
+			return nil, fmt.Errorf("error iterating participants for match %s: %w", matches[i].ID, partRows.Err())
+		}
+
+		matches[i].Participants = participants
+
+		// Derive WinnerBotID from Winner (player_slot)
+		if matches[i].Winner != nil {
+			for _, p := range participants {
+				if p.PlayerSlot == *matches[i].Winner {
+					winnerID := p.BotID
+					matches[i].WinnerBotID = &winnerID
+					break
+				}
+			}
+		}
+	}
+
+	return matches, nil
+}
+
+// UpdateAllRatings updates all bot ratings in a single transaction.
+func (c *DBClient) UpdateAllRatings(ctx context.Context, ratings map[string]Glicko2Rating) error {
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+
+	for botID, rating := range ratings {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE bots
+			SET rating_mu = $1, rating_phi = $2, rating_sigma = $3, last_active = $4
+			WHERE bot_id = $5
+		`, rating.Mu, rating.Phi, rating.Sigma, now, botID)
+		if err != nil {
+			return fmt.Errorf("failed to update rating for bot %s: %w", botID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
