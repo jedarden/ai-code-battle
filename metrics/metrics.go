@@ -115,6 +115,37 @@ var (
 		Name: "acb_rate_limit_hits_total",
 		Help: "Total number of requests rejected by rate limiting.",
 	}, []string{"endpoint"})
+
+	// EnrichmentCycles counts enrichment cycles completed.
+	EnrichmentCycles = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "acb_enrichment_cycles_total",
+		Help: "Total number of enrichment cycles completed.",
+	}, []string{"status"})
+
+	// EnrichmentProcessed counts matches processed for enrichment.
+	EnrichmentProcessed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "acb_enrichment_processed_total",
+		Help: "Total number of matches processed for enrichment.",
+	})
+
+	// EnrichmentGenerated counts successful commentaries generated.
+	EnrichmentGenerated = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "acb_enrichment_generated_total",
+		Help: "Total number of commentaries successfully generated.",
+	})
+
+	// EnrichmentCycleDuration tracks enrichment cycle duration.
+	EnrichmentCycleDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "acb_enrichment_cycle_duration_seconds",
+		Help:    "Duration of enrichment cycles in seconds.",
+		Buckets: []float64{30, 60, 120, 300, 600, 900, 1800},
+	})
+
+	// EnrichmentLLMRequests counts LLM API requests for enrichment.
+	EnrichmentLLMRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "acb_enrichment_llm_requests_total",
+		Help: "Total number of LLM requests for enrichment.",
+	}, []string{"status"})
 )
 
 func init() {
@@ -135,6 +166,11 @@ func init() {
 		WorkerJobsClaimedTotal,
 		WorkerMatchDuration,
 		RateLimitHits,
+		EnrichmentCycles,
+		EnrichmentProcessed,
+		EnrichmentGenerated,
+		EnrichmentCycleDuration,
+		EnrichmentLLMRequests,
 	)
 }
 

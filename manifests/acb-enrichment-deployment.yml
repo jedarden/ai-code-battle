@@ -1,0 +1,156 @@
+# acb-enrichment: AI replay commentary service
+# Polls for featured matches, generates AI commentary via LLM, stores results.
+#
+# Staging file — sync to declarative-config/k8s/apexalgo-iad/ai-code-battle/
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: acb-enrichment
+  namespace: ai-code-battle
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acb-enrichment
+  namespace: ai-code-battle
+  labels:
+    app.kubernetes.io/name: acb-enrichment
+    app.kubernetes.io/part-of: ai-code-battle
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-enrichment
+    argocd-image-updater.argoproj.io/app.update-strategy: name
+    argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acb-enrichment
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: acb-enrichment
+        app.kubernetes.io/part-of: ai-code-battle
+    spec:
+      serviceAccountName: acb-enrichment
+      restartPolicy: Always
+      containers:
+        - name: enrichment
+          image: ronaldraygun/acb-enrichment@sha256:placeholder
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9090
+              protocol: TCP
+              name: metrics
+          env:
+            - name: ACB_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: acb-app-credentials-acb-app
+                  key: uri
+            - name: ACB_DATABASE_NAME
+              value: "acb"
+            # LLM configuration
+            - name: ACB_LLM_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: url
+                  optional: true
+            - name: ACB_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+                  optional: true
+            - name: ACB_LLM_MODEL
+              value: "gpt-4o-mini"
+            - name: ACB_LLM_MAX_TOKENS
+              value: "3000"
+            - name: ACB_LLM_TEMPERATURE
+              value: "0.7"
+            # Rate limiting
+            - name: ACB_ENRICHMENT_MAX_PER_HOUR
+              value: "20"
+            - name: ACB_ENRICHMENT_MAX_CONCURRENT
+              value: "3"
+            # B2 storage (cold archive)
+            - name: ACB_B2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: backblaze-secret
+                  key: endpoint
+                  optional: true
+            - name: ACB_B2_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: backblaze-secret
+                  key: bucket
+                  optional: true
+            - name: ACB_B2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backblaze-secret
+                  key: key-id
+                  optional: true
+            - name: ACB_B2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backblaze-secret
+                  key: secret-key
+                  optional: true
+            # R2 storage (warm cache - preferred)
+            - name: ACB_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-pages-secret
+                  key: r2-endpoint
+                  optional: true
+            - name: ACB_R2_BUCKET
+              value: "acb-data"
+            - name: ACB_R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-pages-secret
+                  key: r2-access-key
+                  optional: true
+            - name: ACB_R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-pages-secret
+                  key: r2-secret-key
+                  optional: true
+            # Enrichment criteria
+            - name: ACB_ENRICHMENT_MIN_TURNS
+              value: "100"
+            - name: ACB_ENRICHMENT_MIN_CROSSINGS
+              value: "3"
+            - name: ACB_ENRICHMENT_UPSET_THRESHOLD
+              value: "150"
+            # Timing
+            - name: ACB_ENRICHMENT_INTERVAL
+              value: "30m"
+            - name: ACB_ENRICHMENT_TIMEOUT
+              value: "25m"
+            - name: ACB_ENRICHMENT_MAX_LIFETIME
+              value: "4h"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          # Enrichment is a batch loop, not an HTTP server — use exec probe
+          livenessProbe:
+            exec:
+              command:
+                - pgrep
+                - -x
+                - acb-enrichment
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
+      imagePullSecrets:
+        - name: docker-hub-registry
