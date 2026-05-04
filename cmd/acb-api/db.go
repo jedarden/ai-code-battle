@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS series (
     season_id        BIGINT REFERENCES seasons(id),
     bracket_round    VARCHAR(32),    -- 'quarterfinal', 'semifinal', 'final' for championship
     bracket_position INTEGER,        -- position within the bracket round (0-based)
+    featured         BOOLEAN NOT NULL DEFAULT FALSE,  -- weekly featured series (Friday 20:00 UTC)
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -50,6 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_series_bots ON series(bot_a_id, bot_b_id);
 CREATE INDEX IF NOT EXISTS idx_series_status ON series(status);
 CREATE INDEX IF NOT EXISTS idx_series_season ON series(season_id);
 CREATE INDEX IF NOT EXISTS idx_series_bracket ON series(season_id, bracket_round) WHERE bracket_round IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_series_featured ON series(featured, created_at DESC) WHERE featured = TRUE;
 
 -- Add bracket columns if they don't exist (idempotent migration)
 DO $$ BEGIN
@@ -58,6 +60,9 @@ DO $$ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'series' AND column_name = 'bracket_position') THEN
         ALTER TABLE series ADD COLUMN bracket_position INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'series' AND column_name = 'featured') THEN
+        ALTER TABLE series ADD COLUMN featured BOOLEAN NOT NULL DEFAULT FALSE;
     END IF;
 END $$;
 

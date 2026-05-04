@@ -35,6 +35,7 @@ func (m *Matchmaker) StartTickers(ctx context.Context) {
 	go m.runTicker(ctx, "stale-reaper", time.Duration(m.cfg.ReaperSecs)*time.Second, m.tickStaleReaper)
 	go m.runTicker(ctx, "series-scheduler", time.Duration(m.cfg.SeriesSchedSecs)*time.Second, m.tickSeriesScheduler)
 	go m.runTicker(ctx, "season-reset", time.Duration(m.cfg.SeasonResetSecs)*time.Second, m.tickSeasonReset)
+	go m.runTicker(ctx, "featured-series", time.Duration(m.cfg.FeaturedSchedSecs)*time.Second, m.tickFeaturedSeries)
 	go m.runTicker(ctx, "fairness-audit", time.Duration(m.cfg.FairnessAuditSecs)*time.Second, m.tickFairnessAudit)
 }
 

@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
+	"sort"
 	"time"
 )
 
@@ -971,4 +973,180 @@ func (m *Matchmaker) createChampionshipBracket(ctx context.Context, seasonID int
 	}
 
 	return nil
+}
+
+// tickFeaturedSeries creates best-of-5 weekly featured series on Friday at 20:00 UTC.
+// It selects top 20 bots by rating and creates 4 rivalry pairs by ELO proximity.
+// Plan §14.7: weekly featured matches between top-ranked bot rivalries.
+func (m *Matchmaker) tickFeaturedSeries(ctx context.Context) {
+	// Check if current time is Friday at 20:00 UTC (within a 1-hour window)
+	now := time.Now().UTC()
+	if now.Weekday() != time.Friday {
+		return
+	}
+	hour := now.Hour()
+	if hour < 20 || hour >= 21 {
+		return // Only run during the 20:00-20:59 UTC window
+	}
+
+	// Check if featured series were already created this week
+	var thisWeekCount int
+	err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM series
+		WHERE featured = TRUE
+		  AND created_at >= date_trunc('week', NOW()) + INTERVAL '4 days' + INTERVAL '20 hours'
+		  AND created_at < date_trunc('week', NOW()) + INTERVAL '4 days' + INTERVAL '21 hours'
+	`).Scan(&thisWeekCount)
+	if err != nil {
+		log.Printf("featured-series: check existing error: %v", err)
+		return
+	}
+	if thisWeekCount > 0 {
+		return // Already created featured series this Friday
+	}
+
+	// Query top 20 active bots by rating (excluding crash-cooldown bots)
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT bot_id, rating_mu FROM bots
+		WHERE status = 'active'
+		  AND (cooldown_until IS NULL OR cooldown_until < NOW())
+		ORDER BY rating_mu DESC
+		LIMIT 20
+	`)
+	if err != nil {
+		log.Printf("featured-series: query top bots error: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	type botRating struct {
+		ID    string
+		Rating float64
+	}
+	var topBots []botRating
+	for rows.Next() {
+		var br botRating
+		if err := rows.Scan(&br.ID, &br.Rating); err != nil {
+			log.Printf("featured-series: scan bot error: %v", err)
+			continue
+		}
+		topBots = append(topBots, br)
+	}
+
+	if len(topBots) < 8 {
+		log.Printf("featured-series: not enough active bots (%d), need at least 8", len(topBots))
+		return
+	}
+
+	// Select 4 rivalry pairs by ELO proximity
+	// Sort bots by rating
+	sort.Slice(topBots, func(i, j int) bool {
+		return topBots[i].Rating > topBots[j].Rating
+	})
+
+	// Create pairs by adjacent ratings (closest ELO proximity)
+	// Pairing: #1-#2, #3-#4, #5-#6, #7-#8 (top rivalries)
+	// Or use a more sophisticated pairing based on historical match count
+	type botPair struct {
+		A string
+		B string
+	}
+	var pairs []botPair
+
+	// Try to find actual rivalries first (bots that have played each other multiple times)
+	for i := 0; i < len(topBots)-1; i++ {
+		if len(pairs) >= 4 {
+			break
+		}
+		for j := i + 1; j < len(topBots); j++ {
+			// Check if these bots have a rivalry history (3+ matches)
+			var matchCount int
+			err := m.db.QueryRowContext(ctx, `
+				SELECT COUNT(*) FROM match_participants mp1
+				JOIN match_participants mp2 ON mp1.match_id = mp2.match_id
+				WHERE mp1.bot_id = $1 AND mp2.bot_id = $2
+			`, topBots[i].ID, topBots[j].ID).Scan(&matchCount)
+			if err == nil && matchCount >= 3 {
+				pairs = append(pairs, botPair{A: topBots[i].ID, B: topBots[j].ID})
+				// Mark these as used
+				topBots[i].ID = ""
+				topBots[j].ID = ""
+				break
+			}
+		}
+	}
+
+	// Fill remaining slots with closest ELO pairs from remaining bots
+	remaining := make([]botRating, 0)
+	for _, br := range topBots {
+		if br.ID != "" {
+			remaining = append(remaining, br)
+		}
+	}
+
+	// Pair adjacent bots by rating (closest ELO)
+	for i := 0; i < len(remaining)-1 && len(pairs) < 4; i += 2 {
+		if i+1 < len(remaining) {
+			pairs = append(pairs, botPair{A: remaining[i].ID, B: remaining[i+1].ID})
+		}
+	}
+
+	// Ensure we have exactly 4 pairs
+	if len(pairs) > 4 {
+		pairs = pairs[:4]
+	} else if len(pairs) < 4 {
+		// Fill with remaining adjacent pairs
+		for i := len(pairs); i < 4 && i+1 < len(remaining); i++ {
+			pairs = append(pairs, botPair{A: remaining[i].ID, B: remaining[i+1].ID})
+		}
+	}
+
+	rng := rand.New(rand.NewSource(now.UnixNano()))
+
+	// Get the active season ID (if any)
+	var seasonID sql.NullInt64
+	m.db.QueryRowContext(ctx,
+		`SELECT id FROM seasons WHERE status = 'active' ORDER BY starts_at DESC LIMIT 1`).Scan(&seasonID)
+
+	// Create bo5 featured series for each pair
+	for i, pair := range pairs {
+		if pair.A == "" || pair.B == "" {
+			continue
+		}
+
+		// Randomize who is bot_a vs bot_b
+		botAID, botBID := pair.A, pair.B
+		if rng.Intn(2) == 0 {
+			botAID, botBID = pair.B, pair.A
+		}
+
+		_, err := m.db.ExecContext(ctx, `
+			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, featured, updated_at)
+			VALUES ($1, $2, 5, 'active', 0, 0, $3, TRUE, NOW())
+		`, botAID, botBID, seasonID)
+		if err != nil {
+			log.Printf("featured-series: failed to create series %d (%s vs %s): %v", i+1, botAID, botBID, err)
+			continue
+		}
+		log.Printf("featured-series: created weekly featured bo5 series %d: %s vs %s", i+1, botAID, botBID)
+	}
+
+	log.Printf("featured-series: created %d weekly featured bo5 series for Friday %s", len(pairs), now.Format("2006-01-02"))
+}
+
+// isFriday20UTC checks if the given time is within the Friday 20:00 UTC window.
+func isFriday20UTC(t time.Time) bool {
+	// Convert to UTC
+	utc := t.UTC()
+	// Check if it's Friday (weekday 5)
+	if utc.Weekday() != time.Friday {
+		return false
+	}
+	// Check if hour is 20 (8 PM UTC)
+	return utc.Hour() == 20
+}
+
+// ratingDistance returns the absolute difference in ratings between two bots.
+func ratingDistance(r1, r2 float64) float64 {
+	return math.Abs(r1 - r2)
 }

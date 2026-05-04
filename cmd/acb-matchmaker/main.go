@@ -19,22 +19,23 @@ import (
 )
 
 type Config struct {
-	DatabaseURL     string
-	ValkeyAddr      string
-	ValkeyPassword  string
-	EncryptionKey   string // AES-256-GCM key for shared secret decryption
-	DiscordWebhook  string
-	SlackWebhook    string
-	MatchmakerSecs    int
-	HealthCheckSecs   int
-	ReaperSecs        int
-	SeriesSchedSecs   int
-	SeasonResetSecs   int
-	FairnessAuditSecs int
-	BotTimeoutSecs    int
-	StaleJobMinutes   int
-	MaxConsecFails    int
-	SeasonDecayFactor float64
+	DatabaseURL        string
+	ValkeyAddr         string
+	ValkeyPassword     string
+	EncryptionKey      string // AES-256-GCM key for shared secret decryption
+	DiscordWebhook     string
+	SlackWebhook       string
+	MatchmakerSecs     int
+	HealthCheckSecs    int
+	ReaperSecs         int
+	SeriesSchedSecs    int
+	SeasonResetSecs    int
+	FairnessAuditSecs  int
+	FeaturedSchedSecs  int // featured series check interval (Friday 20:00 UTC)
+	BotTimeoutSecs     int
+	StaleJobMinutes    int
+	MaxConsecFails     int
+	SeasonDecayFactor  float64
 }
 
 type Matchmaker struct {
@@ -46,22 +47,23 @@ type Matchmaker struct {
 
 func loadConfig() Config {
 	return Config{
-		DatabaseURL:     envOr("ACB_DATABASE_URL", "postgres://localhost:5432/acb?sslmode=disable"),
-		ValkeyAddr:      envOr("ACB_VALKEY_ADDR", "localhost:6379"),
-		ValkeyPassword:  os.Getenv("ACB_VALKEY_PASSWORD"),
-		EncryptionKey:   os.Getenv("ACB_ENCRYPTION_KEY"),
-		DiscordWebhook:  os.Getenv("ACB_DISCORD_WEBHOOK"),
-		SlackWebhook:    os.Getenv("ACB_SLACK_WEBHOOK"),
-		MatchmakerSecs:    envInt("ACB_MATCHMAKER_INTERVAL", 60),
-		HealthCheckSecs:   envInt("ACB_HEALTHCHECK_INTERVAL", 900),
-		ReaperSecs:        envInt("ACB_REAPER_INTERVAL", 300),
-		SeriesSchedSecs:   envInt("ACB_SERIES_SCHED_INTERVAL", 120),
-		SeasonResetSecs:   envInt("ACB_SEASON_RESET_INTERVAL", 300),
-		FairnessAuditSecs: envInt("ACB_FAIRNESS_AUDIT_INTERVAL", 3600),
-		BotTimeoutSecs:    envInt("ACB_BOT_TIMEOUT", 5),
-		StaleJobMinutes:   envInt("ACB_STALE_JOB_MINUTES", 15),
-		MaxConsecFails:    envInt("ACB_MAX_CONSEC_FAILS", 3),
-		SeasonDecayFactor: envFloat("ACB_SEASON_DECAY_FACTOR", 0.7),
+		DatabaseURL:       envOr("ACB_DATABASE_URL", "postgres://localhost:5432/acb?sslmode=disable"),
+		ValkeyAddr:        envOr("ACB_VALKEY_ADDR", "localhost:6379"),
+		ValkeyPassword:    os.Getenv("ACB_VALKEY_PASSWORD"),
+		EncryptionKey:     os.Getenv("ACB_ENCRYPTION_KEY"),
+		DiscordWebhook:     os.Getenv("ACB_DISCORD_WEBHOOK"),
+		SlackWebhook:       os.Getenv("ACB_SLACK_WEBHOOK"),
+		MatchmakerSecs:     envInt("ACB_MATCHMAKER_INTERVAL", 60),
+		HealthCheckSecs:    envInt("ACB_HEALTHCHECK_INTERVAL", 900),
+		ReaperSecs:         envInt("ACB_REAPER_INTERVAL", 300),
+		SeriesSchedSecs:    envInt("ACB_SERIES_SCHED_INTERVAL", 120),
+		SeasonResetSecs:    envInt("ACB_SEASON_RESET_INTERVAL", 300),
+		FairnessAuditSecs:  envInt("ACB_FAIRNESS_AUDIT_INTERVAL", 3600),
+		FeaturedSchedSecs:  envInt("ACB_FEATURED_SCHED_INTERVAL", 3600), // check hourly
+		BotTimeoutSecs:     envInt("ACB_BOT_TIMEOUT", 5),
+		StaleJobMinutes:    envInt("ACB_STALE_JOB_MINUTES", 15),
+		MaxConsecFails:     envInt("ACB_MAX_CONSEC_FAILS", 3),
+		SeasonDecayFactor:  envFloat("ACB_SEASON_DECAY_FACTOR", 0.7),
 	}
 }
 
