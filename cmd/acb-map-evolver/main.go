@@ -28,6 +28,7 @@ type Config struct {
 	ValidateSmoke   bool
 	MinSeedCount    int
 	EvolutionPeriod time.Duration
+	Once            bool
 }
 
 // Map represents a game map.
@@ -91,6 +92,26 @@ func main() {
 		}
 	}
 	seedCancel()
+
+	if cfg.Once {
+		// One-shot mode: run evolution once for all player counts and exit
+		log.Printf("map-evolver: running one-shot evolution for all player counts")
+		totalCreated := 0
+		for _, pc := range allPlayerCounts {
+			cfg.PlayerCount = pc
+			iterCtx, iterCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			results, err := evolver.Run(iterCtx)
+			iterCancel()
+			if err != nil {
+				log.Printf("evolution error player_count=%d: %v", pc, err)
+				continue
+			}
+			log.Printf("player_count=%d: %d new maps created", pc, len(results))
+			totalCreated += len(results)
+		}
+		log.Printf("map-evolver: one-shot evolution complete, %d total maps created", totalCreated)
+		return
+	}
 
 	log.Printf("map-evolver: entering continuous evolution loop (period=%s)", cfg.EvolutionPeriod)
 
@@ -160,6 +181,8 @@ func parseConfig() *Config {
 			cfg.DryRun = true
 		case "--no-smoke":
 			cfg.ValidateSmoke = false
+		case "--once":
+			cfg.Once = true
 		case "--help", "-h":
 			fmt.Println("Usage: acb-map-evolver [options]")
 			fmt.Println("")
@@ -171,6 +194,7 @@ func parseConfig() *Config {
 			fmt.Println("  --evolution-period D  Sleep duration between evolution cycles [default: 30m]")
 			fmt.Println("  --dry-run             Generate maps but don't save to database")
 			fmt.Println("  --no-smoke            Skip smoke-test validation")
+			fmt.Println("  --once                Run evolution once for all player counts and exit")
 			fmt.Println("  --help                Show this help")
 			return nil
 		}
