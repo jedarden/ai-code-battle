@@ -42,6 +42,21 @@ type BlogEntry struct {
 	Tags        []string `json:"tags"`
 }
 
+// WeeklyChronicle represents the weekly aggregated chronicle file
+// per plan §15.5 - written to data/blog/chronicles-YYYY-WW.json
+type WeeklyChronicle struct {
+	Year         int         `json:"year"`
+	WeekNumber   int         `json:"week_number"`
+	GeneratedAt  string      `json:"generated_at"`
+	SeasonName   string      `json:"season_name"`
+	StoryArcs    []StoryArc  `json:"story_arcs"`
+	Narrative    string      `json:"narrative"`
+	MatchCount   int         `json:"match_count"`
+	BotCount     int         `json:"bot_count"`
+	TopBotName   string      `json:"top_bot_name"`
+	TopBotRating float64     `json:"top_bot_rating"`
+}
+
 // generateBlog creates blog posts and the blog index.
 // Meta reports are only generated on Monday or if 7+ days have passed since the last one.
 func generateBlog(data *IndexData, outputDir string, llmClient *LLMClient, cfg *Config) error {
@@ -69,6 +84,12 @@ func generateBlog(data *IndexData, outputDir string, llmClient *LLMClient, cfg *
 	// Generate story arc chronicles using narrative engine
 	chronicles := generateLLMChronicles(context.Background(), data, llmClient)
 	posts = append(posts, chronicles...)
+
+	// Generate weekly aggregated chronicles file
+	if err := generateWeeklyChronicleFile(context.Background(), data, llmClient, blogDir); err != nil {
+		slog.Error("Failed to generate weekly chronicles file", "error", err)
+		// Non-fatal - continue with rest of build
+	}
 
 	// Write individual post files
 	entries := make([]BlogEntry, 0, len(posts))
@@ -2570,4 +2591,222 @@ func formatLookingAhead(movers []eloMover, strats []strategyCount, evoHighlights
 	}
 
 	return sb.String()
+}
+
+// ─── Weekly Chronicles File Generation ────────────────────────────────────────────
+
+// generateWeeklyChronicleFile creates the weekly aggregated chronicles file
+// at data/blog/chronicles-YYYY-WW.json per plan §15.5.
+func generateWeeklyChronicleFile(ctx context.Context, data *IndexData, llmClient *LLMClient, blogDir string) error {
+	now := data.GeneratedAt
+	year, weekNum := now.ISOWeek()
+
+	// Detect story arcs for the week
+	arcs := detectStoryArcs(data)
+
+	// Gather context data
+	topMovers := findTopELOMovers(data, 5)
+	strategies := calculateDominantStrategies(data)
+	bestMatch := findMostWatchedMatch(data)
+
+	dominantStrat := ""
+	if len(strategies) > 0 {
+		dominantStrat = strategies[0].Archetype
+	}
+
+	topBotName := ""
+	topBotRating := 0.0
+	if len(data.Bots) > 0 {
+		topBotName = data.Bots[0].Name
+		topBotRating = data.Bots[0].Rating
+	}
+
+	// Count matches this week
+	weekAgo := now.AddDate(0, 0, -7)
+	matchCount := 0
+	for _, m := range data.Matches {
+		if m.PlayedAt.After(weekAgo) {
+			matchCount++
+		}
+	}
+
+	// Build the request
+	req := WeeklyChroniclesRequest{
+		Year:          year,
+		WeekNumber:    weekNum,
+		SeasonName:    getCurrentSeasonName(data),
+		StoryArcs:     arcs,
+		MatchCount:    matchCount,
+		BotCount:      len(data.Bots),
+		TopBotName:    topBotName,
+		TopBotRating:  topBotRating,
+		TopMovers:     topMovers,
+		DominantStrat: dominantStrat,
+		BestMatch:     bestMatch,
+	}
+
+	// Generate narrative (with LLM if available, otherwise use template)
+	var narrative string
+	if llmClient != nil && llmClient.baseURL != "" {
+		generated, err := llmClient.GenerateWeeklyChronicles(ctx, req)
+		if err != nil {
+			slog.Warn("LLM weekly chronicles generation failed, using template", "error", err)
+			narrative = buildTemplateWeeklyChronicle(req)
+		} else {
+			narrative = generated
+		}
+	} else {
+		narrative = buildTemplateWeeklyChronicle(req)
+	}
+
+	// Build the weekly chronicle struct
+	chronicle := WeeklyChronicle{
+		Year:         year,
+		WeekNumber:   weekNum,
+		GeneratedAt:  now.Format(time.RFC3339),
+		SeasonName:   req.SeasonName,
+		StoryArcs:    arcs,
+		Narrative:    narrative,
+		MatchCount:   matchCount,
+		BotCount:     len(data.Bots),
+		TopBotName:   topBotName,
+		TopBotRating: topBotRating,
+	}
+
+	// Write to data/blog/chronicles-YYYY-WW.json
+	filename := fmt.Sprintf("chronicles-%d-%02d.json", year, weekNum)
+	chroniclePath := filepath.Join(blogDir, filename)
+
+	if err := writeJSON(chroniclePath, chronicle); err != nil {
+		return fmt.Errorf("write weekly chronicle file: %w", err)
+	}
+
+	slog.Info("Generated weekly chronicles file",
+		"filename", filename,
+		"year", year,
+		"week", weekNum,
+		"story_arcs", len(arcs),
+		"narrative_length", len(narrative))
+
+	return nil
+}
+
+// buildTemplateWeeklyChronicle creates a template-based weekly narrative
+// when LLM generation is unavailable.
+func buildTemplateWeeklyChronicle(req WeeklyChroniclesRequest) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("# Week %d Chronicles\n\n", req.WeekNumber))
+	sb.WriteString(fmt.Sprintf("## %s\n\n", req.SeasonName))
+
+	// Lead paragraph
+	if req.TopBotName != "" {
+		sb.WriteString(fmt.Sprintf("**%s** sits atop the leaderboard at %.0f ELO. ", req.TopBotName, req.TopBotRating))
+	}
+
+	sb.WriteString(fmt.Sprintf("This week saw %d matches across %d active bots.\n\n", req.MatchCount, req.BotCount))
+
+	// Top movers section
+	if len(req.TopMovers) > 0 {
+		sb.WriteString("## ELO Movement\n\n")
+		for _, m := range req.TopMovers {
+			dir := "rose"
+			if m.Delta < 0 {
+				dir = "fell"
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** %s %.0f points (%.0f → %.0f)", m.BotName, dir, absF(m.Delta), m.OldRating, m.NewRating))
+			if m.Archetype != "" {
+				sb.WriteString(fmt.Sprintf(" [%s]", m.Archetype))
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	// Story arcs by type
+	riseArcs := filterArcsByType(req.StoryArcs, ArcRise)
+	fallArcs := filterArcsByType(req.StoryArcs, ArcFall)
+	rivalryArcs := filterArcsByType(req.StoryArcs, ArcRivalry)
+	upsetArcs := filterArcsByType(req.StoryArcs, ArcUpset)
+	evoArcs := filterArcsByType(req.StoryArcs, ArcEvolutionMilestone)
+
+	if len(riseArcs) > 0 {
+		sb.WriteString("## Rising Stars\n\n")
+		for _, arc := range riseArcs {
+			delta := arc.RatingEnd - arc.RatingStart
+			sb.WriteString(fmt.Sprintf("**%s** climbed %d points this week, moving from %d to %d ELO",
+				arc.BotName, delta, arc.RatingStart, arc.RatingEnd))
+			if arc.Archetype != "" {
+				sb.WriteString(fmt.Sprintf(" on %s strategy", arc.Archetype))
+			}
+			sb.WriteString(".\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(fallArcs) > 0 {
+		sb.WriteString("## Falling Behind\n\n")
+		for _, arc := range fallArcs {
+			delta := arc.RatingStart - arc.RatingEnd
+			sb.WriteString(fmt.Sprintf("**%s** dropped %d points (%d → %d ELO).\n",
+				arc.BotName, delta, arc.RatingStart, arc.RatingEnd))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(rivalryArcs) > 0 {
+		sb.WriteString("## Intensifying Rivalries\n\n")
+		for _, arc := range rivalryArcs {
+			sb.WriteString(fmt.Sprintf("**%s vs %s**: %d-%d record over %d matches.\n",
+				arc.BotName, arc.BotBName, arc.BotAWins, arc.BotBWins, arc.TotalMatches))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(upsetArcs) > 0 {
+		sb.WriteString("## Upsets of the Week\n\n")
+		for _, arc := range upsetArcs {
+			gap := arc.RatingEnd - arc.RatingStart
+			sb.WriteString(fmt.Sprintf("**%s** upset **%s** despite a %d-point ELO disadvantage.\n",
+				arc.BotName, arc.BotBName, gap))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(evoArcs) > 0 {
+		sb.WriteString("## Evolution Milestones\n\n")
+		for _, arc := range evoArcs {
+			sb.WriteString(fmt.Sprintf("**%s** (generation %d", arc.BotName, arc.Generation))
+			if arc.Archetype != "" {
+				sb.WriteString(fmt.Sprintf(", %s", arc.Archetype))
+			}
+			sb.WriteString(fmt.Sprintf(") reached %.0f ELO.\n", float64(arc.RatingEnd)))
+		}
+		sb.WriteString("\n")
+	}
+
+	if req.BestMatch != nil {
+		sb.WriteString("## Match of the Week\n\n")
+		sb.WriteString(fmt.Sprintf("**%s** — final score %s in %d turns.\n",
+			req.BestMatch.Description, req.BestMatch.Score, req.BestMatch.TurnCount))
+	}
+
+	sb.WriteString("\n---\n\n*Generated automatically by AI Code Battle.*")
+
+	return sb.String()
+}
+
+// WeeklyChroniclesRequest contains context for generating a weekly chronicle
+type WeeklyChroniclesRequest struct {
+	Year          int
+	WeekNumber    int
+	SeasonName    string
+	StoryArcs     []StoryArc
+	MatchCount    int
+	BotCount      int
+	TopBotName    string
+	TopBotRating  float64
+	TopMovers     []eloMover
+	DominantStrat string
+	BestMatch     *notableMatch
 }

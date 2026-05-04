@@ -964,3 +964,181 @@ func getBotRatingHistory(botID string, data *IndexData) []RatingHistoryEntry {
 	}
 	return entries
 }
+
+// ─── Weekly Chronicles Generation ────────────────────────────────────────────────
+
+
+// GenerateWeeklyChronicles creates a ~500-word aggregated narrative for the week
+func (c *LLMClient) GenerateWeeklyChronicles(ctx context.Context, req WeeklyChroniclesRequest) (string, error) {
+	prompt := buildWeeklyChroniclesPrompt(req)
+	return c.chatCompletion(ctx, prompt)
+}
+
+// buildWeeklyChroniclesPrompt constructs a prompt for weekly aggregated narrative
+func buildWeeklyChroniclesPrompt(req WeeklyChroniclesRequest) string {
+	var sb strings.Builder
+
+	sb.WriteString("Write a 500-word weekly chronicle for AI Code Battle. ")
+	sb.WriteString("You are a sports journalist covering an emergent bot league — write with the energy and narrative instinct of esports journalism. ")
+	sb.WriteString("Be dramatic but factual. Reference specific bots, ELO before/after deltas, rivalry context, head-to-head records, critical turning points, and season standings. ")
+	sb.WriteString("Weave the data into a compelling story — quote scores, cite match IDs, describe strategic moments. ")
+	sb.WriteString("Write in present tense with a punchy, journalistic tone. Do not use emojis.\n\n")
+
+	sb.WriteString(fmt.Sprintf("Week: %d of %d\n", req.WeekNumber, req.Year))
+	sb.WriteString(fmt.Sprintf("Season: %s\n", req.SeasonName))
+	sb.WriteString(fmt.Sprintf("Competitive landscape: %d active bots, %d matches this week\n", req.BotCount, req.MatchCount))
+
+	// Top bot and championship race
+	if req.TopBotName != "" {
+		sb.WriteString(fmt.Sprintf("\nCurrent #1: %s (ELO %.0f)\n", req.TopBotName, req.TopBotRating))
+	}
+
+	// Top ELO movers
+	if len(req.TopMovers) > 0 {
+		sb.WriteString("\nTop ELO movers this week:\n")
+		for _, m := range req.TopMovers {
+			dir := "surged"
+			if m.Delta < 0 {
+				dir = "dropped"
+			}
+			arch := nonEmpty(m.Archetype, "unclassified")
+			sb.WriteString(fmt.Sprintf("  - %s %s %.0f points (%.0f → %.0f) [%s], W%d/L%d\n",
+				m.BotName, dir, absF(m.Delta), m.OldRating, m.NewRating, arch, m.MatchesWon, m.MatchesLost))
+		}
+	}
+
+	// Dominant strategy
+	if req.DominantStrat != "" {
+		sb.WriteString(fmt.Sprintf("\nDominant archetype: %s\n", req.DominantStrat))
+	}
+
+	// Story arcs by type
+	sb.WriteString("\nStory arcs this week:\n")
+
+	riseArcs := filterArcsByType(req.StoryArcs, ArcRise)
+	fallArcs := filterArcsByType(req.StoryArcs, ArcFall)
+	rivalryArcs := filterArcsByType(req.StoryArcs, ArcRivalry)
+	upsetArcs := filterArcsByType(req.StoryArcs, ArcUpset)
+	evoArcs := filterArcsByType(req.StoryArcs, ArcEvolutionMilestone)
+	comebackArcs := filterArcsByType(req.StoryArcs, ArcComeback)
+
+	if len(riseArcs) > 0 {
+		sb.WriteString("\n### Rising Stars\n")
+		for _, arc := range riseArcs {
+			delta := arc.RatingEnd - arc.RatingStart
+			sb.WriteString(fmt.Sprintf("  - %s: climbed %d points (%d → %d)", arc.BotName, delta, arc.RatingStart, arc.RatingEnd))
+			if arc.Archetype != "" {
+				sb.WriteString(fmt.Sprintf(" [%s]", arc.Archetype))
+			}
+			if arc.Origin != "" {
+				sb.WriteString(fmt.Sprintf(" (%s)", arc.Origin))
+			}
+			sb.WriteString("\n")
+			// Add key match context
+			if len(arc.KeyMatches) > 0 {
+				m := arc.KeyMatches[0]
+				outcome := "Beat"
+				if !m.Won {
+					outcome = "Lost to"
+				}
+				sb.WriteString(fmt.Sprintf("    Key match: %s %s (rating %d) — score %s, %d turns. Match ID: %s\n",
+					outcome, m.OpponentName, m.OpponentRating, m.Score, m.TurnCount, m.MatchID))
+			}
+		}
+	}
+
+	if len(fallArcs) > 0 {
+		sb.WriteString("\n### Falling Behind\n")
+		for _, arc := range fallArcs {
+			delta := arc.RatingStart - arc.RatingEnd
+			sb.WriteString(fmt.Sprintf("  - %s: dropped %d points (%d → %d)", arc.BotName, delta, arc.RatingStart, arc.RatingEnd))
+			if arc.Archetype != "" {
+				sb.WriteString(fmt.Sprintf(" [%s]", arc.Archetype))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	if len(rivalryArcs) > 0 {
+		sb.WriteString("\n### Intensifying Rivalries\n")
+		for _, arc := range rivalryArcs {
+			sb.WriteString(fmt.Sprintf("  - %s vs %s: %d-%d over %d matches\n",
+				arc.BotName, arc.BotBName, arc.BotAWins, arc.BotBWins, arc.TotalMatches))
+			// Add recent encounters
+			if len(arc.KeyMatches) > 0 {
+				sb.WriteString("    Recent matches: ")
+				for i, m := range arc.KeyMatches {
+					if i > 0 {
+						sb.WriteString(", ")
+					}
+					winner := arc.BotBName
+					if m.Won {
+						winner = arc.BotName
+					}
+					sb.WriteString(fmt.Sprintf("%s won %d-%d", winner, m.TurnCount, m.TurnCount))
+				}
+				sb.WriteString("\n")
+			}
+		}
+	}
+
+	if len(upsetArcs) > 0 {
+		sb.WriteString("\n### Upsets of the Week\n")
+		for _, arc := range upsetArcs {
+			gap := arc.RatingEnd - arc.RatingStart
+			sb.WriteString(fmt.Sprintf("  - %s upset %s: %d-point ELO gap", arc.BotName, arc.BotBName, gap))
+			if len(arc.KeyMatches) > 0 {
+				m := arc.KeyMatches[0]
+				sb.WriteString(fmt.Sprintf(", score %s in %d turns. Match ID: %s\n", m.Score, m.TurnCount, m.MatchID))
+			} else {
+				sb.WriteString("\n")
+			}
+		}
+	}
+
+	if len(evoArcs) > 0 {
+		sb.WriteString("\n### Evolution Milestones\n")
+		for _, arc := range evoArcs {
+			sb.WriteString(fmt.Sprintf("  - %s: generation %d evolved bot", arc.BotName, arc.Generation))
+			if arc.Archetype != "" {
+				sb.WriteString(fmt.Sprintf(" [%s]", arc.Archetype))
+			}
+			if arc.Origin != "" {
+				sb.WriteString(fmt.Sprintf(" (%s)", arc.Origin))
+			}
+			sb.WriteString(fmt.Sprintf(", rating %.0f\n", float64(arc.RatingEnd)))
+		}
+	}
+
+	if len(comebackArcs) > 0 {
+		sb.WriteString("\n### Comebacks\n")
+		for _, arc := range comebackArcs {
+			sb.WriteString(fmt.Sprintf("  - %s: from trough back to %.0f after falling from %.0f\n",
+				arc.BotName, float64(arc.RatingEnd), float64(arc.RatingStart)))
+		}
+	}
+
+	// Match of the week
+	if req.BestMatch != nil {
+		sb.WriteString(fmt.Sprintf("\n### Match of the Week\n"))
+		sb.WriteString(fmt.Sprintf("%s — score %s in %d turns. Match ID: %s\n",
+			req.BestMatch.Description, req.BestMatch.Score, req.BestMatch.TurnCount, req.BestMatch.MatchID))
+	}
+
+	sb.WriteString("\nWrite a compelling 500-word weekly chronicle that weaves these story arcs together. ")
+	sb.WriteString("Focus on the most dramatic narratives — the rise, the fall, the rivalries, the upsets. ")
+	sb.WriteString("Make it feel like a sports recap that makes readers want to watch the replays.")
+
+	return sb.String()
+}
+
+// filterArcsByType returns arcs of a specific type
+func filterArcsByType(arcs []StoryArc, arcType StoryArcType) []StoryArc {
+	filtered := make([]StoryArc, 0)
+	for _, arc := range arcs {
+		if arc.Type == arcType {
+			filtered = append(filtered, arc)
+		}
+	}
+	return filtered
+}
