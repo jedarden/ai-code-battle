@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""
-AI Code Battle - Python Starter Kit
+"""AI Code Battle - Python Starter Kit.
 
-A minimal bot scaffold. Implements the HTTP protocol with HMAC
-authentication and a placeholder random strategy.
+Flask-based HTTP bot with HMAC authentication. Implement your strategy
+in compute_moves() below.
 
 Usage:
     BOT_SECRET=your-secret python3 main.py
@@ -13,158 +12,121 @@ import hashlib
 import hmac
 import json
 import os
-import random
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+from typing import List, Dict, Any
 
-# Engine constants
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+SECRET = os.environ.get("BOT_SECRET", "")
 DIRECTIONS = ["N", "E", "S", "W"]
 
 
-class GameState:
-    def __init__(self, data: dict):
-        self.match_id = data["match_id"]
-        self.turn = data["turn"]
-        self.config = data["config"]
-        self.you_id = data["you"]["id"]
-        self.you_energy = data["you"]["energy"]
-        self.you_score = data["you"]["score"]
-        self.bots = data.get("bots", [])
-        self.energy = data.get("energy", [])
-        self.cores = data.get("cores", [])
-        self.walls = data.get("walls", [])
-        self.dead = data.get("dead", [])
+def verify_signature(body: bytes, match_id: str, turn: str,
+                     timestamp: str, signature: str) -> bool:
+    """Verify HMAC-SHA256 signature from engine."""
+    try:
+        ts = int(timestamp)
+        now = int(time.time())
+        if abs(now - ts) > 30:
+            return False
+    except (ValueError, TypeError):
+        return False
+
+    body_hash = hashlib.sha256(body).hexdigest()
+    signing_string = f"{match_id}.{turn}.{timestamp}.{body_hash}"
+    expected = hmac.new(
+        SECRET.encode(), signing_string.encode(), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
 
 
-class BotHandler(BaseHTTPRequestHandler):
-    secret: str = ""
-
-    def log_message(self, format, *args):
-        pass
-
-    def sign_response(self, body: bytes, match_id: str, turn: int) -> str:
-        body_hash = hashlib.sha256(body).hexdigest()
-        signing_string = f"{match_id}.{turn}.{body_hash}"
-        return hmac.new(
-            self.secret.encode(), signing_string.encode(), hashlib.sha256
-        ).hexdigest()
-
-    def verify_signature(self, body: bytes, match_id: str, turn: str,
-                         timestamp: str, signature: str) -> bool:
-        body_hash = hashlib.sha256(body).hexdigest()
-        signing_string = f"{match_id}.{turn}.{timestamp}.{body_hash}"
-        expected = hmac.new(
-            self.secret.encode(), signing_string.encode(), hashlib.sha256
-        ).hexdigest()
-        return hmac.compare_digest(signature, expected)
-
-    def do_GET(self):
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"OK")
-        else:
-            self.send_error(404)
-
-    def do_POST(self):
-        if self.path != "/turn":
-            self.send_error(404)
-            return
-
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length)
-
-        match_id = self.headers.get("X-ACB-Match-Id", "")
-        turn_str = self.headers.get("X-ACB-Turn", "0")
-        timestamp = self.headers.get("X-ACB-Timestamp", "")
-        signature = self.headers.get("X-ACB-Signature", "")
-
-        if not signature or not self.verify_signature(
-            body, match_id, turn_str, timestamp, signature
-        ):
-            self.send_error(401, "Invalid signature")
-            return
-
-        try:
-            state = GameState(json.loads(body))
-        except (json.JSONDecodeError, KeyError) as e:
-            self.send_error(400, f"Invalid game state: {e}")
-            return
-
-        if state.turn == 0:
-            season_id = state.config.get("season_id", "")
-            rules_version = state.config.get("rules_version", "")
-            print(f"match={state.match_id} season_id={season_id} rules_version={rules_version} rows={state.config['rows']} cols={state.config['cols']}")
-
-        moves = compute_moves(state)
-        turn = int(turn_str)
-
-        response_body = json.dumps({"moves": moves}).encode()
-        response_sig = self.sign_response(response_body, match_id, turn)
-
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("X-ACB-Signature", response_sig)
-        self.end_headers()
-        self.wfile.write(response_body)
+def sign_response(body: bytes, match_id: str, turn: int) -> str:
+    """Generate HMAC-SHA256 signature for response."""
+    body_hash = hashlib.sha256(body).hexdigest()
+    signing_string = f"{match_id}.{turn}.{body_hash}"
+    return hmac.new(
+        SECRET.encode(), signing_string.encode(), hashlib.sha256
+    ).hexdigest()
 
 
-def compute_moves(state: GameState) -> list:
-    """Replace this with your strategy!"""
-    from grid import toroidal_manhattan
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint."""
+    return "OK", 200
 
-    rows = state.config["rows"]
-    cols = state.config["cols"]
+
+@app.route("/turn", methods=["POST"])
+def turn():
+    """Main game turn endpoint."""
+    match_id = request.headers.get("X-ACB-Match-Id", "")
+    turn_str = request.headers.get("X-ACB-Turn", "0")
+    timestamp = request.headers.get("X-ACB-Timestamp", "")
+    signature = request.headers.get("X-ACB-Signature", "")
+
+    body = request.get_data()
+    if not signature or not verify_signature(body, match_id, turn_str, timestamp, signature):
+        return "Invalid signature", 401
+
+    try:
+        state = json.loads(body)
+    except json.JSONDecodeError:
+        return "Invalid JSON", 400
+
+    moves = compute_moves(state)
+    turn_num = int(turn_str)
+
+    response_data = {"moves": moves}
+    response_body = json.dumps(response_data).encode()
+    response_sig = sign_response(response_body, match_id, turn_num)
+
+    response = jsonify(response_data)
+    response.headers["X-ACB-Signature"] = response_sig
+    return response
+
+
+def compute_moves(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """YOUR STRATEGY GOES HERE.
+
+    Args:
+        state: Game state dict with keys:
+            - match_id: str
+            - turn: int
+            - config: dict (rows, cols, max_turns, vision_radius2, attack_radius2, etc.)
+            - you: dict (id, energy, score)
+            - bots: list of dict (each has row, col, owner)
+            - energy: list of dict (each has row, col)
+            - cores: list of dict (each has row, col, owner, active)
+            - walls: list of dict (each has row, col)
+            - dead: list of dict (each has row, col, owner)
+
+    Returns:
+        List of move dicts, each with:
+            - row: int (your bot's current row)
+            - col: int (your bot's current col)
+            - direction: "N" | "E" | "S" | "W"
+    """
+    import random
+
+    my_id = state["you"]["id"]
+    rows, cols = state["config"]["rows"], state["config"]["cols"]
+
     moves = []
-
-    for bot in state.bots:
-        if bot["owner"] != state.you_id:
+    for bot in state.get("bots", []):
+        if bot["owner"] != my_id:
             continue
 
-        br, bc = bot["position"]["row"], bot["position"]["col"]
-
-        # Find nearest energy using toroidal distance
-        if state.energy:
-            best_dist = float("inf")
-            best_dir = None
-            for er, ec, d in _cardinal_moves(br, bc, rows, cols):
-                for e in state.energy:
-                    dist = toroidal_manhattan(er, ec, e["row"], e["col"], cols, rows)
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_dir = d
-            if best_dir:
-                moves.append({"position": bot["position"], "direction": best_dir})
-                continue
-
-        if random.random() < 0.5:
-            moves.append({
-                "position": bot["position"],
-                "direction": random.choice(DIRECTIONS),
-            })
+        # STUB: hold all bots in place (return empty list)
+        # Replace this with your strategy!
+        pass
 
     return moves
 
 
-def _cardinal_moves(row, col, rows, cols):
-    """Yield (new_row, new_col, direction) for each cardinal step with wrap."""
-    for dr, dc, d in [(-1, 0, "N"), (0, 1, "E"), (1, 0, "S"), (0, -1, "W")]:
-        yield (row + dr) % rows, (col + dc) % cols, d
-
-
-def main():
-    port = int(os.environ.get("BOT_PORT", "8080"))
-    secret = os.environ.get("BOT_SECRET", "")
-
-    if not secret:
+if __name__ == "__main__":
+    if not SECRET:
         print("ERROR: BOT_SECRET environment variable is required")
         exit(1)
 
-    BotHandler.secret = secret
-    server = HTTPServer(("", port), BotHandler)
-    print(f"Bot listening on port {port}")
-    server.serve_forever()
-
-
-if __name__ == "__main__":
-    main()
+    port = int(os.environ.get("BOT_PORT", "8080"))
+    app.run(host="0.0.0.0", port=port, debug=False)

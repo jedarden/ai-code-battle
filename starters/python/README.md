@@ -53,17 +53,23 @@ Dockerfile           # Container build
 
 ## Customization
 
-Edit `compute_moves()` in `main.py` to implement your strategy. The `GameState` object provides:
+Edit `compute_moves()` in `main.py` to implement your strategy. The starter includes a stub that holds all bots in place — replace it with your logic!
 
-- `bots` — all visible bots (yours and enemies)
-- `energy` — visible energy pickup locations
-- `cores` — visible core positions
-- `walls` — visible wall positions
-- `you_energy` — your current energy count
-- `you_score` — your current score
-- `config` — match parameters (grid size, etc.)
+The `state` dict provides:
+- `bots` — all visible bots (each has `row`, `col`, `owner`)
+- `energy` — visible energy pickup locations (each has `row`, `col`)
+- `cores` — visible core positions (each has `row`, `col`, `owner`, `active`)
+- `walls` — visible wall positions (each has `row`, `col`)
+- `dead` — bots that died last turn (each has `row`, `col`, `owner`)
+- `you` — your player info (`id`, `energy`, `score`)
+- `config` — match parameters (`rows`, `cols`, `max_turns`, `vision_radius2`, `attack_radius2`, `spawn_cost`, `energy_interval`)
 
-Return a list of moves, each with `position` (your bot's current position) and `direction` (`"N"`, `"E"`, `"S"`, or `"W"`). Bots not included in the moves list stay in place.
+Return a list of move dicts, each with:
+- `row` — your bot's current row
+- `col` — your bot's current column
+- `direction` — `"N"`, `"E"`, `"S"`, or `"W"`
+
+Bots not included in the moves list stay in place.
 
 ## Protocol
 
