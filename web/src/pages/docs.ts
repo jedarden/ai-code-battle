@@ -100,7 +100,7 @@ export function renderDocsPage(): void {
         <section>
           <h2>Data &amp; API</h2>
           <p>All match data (leaderboards, replays, bot profiles) is exposed as static JSON files served from CDN.</p>
-          <p><a href="#/compete/docs" class="btn secondary">View API Reference</a></p>
+          <p><a href="#/compete/docs/api" class="btn secondary">View API Reference</a></p>
         </section>
       </div>
     </div>

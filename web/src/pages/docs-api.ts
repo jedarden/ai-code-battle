@@ -489,6 +489,8 @@ export function renderDocsApiPage(): void {
       <section id="replay-schema" class="schema-section">
         <h2>Replay JSON Schema</h2>
         <p>The replay format is versioned. The current version is <code>v1</code>.</p>
+        <p><a href="/replay-schema-v1.json" target="_blank" class="btn secondary">Download replay-schema-v1.json</a></p>
+        <p>The schema can be used with JSON Schema validators to ensure replay files conform to the expected format.</p>
         <pre><code>${escapeHtml(replaySchema)}</code></pre>
       </section>
 
