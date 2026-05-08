@@ -285,12 +285,17 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
           <div class="keyboard-shortcuts">
             <kbd>Space</kbd> Play/Pause
             <kbd>←</kbd><kbd>→</kbd> Step
+            <kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> Jump 10
             <kbd>[</kbd><kbd>]</kbd> Prev/Next Critical
             <kbd>Home</kbd><kbd>End</kbd> First/Last
             <kbd>1</kbd>-<kbd>6</kbd> Follow Bot
             <kbd>0</kbd>/<kbd>Esc</kbd> Exit Follow
-            <kbd>F</kbd> Theater Mode
+            <kbd>V</kbd> View Mode
+            <kbd>F</kbd> Theater
+            <kbd>E</kbd> Events
+            <kbd>C</kbd> Commentary
             <kbd>T</kbd> Transcript
+            <kbd>?</kbd> Shortcuts
           </div>
         </div>
       </div>
@@ -1684,6 +1689,209 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     }
   });
 
+  // ── Keyboard Shortcuts Overlay (§15.3) ────────────────────────────────────────────
+
+  function showKeyboardShortcutsOverlay(): void {
+    // Remove existing overlay if present
+    const existing = document.getElementById('keyboard-shortcuts-overlay');
+    if (existing) {
+      existing.remove();
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'keyboard-shortcuts-overlay';
+    overlay.className = 'keyboard-shortcuts-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'shortcuts-title');
+    overlay.innerHTML = `
+      <div class="shortcuts-modal">
+        <div class="shortcuts-header">
+          <h2 id="shortcuts-title">Keyboard Shortcuts</h2>
+          <button class="shortcuts-close" aria-label="Close shortcuts" title="Press Esc or ? to close">&times;</button>
+        </div>
+        <div class="shortcuts-content">
+          <div class="shortcuts-section">
+            <h3>Playback Controls</h3>
+            <div class="shortcut-row"><kbd>Space</kbd> <span>Play / Pause</span></div>
+            <div class="shortcut-row"><kbd>←</kbd> / <kbd>→</kbd> <span>Step one turn</span></div>
+            <div class="shortcut-row"><kbd>Shift</kbd>+<kbd>←</kbd> / <kbd>→</kbd> <span>Jump 10 turns</span></div>
+            <div class="shortcut-row"><kbd>Home</kbd> / <kbd>End</kbd> <span>First / Last turn</span></div>
+            <div class="shortcut-row"><kbd>[</kbd> / <kbd>]</kbd> <span>Prev / Next critical moment</span></div>
+            <div class="shortcut-row"><kbd>1</kbd>–<kbd>6</kbd> <span>Follow player (0 to exit)</span></div>
+          </div>
+          <div class="shortcuts-section">
+            <h3>View Options</h3>
+            <div class="shortcut-row"><kbd>V</kbd> <span>Cycle view mode</span></div>
+            <div class="shortcut-row"><kbd>F</kbd> <span>Theater mode</span></div>
+            <div class="shortcut-row"><kbd>E</kbd> <span>Toggle event timeline</span></div>
+            <div class="shortcut-row"><kbd>T</kbd> <span>Toggle transcript panel</span></div>
+            <div class="shortcut-row"><kbd>C</kbd> <span>Toggle commentary</span></div>
+          </div>
+          <div class="shortcuts-section">
+            <h3>Accessibility</h3>
+            <div class="shortcut-row"><kbd>?</kbd> / <kbd>/</kbd> <span>Show this help</span></div>
+            <div class="shortcut-row"><kbd>Esc</kbd> <span>Exit follow mode / Close modal</span></div>
+          </div>
+        </div>
+        <div class="shortcuts-footer">
+          <p>Use checkboxes in the sidebar for: Color-blind palette, High contrast, Reduced motion</p>
+        </div>
+      </div>
+    `;
+
+    // Inject styles for the overlay
+    const style = document.createElement('style');
+    style.textContent = `
+      .keyboard-shortcuts-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        animation: shortcuts-fade-in 0.2s ease;
+      }
+      @keyframes shortcuts-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .shortcuts-modal {
+        background: var(--bg-secondary, #1e293b);
+        border-radius: 12px;
+        max-width: 500px;
+        width: 90vw;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        border: 1px solid var(--border, #334155);
+      }
+      .shortcuts-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border-bottom: 1px solid var(--border, #334155);
+      }
+      .shortcuts-header h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: var(--text-primary, #f8fafc);
+      }
+      .shortcuts-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        color: var(--text-muted, #94a3b8);
+        cursor: pointer;
+        padding: 4px 12px;
+        line-height: 1;
+        min-width: 44px;
+        min-height: 44px;
+        transition: color 0.15s;
+      }
+      .shortcuts-close:hover {
+        color: var(--text-primary, #f8fafc);
+      }
+      .shortcuts-content {
+        padding: 20px;
+      }
+      .shortcuts-section {
+        margin-bottom: 20px;
+      }
+      .shortcuts-section:last-child {
+        margin-bottom: 0;
+      }
+      .shortcuts-section h3 {
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted, #94a3b8);
+        margin: 0 0 12px 0;
+        border-bottom: 1px solid var(--border, #334155);
+        padding-bottom: 8px;
+      }
+      .shortcut-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+        font-size: 0.9rem;
+      }
+      .shortcut-row:last-child {
+        margin-bottom: 0;
+      }
+      .shortcut-row kbd {
+        background: var(--bg-tertiary, #334155);
+        border: 1px solid var(--border, #475569);
+        border-radius: 4px;
+        padding: 4px 10px;
+        font-family: monospace;
+        font-size: 0.85rem;
+        color: var(--text-primary, #f8fafc);
+        min-width: 32px;
+        text-align: center;
+        box-shadow: 0 2px 0 var(--border, #475569);
+      }
+      .shortcut-row span {
+        color: var(--text-secondary, #e2e8f0);
+      }
+      .shortcuts-footer {
+        padding: 15px 20px;
+        border-top: 1px solid var(--border, #334155);
+        background: var(--bg-tertiary, #334155);
+        border-radius: 0 0 12px 12px;
+      }
+      .shortcuts-footer p {
+        margin: 0;
+        font-size: 0.8rem;
+        color: var(--text-muted, #94a3b8);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .keyboard-shortcuts-overlay {
+          animation: none;
+        }
+      }
+    `;
+
+    // Close on click outside or Escape
+    const closeModal = () => {
+      overlay.remove();
+    };
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    });
+
+    const closeBtn = overlay.querySelector('.shortcuts-close') as HTMLButtonElement;
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeModal);
+    }
+
+    // Close on Escape key
+    const escapeHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeModal();
+        document.removeEventListener('keydown', escapeHandler);
+      }
+    };
+    document.addEventListener('keydown', escapeHandler);
+
+    document.body.appendChild(overlay);
+    overlay.appendChild(style);
+
+    // Focus the close button for accessibility
+    closeBtn?.focus();
+  }
+
   document.addEventListener('keydown', (e) => {
     if (!viewer.getReplay()) return;
     switch (e.code) {
@@ -1692,14 +1900,26 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
         viewer.togglePlay();
         break;
       case 'ArrowLeft':
-        e.preventDefault();
-        viewer.setTurn(viewer.getTurn() - 1);
+        if (e.shiftKey) {
+          // Shift+Left: Jump 10 turns back
+          e.preventDefault();
+          viewer.setTurn(Math.max(0, viewer.getTurn() - 10));
+        } else {
+          e.preventDefault();
+          viewer.setTurn(viewer.getTurn() - 1);
+        }
         updateUI();
         updateEventLog();
         break;
       case 'ArrowRight':
-        e.preventDefault();
-        viewer.setTurn(viewer.getTurn() + 1);
+        if (e.shiftKey) {
+          // Shift+Right: Jump 10 turns forward
+          e.preventDefault();
+          viewer.setTurn(Math.min(viewer.getTotalTurns() - 1, viewer.getTurn() + 10));
+        } else {
+          e.preventDefault();
+          viewer.setTurn(viewer.getTurn() + 1);
+        }
         updateUI();
         updateEventLog();
         break;
@@ -1723,13 +1943,57 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
         e.preventDefault();
         navigateToNextCriticalMoment();
         break;
-      case 'KeyF':
+      case 'KeyV':
+        // Cycle view mode (dots → territory → influence → standard)
         e.preventDefault();
-        theater.toggle();
+        const currentViewMode = viewer.getViewMode();
+        const viewModes: Array<'standard' | 'dots' | 'voronoi' | 'influence'> = ['dots', 'voronoi', 'influence', 'standard'];
+        const idx = viewModes.indexOf(currentViewMode);
+        const nextViewMode = viewModes[(idx + 1) % viewModes.length];
+        viewer.setViewMode(nextViewMode);
+        viewModeSelect.value = nextViewMode;
+        break;
+      case 'KeyF':
+        if (!e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          theater.toggle();
+        }
         break;
       case 'KeyT':
         e.preventDefault();
         toggleTranscriptPanel();
+        break;
+      case 'KeyE':
+        // Toggle event timeline visibility
+        e.preventDefault();
+        const timelineContainer = document.getElementById('event-timeline-container');
+        if (timelineContainer) {
+          const isHidden = timelineContainer.style.display === 'none';
+          timelineContainer.style.display = isHidden ? '' : 'none';
+        }
+        break;
+      case 'KeyC':
+        // Toggle commentary subtitles
+        e.preventDefault();
+        commentaryEnabled = !commentaryEnabled;
+        viewer.setCommentaryEnabled(commentaryEnabled);
+        commentaryToggle.classList.toggle('active', commentaryEnabled);
+        if (!commentaryEnabled) {
+          commentaryText.textContent = '';
+        } else {
+          const entry = viewer.getCommentaryForTurn(viewer.getTurn());
+          if (entry) {
+            commentaryText.textContent = entry.text;
+            commentaryText.className = `commentary-text type-${entry.type}`;
+          }
+        }
+        break;
+      case 'Slash':
+        // Show keyboard shortcuts overlay (? key without shift, or / key)
+        if (e.shiftKey || e.key === '?') {
+          e.preventDefault();
+          showKeyboardShortcutsOverlay();
+        }
         break;
       case 'Digit0':
       case 'Escape':
