@@ -10,11 +10,11 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     routing::{get, post},
-    Json, Router,
+    Router,
 };
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::env;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -57,7 +57,7 @@ struct You {
     score: u32,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     pub row: u32,
     pub col: u32,
@@ -87,6 +87,7 @@ struct Move {
     direction: String,
 }
 
+#[derive(Clone)]
 struct AppState {
     secret: String,
 }
@@ -117,7 +118,7 @@ async fn handle_turn(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<(StatusCode, [(&str, String); 2], String), StatusCode> {
+) -> Result<(StatusCode, [(String, String); 2], String), StatusCode> {
     let signature = headers
         .get("X-ACB-Signature")
         .and_then(|v| v.to_str().ok())
@@ -171,8 +172,8 @@ async fn handle_turn(
     Ok((
         StatusCode::OK,
         [
-            ("Content-Type".to_string(), "application/json".to_string()),
-            ("X-ACB-Signature".to_string(), response_sig),
+            ("Content-Type".to_owned(), "application/json".to_owned()),
+            ("X-ACB-Signature".to_owned(), response_sig),
         ],
         response_body,
     ))
@@ -241,7 +242,6 @@ fn verify_signature(
     body: &[u8],
     signature: &str,
 ) -> bool {
-    use hex::FromHex;
     let body_hash = sha2::Sha256::digest(body);
     let signing_string = format!(
         "{}.{}.{}.{}",
@@ -254,15 +254,21 @@ fn verify_signature(
     let mut mac =
         HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC key error");
     mac.update(signing_string.as_bytes());
-    let expected = mac.finalize().into_bytes();
+    let expected = hex::encode(mac.finalize().into_bytes());
 
-    match Vec::from_hex(signature) {
-        Ok(sig_bytes) => {
-            let sig_truncated: &[u8] = &sig_bytes;
-            hmac::digest::constant_time_eq(sig_truncated, &expected)
-        }
-        Err(_) => false,
+    hmac_equal(signature, &expected)
+}
+
+/// Constant-time string comparison
+fn hmac_equal(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
     }
+    a.as_bytes()
+        .iter()
+        .zip(b.as_bytes().iter())
+        .fold(0, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 fn sign_response(secret: &str, match_id: &str, turn: u32, body: &[u8]) -> String {

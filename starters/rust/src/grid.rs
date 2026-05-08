@@ -3,6 +3,7 @@
 //! Provides toroidal distance calculations, neighbor enumeration,
 //! and BFS pathfinding on a wrapping grid.
 
+use crate::Position;
 use std::collections::{HashMap, VecDeque};
 
 /// Manhattan distance with wrap-around on a toroidal grid.
