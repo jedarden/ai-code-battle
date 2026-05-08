@@ -158,7 +158,8 @@ export function reveal(featureKey: string): number | null {
     return null;
   }
 
-  return setXP(feature.xpThreshold);
+  setXP(feature.xpThreshold);
+  return feature.xpThreshold;
 }
 
 /**
