@@ -983,12 +983,13 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
           updateEventLog();
         },
       });
-      // Extract events from replay turns and feed to timeline
+      // Extract events from replay turns and feed to timeline with win probability data
       const timelineTurns = replay.turns.map((t: any, i: number) => ({
         turn: i,
         events: t.events ?? [],
+        energy_collected: t.energy_collected ?? [],
       }));
-      eventTimeline.setEvents(timelineTurns);
+      eventTimeline.setEvents(timelineTurns, replay.win_prob);
       timelineContainer.style.display = '';
     }
 
