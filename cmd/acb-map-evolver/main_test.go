@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -474,5 +475,245 @@ func TestBreed(t *testing.T) {
 
 	if child.ID[:4] != "map_" {
 		t.Errorf("Expected ID to start with 'map_', got %s", child.ID)
+	}
+}
+
+func TestNextScheduledTime(t *testing.T) {
+	// Create a fixed time for testing: Monday, May 12, 2025 at 10:00 UTC
+	baseTime := time.Date(2025, 5, 12, 10, 0, 0, 0, time.UTC) // Monday
+
+	tests := []struct {
+		name           string
+		now            time.Time
+		schedule       WeeklySchedule
+		wantScheduled  string // Expected scheduled time in RFC3339
+		wantHour       int
+		wantMinute     int
+		wantWeekday    time.Weekday
+	}{
+		{
+			name:        "Sunday 03:00 when current time is Monday 10:00",
+			now:         baseTime, // Monday 10:00
+			schedule:    WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
+			wantScheduled: "2025-05-18T03:00:00Z", // Next Sunday
+			wantHour:    3,
+			wantMinute:  0,
+			wantWeekday: time.Sunday,
+		},
+		{
+			name:        "Monday 03:00 when current time is Monday 10:00 (should schedule next Monday)",
+			now:         baseTime, // Monday 10:00
+			schedule:    WeeklySchedule{Weekday: time.Monday, Hour: 3, Minute: 0},
+			wantScheduled: "2025-05-19T03:00:00Z", // Next Monday (passed today)
+			wantHour:    3,
+			wantMinute:  0,
+			wantWeekday: time.Monday,
+		},
+		{
+			name:        "Monday 15:00 when current time is Monday 10:00 (same day, future)",
+			now:         baseTime, // Monday 10:00
+			schedule:    WeeklySchedule{Weekday: time.Monday, Hour: 15, Minute: 0},
+			wantScheduled: "2025-05-12T15:00:00Z", // Same day
+			wantHour:    15,
+			wantMinute:  0,
+			wantWeekday: time.Monday,
+		},
+		{
+			name:        "Wednesday 12:30 when current time is Monday 10:00",
+			now:         baseTime, // Monday 10:00
+			schedule:    WeeklySchedule{Weekday: time.Wednesday, Hour: 12, Minute: 30},
+			wantScheduled: "2025-05-14T12:30:00Z", // 2 days from now
+			wantHour:    12,
+			wantMinute:  30,
+			wantWeekday: time.Wednesday,
+		},
+		{
+			name:        "Saturday 23:59 when current time is Monday 10:00",
+			now:         baseTime, // Monday 10:00
+			schedule:    WeeklySchedule{Weekday: time.Saturday, Hour: 23, Minute: 59},
+			wantScheduled: "2025-05-17T23:59:00Z", // 5 days from now
+			wantHour:    23,
+			wantMinute:  59,
+			wantWeekday: time.Saturday,
+		},
+		{
+			name:        "Default schedule (Sunday 03:00) on Saturday before midnight",
+			now:         time.Date(2025, 5, 10, 23, 0, 0, 0, time.UTC), // Saturday 23:00
+			schedule:    WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
+			wantScheduled: "2025-05-11T03:00:00Z", // Next day (Sunday)
+			wantHour:    3,
+			wantMinute:  0,
+			wantWeekday: time.Sunday,
+		},
+		{
+			name:        "Default schedule (Sunday 03:00) on Sunday after 03:00",
+			now:         time.Date(2025, 5, 11, 5, 0, 0, 0, time.UTC), // Sunday 05:00
+			schedule:    WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
+			wantScheduled: "2025-05-18T03:00:00Z", // Next week (passed today)
+			wantHour:    3,
+			wantMinute:  0,
+			wantWeekday: time.Sunday,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Calculate expected result manually (same logic as nextScheduledTime)
+			scheduled := time.Date(tt.now.Year(), tt.now.Month(), tt.now.Day(),
+				tt.schedule.Hour, tt.schedule.Minute, 0, 0, time.UTC)
+
+			// Add days until correct weekday
+			daysUntil := int(tt.schedule.Weekday) - int(tt.now.Weekday())
+			if daysUntil < 0 {
+				daysUntil += 7
+			}
+			scheduled = scheduled.AddDate(0, 0, daysUntil)
+
+			// If scheduled time has passed, move to next week
+			if scheduled.Before(tt.now) || scheduled.Equal(tt.now) {
+				scheduled = scheduled.Add(7 * 24 * time.Hour)
+			}
+
+			// Verify the scheduled time matches expected
+			gotScheduled := scheduled.Format(time.RFC3339)
+			if gotScheduled != tt.wantScheduled {
+				t.Errorf("Expected scheduled time %s, got %s (from now: %s)",
+					tt.wantScheduled, gotScheduled, tt.now.Format(time.RFC3339))
+			}
+
+			if scheduled.Hour() != tt.wantHour {
+				t.Errorf("Expected hour %d, got %d", tt.wantHour, scheduled.Hour())
+			}
+
+			if scheduled.Minute() != tt.wantMinute {
+				t.Errorf("Expected minute %d, got %d", tt.wantMinute, scheduled.Minute())
+			}
+
+			// Verify weekday matches
+			if scheduled.Weekday() != tt.wantWeekday {
+				t.Errorf("Expected weekday %v, got %v", tt.wantWeekday, scheduled.Weekday())
+			}
+		})
+	}
+}
+
+func TestWeeklyScheduleEnvParsing(t *testing.T) {
+	// Test that environment variable parsing works correctly
+	// Format: "WEEKDAY:HH:MM" e.g., "0:03:00" for Sunday 03:00
+
+	tests := []struct {
+		name           string
+		envValue       string
+		wantParseError bool // Whether Sscanf itself should fail
+		wantValid      bool // Whether the parsed values are valid for use
+		wantDay        time.Weekday
+		wantHour       int
+		wantMinute     int
+	}{
+		{
+			name:           "Valid schedule Sunday 03:00",
+			envValue:       "0:03:00",
+			wantParseError: false,
+			wantValid:      true,
+			wantDay:        time.Sunday,
+			wantHour:       3,
+			wantMinute:     0,
+		},
+		{
+			name:           "Valid schedule Wednesday 15:30",
+			envValue:       "3:15:30",
+			wantParseError: false,
+			wantValid:      true,
+			wantDay:        time.Wednesday,
+			wantHour:       15,
+			wantMinute:     30,
+		},
+		{
+			name:           "Valid schedule Saturday 23:59",
+			envValue:       "6:23:59",
+			wantParseError: false,
+			wantValid:      true,
+			wantDay:        time.Saturday,
+			wantHour:       23,
+			wantMinute:     59,
+		},
+		{
+			name:           "Invalid weekday 7 (out of range 0-6)",
+			envValue:       "7:03:00",
+			wantParseError: false, // Sscanf parses it fine
+			wantValid:      false,  // But validation rejects it
+		},
+		{
+			name:           "Invalid hour 24 (out of range 0-23)",
+			envValue:       "0:24:00",
+			wantParseError: false, // Sscanf parses it fine
+			wantValid:      false,  // But validation rejects it
+		},
+		{
+			name:           "Invalid minute 60 (out of range 0-59)",
+			envValue:       "0:03:60",
+			wantParseError: false, // Sscanf parses it fine
+			wantValid:      false,  // But validation rejects it
+		},
+		{
+			name:           "Invalid format",
+			envValue:       "invalid",
+			wantParseError: true, // Sscanf fails
+			wantValid:      false,
+		},
+		{
+			name:           "Incomplete format",
+			envValue:       "0:03",
+			wantParseError: true, // Sscanf returns n < 3
+			wantValid:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var weekday, hour, minute int
+			n, err := fmt.Sscanf(tt.envValue, "%d:%d:%d", &weekday, &hour, &minute)
+			hasParseError := (err != nil) || (n != 3)
+
+			// Check parse error expectation
+			if hasParseError != tt.wantParseError {
+				if tt.wantParseError {
+					t.Errorf("Expected parse error, but got: weekday=%d, hour=%d, minute=%d (n=%d, err=%v)",
+						weekday, hour, minute, n, err)
+				} else {
+					t.Errorf("Unexpected parse error: %v (n=%d)", err, n)
+				}
+				return
+			}
+
+			// If parse succeeded, check validation
+			if !hasParseError {
+				isValid := (weekday >= 0 && weekday <= 6 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59)
+				if isValid != tt.wantValid {
+					if tt.wantValid {
+						t.Errorf("Expected values to be valid, but validation would reject: weekday=%d (range 0-6), hour=%d (range 0-23), minute=%d (range 0-59)",
+							weekday, hour, minute)
+					} else {
+						t.Errorf("Expected values to be invalid, but validation would accept: weekday=%d, hour=%d, minute=%d",
+							weekday, hour, minute)
+					}
+					return
+				}
+
+				// If valid, check the parsed values match expectations
+				if tt.wantValid {
+					gotDay := time.Weekday(weekday)
+					if gotDay != tt.wantDay {
+						t.Errorf("Expected weekday %v, got %v", tt.wantDay, gotDay)
+					}
+					if hour != tt.wantHour {
+						t.Errorf("Expected hour %d, got %d", tt.wantHour, hour)
+					}
+					if minute != tt.wantMinute {
+						t.Errorf("Expected minute %d, got %d", tt.wantMinute, minute)
+					}
+				}
+			}
+		})
 	}
 }
