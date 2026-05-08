@@ -353,7 +353,8 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 		if req.BotRank > 0 {
 			sb.WriteString(fmt.Sprintf("Current rank: #%d\n", req.BotRank))
 		}
-		sb.WriteString(fmt.Sprintf("ELO: peaked at %d, fell to trough, recovered to %d\n", req.RatingStart, req.RatingEnd))
+		sb.WriteString("Story: Climbed from bottom 25%% of leaderboard to top 25%%\n")
+		sb.WriteString(fmt.Sprintf("Current ELO: %d\n", req.RatingEnd))
 		if req.Archetype != "" {
 			sb.WriteString(fmt.Sprintf("Archetype: %s\n", req.Archetype))
 		}
@@ -364,11 +365,25 @@ func buildNarrativePrompt(req NarrativeRequest) string {
 				if m.Won {
 					outcome = "Beat"
 				}
-				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d) — score %s, %d turns. Match ID: %s\n",
-					outcome, m.OpponentName, m.OpponentRating, m.Score, m.TurnCount, m.MatchID))
+				rankStr := ""
+				if m.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(", #%d", m.OpponentRank)
+				}
+				sb.WriteString(fmt.Sprintf("  - %s %s (ELO %d%s) — score %s, %d turns. Match ID: %s\n",
+					outcome, m.OpponentName, m.OpponentRating, rankStr, m.Score, m.TurnCount, m.MatchID))
 				if m.CriticalMoment != "" {
 					sb.WriteString(fmt.Sprintf("    Turning point: %s\n", m.CriticalMoment))
 				}
+			}
+		}
+		if len(req.HeadToHead) > 0 {
+			sb.WriteString("Head-to-head records (season context):\n")
+			for _, h := range req.HeadToHead {
+				rankStr := ""
+				if h.OpponentRank > 0 {
+					rankStr = fmt.Sprintf(", ranked #%d", h.OpponentRank)
+				}
+				sb.WriteString(fmt.Sprintf("  vs %s%s: %dW-%dL (%d matches)\n", h.OpponentName, rankStr, h.Wins, h.Losses, h.TotalMatches))
 			}
 		}
 
@@ -556,13 +571,11 @@ func detectFallArcs(data *IndexData) []StoryArc {
 
 func detectRivalryArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
-	weekAgo := data.GeneratedAt.AddDate(0, 0, -7)
 
 	pairData := make(map[string]*struct {
 		botAID, botBID   string
 		aWins, bWins     int
 		total            int
-		weekA, weekB     int
 	})
 
 	for _, m := range data.Matches {
@@ -580,7 +593,6 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 						botAID, botBID   string
 						aWins, bWins     int
 						total            int
-						weekA, weekB     int
 					}{botAID: aID, botBID: bID}
 				}
 				pairData[key].total++
@@ -597,15 +609,13 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 						pairData[key].bWins++
 					}
 				}
-				if m.PlayedAt.After(weekAgo) {
-					pairData[key].weekA++
-				}
 			}
 		}
 	}
 
 	for _, pd := range pairData {
-		if pd.weekA >= 5 && pd.aWins >= 2 && pd.bWins >= 2 {
+		// Grudge matches: 10+ total meetings
+		if pd.total >= 10 && pd.aWins >= 2 && pd.bWins >= 2 {
 			arcs = append(arcs, StoryArc{
 				Type:         ArcRivalry,
 				BotID:        pd.botAID,
@@ -626,9 +636,24 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 func detectUpsetArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
 
-	var biggestUpset *StoryArc
-	var biggestGap int
+	if len(data.Bots) < 10 {
+		return arcs
+	}
 
+	// Get current top 10 and bottom 10 bot IDs
+	top10 := make(map[string]bool, 10)
+	bottom10 := make(map[string]bool, 10)
+
+	for i := 0; i < 10 && i < len(data.Bots); i++ {
+		top10[data.Bots[i].ID] = true
+	}
+	for i := len(data.Bots) - 10; i < len(data.Bots); i++ {
+		if i >= 0 {
+			bottom10[data.Bots[i].ID] = true
+		}
+	}
+
+	// Find matches where bottom-10 beat top-10
 	for _, m := range data.Matches {
 		if len(m.Participants) < 2 {
 			continue
@@ -647,10 +672,9 @@ func detectUpsetArcs(data *IndexData) []StoryArc {
 			continue
 		}
 
-		gap := int(loser.PreMatchRating - winner.PreMatchRating)
-		if gap > biggestGap {
-			biggestGap = gap
-			biggestUpset = &StoryArc{
+		// Check if winner was bottom-10 and loser was top-10
+		if bottom10[winner.BotID] && top10[loser.BotID] {
+			arcs = append(arcs, StoryArc{
 				Type:        ArcUpset,
 				BotID:       winner.BotID,
 				BotName:     getBotName(winner.BotID, data),
@@ -664,17 +688,16 @@ func detectUpsetArcs(data *IndexData) []StoryArc {
 					OpponentID:     loser.BotID,
 					OpponentName:   getBotName(loser.BotID, data),
 					OpponentRating: int(loser.PreMatchRating),
+					OpponentRank:   getBotRank(loser.BotID, data),
 					MapName:        m.MapName,
 					Score:          fmt.Sprintf("%d-%d", winner.Score, loser.Score),
 					TurnCount:      m.TurnCount,
 					Won:            true,
+					EndCondition:   m.EndCondition,
+					CriticalMoment: summarizeCriticalMoment(m, winner, loser),
 				}},
-			}
+			})
 		}
-	}
-
-	if biggestUpset != nil && biggestGap >= 100 {
-		arcs = append(arcs, *biggestUpset)
 	}
 
 	return arcs
@@ -730,40 +753,71 @@ func detectEvolutionArcs(data *IndexData) []StoryArc {
 func detectComebackArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
 
+	if len(data.Bots) < 4 {
+		return arcs
+	}
+
+	// Calculate quartile thresholds
+	bottomQuartileCutoff := len(data.Bots) / 4
+	topQuartileStart := len(data.Bots) - (len(data.Bots) / 4)
+
 	for _, bot := range data.Bots {
-		if len(getBotRatingHistory(bot.ID, data)) < 3 {
+		currentRank := getBotRank(bot.ID, data)
+		if currentRank == 0 {
 			continue
 		}
 
-		currentRating := bot.Rating
-		var peakRating, troughRating float64
-		var foundDecline, foundRecovery bool
-
-		for i, rh := range getBotRatingHistory(bot.ID, data) {
-			if rh.Rating > peakRating {
-				peakRating = rh.Rating
+		// Check if bot is currently in top 25%
+		if currentRank < topQuartileStart {
+			// Look at rating history to see if bot was ever in bottom 25%
+			history := getBotRatingHistory(bot.ID, data)
+			if len(history) < 2 {
+				continue
 			}
-			if i > 0 && rh.Rating < getBotRatingHistory(bot.ID, data)[i-1].Rating {
-				if rh.Rating < troughRating || troughRating == 0 {
-					troughRating = rh.Rating
-					foundDecline = true
+
+			// Check if bot was in bottom 25% at some point in the past 30 days
+			monthAgo := data.GeneratedAt.AddDate(0, 0, -30)
+			var wasInBottomQuartile bool
+
+			for _, rh := range history {
+				if rh.RecordedAt.Before(monthAgo) {
+					continue
+				}
+				// Estimate historical rank by comparing rating to others at that time
+				// This is an approximation - we count how many current bots had higher ratings then
+				lowerCount := 0
+				for _, otherBot := range data.Bots {
+					if otherBot.ID == bot.ID {
+						continue
+					}
+					otherHistory := getBotRatingHistory(otherBot.ID, data)
+					var otherRatingAtTime float64
+					for _, orh := range otherHistory {
+						if orh.RecordedAt.Before(rh.RecordedAt) || orh.RecordedAt.Equal(rh.RecordedAt) {
+							otherRatingAtTime = orh.Rating
+						}
+					}
+					if otherRatingAtTime > rh.Rating {
+						lowerCount++
+					}
+				}
+				historicalRank := lowerCount + 1
+				if historicalRank > bottomQuartileCutoff {
+					wasInBottomQuartile = true
+					break
 				}
 			}
-		}
 
-		if foundDecline && currentRating >= troughRating+150 {
-			foundRecovery = true
-		}
-
-		if foundRecovery {
-			arcs = append(arcs, StoryArc{
-				Type:        ArcComeback,
-				BotID:       bot.ID,
-				BotName:     bot.Name,
-				RatingStart: int(peakRating),
-				RatingEnd:   int(currentRating),
-				KeyMatches:  extractKeyMatches(bot.ID, data),
-			})
+			if wasInBottomQuartile {
+				arcs = append(arcs, StoryArc{
+					Type:        ArcComeback,
+					BotID:       bot.ID,
+					BotName:     bot.Name,
+					RatingStart: 0, // Was in bottom quartile
+					RatingEnd:   int(bot.Rating),
+					KeyMatches:  extractKeyMatches(bot.ID, data),
+				})
+			}
 		}
 	}
 
@@ -1113,8 +1167,8 @@ func buildWeeklyChroniclesPrompt(req WeeklyChroniclesRequest) string {
 	if len(comebackArcs) > 0 {
 		sb.WriteString("\n### Comebacks\n")
 		for _, arc := range comebackArcs {
-			sb.WriteString(fmt.Sprintf("  - %s: from trough back to %.0f after falling from %.0f\n",
-				arc.BotName, float64(arc.RatingEnd), float64(arc.RatingStart)))
+			sb.WriteString(fmt.Sprintf("  - %s: climbed from bottom 25%% to top 25%% (current ELO: %d)\n",
+				arc.BotName, arc.RatingEnd))
 		}
 	}
 
