@@ -1141,3 +1141,212 @@ code {
     max-height: 1000px;
   }
 }
+
+/* ─── Bot Profile Page ───────────────────────────────────────────────────────────── */
+
+.bot-profile-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: var(--space-lg);
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: var(--space-lg);
+}
+
+.breadcrumb a {
+  color: var(--accent);
+}
+
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-lg);
+  gap: var(--space-md);
+}
+
+.profile-header-main {
+  flex: 1;
+}
+
+.profile-header h1 {
+  margin: 0 0 var(--space-sm) 0;
+  font-size: 2rem;
+  color: var(--text-primary);
+}
+
+.profile-status {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-healthy {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.status-unhealthy {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+}
+
+.status-unknown {
+  background-color: rgba(148, 163, 184, 0.15);
+  color: var(--text-muted);
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-md);
+}
+
+.profile-section {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-md);
+  text-align: center;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.meta-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-sm) var(--space-lg);
+  font-size: 0.875rem;
+}
+
+.meta-list dt {
+  color: var(--text-muted);
+}
+
+.meta-list dd {
+  color: var(--text-primary);
+}
+
+.rating-display {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.rating-main {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rating-dev {
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.rating-chart {
+  margin-top: var(--space-md);
+}
+
+.rating-sparkline {
+  width: 100%;
+  height: 60px;
+}
+
+.rating-range {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: var(--space-xs);
+}
+
+/* Match items in history */
+.match-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-xs);
+  background-color: var(--bg-primary);
+}
+
+.match-result {
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+}
+
+.match-won .match-result {
+  color: var(--success);
+}
+
+.match-lost .match-result {
+  color: var(--error);
+}
+
+.match-opponent {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.match-score {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.enriched-badge {
+  font-size: 0.65rem;
+  padding: 2px var(--space-sm);
+  background-color: rgba(168, 85, 247, 0.2);
+  color: var(--player5);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.match-list-rest {
+  margin-top: var(--space-sm);
+}
+
+.match-list-rest.expanded {
+  animation: expand-in 200ms ease-out;
+}
+
+.show-more-matches {
+  margin-top: var(--space-sm);
+  width: 100%;
+}

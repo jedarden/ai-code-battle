@@ -408,8 +408,17 @@
   /* Bot profile mobile */
   .profile-header {
     flex-direction: column;
+    align-items: stretch;
     text-align: center;
     gap: var(--space-sm);
+  }
+
+  .profile-header-main {
+    text-align: center;
+  }
+
+  #share-card-btn {
+    width: 100%;
   }
 
   .profile-grid {
@@ -417,7 +426,7 @@
   }
 
   .stats-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
   /* Bot cards mobile */

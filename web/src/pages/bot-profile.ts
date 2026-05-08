@@ -1,10 +1,12 @@
 // Bot profile page - displays individual bot details.
 // §16.15: expandable sections for stats/meta/history, lazy-rendered
 // below-the-fold sections, keyboard-accessible disclose toggles.
+// §14.10: bot profile card generation and sharing
 
 import { fetchBotProfile, type BotProfile } from '../api-types';
 import { updateOGTags, getBotProfileOGTags, resetOGTags } from '../og-tags';
 import { initLazySections, lazySection } from '../lib/lazy-section';
+import { downloadBotCard } from '../components/bot-card';
 
 export async function renderBotProfilePage(params: Record<string, string>): Promise<void> {
   const app = document.getElementById('app');
@@ -56,10 +58,15 @@ function renderProfile(container: HTMLElement, profile: BotProfile): void {
 
   container.innerHTML = `
     <div class="profile-header">
-      <h1>${escapeHtml(profile.name)}</h1>
-      <div class="profile-status ${getStatusClass(profile.health_status)}">
-        ${profile.health_status}
+      <div class="profile-header-main">
+        <h1>${escapeHtml(profile.name)}</h1>
+        <div class="profile-status ${getStatusClass(profile.health_status)}">
+          ${profile.health_status}
+        </div>
       </div>
+      <button id="share-card-btn" class="btn secondary" title="Download shareable bot profile card">
+        📇 Share Card
+      </button>
     </div>
 
     <!-- Always visible: core rating -->
@@ -148,6 +155,9 @@ function renderProfile(container: HTMLElement, profile: BotProfile): void {
 
   // Activate lazy sections
   initLazySections(container);
+
+  // Wire share card button
+  wireShareCardButton(container, profile);
 }
 
 function renderRecentMatches(matches: BotProfile['recent_matches']): string {
@@ -300,4 +310,30 @@ function escapeHtml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Wire up the share card button to download the bot profile card
+ */
+function wireShareCardButton(container: HTMLElement, profile: BotProfile): void {
+  const btn = container.querySelector<HTMLButtonElement>('#share-card-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Generating...';
+
+    try {
+      await downloadBotCard(profile);
+      btn.textContent = '✓ Downloaded!';
+      setTimeout(() => { btn.textContent = originalText; }, 2000);
+    } catch (error) {
+      btn.textContent = 'Failed';
+      console.error('Failed to generate bot card:', error);
+      setTimeout(() => { btn.textContent = originalText; }, 2000);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
