@@ -29,6 +29,15 @@ type Config struct {
 	MinSeedCount    int
 	EvolutionPeriod time.Duration
 	Once            bool
+	Weekly          bool
+	WeeklySchedule  WeeklySchedule
+}
+
+// WeeklySchedule configures when the weekly evolution run fires.
+type WeeklySchedule struct {
+	Weekday time.Weekday // 0=Sunday, 1=Monday, ..., 6=Saturday
+	Hour    int          // 0-23 (UTC)
+	Minute  int          // 0-59
 }
 
 // Map represents a game map.
@@ -113,6 +122,14 @@ func main() {
 		return
 	}
 
+	if cfg.Weekly {
+		// Weekly mode: run evolution on a weekly schedule
+		log.Printf("map-evolver: entering weekly evolution mode (schedule: %s %02d:%02d UTC)",
+			cfg.WeeklySchedule.Weekday, cfg.WeeklySchedule.Hour, cfg.WeeklySchedule.Minute)
+		runWeeklyLoop(evolver, cfg)
+		return
+	}
+
 	log.Printf("map-evolver: entering continuous evolution loop (period=%s)", cfg.EvolutionPeriod)
 
 	for {
@@ -141,6 +158,11 @@ func parseConfig() *Config {
 		ValidateSmoke:   true,
 		MinSeedCount:    20,
 		EvolutionPeriod: 30 * time.Minute,
+		WeeklySchedule: WeeklySchedule{
+			Weekday: time.Sunday, // Default: Sunday
+			Hour:    3,            // Default: 03:00 UTC
+			Minute:  0,
+		},
 	}
 
 	// Allow env var overrides before flag parsing.
@@ -150,6 +172,17 @@ func parseConfig() *Config {
 	if v := os.Getenv("ACB_EVOLUTION_PERIOD"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.EvolutionPeriod = d
+		}
+	}
+	// Weekly schedule from env (format: "WEEKDAY:HH:MM" e.g., "0:03:00" for Sunday 03:00)
+	if v := os.Getenv("ACB_WEEKLY_SCHEDULE"); v != "" {
+		var weekday, hour, minute int
+		if _, err := fmt.Sscanf(v, "%d:%d:%d", &weekday, &hour, &minute); err == nil {
+			if weekday >= 0 && weekday <= 6 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 {
+				cfg.WeeklySchedule.Weekday = time.Weekday(weekday)
+				cfg.WeeklySchedule.Hour = hour
+				cfg.WeeklySchedule.Minute = minute
+			}
 		}
 	}
 
@@ -177,6 +210,22 @@ func parseConfig() *Config {
 					cfg.EvolutionPeriod = d
 				}
 			}
+		case "--weekly":
+			cfg.Weekly = true
+		case "--weekly-schedule":
+			if i+1 < len(os.Args[1:]) {
+				// Parse format: "WEEKDAY:HH:MM" e.g., "0:03:00" for Sunday 03:00
+				var weekday, hour, minute int
+				if _, err := fmt.Sscanf(os.Args[1:][i+1], "%d:%d:%d", &weekday, &hour, &minute); err == nil {
+					if weekday >= 0 && weekday <= 6 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 {
+						cfg.WeeklySchedule.Weekday = time.Weekday(weekday)
+						cfg.WeeklySchedule.Hour = hour
+						cfg.WeeklySchedule.Minute = minute
+					} else {
+						log.Printf("Invalid weekly schedule format: %s (expected WEEKDAY:HH:MM, e.g., 0:03:00)", os.Args[1:][i+1])
+					}
+				}
+			}
 		case "--dry-run":
 			cfg.DryRun = true
 		case "--no-smoke":
@@ -192,10 +241,19 @@ func parseConfig() *Config {
 			fmt.Println("  --min-engagement F    Minimum engagement threshold for parents [default: 5.0]")
 			fmt.Println("  --min-seed-count N    Seed this many maps per player count on startup [default: 20]")
 			fmt.Println("  --evolution-period D  Sleep duration between evolution cycles [default: 30m]")
+			fmt.Println("  --weekly              Enable weekly automated evolution mode")
+			fmt.Println("  --weekly-schedule S   Weekly schedule (WEEKDAY:HH:MM, e.g., 0:03:00 for Sunday 03:00 UTC)")
+			fmt.Println("                        Weekday: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat")
 			fmt.Println("  --dry-run             Generate maps but don't save to database")
 			fmt.Println("  --no-smoke            Skip smoke-test validation")
 			fmt.Println("  --once                Run evolution once for all player counts and exit")
 			fmt.Println("  --help                Show this help")
+			fmt.Println("")
+			fmt.Println("Environment variables:")
+			fmt.Println("  ACB_DATABASE_URL       PostgreSQL connection string")
+			fmt.Println("  ACB_MIN_SEED_COUNT     Minimum maps to seed per player count [default: 20]")
+			fmt.Println("  ACB_EVOLUTION_PERIOD   Sleep duration between cycles [default: 30m]")
+			fmt.Println("  ACB_WEEKLY_SCHEDULE   Weekly schedule (WEEKDAY:HH:MM) [default: 0:03:00]")
 			return nil
 		}
 	}
@@ -1256,4 +1314,77 @@ func generateMapID(rng *rand.Rand) string {
 		b[i] = chars[rng.Intn(len(chars))]
 	}
 	return "map_" + string(b)
+}
+
+// runWeeklyLoop runs map evolution on a weekly schedule.
+// It waits until the next scheduled time (weekday:hour:minute UTC), then runs
+// evolution for all player counts, and repeats every 7 days.
+func runWeeklyLoop(evolver *MapEvolver, cfg *Config) {
+	schedule := cfg.WeeklySchedule
+
+	// Calculate first scheduled run time
+	nextRun := nextScheduledTime(schedule)
+	log.Printf("map-evolver: first weekly run scheduled for %s (in %v)",
+		nextRun.Format(time.RFC3339), time.Until(nextRun).Round(time.Second))
+
+	for {
+		// Sleep until the scheduled time
+		waitDuration := time.Until(nextRun)
+		if waitDuration > 0 {
+			log.Printf("map-evolver: sleeping %v until next scheduled run at %s",
+				waitDuration.Round(time.Second), nextRun.Format(time.RFC3339))
+			time.Sleep(waitDuration)
+		}
+
+		// Run evolution for all player counts
+		log.Printf("map-evolver: starting weekly evolution run for all player counts")
+		totalCreated := 0
+		for _, pc := range allPlayerCounts {
+			evolver.cfg.PlayerCount = pc
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			results, err := evolver.Run(ctx)
+			cancel()
+
+			if err != nil {
+				log.Printf("map-evolver: player_count=%d error: %v", pc, err)
+				continue
+			}
+
+			log.Printf("map-evolver: player_count=%d: %d new maps created", pc, len(results))
+			totalCreated += len(results)
+		}
+		log.Printf("map-evolver: weekly evolution run complete, %d total maps created", totalCreated)
+
+		// Calculate next scheduled run (7 days later)
+		nextRun = nextRun.Add(7 * 24 * time.Hour)
+		log.Printf("map-evolver: next weekly run scheduled for %s",
+			nextRun.Format(time.RFC3339))
+	}
+}
+
+// nextScheduledTime calculates the next occurrence of the weekly schedule.
+// If the current time is before the scheduled time today, it returns today's time.
+// If the current time is after the scheduled time today, it returns next week's time.
+func nextScheduledTime(schedule WeeklySchedule) time.Time {
+	now := time.Now().UTC()
+
+	// Start with today at the scheduled time
+	scheduled := time.Date(now.Year(), now.Month(), now.Day(),
+		schedule.Hour, schedule.Minute, 0, 0, time.UTC)
+
+	// Check if we're on the correct weekday
+	daysUntil := int(schedule.Weekday) - int(now.Weekday())
+	if daysUntil < 0 {
+		daysUntil += 7
+	}
+
+	// Add the days until the scheduled weekday
+	scheduled = scheduled.AddDate(0, 0, daysUntil)
+
+	// If the scheduled time has already passed today, move to next week
+	if scheduled.Before(now) || scheduled.Equal(now) {
+		scheduled = scheduled.Add(7 * 24 * time.Hour)
+	}
+
+	return scheduled
 }

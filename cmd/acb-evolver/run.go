@@ -24,6 +24,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -86,6 +87,21 @@ type RunConfig struct {
 	// PagesBaseURL is the Cloudflare Pages base URL for reading static indexes
 	// such as community_hints.json. Empty disables community hint loading.
 	PagesBaseURL string
+
+	// Map evolution ticker (§14.6)
+	MapEvolutionEnabled  bool           // whether to trigger weekly map evolution
+	MapEvolutionSchedule WeeklySchedule // when to run map evolution
+}
+
+// WeeklySchedule configures when the weekly evolution run fires.
+type WeeklySchedule struct {
+	Weekday time.Weekday // 0=Sunday, 1=Monday, ..., 6=Saturday
+	Hour    int          // 0-23 (UTC)
+	Minute  int          // 0-59
+
+	// PagesBaseURL is the Cloudflare Pages base URL for reading static indexes
+	// such as community_hints.json. Empty disables community hint loading.
+	PagesBaseURL string
 }
 
 // DefaultRunConfig returns production-ready defaults.
@@ -113,6 +129,12 @@ func DefaultRunConfig() RunConfig {
 		DeclarativeConfigRepo:    envOrDefault("ACB_DECLARATIVE_CONFIG_REPO", "https://forgejo.ardenone.com/infra/ardenone-cluster.git"),
 		DeclarativeConfigBranch:  envOrDefault("ACB_DECLARATIVE_CONFIG_BRANCH", "main"),
 		Languages:         []string{"go", "python", "rust", "typescript", "java", "php"},
+		MapEvolutionEnabled: envOrDefault("ACB_MAP_EVOLUTION_ENABLED", "false") == "true",
+		MapEvolutionSchedule: WeeklySchedule{
+			Weekday: time.Sunday, // Default: Sunday 03:00 UTC
+			Hour:    3,
+			Minute:  0,
+		},
 	}
 }
 
@@ -142,6 +164,7 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 	verbose := fs.Bool("v", false, "verbose output")
 	dryRun := fs.Bool("dry-run", false, "simulate without deploying")
 	maxCycles := fs.Int("max-cycles", 0, "stop after N cycles (0 = unlimited)")
+	enableMapEvolution := fs.Bool("enable-map-evolution", false, "enable weekly map evolution ticker")
 
 	if err := fs.Parse(args); err != nil {
 		os.Exit(1)
@@ -170,6 +193,21 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 	cfg := DefaultRunConfig()
 	if *singleLang != "" {
 		cfg.Languages = []string{*singleLang}
+	}
+	if *enableMapEvolution {
+		cfg.MapEvolutionEnabled = true
+	}
+
+	// Parse weekly schedule from env (format: "WEEKDAY:HH:MM" e.g., "0:03:00" for Sunday 03:00)
+	if v := os.Getenv("ACB_MAP_EVOLUTION_SCHEDULE"); v != "" {
+		var weekday, hour, minute int
+		if _, err := fmt.Sscanf(v, "%d:%d:%d", &weekday, &hour, &minute); err == nil {
+			if weekday >= 0 && weekday <= 6 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 {
+				cfg.MapEvolutionSchedule.Weekday = time.Weekday(weekday)
+				cfg.MapEvolutionSchedule.Hour = hour
+				cfg.MapEvolutionSchedule.Minute = minute
+			}
+		}
 	}
 
 	// Track last evolution time per island for cooldown
@@ -202,6 +240,11 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 	// Start periodic retirement ticker (§10.8)
 	if cfg.RetirementCheckInterval > 0 {
 		go startRetirementTicker(ctx, db, store, cfg, &stats, *verbose)
+	}
+
+	// Start weekly map evolution ticker (§14.6)
+	if cfg.MapEvolutionEnabled {
+		go startMapEvolutionTicker(ctx, db, cfg, *verbose)
 	}
 
 	langIdx := 0
@@ -786,6 +829,104 @@ func startRetirementTicker(ctx context.Context, db *sql.DB, store *evolverdb.Sto
 			}
 		}
 	}
+}
+
+// startMapEvolutionTicker runs weekly map evolution (§14.6).
+// This triggers the acb-map-evolver to evolve maps based on engagement scores.
+func startMapEvolutionTicker(ctx context.Context, db *sql.DB, cfg RunConfig, verbose bool) {
+	schedule := cfg.MapEvolutionSchedule
+	log.Printf("starting map evolution ticker (schedule: %s %02d:%02d UTC)",
+		schedule.Weekday, schedule.Hour, schedule.Minute)
+
+	// Calculate first scheduled run time
+	nextRun := nextMapEvolutionTime(schedule)
+	log.Printf("map evolution: first run scheduled for %s (in %v)",
+		nextRun.Format(time.RFC3339), time.Until(nextRun).Round(time.Second))
+
+	for {
+		// Sleep until the scheduled time
+		waitDuration := time.Until(nextRun)
+		if waitDuration > 0 {
+			select {
+			case <-ctx.Done():
+				log.Printf("stopping map evolution ticker")
+				return
+			case <-time.After(waitDuration):
+			}
+		}
+
+		// Run map evolution
+		log.Printf("map evolution: starting weekly map evolution run")
+		if err := runMapEvolution(ctx, db, verbose); err != nil {
+			log.Printf("map evolution: error: %v", err)
+		} else {
+			log.Printf("map evolution: weekly run complete")
+		}
+
+		// Calculate next scheduled run (7 days later)
+		nextRun = nextRun.Add(7 * 24 * time.Hour)
+		log.Printf("map evolution: next run scheduled for %s",
+			nextRun.Format(time.RFC3339))
+
+		// Check for cancellation before sleeping again
+		select {
+		case <-ctx.Done():
+			log.Printf("stopping map evolution ticker")
+			return
+		default:
+		}
+	}
+}
+
+// nextMapEvolutionTime calculates the next occurrence of the map evolution schedule.
+func nextMapEvolutionTime(schedule WeeklySchedule) time.Time {
+	now := time.Now().UTC()
+
+	// Start with today at the scheduled time
+	scheduled := time.Date(now.Year(), now.Month(), now.Day(),
+		schedule.Hour, schedule.Minute, 0, 0, time.UTC)
+
+	// Check if we're on the correct weekday
+	daysUntil := int(schedule.Weekday) - int(now.Weekday())
+	if daysUntil < 0 {
+		daysUntil += 7
+	}
+
+	// Add the days until the scheduled weekday
+	scheduled = scheduled.AddDate(0, 0, daysUntil)
+
+	// If the scheduled time has already passed today, move to next week
+	if scheduled.Before(now) || scheduled.Equal(now) {
+		scheduled = scheduled.Add(7 * 24 * time.Hour)
+	}
+
+	return scheduled
+}
+
+// runMapEvolution executes the map evolution by running the acb-map-evolver binary
+// with the --once flag to trigger a single evolution run for all player counts.
+func runMapEvolution(ctx context.Context, db *sql.DB, verbose bool) error {
+	// Check if acb-map-evolver binary is available
+	cmd := exec.CommandContext(ctx, "acb-map-evolver", "--once")
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("ACB_DATABASE_URL=%s", os.Getenv("ACB_DATABASE_URL")),
+	)
+	if verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		log.Printf("map evolution: executing acb-map-evolver --once")
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("acb-map-evolver failed: %w, output: %s", err, string(output))
+	}
+
+	if verbose && len(output) > 0 {
+		log.Printf("map evolution: %s", string(output))
+	}
+
+	return nil
 }
 
 // printStats displays evolution loop statistics.
