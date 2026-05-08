@@ -2180,9 +2180,17 @@ export class ReplayViewer {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
+  // Get heatmap color from normalized value (0=blue/cold, 1=red/hot)
+  private getHeatmapColor(t: number): string {
+    // Blue (0,0,255) to Red (255,0,0) gradient
+    const r = Math.floor(Math.min(255, Math.max(0, t * 255 * 2)));
+    const b = Math.floor(Math.min(255, Math.max(0, (1 - t) * 255 * 2)));
+    return `rgb(${r}, 0, ${b})`;
+  }
+
   // Render debug telemetry overlay
   private renderDebugOverlay(debug: Record<number, DebugInfo>, colors: string[]): void {
-    const { ctx, cellSize } = this;
+    const { ctx, cellSize, replay } = this;
     let reasoningRow = 0;
 
     for (const [playerId, info] of Object.entries(debug)) {
@@ -2192,6 +2200,49 @@ export class ReplayViewer {
       if (this.debugPlayerEnabled.get(playerIdx) === false) continue;
 
       const color = colors[playerIdx] || '#ffffff';
+
+      // Draw debug heatmap (2D grid overlay with semi-transparent colors)
+      if (info.heatmap && replay) {
+        const { rows, cols } = replay.map;
+        const heatmapData = info.heatmap.data;
+
+        // Validate heatmap dimensions match map dimensions
+        if (heatmapData.length === rows && heatmapData[0]?.length === cols) {
+          // Find min/max values for normalization
+          let minVal = Infinity;
+          let maxVal = -Infinity;
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const v = heatmapData[r][c];
+              if (typeof v === 'number') {
+                minVal = Math.min(minVal, v);
+                maxVal = Math.max(maxVal, v);
+              }
+            }
+          }
+
+          // Only render if there's meaningful data
+          if (maxVal > minVal) {
+            const range = maxVal - minVal || 1;
+
+            for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                const value = heatmapData[r][c];
+                if (typeof value !== 'number') continue;
+
+                // Normalize to 0-1 and apply color gradient
+                const t = (value - minVal) / range;
+                // Blue (low) → Red (high) gradient
+                const heatmapColor = this.getHeatmapColor(t);
+                ctx.globalAlpha = 0.4; // semi-transparent
+                ctx.fillStyle = heatmapColor;
+                ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+              }
+            }
+            ctx.globalAlpha = 1.0;
+          }
+        }
+      }
 
       // Draw debug targets with priority-based opacity
       if (info.targets) {

@@ -141,9 +141,16 @@ export interface DebugTarget {
   priority?: number;  // 0.0–1.0; controls marker opacity (1 = fully opaque)
 }
 
+export interface DebugHeatmap {
+  name: string;      // e.g., "threat", "influence"
+  data: number[][]; // 2D array of values (row-major)
+}
+
 export interface DebugInfo {
   reasoning?: string;
   targets?: DebugTarget[];
+  values?: Record<string, string | number | boolean>;  // Key-value display data
+  heatmap?: DebugHeatmap;
 }
 
 // Extended ReplayTurn with debug support

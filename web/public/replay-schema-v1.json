@@ -485,6 +485,30 @@
         }
       }
     },
+    "DebugHeatmap": {
+      "type": "object",
+      "description": "2D grid overlay for bot telemetry visualization (e.g., threat, influence).",
+      "required": ["name", "data"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Heatmap name (e.g., 'threat', 'influence').",
+          "maxLength": 64
+        },
+        "data": {
+          "type": "array",
+          "description": "2D array of values in row-major order (data[row][col]). Each value is normalized to [0.0, 1.0].",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    },
     "DebugInfo": {
       "type": "object",
       "description": "Optional bot debug telemetry (stored if bot provides debug field in move response).",
@@ -500,6 +524,21 @@
           "items": {
             "$ref": "#/$defs/DebugTarget"
           }
+        },
+        "values": {
+          "type": "object",
+          "description": "Key-value pairs for debug display (e.g., metrics, state flags). Values are strings, numbers, or booleans.",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" }
+            ]
+          }
+        },
+        "heatmap": {
+          "description": "2D grid overlay for visualization (e.g., threat map, influence map).",
+          "$ref": "#/$defs/DebugHeatmap"
         }
       }
     },

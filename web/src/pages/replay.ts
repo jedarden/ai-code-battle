@@ -409,9 +409,17 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
       .debug-player-info { background-color: var(--bg-tertiary); border-radius: 6px; padding: 10px; }
       .debug-player-name { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
       .debug-reasoning { color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; margin-bottom: 8px; }
+      .debug-values { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+      .debug-value-item { font-size: 0.75rem; font-family: monospace; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+      .debug-value-key { font-weight: 600; }
+      .debug-value-value { color: var(--text-secondary); }
       .debug-targets { display: flex; flex-direction: column; gap: 4px; }
       .debug-target-item { font-size: 0.75rem; font-family: monospace; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
       .debug-target-priority { opacity: 0.7; }
+      .debug-heatmap { font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+      .debug-heatmap-label { font-weight: 600; }
+      .debug-heatmap-name { color: var(--accent); }
+      .debug-heatmap-size { opacity: 0.7; }
       .no-debug-data { color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
       /* Transcript panel (§15.3) */
       .transcript-panel { padding: 0; overflow: hidden; }
@@ -1096,7 +1104,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       if (viewer.getDebugPlayerEnabled(idx) === false) continue;
       const color = playerColors[idx] || '#888';
       const playerName = replay?.players[idx]?.name ?? `Player ${idx}`;
-      const hasData = !!(info.reasoning || (info.targets && info.targets.length > 0));
+      const hasData = !!(info.reasoning || (info.targets && info.targets.length > 0) || (info.values && Object.keys(info.values).length > 0) || info.heatmap);
       if (!hasData) continue;
 
       html += `<div class="debug-player-info">
@@ -1104,6 +1112,19 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
 
       if (info.reasoning) {
         html += `<div class="debug-reasoning">${escapeHtml(info.reasoning)}</div>`;
+      }
+
+      // Display values key-value table
+      if (info.values && Object.keys(info.values).length > 0) {
+        html += '<div class="debug-values">';
+        for (const [key, value] of Object.entries(info.values)) {
+          const displayValue = typeof value === 'boolean' ? (value ? 'true' : 'false') : String(value);
+          html += `<div class="debug-value-item">
+            <span class="debug-value-key">${escapeHtml(key)}:</span>
+            <span class="debug-value-value">${escapeHtml(displayValue)}</span>
+          </div>`;
+        }
+        html += '</div>';
       }
 
       if (info.targets && info.targets.length > 0) {
@@ -1118,6 +1139,15 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
           </div>`;
         }
         html += '</div>';
+      }
+
+      // Display heatmap info
+      if (info.heatmap) {
+        html += `<div class="debug-heatmap">
+          <span class="debug-heatmap-label">Heatmap:</span>
+          <span class="debug-heatmap-name">${escapeHtml(info.heatmap.name)}</span>
+          <span class="debug-heatmap-size">(${info.heatmap.data.length}x${info.heatmap.data[0]?.length || 0})</span>
+        </div>`;
       }
 
       html += '</div>';

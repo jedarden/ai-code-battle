@@ -80,8 +80,10 @@ type MoveResponse struct {
 
 // DebugInfo contains optional debug telemetry from the bot.
 type DebugInfo struct {
-	Reasoning string `json:"reasoning,omitempty"`
-	Targets   []DebugTarget `json:"targets,omitempty"`
+	Reasoning string                 `json:"reasoning,omitempty"`
+	Targets   []DebugTarget           `json:"targets,omitempty"`
+	Values    map[string]interface{} `json:"values,omitempty"`
+	Heatmap   *DebugHeatmap           `json:"heatmap,omitempty"`
 }
 
 // DebugTarget represents a debug target marker.
@@ -89,6 +91,12 @@ type DebugTarget struct {
 	Position Position `json:"position"`
 	Label    string   `json:"label"`
 	Priority float64  `json:"priority"`
+}
+
+// DebugHeatmap represents a 2D grid overlay for visualization.
+type DebugHeatmap struct {
+	Name string    `json:"name"`     // e.g., "threat", "influence"
+	Data [][]float64 `json:"data"`   // 2D array of values (row-major)
 }
 
 // GetMoves sends the game state to the bot and returns its moves.
