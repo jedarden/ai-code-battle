@@ -125,7 +125,7 @@ func DefaultRunConfig() RunConfig {
 		EncryptionKey:     os.Getenv("ACB_ENCRYPTION_KEY"),
 		UseNsjail:         true,
 		LiveExportPath:    envOrDefault("ACB_EVOLUTION_OUT", "evolution/live.json"),
-		UploadR2:          false,
+		UploadR2:          envOrDefault("ACB_R2_UPLOAD_ENABLED", "false") == "true",
 		DeclarativeConfigRepo:    envOrDefault("ACB_DECLARATIVE_CONFIG_REPO", "https://forgejo.ardenone.com/infra/ardenone-cluster.git"),
 		DeclarativeConfigBranch:  envOrDefault("ACB_DECLARATIVE_CONFIG_BRANCH", "main"),
 		Languages:         []string{"go", "python", "rust", "typescript", "java", "php"},
@@ -227,6 +227,9 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 	// Stats
 	stats := RunStats{StartTime: time.Now()}
 
+	// Shared cycle state for live observatory
+	cycleState := live.NewCycleState()
+
 	// Setup signal handling for graceful shutdown
 	ctx, cancel := context.WithCancel(ctx)
 	sigCh := make(chan os.Signal, 1)
@@ -282,10 +285,13 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 		}
 
 		// Run one evolution cycle
-		promoted, err := runCycle(ctx, db, store, island, lang, cfg, rng, *verbose, *dryRun)
+		cycleState.SetGeneration(stats.Cycles + 1)
+		promoted, err := runCycle(ctx, db, store, island, lang, cfg, rng, *verbose, *dryRun, cycleState)
 		if err != nil {
 			log.Printf("Cycle failed: %v", err)
 			stats.Errors++
+			cycleState.SetPhase("idle")
+			exportLive(ctx, db, cfg, *verbose, cycleState)
 		}
 		if promoted {
 			stats.Promoted++
@@ -303,7 +309,8 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 		}
 
 		// Export live.json after each cycle
-		exportLive(ctx, db, cfg, *verbose)
+		cycleState.SetPhase("idle")
+		exportLive(ctx, db, cfg, *verbose, cycleState)
 
 		// Check for cross-pollination (§10.2: every 50 generations per island)
 		cpChecker := crosspoll.NewChecker(store, llm.NewClient(cfg.LLMURL, ""), rng)
@@ -375,7 +382,7 @@ func selectNextIsland(lastEvolved map[string]time.Time, cooldown time.Duration, 
 
 // runCycle executes one complete evolution cycle for the given island.
 func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
-	island, lang string, cfg RunConfig, rng *rand.Rand, verbose, dryRun bool) (bool, error) {
+	island, lang string, cfg RunConfig, rng *rand.Rand, verbose, dryRun bool, cycleState *live.CycleState) (bool, error) {
 
 	// 1. Load programs from the island
 	programs, err := store.ListByIsland(ctx, island)
@@ -411,11 +418,23 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 	}
 	generation := maxGen + 1
 
+	// Set up cycle state for live observatory
+	cycleState.SetGeneration(generation)
+	cycleState.SetPhase("generating")
+	exportLiveQuiet(ctx, db, cfg, cycleState)
+
 	// 5. Generate candidate with retry loop
 	var programID int64
 	var code string
 	var program *evolverdb.Program
 	var report *validator.Report
+
+	// Build parent info for cycle state (with ratings)
+	parentInfos := make([]string, len(parents))
+	for i, p := range parents {
+		parentInfos[i] = fmt.Sprintf("%s-%d", island, p.ID)
+	}
+	cycleState.SetCandidate(fmt.Sprintf("%s-%d", lang, generation), island, lang, parentInfos)
 
 	for retry := 0; retry <= cfg.MaxRetries; retry++ {
 		if retry > 0 && verbose {
@@ -480,13 +499,32 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 		valCfg.UseNsjail = cfg.UseNsjail
 
 		report, err = validator.Validate(ctx, code, lang, result.Best.Code, valCfg)
+			cycleState.SetPhase("validating")
+			exportLiveQuiet(ctx, db, cfg, cycleState)
 		if err != nil {
+				cycleState.SetValidationError("infrastructure", err.Error())
 			log.Printf("Validation infrastructure error: %v", err)
 			store.Delete(ctx, programID)
 			programID = 0
 			continue
 		}
 
+			// Track validation results in cycle state
+			for _, stage := range report.Stages {
+				timeMs := int(stage.Duration.Milliseconds())
+				switch stage.Stage {
+				case "syntax":
+					cycleState.SetValidationSyntax(stage.Passed, timeMs)
+				case "schema":
+					cycleState.SetValidationSchema(stage.Passed, timeMs)
+				case "smoke":
+					cycleState.SetValidationSmoke(stage.Passed, timeMs)
+				}
+				if !stage.Passed && stage.Error != "" {
+					cycleState.SetValidationError(string(stage.Stage), stage.Error)
+				}
+			}
+			exportLiveQuiet(ctx, db, cfg, cycleState)
 		// Log validation result
 		valLog := &evolverdb.ValidationLog{
 			Island:    island,
@@ -530,6 +568,8 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 	}
 
 	// 6. Run arena evaluation
+	cycleState.SetPhase("evaluating")
+	exportLiveQuiet(ctx, db, cfg, cycleState)
 	arenaCfg := arena.DefaultConfig()
 	arenaCfg.EncryptionKey = cfg.EncryptionKey
 	a := arena.New(db, arenaCfg)
@@ -761,8 +801,8 @@ Focus on fixing the specific error above while maintaining all required function
 }
 
 // exportLive exports the evolution state to live.json.
-func exportLive(ctx context.Context, db *sql.DB, cfg RunConfig, verbose bool) {
-	data, err := live.Export(ctx, db)
+func exportLive(ctx context.Context, db *sql.DB, cfg RunConfig, verbose bool, cycleState *live.CycleState) {
+	data, err := live.Export(ctx, db, cycleState)
 	if err != nil {
 		log.Printf("warn: live export failed: %v", err)
 		return
@@ -785,6 +825,24 @@ func exportLive(ctx context.Context, db *sql.DB, cfg RunConfig, verbose bool) {
 
 	if verbose {
 		log.Printf("  Exported live.json (%d programs)", data.TotalPrograms)
+	}
+}
+
+// exportLiveQuiet is like exportLive but without verbose logging (for mid-cycle exports).
+func exportLiveQuiet(ctx context.Context, db *sql.DB, cfg RunConfig, cycleState *live.CycleState) {
+	data, err := live.Export(ctx, db, cycleState)
+	if err != nil {
+		return
+	}
+	_ = live.WriteFile(data, cfg.LiveExportPath)
+	if cfg.UploadR2 {
+		r2Cfg := live.R2ConfigFromEnv()
+		if r2Cfg.HasCredentials() {
+			r2Client, err := live.NewR2Client(r2Cfg)
+			if err == nil {
+				_ = r2Client.UploadLiveJSON(ctx, data)
+			}
+		}
 	}
 }
 

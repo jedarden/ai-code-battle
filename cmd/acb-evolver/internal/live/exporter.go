@@ -151,11 +151,17 @@ type LiveData struct {
 }
 
 // Export queries the programs database and builds the current evolution state.
-func Export(ctx context.Context, db *sql.DB) (*LiveData, error) {
+// If cycleState is provided, it includes the current cycle status.
+func Export(ctx context.Context, db *sql.DB, cycleState *CycleState) (*LiveData, error) {
 	data := &LiveData{
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		Islands:   make(map[string]IslandStat),
 		Totals:    Totals{},
+	}
+
+	// Add cycle info if available
+	if cycleState != nil {
+		data.Cycle = cycleState.ToCycleInfo()
 	}
 
 	if err := fillIslandStats(ctx, db, data); err != nil {

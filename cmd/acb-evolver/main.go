@@ -704,7 +704,8 @@ func runLiveExport(ctx context.Context, db *sql.DB, args []string) {
 		os.Exit(1)
 	}
 
-	data, err := live.Export(ctx, db)
+	// No active cycle state for manual export
+	data, err := live.Export(ctx, db, nil)
 	if err != nil {
 		log.Fatalf("live-export: %v", err)
 	}
