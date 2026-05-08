@@ -906,15 +906,25 @@ func nextMapEvolutionTime(schedule WeeklySchedule) time.Time {
 // runMapEvolution executes the map evolution by running the acb-map-evolver binary
 // with the --once flag to trigger a single evolution run for all player counts.
 func runMapEvolution(ctx context.Context, db *sql.DB, verbose bool) error {
-	// Check if acb-map-evolver binary is available
-	cmd := exec.CommandContext(ctx, "acb-map-evolver", "--once")
-	cmd.Env = append(os.Environ(),
+	// Path to acb-map-evolver binary (built into same container)
+	const mapEvolverBin = "/app/acb-map-evolver"
+
+	// Verify binary exists
+	if _, err := os.Stat(mapEvolverBin); err != nil {
+		return fmt.Errorf("acb-map-evolver binary not found at %s: %w", mapEvolverBin, err)
+	}
+
+	// Prepare environment with database URL
+	cmdEnv := append(os.Environ(),
 		fmt.Sprintf("ACB_DATABASE_URL=%s", os.Getenv("ACB_DATABASE_URL")),
 	)
+
+	cmd := exec.CommandContext(ctx, mapEvolverBin, "--once")
+	cmd.Env = cmdEnv
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		log.Printf("map evolution: executing acb-map-evolver --once")
+		log.Printf("map evolution: executing %s --once", mapEvolverBin)
 	}
 
 	output, err := cmd.CombinedOutput()

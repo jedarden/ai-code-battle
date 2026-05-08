@@ -27,8 +27,14 @@ COPY bots/ ./bots/
 # Copy evolver source
 COPY cmd/acb-evolver/ ./cmd/acb-evolver/
 
-# Build the binary
+# Copy map evolver source
+COPY cmd/acb-map-evolver/ ./cmd/acb-map-evolver/
+
+# Build the evolver binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /acb-evolver ./cmd/acb-evolver
+
+# Build the map evolver binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /acb-map-evolver ./cmd/acb-map-evolver
 
 # Runtime stage — needs language runtimes for validation sandbox
 FROM golang:1.25-alpine
@@ -52,8 +58,9 @@ RUN apk --no-cache add \
 # Install TypeScript compiler globally
 RUN npm install -g typescript ts-node
 
-# Copy binary from builder
+# Copy binaries from builder
 COPY --from=builder /acb-evolver /app/acb-evolver
+COPY --from=builder /acb-map-evolver /app/acb-map-evolver
 
 # Create non-root user
 RUN addgroup -g 1000 acb && adduser -D -u 1000 -G acb acb
