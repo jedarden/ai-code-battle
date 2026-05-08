@@ -114,11 +114,11 @@ func TestBuildNarrativePrompt_Evolution(t *testing.T) {
 
 func TestBuildNarrativePrompt_Comeback(t *testing.T) {
 	req := NarrativeRequest{
-		ArcType:    ArcComeback,
-		BotName:    "ComebackBot",
-		SeasonName: "Season 4",
+		ArcType:     ArcComeback,
+		BotName:     "ComebackBot",
+		SeasonName:  "Season 4",
 		RatingStart: 1300,
-		RatingEnd:  1450,
+		RatingEnd:   1450,
 	}
 
 	prompt := buildNarrativePrompt(req)
@@ -126,8 +126,8 @@ func TestBuildNarrativePrompt_Comeback(t *testing.T) {
 	if !strings.Contains(prompt, "Comeback") {
 		t.Error("prompt should contain comeback arc type")
 	}
-	if !strings.Contains(prompt, "1300") {
-		t.Error("prompt should contain rating recovery")
+	if !strings.Contains(prompt, "1450") {
+		t.Error("prompt should contain current ELO")
 	}
 }
 
@@ -231,32 +231,53 @@ func TestDetectRivalryArcs(t *testing.T) {
 			{ID: "bot2", Name: "HunterBot"},
 		},
 		Matches: []MatchData{
+			// Grudge match: 10+ meetings between the same pair
 			{ID: "m1", Participants: []ParticipantData{
 				{BotID: "bot1", Won: true},
 				{BotID: "bot2", Won: false},
-			}, PlayedAt: time.Date(2024, 3, 25, 12, 0, 0, 0, time.UTC)},
+			}, PlayedAt: time.Date(2024, 3, 20, 12, 0, 0, 0, time.UTC)},
 			{ID: "m2", Participants: []ParticipantData{
 				{BotID: "bot1", Won: false},
 				{BotID: "bot2", Won: true},
-			}, PlayedAt: time.Date(2024, 3, 26, 12, 0, 0, 0, time.UTC)},
+			}, PlayedAt: time.Date(2024, 3, 21, 12, 0, 0, 0, time.UTC)},
 			{ID: "m3", Participants: []ParticipantData{
 				{BotID: "bot1", Won: true},
 				{BotID: "bot2", Won: false},
-			}, PlayedAt: time.Date(2024, 3, 27, 12, 0, 0, 0, time.UTC)},
+			}, PlayedAt: time.Date(2024, 3, 22, 12, 0, 0, 0, time.UTC)},
 			{ID: "m4", Participants: []ParticipantData{
 				{BotID: "bot1", Won: false},
 				{BotID: "bot2", Won: true},
-			}, PlayedAt: time.Date(2024, 3, 28, 12, 0, 0, 0, time.UTC)},
+			}, PlayedAt: time.Date(2024, 3, 23, 12, 0, 0, 0, time.UTC)},
 			{ID: "m5", Participants: []ParticipantData{
 				{BotID: "bot1", Won: true},
 				{BotID: "bot2", Won: false},
+			}, PlayedAt: time.Date(2024, 3, 24, 12, 0, 0, 0, time.UTC)},
+			{ID: "m6", Participants: []ParticipantData{
+				{BotID: "bot1", Won: false},
+				{BotID: "bot2", Won: true},
+			}, PlayedAt: time.Date(2024, 3, 25, 12, 0, 0, 0, time.UTC)},
+			{ID: "m7", Participants: []ParticipantData{
+				{BotID: "bot1", Won: true},
+				{BotID: "bot2", Won: false},
+			}, PlayedAt: time.Date(2024, 3, 26, 12, 0, 0, 0, time.UTC)},
+			{ID: "m8", Participants: []ParticipantData{
+				{BotID: "bot1", Won: false},
+				{BotID: "bot2", Won: true},
+			}, PlayedAt: time.Date(2024, 3, 27, 12, 0, 0, 0, time.UTC)},
+			{ID: "m9", Participants: []ParticipantData{
+				{BotID: "bot1", Won: true},
+				{BotID: "bot2", Won: false},
+			}, PlayedAt: time.Date(2024, 3, 28, 12, 0, 0, 0, time.UTC)},
+			{ID: "m10", Participants: []ParticipantData{
+				{BotID: "bot1", Won: false},
+				{BotID: "bot2", Won: true},
 			}, PlayedAt: time.Date(2024, 3, 29, 12, 0, 0, 0, time.UTC)},
 		},
 	}
 
 	arcs := detectRivalryArcs(data)
 	if len(arcs) == 0 {
-		t.Error("expected at least 1 rivalry arc with 5 matches between bots")
+		t.Error("expected at least 1 rivalry arc with 10+ grudge matches between bots")
 	}
 }
 
