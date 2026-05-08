@@ -1,0 +1,25 @@
+{
+  "name": "acb-starter-typescript",
+  "version": "1.0.0",
+  "description": "TypeScript/Node.js starter kit for AI Code Battle",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["ai-code-battle", "bot", "game", "typescript"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
