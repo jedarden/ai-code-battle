@@ -168,6 +168,7 @@ type MapData struct {
 	EnergyCount int             `json:"energy_count"`
 	GridWidth   int             `json:"grid_width"`
 	GridHeight  int             `json:"grid_height"`
+	NetVotes    int             `json:"net_votes"`    // Sum of votes from map_votes table
 	CreatedAt   time.Time       `json:"created_at"`
 	RawJSON     json.RawMessage `json:"-"`
 }
@@ -758,11 +759,17 @@ func fetchPredictorStats(ctx context.Context, db *sql.DB) ([]PredictorStats, err
 
 func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 	query := `
-		SELECT map_id, player_count, status, engagement, wall_density,
-		       energy_count, grid_width, grid_height, created_at, map_json
-		FROM maps
-		WHERE status IN ('active', 'probation', 'classic')
-		ORDER BY engagement DESC
+		SELECT m.map_id, m.player_count, m.status, m.engagement, m.wall_density,
+		       m.energy_count, m.grid_width, m.grid_height, m.created_at, m.map_json,
+		       COALESCE(v.vote_sum, 0) as net_votes
+		FROM maps m
+		LEFT JOIN (
+			SELECT map_id, SUM(vote)::int as vote_sum
+			FROM map_votes
+			GROUP BY map_id
+		) v ON m.map_id = v.map_id
+		WHERE m.status IN ('active', 'probation', 'classic')
+		ORDER BY m.engagement DESC
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -777,6 +784,7 @@ func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 		if err := rows.Scan(
 			&m.MapID, &m.PlayerCount, &m.Status, &m.Engagement, &m.WallDensity,
 			&m.EnergyCount, &m.GridWidth, &m.GridHeight, &m.CreatedAt, &m.RawJSON,
+			&m.NetVotes,
 		); err != nil {
 			return nil, err
 		}

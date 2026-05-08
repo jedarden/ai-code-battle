@@ -1676,6 +1676,7 @@ type MapIndexEntry struct {
 	EnergyCount int     `json:"energy_count"`
 	GridWidth   int     `json:"grid_width"`
 	GridHeight  int     `json:"grid_height"`
+	NetVotes    int     `json:"net_votes"`    // Sum of +1/-1 votes from map_votes table
 	CreatedAt   string  `json:"created_at"`
 }
 
@@ -1696,6 +1697,7 @@ type MapDetail struct {
 	EnergyCount int           `json:"energy_count"`
 	GridWidth   int           `json:"grid_width"`
 	GridHeight  int           `json:"grid_height"`
+	NetVotes    int           `json:"net_votes"`    // Sum of +1/-1 votes from map_votes table
 	CreatedAt   string        `json:"created_at"`
 	Walls       []mapPosition `json:"walls"`
 	Cores       []mapCore     `json:"cores"`
@@ -1721,6 +1723,7 @@ func generateMapsIndex(data *IndexData, outputDir string) error {
 			EnergyCount: m.EnergyCount,
 			GridWidth:   m.GridWidth,
 			GridHeight:  m.GridHeight,
+			NetVotes:    m.NetVotes,
 			CreatedAt:   m.CreatedAt.Format(time.RFC3339),
 		}
 		entries = append(entries, entry)
@@ -1743,6 +1746,7 @@ func generateMapsIndex(data *IndexData, outputDir string) error {
 			EnergyCount: m.EnergyCount,
 			GridWidth:   m.GridWidth,
 			GridHeight:  m.GridHeight,
+			NetVotes:    m.NetVotes,
 			CreatedAt:   m.CreatedAt.Format(time.RFC3339),
 			Walls:       geo.Walls,
 			Cores:       geo.Cores,
