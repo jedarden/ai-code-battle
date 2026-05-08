@@ -12,14 +12,16 @@ interface SocialPreset {
   height: number;
   ratio: string;
   icon: string;
+  format: 'mp4' | 'gif';
+  target: string;
 }
 
 const SOCIAL_PRESETS: SocialPreset[] = [
-  { name: 'Twitter / X',       width: 1280, height: 720,  ratio: '16:9', icon: '𝕏' },
-  { name: 'Instagram Square',  width: 1080, height: 1080, ratio: '1:1',  icon: '▣' },
-  { name: 'Instagram Story',   width: 1080, height: 1920, ratio: '9:16', icon: '◱' },
-  { name: 'TikTok / Reels',    width: 1080, height: 1920, ratio: '9:16', icon: '▶' },
-  { name: 'YouTube Shorts',    width: 1080, height: 1920, ratio: '9:16', icon: '▷' },
+  { name: 'Landscape',      width: 1920, height: 1080, ratio: '16:9', icon: '🖥️', format: 'mp4',  target: 'YouTube, Twitter, Discord' },
+  { name: 'Square',         width: 1080, height: 1080, ratio: '1:1',  icon: '⬜', format: 'mp4',  target: 'Twitter, Instagram feed' },
+  { name: 'Portrait',       width: 1080, height: 1920, ratio: '9:16', icon: '📱', format: 'mp4',  target: 'TikTok, YouTube Shorts, IG Stories' },
+  { name: 'GIF (compact)',  width: 640,  height: 360,  ratio: '16:9', icon: '🎞️', format: 'gif',  target: 'Discord embeds, forums' },
+  { name: 'GIF (square)',   width: 480,  height: 480,  ratio: '1:1',  icon: '🖼️', format: 'gif',  target: 'Twitter, Slack' },
 ];
 
 // Preview scale: limit longest side to 360px
@@ -39,13 +41,13 @@ export function renderClipMakerPage(_params: Record<string, string>): void {
 
 function buildHTML(): string {
   const presetOptions = SOCIAL_PRESETS.map((p, i) =>
-    `<option value="${i}">${p.icon} ${p.name} (${p.ratio})</option>`,
+    `<option value="${i}">${p.icon} ${p.name} (${p.width}×${p.height}, ${p.format.toUpperCase()})</option>`,
   ).join('');
 
   return `
     <div class="clip-page">
       <h1 class="page-title">Clip Maker</h1>
-      <p class="clip-intro">Export replay highlights as MP4 or animated GIF, sized for social media.</p>
+      <p class="clip-intro">Export replay highlights as MP4 or animated GIF with 5 social media format presets.</p>
 
       <div class="clip-layout">
         <!-- Left: load + settings -->
@@ -69,6 +71,7 @@ function buildHTML(): string {
               ${presetOptions}
             </select>
             <div class="preset-dims" id="preset-dims-label"></div>
+            <div class="preset-target" id="preset-target-label"></div>
           </div>
 
           <div class="clip-panel" id="clip-range-panel" style="display:none">
@@ -97,8 +100,7 @@ function buildHTML(): string {
           <div class="clip-panel" id="clip-export-panel" style="display:none">
             <div class="panel-header"><span>Export</span></div>
             <div class="export-buttons">
-              <button id="clip-export-mp4" class="btn primary">Export MP4 / WebM</button>
-              <button id="clip-export-gif" class="btn secondary">Export GIF</button>
+              <button id="clip-export-btn" class="btn primary">Export</button>
             </div>
             <div id="clip-export-progress" class="clip-progress hidden">
               <div class="progress-bar"><div id="clip-progress-fill" class="progress-fill" style="width:0%"></div></div>
@@ -163,13 +165,19 @@ function initClipMaker(): void {
   const fpsSelect   = document.getElementById('clip-fps-select')   as HTMLSelectElement;
   const presetSelect = document.getElementById('clip-preset-select') as HTMLSelectElement;
   const dimsLabel   = document.getElementById('preset-dims-label')!;
+  const targetLabel = document.getElementById('preset-target-label')!;
   const previewInfo = document.getElementById('clip-preview-info')!;
   const frameLabel  = document.getElementById('clip-frame-label')!;
   const previewFrame = document.getElementById('clip-preview-frame')!;
 
   function updateDimsLabel(): void {
     const p = SOCIAL_PRESETS[Number(presetSelect.value)];
-    dimsLabel.textContent = `${p.width} × ${p.height} px`;
+    dimsLabel.textContent = `${p.width} × ${p.height} px · ${p.format.toUpperCase()}`;
+    targetLabel.textContent = `Target: ${p.target}`;
+
+    // Update export button text
+    const exportBtn = document.getElementById('clip-export-btn')!;
+    exportBtn.textContent = `Export ${p.format.toUpperCase()}`;
   }
   updateDimsLabel();
   presetSelect.addEventListener('change', () => { updateDimsLabel(); rebuildPreview(); });
@@ -294,20 +302,18 @@ function initClipMaker(): void {
 
   let lastExportExt = '';
 
-  // ── MP4 export ────────────────────────────────────────────────────────────
-  document.getElementById('clip-export-mp4')!.addEventListener('click', async () => {
+  // ── Export button (format based on preset) ─────────────────────────────────────
+  document.getElementById('clip-export-btn')!.addEventListener('click', async () => {
     if (!replay) return;
-    await exportVideo(replay, 'mp4');
+    const preset = SOCIAL_PRESETS[Number(presetSelect.value)];
+    if (preset.format === 'gif') {
+      await exportGIF(replay);
+    } else {
+      await exportVideo(replay);
+    }
   });
 
-  // ── GIF export ────────────────────────────────────────────────────────────
-  document.getElementById('clip-export-gif')!.addEventListener('click', async () => {
-    if (!replay) return;
-    
-    await exportGIF(replay);
-  });
-
-  async function exportVideo(r: Replay, _fmt: string): Promise<void> {
+  async function exportVideo(r: Replay): Promise<void> {
     if (!('MediaRecorder' in window)) {
       alert('MediaRecorder API not supported in this browser. Please use Chrome or Firefox.');
       return;
@@ -319,8 +325,8 @@ function initClipMaker(): void {
     const endTurn = Number(endSlider.value);
     const totalFrames = endTurn - startTurn + 1;
 
-    // Determine preview scale for video (cap at 720p equivalent)
-    const scale = Math.min(1, 720 / Math.max(preset.width, preset.height));
+    // For MP4 presets, use full resolution (or cap at 1080p for performance)
+    const scale = Math.min(1, 1080 / Math.max(preset.width, preset.height));
     const vw = Math.round(preset.width * scale);
     const vh = Math.round(preset.height * scale);
 
@@ -372,10 +378,9 @@ function initClipMaker(): void {
     const endTurn = Number(endSlider.value);
     const totalFrames = endTurn - startTurn + 1;
 
-    // Use small scale for GIF to keep file size manageable (max 480px)
-    const scale = Math.min(1, 480 / Math.max(preset.width, preset.height));
-    const gw = Math.round(preset.width * scale);
-    const gh = Math.round(preset.height * scale);
+    // For GIF presets, use the preset's exact dimensions (already sized appropriately)
+    const gw = preset.width;
+    const gh = preset.height;
 
     const frameCanvas = document.createElement('canvas');
     frameCanvas.width = gw;
@@ -899,6 +904,7 @@ const CLIP_STYLES = `
 .clip-select, .clip-select-sm { width: 100%; background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); padding: 8px; border-radius: 6px; font-size: 0.875rem; margin-bottom: 8px; }
 .clip-select-sm { width: auto; }
 .preset-dims { font-size: 0.75rem; color: var(--text-muted); }
+.preset-target { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
 .range-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 8px 12px; align-items: center; font-size: 0.875rem; color: var(--text-muted); }
 .range-row { display: flex; gap: 8px; align-items: center; }
 .range-slider { flex: 1; }
