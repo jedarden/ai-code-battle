@@ -1,85 +1,19 @@
 // AI Code Battle - Go Starter Kit
 //
 // A minimal bot scaffold with HMAC authentication and a placeholder
-// random strategy. Replace computeMoves() with your own logic.
+// strategy. Implement computeMoves() to build your bot.
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
-	"strconv"
+
+	"acb-starter-go/game"
 )
-
-// Engine constants
-var directions = []string{"N", "E", "S", "W"}
-
-// GameConfig holds the match configuration.
-type GameConfig struct {
-	Rows           int    `json:"rows"`
-	Cols           int    `json:"cols"`
-	MaxTurns       int    `json:"max_turns"`
-	VisionRadius2  int    `json:"vision_radius2"`
-	AttackRadius2  int    `json:"attack_radius2"`
-	SpawnCost      int    `json:"spawn_cost"`
-	EnergyInterval int    `json:"energy_interval"`
-	SeasonID       string `json:"season_id,omitempty"`
-	RulesVersion   string `json:"rules_version,omitempty"`
-}
-
-// Position is a grid coordinate.
-type Position struct {
-	Row int `json:"row"`
-	Col int `json:"col"`
-}
-
-// VisibleBot is a bot visible in fog of war.
-type VisibleBot struct {
-	Position Position `json:"position"`
-	Owner    int      `json:"owner"`
-}
-
-// VisibleCore is a core visible in fog of war.
-type VisibleCore struct {
-	Position Position `json:"position"`
-	Owner    int      `json:"owner"`
-	Active   bool     `json:"active"`
-}
-
-// GameState is the fog-filtered state visible to this bot.
-type GameState struct {
-	MatchID string     `json:"match_id"`
-	Turn    int        `json:"turn"`
-	Config  GameConfig `json:"config"`
-	You     struct {
-		ID     int `json:"id"`
-		Energy int `json:"energy"`
-		Score  int `json:"score"`
-	} `json:"you"`
-	Bots   []VisibleBot  `json:"bots"`
-	Energy []Position    `json:"energy"`
-	Cores  []VisibleCore `json:"cores"`
-	Walls  []Position    `json:"walls"`
-	Dead   []VisibleBot  `json:"dead"`
-}
-
-// Move is a movement order for one bot.
-type Move struct {
-	Position  Position `json:"position"`
-	Direction string   `json:"direction"`
-}
-
-// MoveResponse is sent back to the engine.
-type MoveResponse struct {
-	Moves []Move `json:"moves"`
-}
 
 func main() {
 	port := getEnv("BOT_PORT", "8080")
@@ -89,10 +23,12 @@ func main() {
 		log.Fatal("BOT_SECRET environment variable is required")
 	}
 
-	http.HandleFunc("/turn", func(w http.ResponseWriter, r *http.Request) {
-		handleTurn(w, r, secret)
-	})
-	http.HandleFunc("/health", handleHealth)
+	server := &Server{
+		secret: secret,
+	}
+
+	http.HandleFunc("/turn", server.handleTurn)
+	http.HandleFunc("/health", server.handleHealth)
 
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("Bot listening on %s", addr)
@@ -101,7 +37,12 @@ func main() {
 	}
 }
 
-func handleTurn(w http.ResponseWriter, r *http.Request, secret string) {
+// Server handles HTTP requests for the bot.
+type Server struct {
+	secret string
+}
+
+func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -114,123 +55,76 @@ func handleTurn(w http.ResponseWriter, r *http.Request, secret string) {
 	}
 	defer r.Body.Close()
 
-	sig := r.Header.Get("X-ACB-Signature")
-	matchID := r.Header.Get("X-ACB-Match-Id")
-	turnStr := r.Header.Get("X-ACB-Turn")
-	timestamp := r.Header.Get("X-ACB-Timestamp")
+	headers := game.AuthHeaders{
+		MatchID:   r.Header.Get("X-ACB-Match-Id"),
+		Turn:      r.Header.Get("X-ACB-Turn"),
+		Timestamp: r.Header.Get("X-ACB-Timestamp"),
+		Signature: r.Header.Get("X-ACB-Signature"),
+	}
 
-	if sig == "" || !verifySignature(secret, matchID, turnStr, timestamp, body, sig) {
+	if !game.VerifyRequest(s.secret, headers, body) {
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
 
-	var state GameState
+	var state game.GameState
 	if err := json.Unmarshal(body, &state); err != nil {
 		http.Error(w, "invalid game state", http.StatusBadRequest)
 		return
 	}
 
-	if state.Turn == 0 {
-		log.Printf("match=%s season_id=%s rules_version=%s rows=%d cols=%d",
-			state.MatchID, state.Config.SeasonID, state.Config.RulesVersion,
-			state.Config.Rows, state.Config.Cols)
+	moves := computeMoves(&state)
+	response := game.MoveResponse{Moves: moves}
+	responseBody, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, "failed to marshal response", http.StatusInternalServerError)
+		return
 	}
 
-	moves := computeMoves(&state)
-	response := MoveResponse{Moves: moves}
-	responseBody, _ := json.Marshal(response)
-
-	turn, _ := strconv.Atoi(turnStr)
-	responseSig := signResponse(secret, matchID, turn, responseBody)
-
+	responseSig := game.SignResponse(s.secret, headers.MatchID, headers.Turn, responseBody)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-ACB-Signature", responseSig)
 	w.Write(responseBody)
 }
 
-func handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
 
-func computeMoves(state *GameState) []Move {
-	// Replace this with your strategy!
-	rows := state.Config.Rows
-	cols := state.Config.Cols
-	var moves []Move
+// computeMoves is where you implement your bot's strategy.
+//
+// The game engine calls this function every turn with the current game state.
+// Return a list of moves for your bots. Any bot not included in the response
+// will hold position.
+//
+// Use the utilities in the game package:
+//   - game.ToroidalManhattan() for distance calculations
+//   - game.BFSDirection() for pathfinding
+//   - game.Neighbors() for getting adjacent positions
+//
+// Example:
+//   moves := []game.Move{}
+//   for _, bot := range state.Bots {
+//       if bot.Owner == state.You.ID {
+//           moves = append(moves, game.Move{
+//               Position:  bot.Position,
+//               Direction: game.DirN, // Move north
+//           })
+//       }
+//   }
+//   return moves
+func computeMoves(state *game.GameState) []game.Move {
+	// TODO: Implement your strategy here!
+	//
+	// This stub returns no moves, which means all your bots will hold
+	// position every turn. Replace this with your own logic.
 
-	for _, bot := range state.Bots {
-		if bot.Owner != state.You.ID {
-			continue
-		}
-
-		// Find direction toward nearest energy using toroidal distance
-		if len(state.Energy) > 0 {
-			bestDist := int(^uint(0) >> 1)
-			bestDir := ""
-			for _, d := range cardinalSteps(bot.Position, rows, cols) {
-				for _, e := range state.Energy {
-					dist := ToroidalManhattan(d.pos, e, rows, cols)
-					if dist < bestDist {
-						bestDist = dist
-						bestDir = d.dir
-					}
-				}
-			}
-			if bestDir != "" {
-				moves = append(moves, Move{Position: bot.Position, Direction: bestDir})
-				continue
-			}
-		}
-
-		if rand.Float64() < 0.5 {
-			moves = append(moves, Move{
-				Position:  bot.Position,
-				Direction: directions[rand.Intn(len(directions))],
-			})
-		}
-	}
-	return moves
-}
-
-type cardinalStep struct {
-	pos Position
-	dir string
-}
-
-func cardinalSteps(p Position, rows, cols int) []cardinalStep {
-	steps := []struct {
-		dr, dc int
-		dir    string
-	}{{-1, 0, "N"}, {0, 1, "E"}, {1, 0, "S"}, {0, -1, "W"}}
-	var result []cardinalStep
-	for _, s := range steps {
-		result = append(result, cardinalStep{
-			pos: Position{
-				Row: (p.Row + s.dr + rows) % rows,
-				Col: (p.Col + s.dc + cols) % cols,
-			},
-			dir: s.dir,
-		})
-	}
-	return result
-}
-
-func verifySignature(secret, matchID, turnStr, timestamp string, body []byte, signature string) bool {
-	bodyHash := sha256.Sum256(body)
-	signingString := fmt.Sprintf("%s.%s.%s.%s", matchID, turnStr, timestamp, hex.EncodeToString(bodyHash[:]))
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(signingString))
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(signature), []byte(expected))
-}
-
-func signResponse(secret, matchID string, turn int, body []byte) string {
-	bodyHash := sha256.Sum256(body)
-	signingString := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(signingString))
-	return hex.EncodeToString(mac.Sum(nil))
+	return nil
 }
 
 func getEnv(key, fallback string) string {
