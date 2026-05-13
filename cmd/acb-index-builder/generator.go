@@ -352,7 +352,7 @@ func matchToSummary(m MatchData, data *IndexData, cfg *Config) MatchSummary {
 			BotID: p.BotID,
 			Name:  name,
 			Score: p.Score,
-			Won:   p.BotID == m.WinnerID,
+			Won:   p.Won,
 		})
 	}
 
@@ -979,7 +979,7 @@ func buildPlaylistMatch(m MatchData, order int, data *IndexData, curationTag str
 			BotID: p.BotID,
 			Name:  name,
 			Score: p.Score,
-			Won:   p.BotID == m.WinnerID,
+			Won:   p.Won,
 		})
 		scoreParts = append(scoreParts, fmt.Sprintf("%d", p.Score))
 	}
@@ -1010,7 +1010,7 @@ func ratingUpsetMagnitude(m MatchData) int {
 	var winnerRating, bestLoserRating float64
 	found := false
 	for _, p := range m.Participants {
-		if p.BotID == m.WinnerID {
+		if p.Won {
 			winnerRating = p.PreMatchRating
 			found = true
 		}
@@ -1019,7 +1019,7 @@ func ratingUpsetMagnitude(m MatchData) int {
 		return 0
 	}
 	for _, p := range m.Participants {
-		if p.BotID != m.WinnerID && p.PreMatchRating > bestLoserRating {
+		if !p.Won && p.PreMatchRating > bestLoserRating {
 			bestLoserRating = p.PreMatchRating
 		}
 	}
@@ -1161,14 +1161,14 @@ func maxScoreDiff(m MatchData) int {
 	}
 	var winnerScore int
 	for _, p := range m.Participants {
-		if p.BotID == m.WinnerID {
+		if p.Won {
 			winnerScore = p.Score
 			break
 		}
 	}
 	maxDiff := 0
 	for _, p := range m.Participants {
-		if p.BotID != m.WinnerID {
+		if !p.Won {
 			diff := winnerScore - p.Score
 			if diff > maxDiff {
 				maxDiff = diff
@@ -1249,10 +1249,21 @@ func isEvolutionBreakthrough(m MatchData, data *IndexData) bool {
 	if m.WinnerID == "" || len(m.Participants) < 2 {
 		return false
 	}
+	var winnerBotID string
+	for _, p := range m.Participants {
+		if p.Won {
+			winnerBotID = p.BotID
+			break
+		}
+	}
+	if winnerBotID == "" {
+		return false
+	}
 	winnerEvolved := false
 	for _, bot := range data.Bots {
-		if bot.ID == m.WinnerID && bot.Evolved {
+		if bot.ID == winnerBotID && bot.Evolved {
 			winnerEvolved = true
+			break
 		}
 	}
 	if !winnerEvolved {
@@ -1260,7 +1271,7 @@ func isEvolutionBreakthrough(m MatchData, data *IndexData) bool {
 	}
 	// Winner must have beaten someone rated >= 1600
 	for _, p := range m.Participants {
-		if p.BotID != m.WinnerID && p.PreMatchRating >= 1600 && !p.Won {
+		if !p.Won && p.PreMatchRating >= 1600 {
 			return true
 		}
 	}
