@@ -17,5 +17,8 @@ To apply the fix to production data:
 - Run the index builder to regenerate static JSON files with correct winner badges
 - This requires database access and running: `go run cmd/acb-index-builder/main.go`
 
+**Note**: The index builder cannot be run in the current environment (Go not installed).
+This needs to be run in an environment with Go installed and database access.
+
 ## Impact
 This fixes the issue where 984/1000 production matches had `winner_id` set but all participants showed `won: false`.
