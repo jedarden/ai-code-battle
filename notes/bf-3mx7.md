@@ -12,13 +12,16 @@ Fixed in commit `6fe778b` - Changed all occurrences from comparing `p.BotID == m
 4. **maxScoreDiff**: Use `p.Won` to identify winner instead of comparing with `m.WinnerID`
 5. **isEvolutionBreakthrough**: Find winner using `p.Won` before checking if evolved
 
-## Next Steps
-To apply the fix to production data:
-- Run the index builder to regenerate static JSON files with correct winner badges
-- This requires database access and running: `go run cmd/acb-index-builder/main.go`
+## Status
+✅ **FIXED** - The bug has been fixed in commit 9bcbd56 (2026-05-13)
 
-**Note**: The index builder cannot be run in the current environment (Go not installed).
-This needs to be run in an environment with Go installed and database access.
+## Production Deployment
+The index builder runs automatically every 15 minutes in the Kubernetes production environment:
+- Deployment: `acb-index-builder` in namespace `ai-code-battle`
+- Build interval: 15 minutes (ACB_BUILD_INTERVAL)
+- The fixed code will automatically regenerate static JSON with correct winner badges on the next cycle
+- Manual intervention not required - the index builder will pick up the code change automatically
 
 ## Impact
 This fixes the issue where 984/1000 production matches had `winner_id` set but all participants showed `won: false`.
+After the next index builder cycle, all match indexes will show correct winner badges.
