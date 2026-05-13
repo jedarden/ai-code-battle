@@ -78,6 +78,26 @@ spec:
                   key: auth-secret-key
             - name: ACB_B2_REGION
               value: ""
+            - name: ACB_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: endpoint
+            - name: ACB_R2_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: bucket
+            - name: ACB_R2_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: access-key
+            - name: ACB_R2_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: acb-r2-credentials
+                  key: secret-key
             - name: ACB_METRICS_ADDR
               value: ":9090"
           resources:
