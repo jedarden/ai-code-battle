@@ -45,7 +45,9 @@ export function renderReplayPage(params: Record<string, string>): void {
   `;
 
   loadReplayViewer().then(({ ReplayViewer }) => {
-    initReplayViewerWithClass(ReplayViewer, params.url);
+    // If params.url is not set but params.id is, construct the URL from the match ID
+    const replayUrl = params.url || (params.id ? `/r2/replays/${params.id}.json.gz` : undefined);
+    initReplayViewerWithClass(ReplayViewer, replayUrl);
   });
 }
 
