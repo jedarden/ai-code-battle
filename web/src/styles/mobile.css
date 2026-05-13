@@ -396,13 +396,16 @@
   }
 
   .participant {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
     flex-shrink: 1;
     min-width: 0;
     padding: var(--space-xs) var(--space-sm);
   }
 
   .participant-name {
-    flex-shrink: 1;
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -411,10 +414,12 @@
 
   .participant-score {
     flex-shrink: 0;
+    margin-left: var(--space-xs);
   }
 
   .winner-badge {
     flex-shrink: 0;
+    margin-left: var(--space-xs);
   }
 
   .match-footer {
