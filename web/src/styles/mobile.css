@@ -391,7 +391,30 @@
   }
 
   .match-participants {
-    gap: var(--space-sm);
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .participant {
+    flex-shrink: 1;
+    min-width: 0;
+    padding: var(--space-xs) var(--space-sm);
+  }
+
+  .participant-name {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .participant-score {
+    flex-shrink: 0;
+  }
+
+  .winner-badge {
+    flex-shrink: 0;
   }
 
   .match-footer {
