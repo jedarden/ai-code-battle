@@ -286,10 +286,7 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 			pos := Position{Row: row, Col: col}
 			gs.AddCore(i, pos)
 
-			// Spawn initial bot only at the primary core
-			if c == 0 {
-				gs.SpawnBot(i, pos)
-			}
+			gs.SpawnBot(i, pos)
 		}
 	}
 

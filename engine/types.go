@@ -182,7 +182,7 @@ func DefaultConfig() Config {
 		AttackRadius2:  5,  // ~2.24 tiles
 		SpawnCost:      3,
 		EnergyInterval: 10,
-		CoresPerPlayer: 1,
+		CoresPerPlayer: 2,
 	}
 }
 
