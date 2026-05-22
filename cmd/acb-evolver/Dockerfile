@@ -46,7 +46,11 @@ WORKDIR /app
 # - python3, nodejs (typescript), rust (rustup), java, php
 # - nsjail for sandbox isolation during validation
 # - ca-certificates for HTTPS (LLM calls, K8s API)
-RUN apk --no-cache add \
+#
+# Note: nsjail is in the community repository, ensure it's enabled
+RUN grep -q '^https.*\/community$' /etc/apk/repositories || \
+    echo "https://dl-cdn.alpinelinux.org/alpine/v$(. /etc/os-release && echo $VERSION_ID | cut -d. -f1,2)/community" >> /etc/apk/repositories && \
+    apk --no-cache add \
     ca-certificates \
     tzdata \
     python3 \

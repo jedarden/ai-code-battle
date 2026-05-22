@@ -127,7 +127,7 @@ func buildNsjailCmd(ctx context.Context, nsjailBin, execPath string, execArgs []
 	}
 
 	// Read-only bind-mounts for language runtimes and system libraries.
-	for _, p := range []string{"/bin", "/usr", "/lib", "/lib64", "/etc/alternatives", "/proc", "/dev"} {
+	for _, p := range []string{"/bin", "/usr", "/lib", "/lib64", "/etc/alternatives", "/opt", "/proc", "/dev"} {
 		if _, err := os.Stat(p); err == nil {
 			args = append(args, "--bindmount_ro", p)
 		}
