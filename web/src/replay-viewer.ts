@@ -1880,74 +1880,153 @@ export class ReplayViewer {
     const { ctx, cellSize } = this;
     const events = turnData.events ?? [];
 
-    // Collect death positions
+    // Collect combat_death events with killers array (new format)
+    const combatDeaths: Array<{pos: Position; owner: number; killers: Array<{bot_id: number; owner: number; position: Position}>}> = [];
+    // Collect bot_died events without combat_death (fallback for old replays)
     const deaths: Array<{pos: Position; owner: number}> = [];
+
     for (const event of events) {
-      if (event.type === 'bot_died') {
+      if (event.type === 'combat_death') {
         const d = event.details as any;
         const rawPos = d.position ?? d.pos ?? d;
         const pos: Position = {row: rawPos.Row ?? rawPos.row ?? 0, col: rawPos.Col ?? rawPos.col ?? 0};
-        if (pos.row === 0 && pos.col === 0 && !d.position && !d.pos) continue; // skip if no real position
+        if (pos.row === 0 && pos.col === 0 && !d.position && !d.pos) continue;
+        const killers = d.killers ?? [];
+        combatDeaths.push({pos, owner: d.owner ?? 0, killers});
+      } else if (event.type === 'bot_died') {
+        const d = event.details as any;
+        const rawPos = d.position ?? d.pos ?? d;
+        const pos: Position = {row: rawPos.Row ?? rawPos.row ?? 0, col: rawPos.Col ?? rawPos.col ?? 0};
+        if (pos.row === 0 && pos.col === 0 && !d.position && !d.pos) continue;
         deaths.push({pos, owner: d.owner ?? 0});
       }
     }
 
-    if (deaths.length === 0) return;
+    // Handle combat_death events with killers[] array (new format) - directed arrows
+    if (combatDeaths.length > 0) {
+      for (const death of combatDeaths) {
+        if (visible && !visible.has(this.posKey(death.pos))) continue;
 
-    // Find living bots this turn to draw attack lines from nearby enemies
-    const livingBots = turnData.bots.filter(b => b.alive);
-    const attackRadius = Math.sqrt(this.replay?.config?.attack_radius2 ?? 5) * cellSize;
+        const dx = death.pos.col * cellSize + cellSize / 2;
+        const dy = death.pos.row * cellSize + cellSize / 2;
 
-    for (const death of deaths) {
-      if (visible && !visible.has(this.posKey(death.pos))) continue;
+        // Draw directed arrows from each killer to the victim
+        for (const killer of death.killers) {
+          if (visible && !visible.has(this.posKey(killer.position))) continue;
 
-      const dx = death.pos.col * cellSize + cellSize / 2;
-      const dy = death.pos.row * cellSize + cellSize / 2;
+          const kx = killer.position.col * cellSize + cellSize / 2;
+          const ky = killer.position.row * cellSize + cellSize / 2;
+          const color = colors[killer.owner];
 
-      // Draw attack lines from nearby enemy bots to the death position
-      for (const attacker of livingBots) {
-        if (attacker.owner === death.owner) continue;
-        const ax = attacker.position.col * cellSize + cellSize / 2;
-        const ay = attacker.position.row * cellSize + cellSize / 2;
-        const dist = Math.hypot(ax - dx, ay - dy);
-
-        if (dist < attackRadius + cellSize * 3) {
-          ctx.strokeStyle = colors[attacker.owner];
-          ctx.lineWidth = 1.5;
-          ctx.globalAlpha = 0.4;
-          ctx.setLineDash([4, 4]);
-          ctx.beginPath();
-          ctx.moveTo(ax, ay);
-          ctx.lineTo(dx, dy);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.globalAlpha = 1;
+          // Draw solid line with arrowhead (attacker player color)
+          this.drawArrow(kx, ky, dx, dy, color, 1.5);
         }
+
+        // Draw red explosion flash behind the X
+        const flashRadius = cellSize * 0.8;
+        const gradient = ctx.createRadialGradient(dx, dy, 0, dx, dy, flashRadius);
+        gradient.addColorStop(0, 'rgba(239, 68, 68, 0.6)');
+        gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(dx, dy, flashRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw death X marker
+        const xSize = cellSize * 0.35;
+        ctx.strokeStyle = '#fca5a5';
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(dx - xSize, dy - xSize);
+        ctx.lineTo(dx + xSize, dy + xSize);
+        ctx.moveTo(dx + xSize, dy - xSize);
+        ctx.lineTo(dx - xSize, dy + xSize);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
       }
+    } else if (deaths.length > 0) {
+      // Fallback for old replays: proximity-inference lines
+      const livingBots = turnData.bots.filter(b => b.alive);
+      const attackRadius = Math.sqrt(this.replay?.config?.attack_radius2 ?? 5) * cellSize;
 
-      // Draw red explosion flash behind the X
-      const flashRadius = cellSize * 0.8;
-      const gradient = ctx.createRadialGradient(dx, dy, 0, dx, dy, flashRadius);
-      gradient.addColorStop(0, 'rgba(239, 68, 68, 0.6)');
-      gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(dx, dy, flashRadius, 0, Math.PI * 2);
-      ctx.fill();
+      for (const death of deaths) {
+        if (visible && !visible.has(this.posKey(death.pos))) continue;
 
-      // Draw death X marker
-      const xSize = cellSize * 0.35;
-      ctx.strokeStyle = '#fca5a5';
-      ctx.lineWidth = 2.5;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(dx - xSize, dy - xSize);
-      ctx.lineTo(dx + xSize, dy + xSize);
-      ctx.moveTo(dx + xSize, dy - xSize);
-      ctx.lineTo(dx - xSize, dy + xSize);
-      ctx.stroke();
-      ctx.lineCap = 'butt';
+        const dx = death.pos.col * cellSize + cellSize / 2;
+        const dy = death.pos.row * cellSize + cellSize / 2;
+
+        // Draw attack lines from nearby enemy bots to the death position
+        for (const attacker of livingBots) {
+          if (attacker.owner === death.owner) continue;
+          const ax = attacker.position.col * cellSize + cellSize / 2;
+          const ay = attacker.position.row * cellSize + cellSize / 2;
+          const dist = Math.hypot(ax - dx, ay - dy);
+
+          if (dist < attackRadius + cellSize * 3) {
+            ctx.strokeStyle = colors[attacker.owner];
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.4;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(dx, dy);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+          }
+        }
+
+        // Draw red explosion flash behind the X
+        const flashRadius = cellSize * 0.8;
+        const gradient = ctx.createRadialGradient(dx, dy, 0, dx, dy, flashRadius);
+        gradient.addColorStop(0, 'rgba(239, 68, 68, 0.6)');
+        gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(dx, dy, flashRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw death X marker
+        const xSize = cellSize * 0.35;
+        ctx.strokeStyle = '#fca5a5';
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(dx - xSize, dy - xSize);
+        ctx.lineTo(dx + xSize, dy + xSize);
+        ctx.moveTo(dx + xSize, dy - xSize);
+        ctx.lineTo(dx - xSize, dy + xSize);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+      }
     }
+  }
+
+  // Draw an arrow from (x1,y1) to (x2,y2) with an arrowhead at the end
+  private drawArrow(x1: number, y1: number, x2: number, y2: number, color: string, lineWidth: number): void {
+    const { ctx } = this;
+    const headLen = 6; // length of arrowhead
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 1;
+
+    // Draw line
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Draw arrowhead
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
   }
 
   // Draw threat lines between bots of different owners within attack range

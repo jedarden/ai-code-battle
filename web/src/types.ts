@@ -120,12 +120,17 @@ export interface CoreCapturedDetails {
   new_owner: number;
 }
 
-export interface CombatDeathDetails {
-  attacker_id: number;
-  attacker_owner: number;
-  defender_id: number;
-  defender_owner: number;
+export interface CombatDeathKiller {
+  bot_id: number;
+  owner: number;
   position: Position;
+}
+
+export interface CombatDeathDetails {
+  bot_id: number;
+  owner: number;
+  position: Position;
+  killers: CombatDeathKiller[];
 }
 
 export interface CollisionDeathDetails {
