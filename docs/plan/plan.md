@@ -983,6 +983,7 @@ minimal, forkable repository containing:
 | `acb-starter-typescript` | Template repo | Fastify, full type definitions |
 | `acb-starter-java` | Template repo | Javalin, Maven-based |
 | `acb-starter-javascript` | Template repo | Node.js built-in http, zero dependencies |
+| `acb-starter-csharp` | Template repo | ASP.NET Core minimal API, zero external dependencies |
 
 Participants are not limited to these languages. Any language that can serve
 HTTP and compute HMAC-SHA256 can compete. The starter kits simply eliminate
@@ -2344,7 +2345,7 @@ the evolution validation pipeline.
 **Evolution validation test suite:**
 - Syntax checking per language: verify that the validation pipeline
   correctly accepts valid code and rejects invalid code for each
-  supported language (Python, Go, Rust, PHP, TypeScript, Java)
+  supported language (Python, Go, Rust, PHP, TypeScript, Java, JavaScript, C#)
 - Schema compliance: verify that generated bots correctly implement
   `POST /turn` and `GET /health` with valid HMAC signatures
 - Sandbox smoke test: verify that nsjail isolation works correctly
@@ -2624,6 +2625,7 @@ ai-code-battle/
 | `acb-starter-typescript` | TypeScript | Fastify, typed interfaces, Dockerfile |
 | `acb-starter-javascript` | JavaScript | Node.js built-in http, HMAC, zero dependencies, Dockerfile |
 | `acb-starter-java` | Java | Javalin, javax.crypto.Mac, Maven, Dockerfile |
+| `acb-starter-csharp` | C# | ASP.NET Core minimal API, System.Security.Cryptography HMAC, Dockerfile |
 
 **CLI tools (built from monorepo, used locally):**
 
