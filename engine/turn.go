@@ -157,10 +157,36 @@ func (gs *GameState) executeCombat() {
 		}
 	}
 
-	// Kill the dead bots
+	// Kill the dead bots and emit combat_death events
 	for _, b := range gs.Bots {
 		if dead[b.ID] {
-			gs.KillBot(b, "combat")
+			b.Alive = false
+			gs.DeadBots = append(gs.DeadBots, b)
+
+			if b.Owner < len(gs.Players) {
+				gs.Players[b.Owner].BotCount--
+			}
+
+			// Build killers array (enemies within attack radius)
+			var killers []map[string]interface{}
+			for _, e := range botsInRadius[b.ID] {
+				killers = append(killers, map[string]interface{}{
+					"bot_id":  e.ID,
+					"owner":   e.Owner,
+					"position": e.Position,
+				})
+			}
+
+			gs.Events = append(gs.Events, Event{
+				Type: EventCombatDeath,
+				Turn: gs.Turn,
+				Details: map[string]interface{}{
+					"bot_id":   b.ID,
+					"owner":    b.Owner,
+					"position": b.Position,
+					"killers":  killers,
+				},
+			})
 		}
 	}
 }
