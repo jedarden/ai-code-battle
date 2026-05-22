@@ -982,6 +982,7 @@ minimal, forkable repository containing:
 | `acb-starter-php` | Template repo | Zero dependencies, built-in server |
 | `acb-starter-typescript` | Template repo | Fastify, full type definitions |
 | `acb-starter-java` | Template repo | Javalin, Maven-based |
+| `acb-starter-javascript` | Template repo | Node.js built-in http, zero dependencies |
 
 Participants are not limited to these languages. Any language that can serve
 HTTP and compute HMAC-SHA256 can compete. The starter kits simply eliminate
@@ -2558,6 +2559,7 @@ ai-code-battle/
 │   ├── rust/
 │   ├── php/
 │   ├── typescript/
+│   ├── javascript/
 │   └── java/
 │
 ├── docs/                        # Project documentation
@@ -2620,6 +2622,7 @@ ai-code-battle/
 | `acb-starter-rust` | Rust | axum + serde, HMAC crate, Dockerfile |
 | `acb-starter-php` | PHP | Built-in server, hash_hmac, Dockerfile |
 | `acb-starter-typescript` | TypeScript | Fastify, typed interfaces, Dockerfile |
+| `acb-starter-javascript` | JavaScript | Node.js built-in http, HMAC, zero dependencies, Dockerfile |
 | `acb-starter-java` | Java | Javalin, javax.crypto.Mac, Maven, Dockerfile |
 
 **CLI tools (built from monorepo, used locally):**
