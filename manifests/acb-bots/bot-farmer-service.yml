@@ -1,0 +1,22 @@
+# bot-farmer: Service for FarmerBot
+# DNS: http://bot-farmer.acb-bots.svc.cluster.local
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot-farmer
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-farmer
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+spec:
+  selector:
+    app.kubernetes.io/name: bot-farmer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

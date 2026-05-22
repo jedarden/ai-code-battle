@@ -1,0 +1,22 @@
+# bot-raider: Service for RaiderBot
+# DNS: http://bot-raider.acb-bots.svc.cluster.local
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot-raider
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-raider
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+spec:
+  selector:
+    app.kubernetes.io/name: bot-raider
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

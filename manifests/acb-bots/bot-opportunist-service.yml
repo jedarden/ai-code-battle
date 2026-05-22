@@ -1,0 +1,22 @@
+# bot-opportunist: Service for OpportunistBot
+# DNS: http://bot-opportunist.acb-bots.svc.cluster.local
+#
+# Staging file — sync to declarative-config/k8s/iad-acb/acb-bots/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot-opportunist
+  namespace: acb-bots
+  labels:
+    app.kubernetes.io/name: bot-opportunist
+    app.kubernetes.io/part-of: ai-code-battle
+    app.kubernetes.io/component: strategy-bot
+spec:
+  selector:
+    app.kubernetes.io/name: bot-opportunist
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
