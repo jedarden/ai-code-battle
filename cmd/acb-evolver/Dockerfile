@@ -43,7 +43,8 @@ WORKDIR /app
 
 # Install language runtimes for bot validation:
 # - go (included in base image)
-# - python3, nodejs (typescript), rust (rustup-init), java, php
+# - python3, nodejs (typescript), rust (rustup), java, php
+# - nsjail for sandbox isolation during validation
 # - ca-certificates for HTTPS (LLM calls, K8s API)
 RUN apk --no-cache add \
     ca-certificates \
@@ -52,8 +53,21 @@ RUN apk --no-cache add \
     py3-pip \
     nodejs \
     npm \
+    openjdk-17-jdk \
+    nsjail \
     curl \
     bash
+
+# Create non-root user first (before Rust installation)
+RUN addgroup -g 1000 acb && adduser -D -u 1000 -G acb acb
+
+# Install Rust toolchain (rustc) for validating Rust bots
+# Install to /opt/rust so it's accessible to all users
+RUN mkdir -p /opt/rust && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path && \
+    cp -r /root/.cargo/* /opt/rust/ && \
+    rm -rf /root/.cargo && \
+    chown -R acb:acb /opt/rust
 
 # Install TypeScript compiler globally
 RUN npm install -g typescript ts-node
@@ -62,8 +76,8 @@ RUN npm install -g typescript ts-node
 COPY --from=builder /acb-evolver /app/acb-evolver
 COPY --from=builder /acb-map-evolver /app/acb-map-evolver
 
-# Create non-root user
-RUN addgroup -g 1000 acb && adduser -D -u 1000 -G acb acb
+# Set PATH to include Rust binaries and switch to non-root user
+ENV PATH="/opt/rust/bin:${PATH}"
 USER acb
 
 # Environment variables (set at runtime)
