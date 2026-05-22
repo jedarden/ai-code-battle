@@ -8,6 +8,22 @@ import (
 
 // ────────────────────────────────────────────────────────────────────────────
 // Phase 13 expansion bots — 10 new strategy archetypes
+//
+// These are HAND-CODED strategy implementations, NOT LLM-evolved bots.
+// They serve as:
+//   - Reference implementations for polyglot bot development
+//   - Strategic diversity fixtures for the ladder (similar to RandomBot, GathererBot, etc.)
+//   - Inspiration/parents for the LLM evolver pipeline (see plan §10)
+//
+// For the autonomous LLM evolution system, see docs/plan/plan.md §10, which describes:
+//   - Island model with FunSearch/AlphaEvolve approach
+//   - Programs database storing LLM-generated candidates
+//   - Validation pipeline, evaluation arena, promotion gates
+//   - Auto-deployment of evolved bots to ladder
+//
+// Phase 13 archetypes vs §10 evolver:
+//   - Phase 13: Human-designed strategies, fixed behavior, deterministic
+//   - Evolver: LLM-generated strategies, continuously evolving, experimental
 // ────────────────────────────────────────────────────────────────────────────
 
 // DefenderBot hugs own cores and intercepts enemies within a perimeter.
