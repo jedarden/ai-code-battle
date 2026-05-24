@@ -411,8 +411,8 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 
 	// Calculate map engagement score from replay
 	engagement := engine.CalculateMapEngagement(replay)
-	w.logger.Printf("Map engagement: crossings=%.0f, critical_moments=%d, resource_contest_turns=%d, survival_turns=%d, score=%.2f",
-		engagement.WinProbCrossings, engagement.CriticalMoments, engagement.ResourceContestTurns, engagement.SurvivalTurns, engagement.Engagement)
+	w.logger.Printf("Map engagement: crossings=%.0f, combat_deaths=%d, critical_moments=%d, resource_contest_turns=%d, survival_turns=%d, score=%.2f",
+		engagement.WinProbCrossings, engagement.CombatDeaths, engagement.CriticalMoments, engagement.ResourceContestTurns, engagement.SurvivalTurns, engagement.Engagement)
 
 	// Update map engagement in database
 	if err := w.db.UpdateMapEngagement(ctx, claimData.Match.MapID, engagement.Engagement, result.Turns); err != nil {
@@ -424,8 +424,8 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 }
 
 // computeCombatTurns counts the number of distinct turns in a replay where at
-// least one bot was killed by an enemy (reason == "combat"). Deaths from
-// self-collision or other causes are excluded.
+// least one bot died from focus-fire combat (EventCombatDeath). Deaths from
+// self-collision, zone, or other causes are excluded.
 func computeCombatTurns(replay *engine.Replay) int {
 	if replay == nil {
 		return 0
@@ -433,15 +433,7 @@ func computeCombatTurns(replay *engine.Replay) int {
 	combatTurnSet := make(map[int]struct{})
 	for _, turn := range replay.Turns {
 		for _, event := range turn.Events {
-			if event.Type != engine.EventBotDied {
-				continue
-			}
-			details, ok := event.Details.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			reason, _ := details["reason"].(string)
-			if reason == "combat" {
+			if event.Type == engine.EventCombatDeath {
 				combatTurnSet[turn.Turn] = struct{}{}
 				break // one combat death is enough to count this turn
 			}

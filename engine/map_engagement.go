@@ -6,14 +6,16 @@ import "math"
 type MapEngagementScore struct {
 	WinProbCrossings     float64 // Number of times win prob crossed 50%
 	CriticalMoments      int     // Count of critical moments (bot deaths/captures)
+	CombatDeaths         int     // Count of focus-fire combat deaths (EventCombatDeath)
 	ResourceContestTurns int     // Turns where energy was contested (multiple players adjacent)
 	SurvivalTurns        int     // Turns where all players had at least one bot alive
 	Engagement           float64 // Combined engagement score
 }
 
 // CalculateMapEngagement computes the engagement score for a map based on replay data.
-// The engagement formula (from plan §14.6) is:
-// score = win_prob_crossings * 3.0 + critical_moments * 2.0 + resource_contest_turns * 1.5 + survival_turns * 0.5
+// The engagement formula (from plan §14.6, extended for combat density) is:
+// score = win_prob_crossings * 3.0 + combat_deaths * 3.0 + critical_moments * 2.0 +
+//         resource_contest_turns * 1.5 + survival_turns * 0.5
 func CalculateMapEngagement(replay *Replay) MapEngagementScore {
 	if replay == nil || len(replay.Turns) == 0 {
 		return MapEngagementScore{}
@@ -21,6 +23,9 @@ func CalculateMapEngagement(replay *Replay) MapEngagementScore {
 
 	// Count win probability crossings (times the leader changed)
 	winProbCrossings := countWinProbCrossings(replay.WinProb)
+
+	// Count combat deaths (focus-fire kills)
+	combatDeaths := countCombatDeaths(replay)
 
 	// Count critical moments (bot deaths/captures with significant win prob shifts)
 	criticalMoments := len(replay.CriticalMoments)
@@ -32,7 +37,9 @@ func CalculateMapEngagement(replay *Replay) MapEngagementScore {
 	survivalTurns := countSurvivalTurns(replay)
 
 	// Calculate combined engagement score per plan §14.6
+	// Combat deaths are weighted heavily (3.0) to bias map evolution toward combat-dense maps
 	engagement := float64(winProbCrossings)*3.0 +
+		float64(combatDeaths)*3.0 +
 		float64(criticalMoments)*2.0 +
 		float64(resourceContestTurns)*1.5 +
 		float64(survivalTurns)*0.5
@@ -40,6 +47,7 @@ func CalculateMapEngagement(replay *Replay) MapEngagementScore {
 	return MapEngagementScore{
 		WinProbCrossings:     winProbCrossings,
 		CriticalMoments:      criticalMoments,
+		CombatDeaths:         combatDeaths,
 		ResourceContestTurns: resourceContestTurns,
 		SurvivalTurns:        survivalTurns,
 		Engagement:           engagement,
@@ -259,6 +267,24 @@ func allPlayersAlive(turn ReplayTurn, numPlayers int) bool {
 
 	// All players must have at least one living bot
 	return len(playersWithBots) == numPlayers
+}
+
+// countCombatDeaths counts the total number of focus-fire combat deaths (EventCombatDeath)
+// across all turns in the replay. This is the key combat-density metric.
+func countCombatDeaths(replay *Replay) int {
+	if replay == nil || len(replay.Turns) == 0 {
+		return 0
+	}
+
+	combatDeaths := 0
+	for _, turn := range replay.Turns {
+		for _, event := range turn.Events {
+			if event.Type == EventCombatDeath {
+				combatDeaths++
+			}
+		}
+	}
+	return combatDeaths
 }
 
 // toroidalDistance computes the toroidal distance between two positions.

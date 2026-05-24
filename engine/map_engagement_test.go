@@ -204,12 +204,13 @@ func TestMapEngagement_Formula(t *testing.T) {
 
 	// Count each metric
 	winProbCrossings := 1.0  // One lead change
+	combatDeaths := 0        // No combat deaths in this replay
 	criticalMoments := 1      // One critical moment
 	resourceContestTurns := 1 // Turn 0 has contested energy
 	survivalTurns := 2        // Both turns have all players alive
 
-	// Expected formula: 1.0*3.0 + 1*2.0 + 1*1.5 + 2*0.5 = 3.0 + 2.0 + 1.5 + 1.0 = 7.5
-	expectedEngagement := winProbCrossings*3.0 + float64(criticalMoments)*2.0 + float64(resourceContestTurns)*1.5 + float64(survivalTurns)*0.5
+	// Expected formula: 1.0*3.0 + 0*3.0 + 1*2.0 + 1*1.5 + 2*0.5 = 3.0 + 0 + 2.0 + 1.5 + 1.0 = 7.5
+	expectedEngagement := winProbCrossings*3.0 + float64(combatDeaths)*3.0 + float64(criticalMoments)*2.0 + float64(resourceContestTurns)*1.5 + float64(survivalTurns)*0.5
 
 	if score.Engagement != expectedEngagement {
 		t.Errorf("Expected engagement %.2f, got %.2f", expectedEngagement, score.Engagement)
@@ -217,6 +218,10 @@ func TestMapEngagement_Formula(t *testing.T) {
 
 	if score.WinProbCrossings != winProbCrossings {
 		t.Errorf("Expected win_prob_crossings %.0f, got %.0f", winProbCrossings, score.WinProbCrossings)
+	}
+
+	if score.CombatDeaths != combatDeaths {
+		t.Errorf("Expected combat_deaths %d, got %d", combatDeaths, score.CombatDeaths)
 	}
 
 	if score.CriticalMoments != criticalMoments {
@@ -361,5 +366,61 @@ func TestWinProb_ComputeAndSet(t *testing.T) {
 	}
 	if len(replay.CriticalMoments) != len(moments) {
 		t.Errorf("Replay has %d critical moments, want %d", len(replay.CriticalMoments), len(moments))
+	}
+}
+
+// TestMapEngagement_CombatDeaths verifies that focus-fire combat deaths are counted correctly.
+func TestMapEngagement_CombatDeaths(t *testing.T) {
+	replay := &Replay{
+		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Turns: []ReplayTurn{
+			{
+				Turn: 0,
+				Events: []Event{
+					{Type: EventCombatDeath, Turn: 0, Details: map[string]interface{}{"bot_id": 1, "owner": 0}},
+				},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 1},
+				},
+			},
+			{
+				Turn: 1,
+				Events: []Event{
+					{Type: EventCombatDeath, Turn: 1, Details: map[string]interface{}{"bot_id": 2, "owner": 1}},
+					{Type: EventCombatDeath, Turn: 1, Details: map[string]interface{}{"bot_id": 3, "owner": 1}},
+				},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+				},
+			},
+			{
+				Turn: 2,
+				Events: []Event{
+					{Type: EventBotDied, Turn: 2, Details: map[string]interface{}{"bot_id": 4, "owner": 0, "reason": "zone"}},
+				},
+				Bots: []ReplayBot{
+					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
+				},
+			},
+		},
+		Map: ReplayMap{
+			Walls: []Position{{Row: 15, Col: 15}},
+		},
+		Players: []ReplayPlayer{{ID: 0}, {ID: 1}},
+	}
+
+	score := CalculateMapEngagement(replay)
+
+	// Should count 3 combat deaths (1 on turn 0, 2 on turn 1)
+	// The zone death on turn 2 should NOT be counted
+	if score.CombatDeaths != 3 {
+		t.Errorf("Expected 3 combat deaths, got %d", score.CombatDeaths)
+	}
+
+	// Combat deaths should contribute 3.0 * 3 = 9.0 to engagement
+	expectedCombatContribution := 3.0 * 3.0
+	if score.Engagement < expectedCombatContribution {
+		t.Errorf("Expected engagement >= %.2f from combat deaths, got %.2f", expectedCombatContribution, score.Engagement)
 	}
 }
