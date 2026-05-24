@@ -237,19 +237,20 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 
 	// Scale zone parameters to force combat contact
 	// Zone must compress bots into contact range while preserving enough population for combat
-	// For 2-player: start later to allow buildup, then shrink aggressively
-	// Also increase attack radius for 2-player to make combat more likely
+	// Key insight: zone kills bots at spawn radius before they can reach attack range
+	// Solution: delay zone start until bots have had time to close distance and engage
+	// ZoneMinRadius must be >= spawn radius so bots aren't killed before final combat
 	if numPlayers == 2 {
-		cfg.ZoneStartTurn = 30     // Allow time for bots to spawn and move
-		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns (faster than 3+)
-		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval (1 tile/turn)
-		cfg.ZoneMinRadius = 3      // Tight final zone forces contact
+		cfg.ZoneStartTurn = 60     // Delay zone start to allow bots to close 1-tile gap and engage
+		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns (slower to allow combat)
+		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval
+		cfg.ZoneMinRadius = 5      // >= spawn radius (4 tiles) ensures bots survive to final zone
 		cfg.AttackRadius2 = 12     // 3.5 tiles (balanced for 2-player)
 	} else {
-		cfg.ZoneStartTurn = 30     // Delay zone start to allow bot spawns and movement (was 15, killed bots too early)
-		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns (vs default 5)
-		cfg.ZoneShrinkStep = 3     // Shrink 3 tiles per interval (1 tile/turn)
-		cfg.ZoneMinRadius = 3      // Tight final zone forces contact (same as 2-player)
+		cfg.ZoneStartTurn = 50     // Delay zone start to allow bots to close 4-tile gap and engage
+		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns
+		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval (slower)
+		cfg.ZoneMinRadius = 8      // >= spawn radius (5-6 tiles) ensures bots survive to final zone
 		cfg.AttackRadius2 = 12     // 3.5 tiles (same as 2-player for better combat trigger)
 	}
 
