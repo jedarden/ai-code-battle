@@ -295,18 +295,17 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 
 // executeMatch runs a match and returns the result and replay.
 func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*MatchResult, *engine.Replay, error) {
-	// Build game config from map data
-	config := engine.Config{
-		Rows:           claimData.Map.Width,
-		Cols:           claimData.Map.Height,
-		MaxTurns:       500, // Default max turns
-		VisionRadius2:  49,  // Default vision
-		AttackRadius2:  5,   // Default attack
-		SpawnCost:      3,   // Default spawn cost
-		EnergyInterval: 10,  // Default energy interval
-		SeasonID:       claimData.Match.SeasonID,
-		RulesVersion:   claimData.Match.RulesVersion,
-	}
+	// Build game config using ConfigForPlayers to get proper attack radius and zone parameters
+	numPlayers := len(claimData.Participants)
+	config := engine.ConfigForPlayers(numPlayers, 2) // 2 cores per player default
+
+	// Override grid dimensions from the pre-generated map
+	config.Rows = claimData.Map.Width
+	config.Cols = claimData.Map.Height
+
+	// Set match metadata
+	config.SeasonID = claimData.Match.SeasonID
+	config.RulesVersion = claimData.Match.RulesVersion
 
 	// Create match runner
 	runner := engine.NewMatchRunner(config,
