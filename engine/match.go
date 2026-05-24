@@ -311,10 +311,24 @@ func (mr *MatchRunner) placeEnergyNodes(gs *GameState, numPlayers int) {
 	}
 	nodesPerSector := numNodes / numPlayers
 
+	// Tiered radius distribution biases toward center to force contested energy:
+	// - 30% central (0.05-0.20): contested central zone
+	// - 40% mid (0.20-0.40): mid-zone
+	// - 30% outer (0.40-0.60): outer zone
 	for i := 0; i < nodesPerSector; i++ {
 		// Generate one position in the first sector
 		angle := mr.rng.Float64() * 2.0 * math.Pi / float64(numPlayers)
-		radius := 0.3 + mr.rng.Float64()*0.4 // 30-70% of half-size
+		// Tiered radius: bias toward center to force contested energy collection.
+		// 30% central (forces both players to midfield), 40% mid, 30% outer.
+		var radius float64
+		switch {
+		case i < nodesPerSector*3/10:
+			radius = 0.05 + mr.rng.Float64()*0.15 // 0.05–0.20: contested central zone
+		case i < nodesPerSector*7/10:
+			radius = 0.20 + mr.rng.Float64()*0.20 // 0.20–0.40: mid-zone
+		default:
+			radius = 0.40 + mr.rng.Float64()*0.20 // 0.40–0.60: outer zone
+		}
 
 		// Mirror for all players
 		for p := 0; p < numPlayers; p++ {

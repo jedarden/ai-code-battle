@@ -174,7 +174,11 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 		})
 	}
 
-	// Generate energy nodes with rotational symmetry
+	// Generate energy nodes with rotational symmetry.
+	// Tiered radius distribution biases toward center to force contested energy:
+	// - 30% central (0.05-0.20): contested central zone
+	// - 40% mid (0.20-0.40): mid-zone
+	// - 30% home (0.40-0.60): home zone
 	nodesPerSector := numEnergyNodes / numPlayers
 	usedPositions := make(map[Position]bool)
 
@@ -186,7 +190,17 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 	for i := 0; i < nodesPerSector; i++ {
 		for attempt := 0; attempt < 100; attempt++ {
 			angle := rng.Float64() * 2.0 * math.Pi / float64(numPlayers)
-			radius := 0.2 + rng.Float64()*0.5 // 20-70% from center
+			// Tiered radius: bias toward center to force contested energy collection.
+			// 30% central (forces both players to midfield), 40% mid, 30% home.
+			var radius float64
+			switch {
+			case i < nodesPerSector*3/10:
+				radius = 0.05 + rng.Float64()*0.15 // 0.05–0.20: contested central zone
+			case i < nodesPerSector*7/10:
+				radius = 0.20 + rng.Float64()*0.20 // 0.20–0.40: mid-zone
+			default:
+				radius = 0.40 + rng.Float64()*0.20 // 0.40–0.60: home zone
+			}
 			r := centerRow + int(float64(centerRow)*radius*math.Cos(angle))
 			c := centerCol + int(float64(centerCol)*radius*math.Sin(angle))
 			pos := wrap(r, c)

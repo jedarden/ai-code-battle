@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -193,4 +194,65 @@ func createMockBotServer(t *testing.T, secret string, playerID int) *httptest.Se
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(body)
 	}))
+}
+// TestIntegration_CenterWeightedEnergy verifies that energy nodes are biased
+// toward the map center to force contested energy collection.
+func TestIntegration_CenterWeightedEnergy(t *testing.T) {
+	secret := "test-energy-secret"
+	server := createMockBotServer(t, secret, 0)
+	defer server.Close()
+
+	auth := AuthConfig{BotID: "b_test", Secret: secret, MatchID: "m_energy_test"}
+	bot := NewHTTPBot(server.URL, auth, WithHTTPTimeout(5*time.Second))
+
+	config := DefaultConfig()
+	config.Rows = 60
+	config.Cols = 60
+	config.MaxTurns = 10 // Short match for fast test
+
+	runner := NewMatchRunner(config,
+		WithRNG(rand.New(rand.NewSource(42))),
+		WithTimeout(5*time.Second),
+	)
+
+	runner.AddBot(bot, "TestBot")
+	runner.AddBot(bot, "TestBot2")
+
+	result, replay, err := runner.Run()
+	if err != nil {
+		t.Fatalf("Match failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Match result is nil")
+	}
+
+	if replay == nil {
+		t.Fatal("Replay is nil")
+	}
+
+	// Count energy nodes in central zone (20% of map radius)
+	centerRow, centerCol := config.Rows/2, config.Cols/2
+	maxRadius := float64(centerRow) * 0.20 // 20% of center distance = central zone
+	centralCount := 0
+
+	for _, en := range replay.Map.EnergyNodes {
+		dr := float64(en.Row) - float64(centerRow)
+		dc := float64(en.Col) - float64(centerCol)
+		dist := math.Sqrt(dr*dr + dc*dc)
+		if dist <= maxRadius {
+			centralCount++
+		}
+	}
+
+	// Expect at least 20% in central zone (allowing some variance for randomness)
+	minCentral := int(float64(len(replay.Map.EnergyNodes)) * 0.20)
+	if centralCount < minCentral {
+		t.Errorf("expected at least %d energy nodes in central zone, got %d (total nodes: %d)",
+			minCentral, centralCount, len(replay.Map.EnergyNodes))
+	}
+
+	t.Logf("Center-weighted energy: %d/%d nodes in central zone (%.1f%%)",
+		centralCount, len(replay.Map.EnergyNodes),
+		100.0*float64(centralCount)/float64(len(replay.Map.EnergyNodes)))
 }

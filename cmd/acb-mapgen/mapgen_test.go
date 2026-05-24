@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 )
@@ -187,5 +188,38 @@ func TestGenerateMap_Deterministic(t *testing.T) {
 			t.Errorf("determinism: wall %d differs: %v vs %v", i, w, m2.Walls[i])
 			break
 		}
+	}
+}
+
+func TestGenerateMap_CenterWeightedEnergy(t *testing.T) {
+	// Verify energy nodes are biased toward the map center.
+	// For 2-player with 20 energy nodes, expect at least 30% in central zone.
+	// The tiered distribution should place ~30% of nodes in the inner 20% radius.
+	rng := rand.New(rand.NewSource(42))
+	m := EnsureConnectivity(2, 60, 60, 0.15, 20, rng, 100)
+	if m == nil {
+		t.Fatal("failed to generate map")
+	}
+	if len(m.EnergyNodes) == 0 {
+		t.Fatal("expected energy nodes, got 0")
+	}
+
+	centerRow, centerCol := m.Rows/2, m.Cols/2
+	maxRadius := float64(centerRow) * 0.20 // 20% of center distance = central zone
+	centralCount := 0
+
+	for _, en := range m.EnergyNodes {
+		dr := float64(en.Row) - float64(centerRow)
+		dc := float64(en.Col) - float64(centerCol)
+		dist := math.Sqrt(dr*dr + dc*dc)
+		if dist <= maxRadius {
+			centralCount++
+		}
+	}
+
+	// Expect at least 20% in central zone (allowing some variance for randomness)
+	minCentral := int(float64(len(m.EnergyNodes)) * 0.20)
+	if centralCount < minCentral {
+		t.Errorf("expected at least %d energy nodes in central zone, got %d", minCentral, centralCount)
 	}
 }
