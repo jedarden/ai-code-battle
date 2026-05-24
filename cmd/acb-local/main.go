@@ -157,7 +157,11 @@ func main() {
 	fmt.Printf("Match complete!\n")
 	fmt.Printf("  Players: %s\n", strings.Join(botNames, " vs "))
 	fmt.Printf("  Grid: %dx%d (%d tiles), Cores: %d/player\n", config.Rows, config.Cols, config.Rows*config.Cols, config.CoresPerPlayer)
-	fmt.Printf("  Winner: Player %d (%s)\n", result.Winner, botNames[result.Winner])
+	if result.Winner >= 0 {
+		fmt.Printf("  Winner: Player %d (%s)\n", result.Winner, botNames[result.Winner])
+	} else {
+		fmt.Printf("  Result: Draw\n")
+	}
 	fmt.Printf("  Reason: %s\n", result.Reason)
 	fmt.Printf("  Turns: %d\n", result.Turns)
 	fmt.Printf("  Scores: %v\n", result.Scores)
