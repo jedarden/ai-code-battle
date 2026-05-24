@@ -235,6 +235,14 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	// Scale energy nodes with player count
 	cfg.EnergyInterval = 10
 
+	// Scale zone parameters for 3+ players to force combat contact
+	// 2-player matches naturally converge at center; 3+ need aggressive zone
+	if numPlayers >= 3 {
+		cfg.ZoneStartTurn = 20  // Start shrinking earlier
+		cfg.ZoneShrinkStep = 3  // Shrink faster (3 tiles per interval vs 2)
+		cfg.ZoneMinRadius = 2   // Force bots into tighter cluster (attack radius is ~2.24)
+	}
+
 	return cfg
 }
 
