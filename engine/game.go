@@ -32,9 +32,10 @@ type GameState struct {
 	LastTotalBots   int // total living bots at last progress
 
 	// Zone (storm) state
-	ZoneCenter Position // center of the zone (map center)
-	ZoneRadius int      // current radius of the safe zone
-	ZoneActive bool     // whether the zone is currently shrinking
+	ZoneCenter  Position // center of the zone (map center)
+	ZoneRadius  int      // current radius of the safe zone
+	ZoneActive  bool     // whether the zone is currently shrinking
+	CombatDeaths []int   // combat deaths per player (tracked for final stats)
 }
 
 // Event represents something that happened during a turn.
@@ -61,23 +62,24 @@ func NewGameState(config Config, rng *rand.Rand) *GameState {
 	initialRadius := min(config.Rows, config.Cols) / 2
 
 	return &GameState{
-		Config:     config,
-		Grid:       NewGrid(config.Rows, config.Cols),
-		Bots:       make([]*Bot, 0),
-		Cores:      make([]*Core, 0),
-		Energy:     make([]*EnergyNode, 0),
-		Players:    make([]*Player, 0),
-		Turn:       0,
-		MatchID:    generateMatchID(rng),
-		NextBotID:  0,
-		rng:        rng,
-		Moves:      make(map[int]Move),
-		DeadBots:   make([]*Bot, 0),
-		Events:     make([]Event, 0),
-		Dominance:  make(map[int]int),
-		ZoneCenter: center,
-		ZoneRadius: initialRadius,
-		ZoneActive: false,
+		Config:       config,
+		Grid:         NewGrid(config.Rows, config.Cols),
+		Bots:         make([]*Bot, 0),
+		Cores:        make([]*Core, 0),
+		Energy:       make([]*EnergyNode, 0),
+		Players:      make([]*Player, 0),
+		Turn:         0,
+		MatchID:      generateMatchID(rng),
+		NextBotID:    0,
+		rng:          rng,
+		Moves:        make(map[int]Move),
+		DeadBots:     make([]*Bot, 0),
+		Events:       make([]Event, 0),
+		Dominance:    make(map[int]int),
+		ZoneCenter:   center,
+		ZoneRadius:   initialRadius,
+		ZoneActive:   false,
+		CombatDeaths: make([]int, 0), // Will be sized when players are added
 	}
 }
 
@@ -100,6 +102,7 @@ func (gs *GameState) AddPlayer() *Player {
 	}
 	gs.Players = append(gs.Players, p)
 	gs.Dominance[p.ID] = 0
+	gs.CombatDeaths = append(gs.CombatDeaths, 0) // Track combat deaths for this player
 	return p
 }
 

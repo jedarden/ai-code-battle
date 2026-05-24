@@ -11,7 +11,7 @@ func TestMapEngagement_WinProbDependency(t *testing.T) {
 	// Create a replay with alternating win probs to simulate lead changes
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		WinProb: []WinProbEntry{
 			{0.6, 0.4}, // Player 0 leading
 			{0.4, 0.6}, // Player 1 leading - 1st crossing
@@ -46,7 +46,7 @@ func TestMapEngagement_WinProbDependency(t *testing.T) {
 func TestMapEngagement_CriticalMomentsDependency(t *testing.T) {
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		CriticalMoments: []CriticalMoment{
 			{Turn: 10, Delta: 0.20, Player: 0, Description: "Player 0 scores"},
 			{Turn: 25, Delta: -0.25, Player: 1, Description: "Player 1 fights back"},
@@ -78,7 +78,7 @@ func TestMapEngagement_CriticalMomentsDependency(t *testing.T) {
 func TestMapEngagement_ResourceContestTurns(t *testing.T) {
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		Turns: []ReplayTurn{
 			{
 				Turn:   0,
@@ -114,7 +114,7 @@ func TestMapEngagement_ResourceContestTurns(t *testing.T) {
 func TestMapEngagement_SurvivalTurns(t *testing.T) {
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		Turns: []ReplayTurn{
 			{
 				Turn: 0,
@@ -168,7 +168,7 @@ func TestMapEngagement_EmptyReplay(t *testing.T) {
 func TestMapEngagement_Formula(t *testing.T) {
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		WinProb: []WinProbEntry{
 			{0.6, 0.4}, // Player 0 leading
 			{0.4, 0.6}, // Player 1 leading - 1st crossing
@@ -241,7 +241,7 @@ func TestMapEngagement_Formula(t *testing.T) {
 func TestMapEngagement_NoContestedEnergy(t *testing.T) {
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		Turns: []ReplayTurn{
 			{
 				Turn:   0,
@@ -275,7 +275,7 @@ func TestMapEngagement_NoContestedEnergy(t *testing.T) {
 func TestMapEngagement_PlayerElimination(t *testing.T) {
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		Turns: []ReplayTurn{
 			{
 				Turn: 0,
@@ -373,7 +373,7 @@ func TestWinProb_ComputeAndSet(t *testing.T) {
 func TestMapEngagement_CombatDeaths(t *testing.T) {
 	replay := &Replay{
 		Config: Config{Rows: 20, Cols: 20, MaxTurns: 100},
-		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
+		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}, CombatDeaths: []int{0, 0}},
 		Turns: []ReplayTurn{
 			{
 				Turn: 0,

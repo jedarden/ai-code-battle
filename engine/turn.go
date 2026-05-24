@@ -218,6 +218,10 @@ func (gs *GameState) executeCombat() {
 					"owner":    e.Owner,
 					"position": e.Position,
 				})
+				// Track combat deaths for the killer's player
+				if e.Owner < len(gs.CombatDeaths) {
+					gs.CombatDeaths[e.Owner]++
+				}
 			}
 
 			gs.Events = append(gs.Events, Event{
@@ -497,12 +501,13 @@ func (gs *GameState) createResult(winner int, reason string) *MatchResult {
 	}
 
 	return &MatchResult{
-		Winner:    winner,
-		Reason:    reason,
-		Turns:     gs.Turn,
-		Scores:    scores,
-		Energy:    energy,
-		BotsAlive: botsAlive,
+		Winner:       winner,
+		Reason:       reason,
+		Turns:        gs.Turn,
+		Scores:       scores,
+		Energy:       energy,
+		BotsAlive:    botsAlive,
+		CombatDeaths: gs.CombatDeaths,
 	}
 }
 

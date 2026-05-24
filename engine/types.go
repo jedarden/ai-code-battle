@@ -258,13 +258,14 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 
 // MatchResult represents the outcome of a match.
 type MatchResult struct {
-	Winner    int    `json:"winner"` // -1 for draw
-	Reason    string `json:"reason"` // "elimination", "dominance", "turns", "draw"
-	Turns     int    `json:"turns"`
-	Scores    []int  `json:"scores"`
-	Energy    []int  `json:"energy"` // energy collected per player
-	BotsAlive []int  `json:"bots_alive"`
-	Crashed   []bool `json:"crashed"` // per-player: true if bot was marked crashed during match
+	Winner       int    `json:"winner"` // -1 for draw
+	Reason       string `json:"reason"` // "elimination", "dominance", "turns", "draw"
+	Turns        int    `json:"turns"`
+	Scores       []int  `json:"scores"`
+	Energy       []int  `json:"energy"`         // energy collected per player
+	BotsAlive    []int  `json:"bots_alive"`
+	Crashed      []bool `json:"crashed"`        // per-player: true if bot was marked crashed during match
+	CombatDeaths []int  `json:"combat_deaths"`  // bots killed in combat per player (focus-fire)
 }
 
 // BotInterface defines the interface for bot decision-making.
