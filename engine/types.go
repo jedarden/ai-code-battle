@@ -237,10 +237,12 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 
 	// Scale zone parameters for 3+ players to force combat contact
 	// 2-player matches naturally converge at center; 3+ need aggressive zone
+	// Zone must compress bots into attack range before elimination (~40-50 turns)
 	if numPlayers >= 3 {
-		cfg.ZoneStartTurn = 20  // Start shrinking earlier
-		cfg.ZoneShrinkStep = 3  // Shrink faster (3 tiles per interval vs 2)
-		cfg.ZoneMinRadius = 2   // Force bots into tighter cluster (attack radius is ~2.24)
+		cfg.ZoneStartTurn = 5      // Start shrinking very early (vs default 50)
+		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns (vs default 5)
+		cfg.ZoneShrinkStep = 3     // Shrink 3 tiles per interval (1.5 tiles/turn vs default 0.4)
+		cfg.ZoneMinRadius = 3      // Small enough to force contact (attack radius ~2.24)
 	}
 
 	return cfg
