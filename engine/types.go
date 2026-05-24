@@ -236,21 +236,20 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	cfg.EnergyInterval = 10
 
 	// Scale zone parameters to force combat contact
-	// Zone must compress bots into contact range while preserving enough population for combat
-	// Key insight: zone kills bots at spawn radius before they can reach attack range
-	// Solution: delay zone start until bots have had time to close distance and engage
-	// ZoneMinRadius must be >= spawn radius so bots aren't killed before final combat
+	// Zone must start early to force combat before energy farming wins
+	// ZoneMinRadius must be >= spawn radius so bots aren't killed before they can reach attack range
+	// Faster shrink (interval 2) forces quicker engagement
 	if numPlayers == 2 {
-		cfg.ZoneStartTurn = 60     // Delay zone start to allow bots to close 1-tile gap and engage
-		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns (slower to allow combat)
+		cfg.ZoneStartTurn = 20     // Start zone early to force combat before farming wins
+		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns (faster pressure)
 		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval
 		cfg.ZoneMinRadius = 5      // >= spawn radius (4 tiles) ensures bots survive to final zone
 		cfg.AttackRadius2 = 12     // 3.5 tiles (balanced for 2-player)
 	} else {
-		cfg.ZoneStartTurn = 50     // Delay zone start to allow bots to close 4-tile gap and engage
-		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns
-		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval (slower)
-		cfg.ZoneMinRadius = 8      // >= spawn radius (5-6 tiles) ensures bots survive to final zone
+		cfg.ZoneStartTurn = 15     // Start zone early for 3+ players (larger gap to close)
+		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns (faster pressure)
+		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval
+		cfg.ZoneMinRadius = 5      // >= spawn radius (5 tiles) ensures bots survive to final zone
 		cfg.AttackRadius2 = 12     // 3.5 tiles (same as 2-player for better combat trigger)
 	}
 
