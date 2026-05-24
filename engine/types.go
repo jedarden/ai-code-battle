@@ -194,7 +194,7 @@ func DefaultConfig() Config {
 		ZoneStartTurn:      50,
 		ZoneShrinkInterval: 5,
 		ZoneShrinkStep:     2,
-		ZoneMinRadius:      10,
+		ZoneMinRadius:      3,
 	}
 }
 
