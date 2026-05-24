@@ -120,26 +120,26 @@ func (d Direction) Delta() (dr, dc int) {
 
 // Bot represents a unit on the grid.
 type Bot struct {
-	ID       int `json:"id"`
-	Owner    int `json:"owner"`
+	ID       int      `json:"id"`
+	Owner    int      `json:"owner"`
 	Position Position `json:"position"`
-	Alive    bool `json:"alive"`
+	Alive    bool     `json:"alive"`
 }
 
 // Core represents a spawn point owned by a player.
 type Core struct {
 	Position        Position `json:"position"`
 	Owner           int      `json:"owner"`
-	Active          bool     `json:"active"`           // false if razed
-	ID              int      `json:"id"`               // unique core identifier
+	Active          bool     `json:"active"`            // false if razed
+	ID              int      `json:"id"`                // unique core identifier
 	LastSpawnedTurn int      `json:"last_spawned_turn"` // turn when this core last spawned a bot
 }
 
 // EnergyNode represents an energy spawn location.
 type EnergyNode struct {
 	Position  Position `json:"position"`
-	HasEnergy bool `json:"has_energy"` // true if energy is currently collectible
-	Tick      int `json:"tick"`        // turns since last spawn
+	HasEnergy bool     `json:"has_energy"` // true if energy is currently collectible
+	Tick      int      `json:"tick"`       // turns since last spawn
 }
 
 // Player represents a participant in the match.
@@ -153,48 +153,48 @@ type Player struct {
 // Move represents a bot's movement order.
 // Bots are identified by their position in the fog-filtered state.
 type Move struct {
-	Position  Position  `json:"position"`  // current position of bot to move
+	Position  Position  `json:"position"` // current position of bot to move
 	Direction Direction `json:"direction"`
 }
 
 // Config holds game configuration parameters.
 type Config struct {
-	Rows            int    `json:"rows"`
-	Cols            int    `json:"cols"`
-	MaxTurns        int    `json:"max_turns"`
-	VisionRadius2   int    `json:"vision_radius2"`   // squared vision distance
-	AttackRadius2   int    `json:"attack_radius2"`   // squared attack distance
-	SpawnCost       int    `json:"spawn_cost"`        // energy cost to spawn a bot
-	EnergyInterval  int    `json:"energy_interval"`   // turns between energy spawns
-	CoresPerPlayer  int    `json:"cores_per_player"`  // starting cores per player
-	MapID           string `json:"map_id,omitempty"`
-	SeasonID        string `json:"season_id,omitempty"`
-	RulesVersion    string `json:"rules_version,omitempty"`
+	Rows           int    `json:"rows"`
+	Cols           int    `json:"cols"`
+	MaxTurns       int    `json:"max_turns"`
+	VisionRadius2  int    `json:"vision_radius2"`   // squared vision distance
+	AttackRadius2  int    `json:"attack_radius2"`   // squared attack distance
+	SpawnCost      int    `json:"spawn_cost"`       // energy cost to spawn a bot
+	EnergyInterval int    `json:"energy_interval"`  // turns between energy spawns
+	CoresPerPlayer int    `json:"cores_per_player"` // starting cores per player
+	MapID          string `json:"map_id,omitempty"`
+	SeasonID       string `json:"season_id,omitempty"`
+	RulesVersion   string `json:"rules_version,omitempty"`
 
 	// Zone (storm) configuration
-	ZoneEnabled       bool `json:"zone_enabled"`        // whether the shrinking zone is active
-	ZoneStartTurn     int  `json:"zone_start_turn"`     // turn when zone starts shrinking
-	ZoneShrinkInterval int `json:"zone_shrink_interval"` // turns between shrink steps
-	ZoneShrinkStep    int  `json:"zone_shrink_step"`    // tiles to shrink each step
-	ZoneMinRadius     int  `json:"zone_min_radius"`     // minimum zone radius (stops here)
+	ZoneEnabled        bool `json:"zone_enabled"`         // whether the shrinking zone is active
+	ZoneStartTurn      int  `json:"zone_start_turn"`      // turn when zone starts shrinking
+	ZoneShrinkInterval int  `json:"zone_shrink_interval"` // turns between shrink steps
+	ZoneShrinkStep     int  `json:"zone_shrink_step"`     // tiles to shrink each step
+	ZoneMinRadius      int  `json:"zone_min_radius"`      // minimum zone radius (stops here)
 }
 
 // DefaultConfig returns the default game configuration.
 func DefaultConfig() Config {
 	return Config{
-		Rows:             40,
-		Cols:             40,
-		MaxTurns:         500,
-		VisionRadius2:    49, // ~7 tiles
-		AttackRadius2:    5,  // ~2.24 tiles
-		SpawnCost:        3,
-		EnergyInterval:   10,
-		CoresPerPlayer:   2,
-		ZoneEnabled:      false,
-		ZoneStartTurn:    50,
+		Rows:               40,
+		Cols:               40,
+		MaxTurns:           500,
+		VisionRadius2:      49, // ~7 tiles
+		AttackRadius2:      5,  // ~2.24 tiles
+		SpawnCost:          3,
+		EnergyInterval:     10,
+		CoresPerPlayer:     2,
+		ZoneEnabled:        true,
+		ZoneStartTurn:      50,
 		ZoneShrinkInterval: 5,
-		ZoneShrinkStep:   2,
-		ZoneMinRadius:    10,
+		ZoneShrinkStep:     2,
+		ZoneMinRadius:      10,
 	}
 }
 
@@ -240,13 +240,13 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 
 // MatchResult represents the outcome of a match.
 type MatchResult struct {
-	Winner      int      `json:"winner"`       // -1 for draw
-	Reason      string   `json:"reason"`       // "elimination", "dominance", "turns", "draw"
-	Turns       int      `json:"turns"`
-	Scores      []int    `json:"scores"`
-	Energy      []int    `json:"energy"`       // energy collected per player
-	BotsAlive   []int    `json:"bots_alive"`
-	Crashed     []bool   `json:"crashed"`      // per-player: true if bot was marked crashed during match
+	Winner    int    `json:"winner"` // -1 for draw
+	Reason    string `json:"reason"` // "elimination", "dominance", "turns", "draw"
+	Turns     int    `json:"turns"`
+	Scores    []int  `json:"scores"`
+	Energy    []int  `json:"energy"` // energy collected per player
+	BotsAlive []int  `json:"bots_alive"`
+	Crashed   []bool `json:"crashed"` // per-player: true if bot was marked crashed during match
 }
 
 // BotInterface defines the interface for bot decision-making.
@@ -267,11 +267,11 @@ type VisibleState struct {
 		Energy int `json:"energy"`
 		Score  int `json:"score"`
 	} `json:"you"`
-	Bots   []VisibleBot `json:"bots"`
-	Energy []Position   `json:"energy"`
+	Bots   []VisibleBot  `json:"bots"`
+	Energy []Position    `json:"energy"`
 	Cores  []VisibleCore `json:"cores"`
-	Walls  []Position   `json:"walls"`
-	Dead   []VisibleBot `json:"dead"`
+	Walls  []Position    `json:"walls"`
+	Dead   []VisibleBot  `json:"dead"`
 }
 
 // VisibleBot represents a bot visible to a player.
