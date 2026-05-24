@@ -32,10 +32,10 @@ type GameState struct {
 	LastTotalBots   int // total living bots at last progress
 
 	// Zone (storm) state
-	ZoneCenter  Position // center of the zone (map center)
-	ZoneRadius  int      // current radius of the safe zone
-	ZoneActive  bool     // whether the zone is currently shrinking
-	CombatDeaths []int   // combat deaths per player (tracked for final stats)
+	ZoneCenter   Position // center of the zone (map center)
+	ZoneRadius   int      // current radius of the safe zone
+	ZoneActive   bool     // whether the zone is currently shrinking
+	CombatDeaths []int    // combat deaths per player (tracked for final stats)
 }
 
 // Event represents something that happened during a turn.
