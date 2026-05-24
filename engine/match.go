@@ -257,15 +257,15 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	// Place cores for each player using rotational symmetry.
 	// Tight spawn radius forces immediate bot contact.
 	// For 2 players: 20% from center (~8 tiles on 40x40) → ~16 tiles apart at spawn
-	// For 3+ players: 25% from center (~7 tiles on 54x54) → ~12 tiles apart at spawn
-	// Attack radius is 3 tiles, so bots need to close ~10 tiles to engage.
+	// For 3+ players: 18% from center (~5 tiles on 54x54) → ~10 tiles apart at spawn
+	// Attack radius is 3.5 tiles (AttackRadius2=12), so bots need to close ~6 tiles to engage.
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
 		primaryRadius = 0.20 // Tighter for 2-player to force contact
 		secondaryRadius = 0.12
 	} else {
-		primaryRadius = 0.25
-		secondaryRadius = 0.15
+		primaryRadius = 0.18 // Reduced from 0.25 to force earlier contact
+		secondaryRadius = 0.12
 	}
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)

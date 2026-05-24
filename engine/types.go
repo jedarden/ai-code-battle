@@ -246,7 +246,7 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 		cfg.ZoneMinRadius = 3      // Tight final zone forces contact
 		cfg.AttackRadius2 = 12     // 3.5 tiles (balanced for 2-player)
 	} else {
-		cfg.ZoneStartTurn = 15     // Start zone early (bots already close at spawn)
+		cfg.ZoneStartTurn = 30     // Delay zone start to allow bot spawns and movement (was 15, killed bots too early)
 		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns (vs default 5)
 		cfg.ZoneShrinkStep = 3     // Shrink 3 tiles per interval (1 tile/turn)
 		cfg.ZoneMinRadius = 5      // Tight final zone forces final contact
