@@ -22,15 +22,15 @@ func NewStore(db *sql.DB) *Store {
 
 // Match represents a match from the database.
 type Match struct {
-	ID            string
-	MapID         string
-	Status        string
-	Winner        sql.NullInt32
-	Condition     sql.NullString
-	TurnCount     sql.NullInt32
-	ScoresJSON    sql.NullString
-	CreatedAt     time.Time
-	CompletedAt   sql.NullTime
+	ID             string
+	MapID          string
+	Status         string
+	Winner         sql.NullInt32
+	Condition      sql.NullString
+	TurnCount      sql.NullInt32
+	ScoresJSON     sql.NullString
+	CreatedAt      time.Time
+	CompletedAt    sql.NullTime
 	CommentaryJSON sql.NullString // NULL if not yet enriched
 }
 
@@ -54,15 +54,15 @@ type BotInfo struct {
 
 // CandidateMatch represents a match that may be enriched.
 type CandidateMatch struct {
-	MatchID         string
-	TurnCount       int
-	Winner          int
-	Condition       string
-	FinalScores     []int
-	Players         []PlayerData
+	MatchID          string
+	TurnCount        int
+	Winner           int
+	Condition        string
+	FinalScores      []int
+	Players          []PlayerData
 	WinProbCrossings int
-	IsUpset         bool
-	IsCloseFinish   bool
+	IsUpset          bool
+	IsCloseFinish    bool
 }
 
 // PlayerData holds player info for enrichment.
@@ -134,9 +134,9 @@ func (s *Store) FindCandidates(ctx context.Context, minTurns, minCrossings int, 
 
 		// Parse participants
 		var participants []struct {
-			BotID      string `json:"bot_id"`
-			PlayerSlot int    `json:"player_slot"`
-			Name       string `json:"name"`
+			BotID      string  `json:"bot_id"`
+			PlayerSlot int     `json:"player_slot"`
+			Name       string  `json:"name"`
 			RatingMu   float64 `json:"rating_mu"`
 			RatingPhi  float64 `json:"rating_phi"`
 		}

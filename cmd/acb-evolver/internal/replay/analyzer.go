@@ -48,10 +48,10 @@ func (a *Analyzer) Analyze(replay *engine.Replay) *Analysis {
 	}
 
 	analysis := &Analysis{
-		MatchID:    replay.MatchID,
-		TurnCount:  len(replay.Turns),
-		Scores:     make([]int, 0),
-		Condition:  "",
+		MatchID:   replay.MatchID,
+		TurnCount: len(replay.Turns),
+		Scores:    make([]int, 0),
+		Condition: "",
 	}
 
 	// Extract result information

@@ -135,11 +135,11 @@ type slackPayload struct {
 }
 
 type slackAttachment struct {
-	Color    string `json:"color"`
-	Title    string `json:"title"`
-	Text     string `json:"text"`
-	Footer   string `json:"footer"`
-	Ts       int64  `json:"ts"`
+	Color  string `json:"color"`
+	Title  string `json:"title"`
+	Text   string `json:"text"`
+	Footer string `json:"footer"`
+	Ts     int64  `json:"ts"`
 }
 
 func (a *Alerter) sendSlack(ctx context.Context, level AlertLevel, title, message string) error {

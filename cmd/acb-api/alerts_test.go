@@ -105,9 +105,9 @@ func TestAlerterSendSlack(t *testing.T) {
 
 func TestAlerterColorCodes(t *testing.T) {
 	tests := []struct {
-		level        AlertLevel
-		wantDiscord  int
-		wantSlack    string
+		level       AlertLevel
+		wantDiscord int
+		wantSlack   string
 	}{
 		{AlertInfo, 0x3498db, "#3498db"},
 		{AlertWarning, 0xf39c12, "#f39c12"},

@@ -19,7 +19,7 @@ type mockStore struct {
 	mu           sync.Mutex
 	programs     []*evolverdb.Program
 	nextID       int64
-	createdCalls [] *evolverdb.Program // captures programs passed to Create
+	createdCalls []*evolverdb.Program // captures programs passed to Create
 }
 
 func newMockStore(programs ...*evolverdb.Program) *mockStore {

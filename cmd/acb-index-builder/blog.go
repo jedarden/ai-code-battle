@@ -45,16 +45,16 @@ type BlogEntry struct {
 // WeeklyChronicle represents the weekly aggregated chronicle file
 // per plan §15.5 - written to data/blog/chronicles-YYYY-WW.json
 type WeeklyChronicle struct {
-	Year         int         `json:"year"`
-	WeekNumber   int         `json:"week_number"`
-	GeneratedAt  string      `json:"generated_at"`
-	SeasonName   string      `json:"season_name"`
-	StoryArcs    []StoryArc  `json:"story_arcs"`
-	Narrative    string      `json:"narrative"`
-	MatchCount   int         `json:"match_count"`
-	BotCount     int         `json:"bot_count"`
-	TopBotName   string      `json:"top_bot_name"`
-	TopBotRating float64     `json:"top_bot_rating"`
+	Year         int        `json:"year"`
+	WeekNumber   int        `json:"week_number"`
+	GeneratedAt  string     `json:"generated_at"`
+	SeasonName   string     `json:"season_name"`
+	StoryArcs    []StoryArc `json:"story_arcs"`
+	Narrative    string     `json:"narrative"`
+	MatchCount   int        `json:"match_count"`
+	BotCount     int        `json:"bot_count"`
+	TopBotName   string     `json:"top_bot_name"`
+	TopBotRating float64    `json:"top_bot_rating"`
 }
 
 // generateBlog creates blog posts and the blog index.
@@ -182,14 +182,14 @@ func recordMetaReportGenerated(postsDir string) {
 // ─── ELO mover tracking ──────────────────────────────────────────────────────
 
 type eloMover struct {
-	BotID      string
-	BotName    string
-	OldRating  float64
-	NewRating  float64
-	Delta      float64
-	Evolved    bool
-	Archetype  string
-	MatchesWon int
+	BotID       string
+	BotName     string
+	OldRating   float64
+	NewRating   float64
+	Delta       float64
+	Evolved     bool
+	Archetype   string
+	MatchesWon  int
 	MatchesLost int
 }
 
@@ -227,14 +227,14 @@ func findTopELOMovers(data *IndexData, count int) []eloMover {
 		wins, losses := countWeeklyResults(bot.ID, data)
 
 		movers = append(movers, eloMover{
-			BotID:      bot.ID,
-			BotName:    bot.Name,
-			OldRating:  oldRating,
-			NewRating:  bot.Rating,
-			Delta:      delta,
-			Evolved:    bot.Evolved,
-			Archetype:  bot.Archetype,
-			MatchesWon: wins,
+			BotID:       bot.ID,
+			BotName:     bot.Name,
+			OldRating:   oldRating,
+			NewRating:   bot.Rating,
+			Delta:       delta,
+			Evolved:     bot.Evolved,
+			Archetype:   bot.Archetype,
+			MatchesWon:  wins,
 			MatchesLost: losses,
 		})
 	}
@@ -1224,12 +1224,12 @@ func getBotArchetype(botID string, data *IndexData) string {
 // ─── Strategy trend analysis ───────────────────────────────────────────────────
 
 type strategyTrend struct {
-	Archetype    string
-	ThisWeekPct  float64 // % of top-20 this week
-	LastWeekPct  float64 // % of top-20 implied from rating history
-	Shift        float64 // ThisWeekPct - LastWeekPct
-	AvgRating    float64
-	Count        int
+	Archetype   string
+	ThisWeekPct float64 // % of top-20 this week
+	LastWeekPct float64 // % of top-20 implied from rating history
+	Shift       float64 // ThisWeekPct - LastWeekPct
+	AvgRating   float64
+	Count       int
 }
 
 // calculateStrategyTrends compares archetype representation in the top 20 this
@@ -1331,12 +1331,12 @@ type evolutionLiveData struct {
 		BestBot    string  `json:"best_bot"`
 	} `json:"islands"`
 	RecentActivity []struct {
-		Time       string `json:"time"`
-		Candidate  string `json:"candidate"`
-		Island     string `json:"island"`
-		Result     string `json:"result"`
-		Reason     string `json:"reason"`
-		Stage      string `json:"stage"`
+		Time      string `json:"time"`
+		Candidate string `json:"candidate"`
+		Island    string `json:"island"`
+		Result    string `json:"result"`
+		Reason    string `json:"reason"`
+		Stage     string `json:"stage"`
 	} `json:"recent_activity"`
 }
 
@@ -1375,7 +1375,6 @@ func nonEmpty(s, fallback string) string {
 	}
 	return fallback
 }
-
 
 func findSectionIndex(content, section string) int {
 	// Find "## Looking Ahead" as a section header

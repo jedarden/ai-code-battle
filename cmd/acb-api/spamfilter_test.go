@@ -44,7 +44,7 @@ func TestSpamFilter_BlockedTerms(t *testing.T) {
 		{"blocked in middle", "this is a scam attempt", true},
 		{"case insensitive", "SPAM everywhere", true},
 		{"mixed case", "VIAGRA pills", true},
-		{"substring not blocked", "spamming is okay", false}, // "spamming" != "spam"
+		{"substring not blocked", "spamming is okay", false},  // "spamming" != "spam"
 		{"partial word not blocked", "this is spammy", false}, // "spammy" != "spam"
 	}
 
@@ -131,7 +131,7 @@ func TestSpamFilter_WordBoundaries(t *testing.T) {
 		{"with space after", "ass ", true},
 		{"in middle", "this ass here", true},
 		{"with punctuation", "ass.", true},
-		{"substring should not match", "this is classic", false},    // "ass" in "classic"
+		{"substring should not match", "this is classic", false},     // "ass" in "classic"
 		{"substring should not match 2", "cassandra is cool", false}, // "ass" in "cassandra"
 		{"casino exact", "casino", true},
 		{"casino plural", "casinos", false}, // different word
@@ -155,11 +155,11 @@ func TestNormalize(t *testing.T) {
 		expected string
 	}{
 		{"ViAgRA", "viagra"},
-		{"V1@GR@", "viagra"},   // 1→i, @→a
-		{"C451N0", "casino"},   // 4→a, 5→s, 0→o, 1→i
-		{"Test!", "testi"},     // !→i
+		{"V1@GR@", "viagra"}, // 1→i, @→a
+		{"C451N0", "casino"}, // 4→a, 5→s, 0→o, 1→i
+		{"Test!", "testi"},   // !→i
 		{"Mixed CASE", "mixed case"},
-		{"0wned", "owned"},     // 0→o
+		{"0wned", "owned"}, // 0→o
 	}
 
 	for _, tt := range tests {

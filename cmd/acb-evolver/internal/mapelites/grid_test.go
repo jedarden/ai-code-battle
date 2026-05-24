@@ -7,7 +7,7 @@ func TestBehaviorToCell(t *testing.T) {
 	g := New(3)
 
 	cases := []struct {
-		agg, eco, expl, form float64
+		agg, eco, expl, form       float64
 		wantX, wantY, wantZ, wantW int
 	}{
 		{0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0},
@@ -152,10 +152,10 @@ func TestSeedBehaviorVectors(t *testing.T) {
 	g := New(3)
 
 	bots := []struct {
-		id                      int64
-		name                    string
-		aggression, economy     float64
-		exploration, formation  float64
+		id                     int64
+		name                   string
+		aggression, economy    float64
+		exploration, formation float64
 	}{
 		{1, "gatherer", 0.1, 0.9, 0.3, 0.2},
 		{2, "guardian", 0.2, 0.6, 0.1, 0.8},

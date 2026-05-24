@@ -9,12 +9,12 @@ import (
 )
 
 const (
-	fairnessMinGames      = 80
-	fairnessThresholdPP   = 0.10
+	fairnessMinGames         = 80
+	fairnessThresholdPP      = 0.10
 	voteForceRetireThreshold = -20
-	engagementPrunePct    = 0.10
-	classicMinMonths      = 3
-	classicTopN           = 5
+	engagementPrunePct       = 0.10
+	classicMinMonths         = 3
+	classicTopN              = 5
 )
 
 // tickFairnessAudit runs the full map lifecycle audit:

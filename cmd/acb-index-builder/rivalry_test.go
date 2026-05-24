@@ -16,9 +16,9 @@ func TestComputeRivalries_BasicPair(t *testing.T) {
 	matches := make([]MatchData, 12)
 	for i := 0; i < 6; i++ {
 		matches[i] = MatchData{
-			ID:        fmt.Sprintf("m_a_%d", i),
-			WinnerID:  "bot1",
-			PlayedAt:  now.Add(-time.Duration(12-i) * 24 * time.Hour),
+			ID:       fmt.Sprintf("m_a_%d", i),
+			WinnerID: "bot1",
+			PlayedAt: now.Add(-time.Duration(12-i) * 24 * time.Hour),
 			Participants: []ParticipantData{
 				{BotID: "bot1", Score: 5 - i%3, Won: true},
 				{BotID: "bot2", Score: 2 + i%2, Won: false},
@@ -27,9 +27,9 @@ func TestComputeRivalries_BasicPair(t *testing.T) {
 	}
 	for i := 0; i < 6; i++ {
 		matches[6+i] = MatchData{
-			ID:        fmt.Sprintf("m_b_%d", i),
-			WinnerID:  "bot2",
-			PlayedAt:  now.Add(-time.Duration(6-i) * 24 * time.Hour),
+			ID:       fmt.Sprintf("m_b_%d", i),
+			WinnerID: "bot2",
+			PlayedAt: now.Add(-time.Duration(6-i) * 24 * time.Hour),
 			Participants: []ParticipantData{
 				{BotID: "bot1", Score: 2 + i%2, Won: false},
 				{BotID: "bot2", Score: 5 - i%3, Won: true},
@@ -84,9 +84,9 @@ func TestComputeRivalries_BelowThreshold(t *testing.T) {
 	matches := make([]MatchData, 5)
 	for i := 0; i < 5; i++ {
 		matches[i] = MatchData{
-			ID:        fmt.Sprintf("m_%d", i),
-			WinnerID:  "bot1",
-			PlayedAt:  now.Add(-time.Duration(i) * time.Hour),
+			ID:       fmt.Sprintf("m_%d", i),
+			WinnerID: "bot1",
+			PlayedAt: now.Add(-time.Duration(i) * time.Hour),
 			Participants: []ParticipantData{
 				{BotID: "bot1", Score: 3, Won: true},
 				{BotID: "bot2", Score: 1, Won: false},
@@ -197,9 +197,9 @@ func TestComputeRivalries_TopKLimit(t *testing.T) {
 				winner = botB
 			}
 			matches = append(matches, MatchData{
-				ID:        fmt.Sprintf("pair%d_m%d", pair, i),
-				WinnerID:  winner,
-				PlayedAt:  now.Add(-time.Duration(i) * time.Hour),
+				ID:       fmt.Sprintf("pair%d_m%d", pair, i),
+				WinnerID: winner,
+				PlayedAt: now.Add(-time.Duration(i) * time.Hour),
 				Participants: []ParticipantData{
 					{BotID: botA, Score: 3, Won: winner == botA},
 					{BotID: botB, Score: 2, Won: winner == botB},
@@ -267,9 +267,9 @@ func TestComputeRivalries_MultiPlayerSkipped(t *testing.T) {
 	var matches []MatchData
 	for i := 0; i < 10; i++ {
 		matches = append(matches, MatchData{
-			ID:        fmt.Sprintf("2p_%d", i),
-			WinnerID:  "bot1",
-			PlayedAt:  now.Add(-time.Duration(i) * time.Hour),
+			ID:       fmt.Sprintf("2p_%d", i),
+			WinnerID: "bot1",
+			PlayedAt: now.Add(-time.Duration(i) * time.Hour),
 			Participants: []ParticipantData{
 				{BotID: "bot1", Score: 3, Won: true},
 				{BotID: "bot2", Score: 1, Won: false},
@@ -278,9 +278,9 @@ func TestComputeRivalries_MultiPlayerSkipped(t *testing.T) {
 	}
 	for i := 0; i < 5; i++ {
 		matches = append(matches, MatchData{
-			ID:        fmt.Sprintf("3p_%d", i),
-			WinnerID:  "bot1",
-			PlayedAt:  now.Add(-time.Duration(i) * time.Hour),
+			ID:       fmt.Sprintf("3p_%d", i),
+			WinnerID: "bot1",
+			PlayedAt: now.Add(-time.Duration(i) * time.Hour),
 			Participants: []ParticipantData{
 				{BotID: "bot1", Score: 3, Won: true},
 				{BotID: "bot2", Score: 1, Won: false},
@@ -375,12 +375,12 @@ func TestComputeRivalries_RecencyBoost(t *testing.T) {
 
 func TestLongestStreak(t *testing.T) {
 	tests := []struct {
-		name     string
-		winners  []string
-		botA     string
-		botB     string
-		wantLen  int
-		wantNil  bool
+		name    string
+		winners []string
+		botA    string
+		botB    string
+		wantLen int
+		wantNil bool
 	}{
 		{"empty", []string{}, "a", "b", 0, true},
 		{"single", []string{"a"}, "a", "b", 0, true}, // < 2

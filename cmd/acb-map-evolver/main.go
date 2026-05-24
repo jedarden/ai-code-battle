@@ -160,7 +160,7 @@ func parseConfig() *Config {
 		EvolutionPeriod: 30 * time.Minute,
 		WeeklySchedule: WeeklySchedule{
 			Weekday: time.Sunday, // Default: Sunday
-			Hour:    3,            // Default: 03:00 UTC
+			Hour:    3,           // Default: 03:00 UTC
 			Minute:  0,
 		},
 	}
@@ -552,8 +552,8 @@ func (e *MapEvolver) mutate(m *Map) {
 	for _, core := range m.Cores {
 		for dr := -3; dr <= 3; dr++ {
 			for dc := -3; dc <= 3; dc++ {
-				nr := ((core.Position.Row + dr) % m.Rows + m.Rows) % m.Rows
-				nc := ((core.Position.Col + dc) % m.Cols + m.Cols) % m.Cols
+				nr := ((core.Position.Row+dr)%m.Rows + m.Rows) % m.Rows
+				nc := ((core.Position.Col+dc)%m.Cols + m.Cols) % m.Cols
 				protected[Position{Row: nr, Col: nc}] = true
 			}
 		}
@@ -774,7 +774,7 @@ func (e *MapEvolver) smoothWalls(m *Map, protected PositionSet) {
 		m.Walls = append(m.Walls, pos)
 	}
 
-	m.WallDensity = float64(len(m.Walls)) / float64(m.Rows * m.Cols)
+	m.WallDensity = float64(len(m.Walls)) / float64(m.Rows*m.Cols)
 }
 
 // validate checks if a map meets all validation criteria.
@@ -850,8 +850,8 @@ func (e *MapEvolver) checkConnectivity(m *Map) bool {
 		queue = queue[1:]
 
 		for _, d := range dirs {
-			nr := ((curr.Row + d.Row) % m.Rows + m.Rows) % m.Rows
-			nc := ((curr.Col + d.Col) % m.Cols + m.Cols) % m.Cols
+			nr := ((curr.Row+d.Row)%m.Rows + m.Rows) % m.Rows
+			nc := ((curr.Col+d.Col)%m.Cols + m.Cols) % m.Cols
 			np := Position{Row: nr, Col: nc}
 
 			if passable[np] && !visited[np] {
@@ -893,8 +893,8 @@ func (e *MapEvolver) countReachableEnergyNodes(m *Map, start Position) int {
 		}
 
 		for _, d := range dirs {
-			nr := ((curr.Row + d.Row) % m.Rows + m.Rows) % m.Rows
-			nc := ((curr.Col + d.Col) % m.Cols + m.Cols) % m.Cols
+			nr := ((curr.Row+d.Row)%m.Rows + m.Rows) % m.Rows
+			nc := ((curr.Col+d.Col)%m.Cols + m.Cols) % m.Cols
 			np := Position{Row: nr, Col: nc}
 
 			if !wallSet[np] && !visited[np] {
@@ -955,8 +955,8 @@ func (e *MapEvolver) canReach(m *Map, start, end Position) bool {
 		}
 
 		for _, d := range dirs {
-			nr := ((curr.Row + d.Row) % m.Rows + m.Rows) % m.Rows
-			nc := ((curr.Col + d.Col) % m.Cols + m.Cols) % m.Cols
+			nr := ((curr.Row+d.Row)%m.Rows + m.Rows) % m.Rows
+			nc := ((curr.Col+d.Col)%m.Cols + m.Cols) % m.Cols
 			np := Position{Row: nr, Col: nc}
 
 			if !wallSet[np] && !visited[np] {

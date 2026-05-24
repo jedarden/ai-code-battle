@@ -43,15 +43,15 @@ type Match struct {
 
 // Participant represents a match participant.
 type Participant struct {
-	ID                   string `json:"id"`
-	MatchID              string `json:"match_id"`
-	BotID                string `json:"bot_id"`
-	PlayerIndex          int    `json:"player_index"`
-	Score                int    `json:"score"`
-	RatingBefore         int    `json:"rating_before"`
-	RatingAfter          *int   `json:"rating_after"`
-	RatingDeviationBefore int   `json:"rating_deviation_before"`
-	RatingDeviationAfter *int   `json:"rating_deviation_after"`
+	ID                    string `json:"id"`
+	MatchID               string `json:"match_id"`
+	BotID                 string `json:"bot_id"`
+	PlayerIndex           int    `json:"player_index"`
+	Score                 int    `json:"score"`
+	RatingBefore          int    `json:"rating_before"`
+	RatingAfter           *int   `json:"rating_after"`
+	RatingDeviationBefore int    `json:"rating_deviation_before"`
+	RatingDeviationAfter  *int   `json:"rating_deviation_after"`
 }
 
 // MapData represents map configuration.
@@ -83,7 +83,7 @@ type MatchResult struct {
 	EndReason   string          `json:"end_reason"`
 	Scores      map[string]int  `json:"scores"`
 	CrashedBots map[string]bool `json:"crashed_bots"` // bot_id -> crashed
-	CombatTurns int             `json:"combat_turns"`  // turns with ≥1 enemy-kill combat death
+	CombatTurns int             `json:"combat_turns"` // turns with ≥1 enemy-kill combat death
 }
 
 // ConvertDBJobToJob converts a DBJob to Job type.
@@ -115,12 +115,12 @@ func ConvertDBClaimToResponse(data *JobClaimData) *JobClaimResponse {
 
 	for i, p := range data.Participants {
 		participants[i] = Participant{
-			ID:                   p.MatchID + "-" + p.BotID,
-			MatchID:              p.MatchID,
-			BotID:                p.BotID,
-			PlayerIndex:          p.PlayerSlot,
-			Score:                p.Score,
-			RatingBefore:         int(p.RatingMuBefore),
+			ID:                    p.MatchID + "-" + p.BotID,
+			MatchID:               p.MatchID,
+			BotID:                 p.BotID,
+			PlayerIndex:           p.PlayerSlot,
+			Score:                 p.Score,
+			RatingBefore:          int(p.RatingMuBefore),
 			RatingDeviationBefore: int(p.RatingPhiBefore),
 		}
 		botSecrets[i] = BotSecret{

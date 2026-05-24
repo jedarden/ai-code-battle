@@ -8,23 +8,23 @@ import (
 
 // GameState represents the complete state of a match.
 type GameState struct {
-	Config    Config
-	Grid      *Grid
-	Bots      []*Bot
-	Cores     []*Core
-	Energy    []*EnergyNode
-	Players   []*Player
-	Turn      int
+	Config     Config
+	Grid       *Grid
+	Bots       []*Bot
+	Cores      []*Core
+	Energy     []*EnergyNode
+	Players    []*Player
+	Turn       int
 	MatchID    string
 	NextBotID  int
 	NextCoreID int
 	rng        *rand.Rand
 
 	// Turn state
-	Moves       map[int]Move       // bot ID -> move
-	DeadBots    []*Bot             // bots that died this turn (for fog display)
-	Events      []Event            // events that occurred this turn
-	Dominance   map[int]int        // player -> consecutive turns with 80%+ bots
+	Moves     map[int]Move // bot ID -> move
+	DeadBots  []*Bot       // bots that died this turn (for fog display)
+	Events    []Event      // events that occurred this turn
+	Dominance map[int]int  // player -> consecutive turns with 80%+ bots
 
 	// Stalemate detection
 	StalemateTurns  int // consecutive turns with no progress
@@ -32,9 +32,9 @@ type GameState struct {
 	LastTotalBots   int // total living bots at last progress
 
 	// Zone (storm) state
-	ZoneCenter  Position // center of the zone (map center)
-	ZoneRadius  int      // current radius of the safe zone
-	ZoneActive  bool     // whether the zone is currently shrinking
+	ZoneCenter Position // center of the zone (map center)
+	ZoneRadius int      // current radius of the safe zone
+	ZoneActive bool     // whether the zone is currently shrinking
 }
 
 // Event represents something that happened during a turn.
@@ -46,13 +46,13 @@ type Event struct {
 
 // Event types
 const (
-	EventBotSpawned    = "bot_spawned"
-	EventBotDied       = "bot_died"
+	EventBotSpawned      = "bot_spawned"
+	EventBotDied         = "bot_died"
 	EventEnergyCollected = "energy_collected"
-	EventCoreCaptured  = "core_captured"
-	EventCombatDeath   = "combat_death"
-	EventCollisionDeath = "collision_death"
-	EventZoneDeath     = "zone_death"
+	EventCoreCaptured    = "core_captured"
+	EventCombatDeath     = "combat_death"
+	EventCollisionDeath  = "collision_death"
+	EventZoneDeath       = "zone_death"
 )
 
 // NewGameState creates a new game state with the given configuration.
@@ -61,20 +61,20 @@ func NewGameState(config Config, rng *rand.Rand) *GameState {
 	initialRadius := min(config.Rows, config.Cols) / 2
 
 	return &GameState{
-		Config:    config,
-		Grid:      NewGrid(config.Rows, config.Cols),
-		Bots:      make([]*Bot, 0),
-		Cores:     make([]*Core, 0),
-		Energy:    make([]*EnergyNode, 0),
-		Players:   make([]*Player, 0),
-		Turn:      0,
-		MatchID:   generateMatchID(rng),
-		NextBotID: 0,
-		rng:       rng,
-		Moves:     make(map[int]Move),
-		DeadBots:  make([]*Bot, 0),
-		Events:    make([]Event, 0),
-		Dominance: make(map[int]int),
+		Config:     config,
+		Grid:       NewGrid(config.Rows, config.Cols),
+		Bots:       make([]*Bot, 0),
+		Cores:      make([]*Core, 0),
+		Energy:     make([]*EnergyNode, 0),
+		Players:    make([]*Player, 0),
+		Turn:       0,
+		MatchID:    generateMatchID(rng),
+		NextBotID:  0,
+		rng:        rng,
+		Moves:      make(map[int]Move),
+		DeadBots:   make([]*Bot, 0),
+		Events:     make([]Event, 0),
+		Dominance:  make(map[int]int),
 		ZoneCenter: center,
 		ZoneRadius: initialRadius,
 		ZoneActive: false,

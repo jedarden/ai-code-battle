@@ -94,15 +94,15 @@ func (g *Generator) enrichOne(ctx context.Context, match db.CandidateMatch) (boo
 
 	// Build metadata
 	metadata := llm.MatchMetadata{
-		Players:      make([]llm.PlayerInfo, len(match.Players)),
-		MapSize:      fmt.Sprintf("%dx%d", 60, 60), // Could extract from replay
-		TurnCount:    match.TurnCount,
-		Winner:       match.Winner,
-		Condition:    match.Condition,
-		FinalScores:  match.FinalScores,
-		IsUpset:      match.IsUpset,
+		Players:       make([]llm.PlayerInfo, len(match.Players)),
+		MapSize:       fmt.Sprintf("%dx%d", 60, 60), // Could extract from replay
+		TurnCount:     match.TurnCount,
+		Winner:        match.Winner,
+		Condition:     match.Condition,
+		FinalScores:   match.FinalScores,
+		IsUpset:       match.IsUpset,
 		IsCloseFinish: match.IsCloseFinish,
-		IsFeatured:   true, // All selected matches are featured
+		IsFeatured:    true, // All selected matches are featured
 	}
 
 	for i, p := range match.Players {
@@ -148,7 +148,7 @@ func (g *Generator) enrichOne(ctx context.Context, match db.CandidateMatch) (boo
 
 	// Store the result
 	commentaryMap := map[string]interface{}{
-		"match_id":    match.MatchID,
+		"match_id":     match.MatchID,
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 		"key_moments":  commentary.KeyMoments,
 		"summary":      commentary.Summary,

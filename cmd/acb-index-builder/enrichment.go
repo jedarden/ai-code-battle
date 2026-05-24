@@ -22,10 +22,10 @@ type CommentaryEntry struct {
 
 // EnrichedCommentary wraps all AI commentary for a single match.
 type EnrichedCommentary struct {
-	MatchID   string             `json:"match_id"`
+	MatchID   string            `json:"match_id"`
 	Generated string            `json:"generated_at"`
-	Criteria  []string           `json:"criteria"` // why this match was selected
-	Entries   []CommentaryEntry  `json:"entries"`
+	Criteria  []string          `json:"criteria"` // why this match was selected
+	Entries   []CommentaryEntry `json:"entries"`
 }
 
 // shouldEnrich returns true and lists criteria if the match qualifies for
@@ -146,18 +146,18 @@ func enrichSingleReplay(ctx context.Context, m MatchData, criteria []string, dat
 			Description string  `json:"description"`
 		} `json:"critical_moments"`
 		Result struct {
-			Winner int      `json:"winner"`
-			Reason string   `json:"reason"`
-			Turns  int      `json:"turns"`
-			Scores []int    `json:"scores"`
+			Winner int    `json:"winner"`
+			Reason string `json:"reason"`
+			Turns  int    `json:"turns"`
+			Scores []int  `json:"scores"`
 		} `json:"result"`
 		Players []struct {
 			ID   int    `json:"id"`
 			Name string `json:"name"`
 		} `json:"players"`
 		Turns []struct {
-			Turn    int    `json:"turn"`
-			Events  []struct {
+			Turn   int `json:"turn"`
+			Events []struct {
 				Type    string `json:"type"`
 				Turn    int    `json:"turn"`
 				Details any    `json:"details"`
@@ -220,18 +220,18 @@ func buildCommentaryPrompt(m MatchData, replay struct {
 		Description string  `json:"description"`
 	} `json:"critical_moments"`
 	Result struct {
-		Winner int      `json:"winner"`
-		Reason string   `json:"reason"`
-		Turns  int      `json:"turns"`
-		Scores []int    `json:"scores"`
+		Winner int    `json:"winner"`
+		Reason string `json:"reason"`
+		Turns  int    `json:"turns"`
+		Scores []int  `json:"scores"`
 	} `json:"result"`
 	Players []struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
 	} `json:"players"`
 	Turns []struct {
-		Turn    int    `json:"turn"`
-		Events  []struct {
+		Turn   int `json:"turn"`
+		Events []struct {
 			Type    string `json:"type"`
 			Turn    int    `json:"turn"`
 			Details any    `json:"details"`

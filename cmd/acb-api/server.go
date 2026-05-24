@@ -25,16 +25,16 @@ import (
 // Provides bot registration, job coordination, replay serving,
 // bot profiles, leaderboards, and UI feedback ingestion.
 type Server struct {
-	cfg          Config
-	db           *sql.DB
-	rdb          *redis.Client
-	regLimiter   *ratelimit.Limiter // 5/hour per IP
-	feedbackLtr  *ratelimit.Limiter // 20/hour per IP
-	predictLtr   *ratelimit.Limiter // 60/hour per IP
-	submitLtr    *ratelimit.Limiter // 5/day per bot_id
-	enrichLtr    *ratelimit.Limiter // 5/day per bot_id for enrichment requests
-	voteLtr      *ratelimit.Limiter // 10/hour per IP
-	spamFilter   *SpamFilter        // word/spam filter for feedback
+	cfg         Config
+	db          *sql.DB
+	rdb         *redis.Client
+	regLimiter  *ratelimit.Limiter // 5/hour per IP
+	feedbackLtr *ratelimit.Limiter // 20/hour per IP
+	predictLtr  *ratelimit.Limiter // 60/hour per IP
+	submitLtr   *ratelimit.Limiter // 5/day per bot_id
+	enrichLtr   *ratelimit.Limiter // 5/day per bot_id for enrichment requests
+	voteLtr     *ratelimit.Limiter // 10/hour per IP
+	spamFilter  *SpamFilter        // word/spam filter for feedback
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
@@ -303,10 +303,10 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 
 	// Parse config_json to get match details
 	var config struct {
-		MapID     string `json:"map_id"`
-		MapSeed   int64  `json:"map_seed"`
-		BotIDs    []string `json:"bot_ids"`
-		PlayerSlots []int `json:"player_slots"`
+		MapID       string   `json:"map_id"`
+		MapSeed     int64    `json:"map_seed"`
+		BotIDs      []string `json:"bot_ids"`
+		PlayerSlots []int    `json:"player_slots"`
 	}
 	if err := json.Unmarshal(job.ConfigJSON, &config); err != nil {
 		log.Printf("failed to parse job config: %v", err)
@@ -366,15 +366,15 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 
 	// Build response
 	response := map[string]interface{}{
-		"job_id":        job.JobID,
-		"match_id":      job.MatchID,
-		"map_id":        config.MapID,
-		"map_seed":      config.MapSeed,
-		"map_width":     mapData.GridWidth,
-		"map_height":    mapData.GridHeight,
-		"map_json":      mapData.MapJSON,
-		"bots":          bots,
-		"player_slots":  config.PlayerSlots,
+		"job_id":       job.JobID,
+		"match_id":     job.MatchID,
+		"map_id":       config.MapID,
+		"map_seed":     config.MapSeed,
+		"map_width":    mapData.GridWidth,
+		"map_height":   mapData.GridHeight,
+		"map_json":     mapData.MapJSON,
+		"bots":         bots,
+		"player_slots": config.PlayerSlots,
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -786,19 +786,19 @@ func (s *Server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 
 	// Get bot details
 	var bot struct {
-		BotID      string  `json:"bot_id"`
-		Name       string  `json:"name"`
-		Owner      string  `json:"owner"`
-		Status     string  `json:"status"`
-		RatingMu   float64 `json:"rating_mu"`
-		RatingPhi  float64 `json:"rating_phi"`
-		Evolved    bool    `json:"evolved"`
-		Island     *string `json:"island,omitempty"`
-		Generation *int    `json:"generation,omitempty"`
+		BotID       string  `json:"bot_id"`
+		Name        string  `json:"name"`
+		Owner       string  `json:"owner"`
+		Status      string  `json:"status"`
+		RatingMu    float64 `json:"rating_mu"`
+		RatingPhi   float64 `json:"rating_phi"`
+		Evolved     bool    `json:"evolved"`
+		Island      *string `json:"island,omitempty"`
+		Generation  *int    `json:"generation,omitempty"`
 		ParentIDs   *string `json:"parent_ids,omitempty"`
 		DebugPublic bool    `json:"debug_public"`
 		CreatedAt   string  `json:"created_at"`
-		LastActive *string `json:"last_active,omitempty"`
+		LastActive  *string `json:"last_active,omitempty"`
 	}
 
 	err := s.db.QueryRowContext(ctx, `
@@ -884,8 +884,8 @@ func (s *Server) handleBotPatch(w http.ResponseWriter, r *http.Request) {
 	botID := pathParts[0]
 
 	var req struct {
-		DebugPublic *bool   `json:"debug_public"`
-		APISecret   string  `json:"api_secret"`
+		DebugPublic *bool  `json:"debug_public"`
+		APISecret   string `json:"api_secret"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -1257,10 +1257,10 @@ func (s *Server) handlePredict(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]interface{}{
-		"id":         predictionID,
-		"match_id":   req.MatchID,
-		"predicted":  req.BotID,
-		"predictor":  req.Predictor,
+		"id":        predictionID,
+		"match_id":  req.MatchID,
+		"predicted": req.BotID,
+		"predictor": req.Predictor,
 	}
 	if req.Confidence != nil {
 		resp["confidence"] = *req.Confidence
@@ -1303,10 +1303,10 @@ func (s *Server) handleOpenPredictions(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type MatchPrediction struct {
-		MatchID     string          `json:"match_id"`
-		CreatedAt   string          `json:"created_at"`
+		MatchID      string                   `json:"match_id"`
+		CreatedAt    string                   `json:"created_at"`
 		Participants []map[string]interface{} `json:"participants"`
-		YourPick    *string         `json:"your_pick,omitempty"`
+		YourPick     *string                  `json:"your_pick,omitempty"`
 	}
 
 	var matches []MatchPrediction
@@ -2079,15 +2079,15 @@ func (s *Server) enqueueForEnrichment(ctx context.Context, matchID string) error
 func estimateWaitTime(status string) int {
 	switch status {
 	case "pending":
-		return 300  // 5 minutes for new requests
+		return 300 // 5 minutes for new requests
 	case "processing":
-		return 60   // 1 minute if already being processed
+		return 60 // 1 minute if already being processed
 	case "completed":
-		return 0    // Already done
+		return 0 // Already done
 	case "failed":
-		return -1   // Failed - will retry
+		return -1 // Failed - will retry
 	default:
-		return 300  // Default to 5 minutes
+		return 300 // Default to 5 minutes
 	}
 }
 

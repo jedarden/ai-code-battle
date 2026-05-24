@@ -25,8 +25,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/arena"
+	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/live"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/llm"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/mapelites"
@@ -370,10 +370,10 @@ func runEvaluate(ctx context.Context, db *sql.DB, args []string) {
 		for _, pp := range promoted {
 			if len(pp.BehaviorVector) >= 2 {
 				expl, form := 0.5, 0.5
-					if len(pp.BehaviorVector) >= 4 {
-						expl, form = pp.BehaviorVector[2], pp.BehaviorVector[3]
-					}
-					grid.TryPlace(pp.ProgramID, pp.Fitness, pp.BehaviorVector[0], pp.BehaviorVector[1], expl, form)
+				if len(pp.BehaviorVector) >= 4 {
+					expl, form = pp.BehaviorVector[2], pp.BehaviorVector[3]
+				}
+				grid.TryPlace(pp.ProgramID, pp.Fitness, pp.BehaviorVector[0], pp.BehaviorVector[1], expl, form)
 			}
 		}
 	}
@@ -517,9 +517,9 @@ func runRetire(ctx context.Context, db *sql.DB, args []string) {
 		}
 		defer rows.Close()
 		type row struct {
-			programID     int64
+			programID      int64
 			botID, botName string
-			displayRating float64
+			displayRating  float64
 		}
 		var bots []row
 		for rows.Next() {

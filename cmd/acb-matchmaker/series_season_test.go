@@ -118,11 +118,11 @@ func TestDecayDifferentFactors(t *testing.T) {
 		current float64
 		want    float64
 	}{
-		{0.0, 2000, 1500},   // full reset
-		{0.5, 2000, 1750},   // half decay
-		{1.0, 2000, 2000},   // no decay
-		{0.3, 1000, 1350},   // heavy decay toward center
-		{0.9, 1000, 1050},   // light decay
+		{0.0, 2000, 1500}, // full reset
+		{0.5, 2000, 1750}, // half decay
+		{1.0, 2000, 2000}, // no decay
+		{0.3, 1000, 1350}, // heavy decay toward center
+		{0.9, 1000, 1050}, // light decay
 	}
 
 	for _, tc := range tests {
@@ -160,14 +160,14 @@ func TestSeriesFormatSelection(t *testing.T) {
 		gap    float64
 		format int
 	}{
-		{0, 7},    // identical ratings → bo7
-		{25, 7},   // small gap → bo7
-		{49, 7},   // just under threshold → bo7
-		{50, 5},   // at threshold → bo5
-		{100, 5},  // moderate gap → bo5
-		{199, 5},  // just under threshold → bo5
-		{200, 3},  // at threshold → bo3
-		{500, 3},  // large gap → bo3
+		{0, 7},   // identical ratings → bo7
+		{25, 7},  // small gap → bo7
+		{49, 7},  // just under threshold → bo7
+		{50, 5},  // at threshold → bo5
+		{100, 5}, // moderate gap → bo5
+		{199, 5}, // just under threshold → bo5
+		{200, 3}, // at threshold → bo3
+		{500, 3}, // large gap → bo3
 	}
 
 	for _, tc := range tests {
@@ -569,11 +569,11 @@ func TestAllPlayedFinalization(t *testing.T) {
 	// winning threshold (possible with draws), the series should be finalized
 	// with the bot that has more wins, or NULL if equal.
 	tests := []struct {
-		name     string
-		format   int
-		aWins    int
-		bWins    int
-		winner   string // "a", "b", or "" for draw
+		name   string
+		format int
+		aWins  int
+		bWins  int
+		winner string // "a", "b", or "" for draw
 	}{
 		{"bo3 with 1-1 and 1 draw", 3, 1, 1, ""},
 		{"bo5 with 2-1 and 2 draws", 5, 2, 1, "a"},

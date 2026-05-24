@@ -10,10 +10,10 @@ func TestFairnessThresholdCalculation(t *testing.T) {
 	// For N-player maps, expected win rate is 1/N.
 	// A slot is flagged unfair if its win rate deviates by > 10pp.
 	tests := []struct {
-		name         string
-		playerCount  int
-		winRate      float64
-		shouldFlag   bool
+		name        string
+		playerCount int
+		winRate     float64
+		shouldFlag  bool
 	}{
 		{"2-player exact 50%", 2, 0.50, false},
 		{"2-player 59%", 2, 0.59, false},
@@ -71,7 +71,7 @@ func TestFairnessMinGamesThreshold(t *testing.T) {
 func TestVoteForceRetireThreshold(t *testing.T) {
 	// Maps with >20 net negative votes are force-retired.
 	tests := []struct {
-		netVotes  int
+		netVotes     int
 		shouldRetire bool
 	}{
 		{-25, true},
@@ -98,7 +98,7 @@ func TestEngagementPrunePercentage(t *testing.T) {
 		totalActive int
 		wantPruned  int
 	}{
-		{5, 0},   // too few to prune
+		{5, 0}, // too few to prune
 		{10, 1},
 		{20, 2},
 		{50, 5},
@@ -120,10 +120,10 @@ func TestClassicPromotionCriteria(t *testing.T) {
 	// Maps must be active, have engagement > 0, be 3+ months old,
 	// and be in the top 5 by engagement for their player count.
 	tests := []struct {
-		name        string
-		engagement  float64
-		ageMonths   int
-		status      string
+		name          string
+		engagement    float64
+		ageMonths     int
+		status        string
 		shouldPromote bool
 	}{
 		{"meets all criteria", 8.5, 4, "active", true},
@@ -163,8 +163,8 @@ func TestFairnessAuditConfigOverride(t *testing.T) {
 func TestMonthlyPruneOnlyOnFirst(t *testing.T) {
 	// pruneLowEngagementMaps only runs on the 1st of each month.
 	tests := []struct {
-		day  int
-		run  bool
+		day int
+		run bool
 	}{
 		{1, true},
 		{2, false},

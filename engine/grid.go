@@ -6,10 +6,10 @@ import (
 
 // Grid represents the toroidal game board.
 type Grid struct {
-	Rows   int
-	Cols   int
-	Tiles  [][]Tile
-	Walls  map[Position]bool // cached wall positions for fast lookup
+	Rows  int
+	Cols  int
+	Tiles [][]Tile
+	Walls map[Position]bool // cached wall positions for fast lookup
 }
 
 // NewGrid creates a new empty grid with the given dimensions.

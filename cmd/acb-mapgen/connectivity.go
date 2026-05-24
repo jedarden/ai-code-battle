@@ -47,8 +47,8 @@ func CheckConnectivity(m *Map) bool {
 
 		for _, d := range dirs {
 			// Toroidal wrapping
-			nr := ((curr.Row + d.Row) % m.Rows + m.Rows) % m.Rows
-			nc := ((curr.Col + d.Col) % m.Cols + m.Cols) % m.Cols
+			nr := ((curr.Row+d.Row)%m.Rows + m.Rows) % m.Rows
+			nc := ((curr.Col+d.Col)%m.Cols + m.Cols) % m.Cols
 			np := Position{Row: nr, Col: nc}
 
 			if passable[np] && !visited[np] {

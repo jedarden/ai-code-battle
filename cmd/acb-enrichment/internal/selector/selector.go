@@ -12,19 +12,19 @@ import (
 
 // Selector chooses which matches should be enriched.
 type Selector struct {
-	store            *db.Store
-	minTurnCount     int
-	minCrossings     int
-	upsetThreshold   float64
-	maxPerHour       int
+	store          *db.Store
+	minTurnCount   int
+	minCrossings   int
+	upsetThreshold float64
+	maxPerHour     int
 }
 
 // Config holds selector configuration.
 type Config struct {
-	MinTurnCount     int
-	MinCrossings     int
-	UpsetThreshold   float64
-	MaxPerHour       int
+	MinTurnCount   int
+	MinCrossings   int
+	UpsetThreshold float64
+	MaxPerHour     int
 }
 
 // DefaultConfig returns default selector configuration.
@@ -53,11 +53,11 @@ func NewSelector(store *db.Store, cfg Config) *Selector {
 	}
 
 	return &Selector{
-		store:            store,
-		minTurnCount:     cfg.MinTurnCount,
-		minCrossings:     cfg.MinCrossings,
-		upsetThreshold:   cfg.UpsetThreshold,
-		maxPerHour:       cfg.MaxPerHour,
+		store:          store,
+		minTurnCount:   cfg.MinTurnCount,
+		minCrossings:   cfg.MinCrossings,
+		upsetThreshold: cfg.UpsetThreshold,
+		maxPerHour:     cfg.MaxPerHour,
 	}
 }
 

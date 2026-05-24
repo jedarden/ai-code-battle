@@ -160,7 +160,7 @@ func TestValidate(t *testing.T) {
 		Players:     2,
 		Rows:        60,
 		Cols:        60,
-		WallDensity: 0.50, // Too high
+		WallDensity: 0.50,                   // Too high
 		Walls:       make([]Position, 1800), // 50% density
 		Cores: []Core{
 			{Position: Position{Row: 15, Col: 30}, Owner: 0},
@@ -483,76 +483,76 @@ func TestNextScheduledTime(t *testing.T) {
 	baseTime := time.Date(2025, 5, 12, 10, 0, 0, 0, time.UTC) // Monday
 
 	tests := []struct {
-		name           string
-		now            time.Time
-		schedule       WeeklySchedule
-		wantScheduled  string // Expected scheduled time in RFC3339
-		wantHour       int
-		wantMinute     int
-		wantWeekday    time.Weekday
+		name          string
+		now           time.Time
+		schedule      WeeklySchedule
+		wantScheduled string // Expected scheduled time in RFC3339
+		wantHour      int
+		wantMinute    int
+		wantWeekday   time.Weekday
 	}{
 		{
-			name:        "Sunday 03:00 when current time is Monday 10:00",
-			now:         baseTime, // Monday 10:00
-			schedule:    WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
+			name:          "Sunday 03:00 when current time is Monday 10:00",
+			now:           baseTime, // Monday 10:00
+			schedule:      WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
 			wantScheduled: "2025-05-18T03:00:00Z", // Next Sunday
-			wantHour:    3,
-			wantMinute:  0,
-			wantWeekday: time.Sunday,
+			wantHour:      3,
+			wantMinute:    0,
+			wantWeekday:   time.Sunday,
 		},
 		{
-			name:        "Monday 03:00 when current time is Monday 10:00 (should schedule next Monday)",
-			now:         baseTime, // Monday 10:00
-			schedule:    WeeklySchedule{Weekday: time.Monday, Hour: 3, Minute: 0},
+			name:          "Monday 03:00 when current time is Monday 10:00 (should schedule next Monday)",
+			now:           baseTime, // Monday 10:00
+			schedule:      WeeklySchedule{Weekday: time.Monday, Hour: 3, Minute: 0},
 			wantScheduled: "2025-05-19T03:00:00Z", // Next Monday (passed today)
-			wantHour:    3,
-			wantMinute:  0,
-			wantWeekday: time.Monday,
+			wantHour:      3,
+			wantMinute:    0,
+			wantWeekday:   time.Monday,
 		},
 		{
-			name:        "Monday 15:00 when current time is Monday 10:00 (same day, future)",
-			now:         baseTime, // Monday 10:00
-			schedule:    WeeklySchedule{Weekday: time.Monday, Hour: 15, Minute: 0},
+			name:          "Monday 15:00 when current time is Monday 10:00 (same day, future)",
+			now:           baseTime, // Monday 10:00
+			schedule:      WeeklySchedule{Weekday: time.Monday, Hour: 15, Minute: 0},
 			wantScheduled: "2025-05-12T15:00:00Z", // Same day
-			wantHour:    15,
-			wantMinute:  0,
-			wantWeekday: time.Monday,
+			wantHour:      15,
+			wantMinute:    0,
+			wantWeekday:   time.Monday,
 		},
 		{
-			name:        "Wednesday 12:30 when current time is Monday 10:00",
-			now:         baseTime, // Monday 10:00
-			schedule:    WeeklySchedule{Weekday: time.Wednesday, Hour: 12, Minute: 30},
+			name:          "Wednesday 12:30 when current time is Monday 10:00",
+			now:           baseTime, // Monday 10:00
+			schedule:      WeeklySchedule{Weekday: time.Wednesday, Hour: 12, Minute: 30},
 			wantScheduled: "2025-05-14T12:30:00Z", // 2 days from now
-			wantHour:    12,
-			wantMinute:  30,
-			wantWeekday: time.Wednesday,
+			wantHour:      12,
+			wantMinute:    30,
+			wantWeekday:   time.Wednesday,
 		},
 		{
-			name:        "Saturday 23:59 when current time is Monday 10:00",
-			now:         baseTime, // Monday 10:00
-			schedule:    WeeklySchedule{Weekday: time.Saturday, Hour: 23, Minute: 59},
+			name:          "Saturday 23:59 when current time is Monday 10:00",
+			now:           baseTime, // Monday 10:00
+			schedule:      WeeklySchedule{Weekday: time.Saturday, Hour: 23, Minute: 59},
 			wantScheduled: "2025-05-17T23:59:00Z", // 5 days from now
-			wantHour:    23,
-			wantMinute:  59,
-			wantWeekday: time.Saturday,
+			wantHour:      23,
+			wantMinute:    59,
+			wantWeekday:   time.Saturday,
 		},
 		{
-			name:        "Default schedule (Sunday 03:00) on Saturday before midnight",
-			now:         time.Date(2025, 5, 10, 23, 0, 0, 0, time.UTC), // Saturday 23:00
-			schedule:    WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
+			name:          "Default schedule (Sunday 03:00) on Saturday before midnight",
+			now:           time.Date(2025, 5, 10, 23, 0, 0, 0, time.UTC), // Saturday 23:00
+			schedule:      WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
 			wantScheduled: "2025-05-11T03:00:00Z", // Next day (Sunday)
-			wantHour:    3,
-			wantMinute:  0,
-			wantWeekday: time.Sunday,
+			wantHour:      3,
+			wantMinute:    0,
+			wantWeekday:   time.Sunday,
 		},
 		{
-			name:        "Default schedule (Sunday 03:00) on Sunday after 03:00",
-			now:         time.Date(2025, 5, 11, 5, 0, 0, 0, time.UTC), // Sunday 05:00
-			schedule:    WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
+			name:          "Default schedule (Sunday 03:00) on Sunday after 03:00",
+			now:           time.Date(2025, 5, 11, 5, 0, 0, 0, time.UTC), // Sunday 05:00
+			schedule:      WeeklySchedule{Weekday: time.Sunday, Hour: 3, Minute: 0},
 			wantScheduled: "2025-05-18T03:00:00Z", // Next week (passed today)
-			wantHour:    3,
-			wantMinute:  0,
-			wantWeekday: time.Sunday,
+			wantHour:      3,
+			wantMinute:    0,
+			wantWeekday:   time.Sunday,
 		},
 	}
 
@@ -641,19 +641,19 @@ func TestWeeklyScheduleEnvParsing(t *testing.T) {
 			name:           "Invalid weekday 7 (out of range 0-6)",
 			envValue:       "7:03:00",
 			wantParseError: false, // Sscanf parses it fine
-			wantValid:      false,  // But validation rejects it
+			wantValid:      false, // But validation rejects it
 		},
 		{
 			name:           "Invalid hour 24 (out of range 0-23)",
 			envValue:       "0:24:00",
 			wantParseError: false, // Sscanf parses it fine
-			wantValid:      false,  // But validation rejects it
+			wantValid:      false, // But validation rejects it
 		},
 		{
 			name:           "Invalid minute 60 (out of range 0-59)",
 			envValue:       "0:03:60",
 			wantParseError: false, // Sscanf parses it fine
-			wantValid:      false,  // But validation rejects it
+			wantValid:      false, // But validation rejects it
 		},
 		{
 			name:           "Invalid format",

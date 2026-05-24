@@ -157,9 +157,9 @@ type GridSnapshot struct {
 
 // CellSnapshot is one occupied cell in the grid snapshot.
 type CellSnapshot struct {
-	Pos      [NumDims]int `json:"pos"`
-	Program  int64        `json:"program_id"`
-	Fitness  float64      `json:"fitness"`
+	Pos     [NumDims]int `json:"pos"`
+	Program int64        `json:"program_id"`
+	Fitness float64      `json:"fitness"`
 }
 
 // Snapshot returns a JSON-serializable representation of the grid.

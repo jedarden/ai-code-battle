@@ -23,22 +23,22 @@ import (
 )
 
 type Config struct {
-	ListenAddr       string
-	DatabaseURL      string
-	ValkeyAddr       string
-	ValkeyPassword   string
-	WorkerAPIKey     string // API key workers use to submit results
-	EncryptionKey    string // AES-256-GCM key for shared secret encryption
-	DiscordWebhook   string // Discord webhook URL for alerts
-	SlackWebhook     string // Slack webhook URL for alerts
-	MatchmakerSecs   int
-	HealthCheckSecs  int
-	ReaperSecs       int
-	BotTimeoutSecs   int
-	StaleJobMinutes  int
-	MaxConsecFails   int
-	SpamBlockList    string // Comma-separated list of blocked terms (env: ACB_SPAM_BLOCK_LIST)
-	SpamMinLength    int    // Minimum feedback content length (env: ACB_SPAM_MIN_LENGTH)
+	ListenAddr      string
+	DatabaseURL     string
+	ValkeyAddr      string
+	ValkeyPassword  string
+	WorkerAPIKey    string // API key workers use to submit results
+	EncryptionKey   string // AES-256-GCM key for shared secret encryption
+	DiscordWebhook  string // Discord webhook URL for alerts
+	SlackWebhook    string // Slack webhook URL for alerts
+	MatchmakerSecs  int
+	HealthCheckSecs int
+	ReaperSecs      int
+	BotTimeoutSecs  int
+	StaleJobMinutes int
+	MaxConsecFails  int
+	SpamBlockList   string // Comma-separated list of blocked terms (env: ACB_SPAM_BLOCK_LIST)
+	SpamMinLength   int    // Minimum feedback content length (env: ACB_SPAM_MIN_LENGTH)
 }
 
 func loadConfig() Config {
@@ -85,12 +85,12 @@ func main() {
 		cfg:         cfg,
 		db:          db,
 		rdb:         rdb,
-		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),    // 5/hour per IP
-		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600),  // 20/hour per IP
-		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600),  // 60/hour per IP
-		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),   // 5/day per key
-		enrichLtr:   ratelimit.NewLimiter(5, 5.0/86400),   // 5/day per bot
-		voteLtr:     ratelimit.NewLimiter(10, 10.0/3600),  // 10/hour per IP
+		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),   // 5/hour per IP
+		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600), // 20/hour per IP
+		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600), // 60/hour per IP
+		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),  // 5/day per key
+		enrichLtr:   ratelimit.NewLimiter(5, 5.0/86400),  // 5/day per bot
+		voteLtr:     ratelimit.NewLimiter(10, 10.0/3600), // 10/hour per IP
 	}
 
 	// Initialize spam filter with configurable block-list

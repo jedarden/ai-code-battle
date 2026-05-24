@@ -55,15 +55,15 @@ type VisibleCore struct {
 
 // GameState represents the fog-filtered game state for a single turn.
 type GameState struct {
-	MatchID string       `json:"match_id"`
-	Turn    int          `json:"turn"`
-	Config  GameConfig   `json:"config"`
-	You     PlayerInfo   `json:"you"`
-	Bots    []VisibleBot `json:"bots"`
-	Energy  []Position   `json:"energy"`
+	MatchID string        `json:"match_id"`
+	Turn    int           `json:"turn"`
+	Config  GameConfig    `json:"config"`
+	You     PlayerInfo    `json:"you"`
+	Bots    []VisibleBot  `json:"bots"`
+	Energy  []Position    `json:"energy"`
 	Cores   []VisibleCore `json:"cores"`
-	Walls   []Position   `json:"walls"`
-	Dead    []VisibleBot `json:"dead"`
+	Walls   []Position    `json:"walls"`
+	Dead    []VisibleBot  `json:"dead"`
 }
 
 // PlayerInfo contains information about the current player.

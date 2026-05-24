@@ -51,7 +51,7 @@ func (gs *GameState) ExecuteTurn() *MatchResult {
 // executeMoves processes all submitted moves.
 func (gs *GameState) executeMoves() {
 	// First, compute intended destinations
-	intended := make(map[int]Position) // bot ID -> intended position
+	intended := make(map[int]Position)     // bot ID -> intended position
 	botsAtPos := make(map[Position][]*Bot) // position -> bots trying to move there
 
 	for _, b := range gs.Bots {
@@ -150,7 +150,7 @@ func (gs *GameState) executeZone() {
 // executeCombat resolves the focus-fire combat algorithm.
 func (gs *GameState) executeCombat() {
 	// For each bot, count enemies within attack radius
-	enemyCounts := make(map[int]int) // bot ID -> enemy count
+	enemyCounts := make(map[int]int)     // bot ID -> enemy count
 	botsInRadius := make(map[int][]*Bot) // bot ID -> enemies within radius
 
 	for _, b := range gs.Bots {
@@ -210,8 +210,8 @@ func (gs *GameState) executeCombat() {
 			var killers []map[string]interface{}
 			for _, e := range botsInRadius[b.ID] {
 				killers = append(killers, map[string]interface{}{
-					"bot_id":  e.ID,
-					"owner":   e.Owner,
+					"bot_id":   e.ID,
+					"owner":    e.Owner,
 					"position": e.Position,
 				})
 			}

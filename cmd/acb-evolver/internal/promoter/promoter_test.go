@@ -153,7 +153,9 @@ func TestManifestTemplates_Execute(t *testing.T) {
 		SecretBase64: "dGVzdA==",
 	}
 
-	for name, tmpl := range map[string]interface{ Execute(interface{}, interface{}) error }{} {
+	for name, tmpl := range map[string]interface {
+		Execute(interface{}, interface{}) error
+	}{} {
 		_ = name
 		_ = tmpl
 	}

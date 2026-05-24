@@ -117,7 +117,7 @@ func makeBotCmd(ctx context.Context, execPath string, execArgs []string, dir str
 // receive requests from the test loop running in the same network namespace.
 func buildNsjailCmd(ctx context.Context, nsjailBin, execPath string, execArgs []string, dir string, env []string) *exec.Cmd {
 	args := []string{
-		"--mode", "o",        // single-shot: run one command then exit
+		"--mode", "o", // single-shot: run one command then exit
 		"--time_limit", "30", // 30-second wall-clock limit
 		"--rlimit_as", "512", // 512 MiB virtual address space
 		"--rlimit_cpu", "15", // 15 CPU seconds
@@ -333,15 +333,15 @@ func signSmokeRequest(secret, matchID string, turn int, body []byte) string {
 // ── Test state types ──────────────────────────────────────────────────────
 
 type smokeState struct {
-	MatchID string       `json:"match_id"`
-	Turn    int          `json:"turn"`
-	Config  smokeConfig  `json:"config"`
-	You     smokePlayer  `json:"you"`
-	Bots    []smokeBot   `json:"bots"`
-	Energy  []smokePos   `json:"energy"`
-	Cores   []smokeCore  `json:"cores"`
-	Walls   []smokePos   `json:"walls"`
-	Dead    []smokeBot   `json:"dead"`
+	MatchID string      `json:"match_id"`
+	Turn    int         `json:"turn"`
+	Config  smokeConfig `json:"config"`
+	You     smokePlayer `json:"you"`
+	Bots    []smokeBot  `json:"bots"`
+	Energy  []smokePos  `json:"energy"`
+	Cores   []smokeCore `json:"cores"`
+	Walls   []smokePos  `json:"walls"`
+	Dead    []smokeBot  `json:"dead"`
 }
 
 type smokeConfig struct {

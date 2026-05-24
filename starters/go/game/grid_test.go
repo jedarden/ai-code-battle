@@ -6,10 +6,10 @@ import (
 
 func TestToroidalManhattan(t *testing.T) {
 	tests := []struct {
-		name     string
-		a, b     Position
+		name       string
+		a, b       Position
 		rows, cols int
-		want     int
+		want       int
 	}{
 		{
 			name: "adjacent",
@@ -52,10 +52,10 @@ func TestToroidalManhattan(t *testing.T) {
 
 func TestToroidalDistance2(t *testing.T) {
 	tests := []struct {
-		name     string
-		a, b     Position
+		name       string
+		a, b       Position
 		rows, cols int
-		want     int
+		want       int
 	}{
 		{
 			name: "adjacent",
@@ -116,11 +116,11 @@ func TestNeighbors(t *testing.T) {
 
 func TestNeighborInDirection(t *testing.T) {
 	tests := []struct {
-		name     string
-		pos      Position
-		dir      Direction
+		name       string
+		pos        Position
+		dir        Direction
 		rows, cols int
-		want     Position
+		want       Position
 	}{
 		{
 			name: "north",

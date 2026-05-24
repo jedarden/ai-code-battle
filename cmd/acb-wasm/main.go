@@ -225,7 +225,7 @@ func jsAddPlayer(_ js.Value, args []js.Value) interface{} {
 	})
 
 	return map[string]interface{}{
-		"ok":   true,
+		"ok":    true,
 		"index": len(jsPlayers) - 1,
 	}
 }

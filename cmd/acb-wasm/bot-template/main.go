@@ -4,8 +4,9 @@
 // Compile with: GOOS=js GOARCH=wasm go build -o mybot.wasm .
 //
 // The bot exports an 'acbBot' global object with:
-//   init(configJSON: string) - called once at match start
-//   compute_moves(stateJSON: string) - called each turn, returns moves JSON
+//
+//	init(configJSON: string) - called once at match start
+//	compute_moves(stateJSON: string) - called each turn, returns moves JSON
 package main
 
 import (
@@ -17,9 +18,9 @@ import (
 
 // botState holds persistent state across turns (e.g., pathfinding cache).
 type botState struct {
-	config    engine.Config
-	myID      int
-	knownPos  map[string]bool // positions we've seen
+	config   engine.Config
+	myID     int
+	knownPos map[string]bool // positions we've seen
 }
 
 var state = &botState{
@@ -90,7 +91,7 @@ func computeMoves(visible *engine.VisibleState) []engine.Move {
 		}
 
 		moves = append(moves, engine.Move{
-			Position: bot.Position,
+			Position:  bot.Position,
 			Direction: dir,
 		})
 	}
@@ -115,8 +116,8 @@ func bestFleeDir(from engine.Position, enemies map[engine.Position]bool) engine.
 	for _, d := range []engine.Direction{engine.DirN, engine.DirE, engine.DirS, engine.DirW} {
 		dr, dc := d.Delta()
 		np := engine.Position{
-			Row: ((from.Row + dr) % state.config.Rows + state.config.Rows) % state.config.Rows,
-			Col: ((from.Col + dc) % state.config.Cols + state.config.Cols) % state.config.Cols,
+			Row: ((from.Row+dr)%state.config.Rows + state.config.Rows) % state.config.Rows,
+			Col: ((from.Col+dc)%state.config.Cols + state.config.Cols) % state.config.Cols,
 		}
 
 		minDist := 1 << 30
@@ -146,8 +147,8 @@ func towardNearest(from engine.Position, targets map[engine.Position]bool) engin
 	for _, d := range []engine.Direction{engine.DirN, engine.DirE, engine.DirS, engine.DirW} {
 		dr, dc := d.Delta()
 		np := engine.Position{
-			Row: ((from.Row + dr) % state.config.Rows + state.config.Rows) % state.config.Rows,
-			Col: ((from.Col + dc) % state.config.Cols + state.config.Cols) % state.config.Cols,
+			Row: ((from.Row+dr)%state.config.Rows + state.config.Rows) % state.config.Rows,
+			Col: ((from.Col+dc)%state.config.Cols + state.config.Cols) % state.config.Cols,
 		}
 
 		for t := range targets {
@@ -188,7 +189,7 @@ func main() {
 	done := make(chan struct{})
 
 	js.Global().Set("acbBot", js.ValueOf(map[string]interface{}{
-		"init": js.FuncOf(jsInit),
+		"init":          js.FuncOf(jsInit),
 		"compute_moves": js.FuncOf(jsComputeMoves),
 	}))
 

@@ -13,10 +13,10 @@ type Config struct {
 	DatabaseName string
 
 	// LLM
-	LLMBaseURL    string
-	LLMAPIKey     string
-	LLMModel      string // Model to use for commentary (e.g., "gpt-4o-mini", "claude-3-haiku")
-	LLMMaxTokens  int
+	LLMBaseURL     string
+	LLMAPIKey      string
+	LLMModel       string // Model to use for commentary (e.g., "gpt-4o-mini", "claude-3-haiku")
+	LLMMaxTokens   int
 	LLMTemperature float64
 
 	// Rate limiting
@@ -24,20 +24,20 @@ type Config struct {
 	MaxConcurrentRequests int // Maximum parallel LLM requests
 
 	// Storage (B2/R2)
-	B2BucketName     string
-	B2AccessKeyID    string
+	B2BucketName      string
+	B2AccessKeyID     string
 	B2SecretAccessKey string
-	B2Endpoint       string // S3-compatible endpoint URL
+	B2Endpoint        string // S3-compatible endpoint URL
 
-	R2BucketName     string
-	R2AccessKeyID    string
+	R2BucketName      string
+	R2AccessKeyID     string
 	R2SecretAccessKey string
-	R2Endpoint       string
+	R2Endpoint        string
 
 	// Enrichment criteria
 	MinTurnCount        int     // Minimum turn count to consider enrichment
 	MinWinProbCrossings int     // Minimum win probability crossings
-	UpsetThreshold     float64 // Minimum rating difference for upset consideration
+	UpsetThreshold      float64 // Minimum rating difference for upset consideration
 
 	// Timing
 	CycleInterval time.Duration // How often to run enrichment cycles

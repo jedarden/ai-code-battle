@@ -69,17 +69,17 @@ type CycleInfo struct {
 
 // Candidate represents the current candidate being evaluated.
 type Candidate struct {
-	ID         string              `json:"id"`         // e.g., "go-847-3"
-	Island     string              `json:"island"`
-	Language   string              `json:"language"`
-	Parents    []ParentInfo        `json:"parents"`
-	Validation *ValidationStatus   `json:"validation,omitempty"`
-	Evaluation *EvaluationStatus   `json:"evaluation,omitempty"`
+	ID         string            `json:"id"` // e.g., "go-847-3"
+	Island     string            `json:"island"`
+	Language   string            `json:"language"`
+	Parents    []ParentInfo      `json:"parents"`
+	Validation *ValidationStatus `json:"validation,omitempty"`
+	Evaluation *EvaluationStatus `json:"evaluation,omitempty"`
 }
 
 // ParentInfo holds parent bot information.
 type ParentInfo struct {
-	ID     string `json:"id"`     // e.g., "go-831-1"
+	ID     string `json:"id"` // e.g., "go-831-1"
 	Rating int    `json:"rating"`
 }
 
@@ -99,55 +99,55 @@ type StageResult struct {
 
 // EvaluationStatus holds arena evaluation results.
 type EvaluationStatus struct {
-	MatchesTotal int           `json:"matches_total"`
-	MatchesPlayed int          `json:"matches_played"`
-	Results      []MatchResult `json:"results"`
+	MatchesTotal  int           `json:"matches_total"`
+	MatchesPlayed int           `json:"matches_played"`
+	Results       []MatchResult `json:"results"`
 }
 
 // MatchResult is a single evaluation match result.
 type MatchResult struct {
 	Opponent string `json:"opponent"` // opponent bot name
 	Won      bool   `json:"won"`
-	Score    string `json:"score"`    // e.g., "5-1"
+	Score    string `json:"score"` // e.g., "5-1"
 }
 
 // ActivityEntry is a single event in the recent activity feed.
 type ActivityEntry struct {
-	Time      string `json:"time"`
-	Generation int   `json:"generation"`
-	Candidate string `json:"candidate"`
-	Island    string `json:"island"`
-	Result    string `json:"result"` // promoted, rejected
-	Reason    string `json:"reason"`
-	Stage     string `json:"stage"`  // validation, promotion, deployment
-	BotID     string `json:"bot_id,omitempty"`
-	InitialRating int `json:"initial_rating,omitempty"`
+	Time          string `json:"time"`
+	Generation    int    `json:"generation"`
+	Candidate     string `json:"candidate"`
+	Island        string `json:"island"`
+	Result        string `json:"result"` // promoted, rejected
+	Reason        string `json:"reason"`
+	Stage         string `json:"stage"` // validation, promotion, deployment
+	BotID         string `json:"bot_id,omitempty"`
+	InitialRating int    `json:"initial_rating,omitempty"`
 }
 
 // Totals holds overall evolution statistics.
 type Totals struct {
-	GenerationsTotal      int     `json:"generations_total"`
-	CandidatesToday       int     `json:"candidates_today"`
-	PromotedToday         int     `json:"promoted_today"`
-	PromotionRate7d       float64 `json:"promotion_rate_7d"`
-	HighestEvolvedRating  int     `json:"highest_evolved_rating"`
-	EvolvedInTop10        int     `json:"evolved_in_top_10"`
-	MutationsPerHour      float64 `json:"mutations_per_hour"`
+	GenerationsTotal     int     `json:"generations_total"`
+	CandidatesToday      int     `json:"candidates_today"`
+	PromotedToday        int     `json:"promoted_today"`
+	PromotionRate7d      float64 `json:"promotion_rate_7d"`
+	HighestEvolvedRating int     `json:"highest_evolved_rating"`
+	EvolvedInTop10       int     `json:"evolved_in_top_10"`
+	MutationsPerHour     float64 `json:"mutations_per_hour"`
 }
 
 // LiveData is the full evolution dashboard payload written to live.json (plan §14 format).
 type LiveData struct {
-	UpdatedAt      string                 `json:"updated_at"`
-	Cycle          *CycleInfo             `json:"cycle,omitempty"`
-	RecentActivity []ActivityEntry        `json:"recent_activity,omitempty"`
-	Islands        map[string]IslandStat  `json:"islands"`
-	Totals         Totals                 `json:"totals"`
+	UpdatedAt      string                `json:"updated_at"`
+	Cycle          *CycleInfo            `json:"cycle,omitempty"`
+	RecentActivity []ActivityEntry       `json:"recent_activity,omitempty"`
+	Islands        map[string]IslandStat `json:"islands"`
+	Totals         Totals                `json:"totals"`
 	// Legacy fields for backward compatibility
-	TotalPrograms int                    `json:"total_programs,omitempty"`
-	PromotedCount int                    `json:"promoted_count,omitempty"`
-	GenerationLog []GenerationEntry      `json:"generation_log,omitempty"`
-	Lineage       []LineageNode          `json:"lineage,omitempty"`
-	MetaSnapshots []MetaSnapshot         `json:"meta_snapshots,omitempty"`
+	TotalPrograms int               `json:"total_programs,omitempty"`
+	PromotedCount int               `json:"promoted_count,omitempty"`
+	GenerationLog []GenerationEntry `json:"generation_log,omitempty"`
+	Lineage       []LineageNode     `json:"lineage,omitempty"`
+	MetaSnapshots []MetaSnapshot    `json:"meta_snapshots,omitempty"`
 }
 
 // Export queries the programs database and builds the current evolution state.
@@ -354,14 +354,14 @@ func fillRecentActivity(ctx context.Context, db *sql.DB, data *LiveData) error {
 			continue
 		}
 		activities = append(activities, ActivityEntry{
-			Time:      createdAt.UTC().Format(time.RFC3339),
+			Time:       createdAt.UTC().Format(time.RFC3339),
 			Generation: generation,
-			Candidate: botName,
-			Island:    island,
-			Result:    "promoted",
-			Reason:    "Passed promotion gate",
-			Stage:     "deployment",
-			BotID:     botID,
+			Candidate:  botName,
+			Island:     island,
+			Result:     "promoted",
+			Reason:     "Passed promotion gate",
+			Stage:      "deployment",
+			BotID:      botID,
 		})
 	}
 	data.RecentActivity = activities

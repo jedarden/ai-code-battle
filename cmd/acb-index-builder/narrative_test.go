@@ -10,16 +10,16 @@ import (
 
 func TestBuildNarrativePrompt_Rise(t *testing.T) {
 	req := NarrativeRequest{
-		ArcType:    ArcRise,
-		BotName:    "TestBot",
-		SeasonName: "Season 4",
+		ArcType:     ArcRise,
+		BotName:     "TestBot",
+		SeasonName:  "Season 4",
 		RatingStart: 1200,
-		RatingEnd: 1450,
+		RatingEnd:   1450,
 		KeyMatches: []KeyMatch{
 			{MatchID: "m1", OpponentName: "TopBot", OpponentRating: 1800, MapName: "The Labyrinth", Score: "3-2", TurnCount: 200, Won: true},
 		},
 		Archetype: "aggressive",
-		Origin:   "evolved, go island, generation 5",
+		Origin:    "evolved, go island, generation 5",
 	}
 
 	prompt := buildNarrativePrompt(req)
@@ -40,11 +40,11 @@ func TestBuildNarrativePrompt_Rise(t *testing.T) {
 
 func TestBuildNarrativePrompt_Upset(t *testing.T) {
 	req := NarrativeRequest{
-		ArcType:    ArcUpset,
-		BotName:    "UnderdogBot",
-		BotBName:   "FavoriteBot",
+		ArcType:     ArcUpset,
+		BotName:     "UnderdogBot",
+		BotBName:    "FavoriteBot",
 		RatingStart: 1100,
-		RatingEnd:  1800,
+		RatingEnd:   1800,
 		KeyMatches: []KeyMatch{
 			{MatchID: "m2", OpponentName: "FavoriteBot", OpponentRating: 1800, MapName: "Open Field", Score: "4-3", TurnCount: 150, Won: true},
 		},
@@ -65,13 +65,13 @@ func TestBuildNarrativePrompt_Upset(t *testing.T) {
 
 func TestBuildNarrativePrompt_Rivalry(t *testing.T) {
 	req := NarrativeRequest{
-		ArcType:    ArcRivalry,
-		BotName:    "SwarmBot",
-		BotBName:   "HunterBot",
-		BotAWins:   5,
-		BotBWins:   4,
+		ArcType:      ArcRivalry,
+		BotName:      "SwarmBot",
+		BotBName:     "HunterBot",
+		BotAWins:     5,
+		BotBWins:     4,
 		TotalMatches: 9,
-		SeasonName: "Season 4",
+		SeasonName:   "Season 4",
 	}
 
 	prompt := buildNarrativePrompt(req)
@@ -93,10 +93,10 @@ func TestBuildNarrativePrompt_Evolution(t *testing.T) {
 		BotName:    "evo-go-g31",
 		SeasonName: "Season 4",
 		RatingEnd:  1580,
-		Origin:    "evolved, go island",
+		Origin:     "evolved, go island",
 		Generation: 31,
-		ParentIDs: []string{"evo-go-g28", "evo-go-g25"},
-		Archetype: "hybrid swarm-gatherer",
+		ParentIDs:  []string{"evo-go-g28", "evo-go-g25"},
+		Archetype:  "hybrid swarm-gatherer",
 	}
 
 	prompt := buildNarrativePrompt(req)
@@ -145,8 +145,8 @@ func TestTruncateSummary(t *testing.T) {
 	for _, tc := range tests {
 		result := truncateSummary(tc.input, tc.maxLen)
 		if result != tc.expected {
-		t.Errorf("truncateSummary(%q, %d) = %q, want %q", tc.input, tc.maxLen, result, tc.expected)
-	}
+			t.Errorf("truncateSummary(%q, %d) = %q, want %q", tc.input, tc.maxLen, result, tc.expected)
+		}
 	}
 }
 

@@ -108,16 +108,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 //   - game.Neighbors() for getting adjacent positions
 //
 // Example:
-//   moves := []game.Move{}
-//   for _, bot := range state.Bots {
-//       if bot.Owner == state.You.ID {
-//           moves = append(moves, game.Move{
-//               Position:  bot.Position,
-//               Direction: game.DirN, // Move north
-//           })
-//       }
-//   }
-//   return moves
+//
+//	moves := []game.Move{}
+//	for _, bot := range state.Bots {
+//	    if bot.Owner == state.You.ID {
+//	        moves = append(moves, game.Move{
+//	            Position:  bot.Position,
+//	            Direction: game.DirN, // Move north
+//	        })
+//	    }
+//	}
+//	return moves
 func computeMoves(state *game.GameState) []game.Move {
 	// TODO: Implement your strategy here!
 	//

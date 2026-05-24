@@ -32,9 +32,9 @@ import (
 
 	_ "github.com/lib/pq"
 
-	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/arena"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/crosspoll"
+	evolverdb "github.com/aicodebattle/acb/cmd/acb-evolver/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/live"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/llm"
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/mapelites"
@@ -49,10 +49,10 @@ import (
 // RunConfig holds configuration for the autonomous evolution loop.
 type RunConfig struct {
 	// Evolution parameters
-	NumParents   int     // number of parents for tournament selection
-	TournamentK  int     // tournament size
-	MaxRetries   int     // max LLM retries on validation failure
-	TopBotLimit  int     // number of top bots for meta description
+	NumParents  int // number of parents for tournament selection
+	TournamentK int // tournament size
+	MaxRetries  int // max LLM retries on validation failure
+	TopBotLimit int // number of top bots for meta description
 
 	// Gate thresholds
 	NashThreshold     float64 // Nash value threshold for promotion
@@ -63,8 +63,8 @@ type RunConfig struct {
 	PopCap          int     // max evolved bots in fleet
 
 	// Timing
-	CycleInterval  time.Duration // delay between cycles (0 = continuous)
-	IslandCooldown time.Duration // min time between same-island evolutions
+	CycleInterval           time.Duration // delay between cycles (0 = continuous)
+	IslandCooldown          time.Duration // min time between same-island evolutions
 	RetirementCheckInterval time.Duration // interval between periodic retirement checks
 
 	// Infrastructure
@@ -78,8 +78,8 @@ type RunConfig struct {
 	UploadR2       bool
 
 	// Declarative config for K8s manifests (§10.8)
-	DeclarativeConfigRepo    string // git repo URL for K8s manifests
-	DeclarativeConfigBranch  string // git branch for K8s manifests
+	DeclarativeConfigRepo   string // git repo URL for K8s manifests
+	DeclarativeConfigBranch string // git branch for K8s manifests
 
 	// Languages to evolve (in priority order)
 	Languages []string
@@ -107,29 +107,29 @@ type WeeklySchedule struct {
 // DefaultRunConfig returns production-ready defaults.
 func DefaultRunConfig() RunConfig {
 	return RunConfig{
-		NumParents:        2,
-		TournamentK:       3,
-		MaxRetries:        2,
-		TopBotLimit:       10,
-		NashThreshold:     0.50,
-		WinRateLowerBound: 0.40,
+		NumParents:              2,
+		TournamentK:             3,
+		MaxRetries:              2,
+		TopBotLimit:             10,
+		NashThreshold:           0.50,
+		WinRateLowerBound:       0.40,
 		RatingThreshold:         800.0,
-		PopCap:            50,
-		CycleInterval:          5 * time.Minute,
+		PopCap:                  50,
+		CycleInterval:           5 * time.Minute,
 		RetirementCheckInterval: 24 * time.Hour,
-		IslandCooldown:    2 * time.Minute,
-		LLMURL:            envOrDefault("ACB_LLM_URL", "http://zai-proxy-apexalgo.tail1b1987.ts.net:8080"),
-		RepoDir:           envOrDefault("ACB_REPO_DIR", "."),
-		Registry:          envOrDefault("ACB_REGISTRY", "forgejo.ardenone.com/ai-code-battle"),
-		KubectlServer:     envOrDefault("ACB_KUBECTL_SERVER", "http://kubectl-ardenone-cluster:8001"),
-		EncryptionKey:     os.Getenv("ACB_ENCRYPTION_KEY"),
-		UseNsjail:         true,
-		LiveExportPath:    envOrDefault("ACB_EVOLUTION_OUT", "evolution/live.json"),
-		UploadR2:          envOrDefault("ACB_R2_UPLOAD_ENABLED", "false") == "true",
-		DeclarativeConfigRepo:    envOrDefault("ACB_DECLARATIVE_CONFIG_REPO", "https://forgejo.ardenone.com/infra/ardenone-cluster.git"),
-		DeclarativeConfigBranch:  envOrDefault("ACB_DECLARATIVE_CONFIG_BRANCH", "main"),
-		Languages:         []string{"go", "python", "rust", "typescript", "java", "php"},
-		MapEvolutionEnabled: envOrDefault("ACB_MAP_EVOLUTION_ENABLED", "false") == "true",
+		IslandCooldown:          2 * time.Minute,
+		LLMURL:                  envOrDefault("ACB_LLM_URL", "http://zai-proxy-apexalgo.tail1b1987.ts.net:8080"),
+		RepoDir:                 envOrDefault("ACB_REPO_DIR", "."),
+		Registry:                envOrDefault("ACB_REGISTRY", "forgejo.ardenone.com/ai-code-battle"),
+		KubectlServer:           envOrDefault("ACB_KUBECTL_SERVER", "http://kubectl-ardenone-cluster:8001"),
+		EncryptionKey:           os.Getenv("ACB_ENCRYPTION_KEY"),
+		UseNsjail:               true,
+		LiveExportPath:          envOrDefault("ACB_EVOLUTION_OUT", "evolution/live.json"),
+		UploadR2:                envOrDefault("ACB_R2_UPLOAD_ENABLED", "false") == "true",
+		DeclarativeConfigRepo:   envOrDefault("ACB_DECLARATIVE_CONFIG_REPO", "https://forgejo.ardenone.com/infra/ardenone-cluster.git"),
+		DeclarativeConfigBranch: envOrDefault("ACB_DECLARATIVE_CONFIG_BRANCH", "main"),
+		Languages:               []string{"go", "python", "rust", "typescript", "java", "php"},
+		MapEvolutionEnabled:     envOrDefault("ACB_MAP_EVOLUTION_ENABLED", "false") == "true",
 		MapEvolutionSchedule: WeeklySchedule{
 			Weekday: time.Sunday, // Default: Sunday 03:00 UTC
 			Hour:    3,
@@ -499,32 +499,32 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 		valCfg.UseNsjail = cfg.UseNsjail
 
 		report, err = validator.Validate(ctx, code, lang, result.Best.Code, valCfg)
-			cycleState.SetPhase("validating")
-			exportLiveQuiet(ctx, db, cfg, cycleState)
+		cycleState.SetPhase("validating")
+		exportLiveQuiet(ctx, db, cfg, cycleState)
 		if err != nil {
-				cycleState.SetValidationError("infrastructure", err.Error())
+			cycleState.SetValidationError("infrastructure", err.Error())
 			log.Printf("Validation infrastructure error: %v", err)
 			store.Delete(ctx, programID)
 			programID = 0
 			continue
 		}
 
-			// Track validation results in cycle state
-			for _, stage := range report.Stages {
-				timeMs := int(stage.Duration.Milliseconds())
-				switch stage.Stage {
-				case "syntax":
-					cycleState.SetValidationSyntax(stage.Passed, timeMs)
-				case "schema":
-					cycleState.SetValidationSchema(stage.Passed, timeMs)
-				case "smoke":
-					cycleState.SetValidationSmoke(stage.Passed, timeMs)
-				}
-				if !stage.Passed && stage.Error != "" {
-					cycleState.SetValidationError(string(stage.Stage), stage.Error)
-				}
+		// Track validation results in cycle state
+		for _, stage := range report.Stages {
+			timeMs := int(stage.Duration.Milliseconds())
+			switch stage.Stage {
+			case "syntax":
+				cycleState.SetValidationSyntax(stage.Passed, timeMs)
+			case "schema":
+				cycleState.SetValidationSchema(stage.Passed, timeMs)
+			case "smoke":
+				cycleState.SetValidationSmoke(stage.Passed, timeMs)
 			}
-			exportLiveQuiet(ctx, db, cfg, cycleState)
+			if !stage.Passed && stage.Error != "" {
+				cycleState.SetValidationError(string(stage.Stage), stage.Error)
+			}
+		}
+		exportLiveQuiet(ctx, db, cfg, cycleState)
 		// Log validation result
 		valLog := &evolverdb.ValidationLog{
 			Island:    island,

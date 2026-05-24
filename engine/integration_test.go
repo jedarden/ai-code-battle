@@ -195,6 +195,7 @@ func createMockBotServer(t *testing.T, secret string, playerID int) *httptest.Se
 		w.Write(body)
 	}))
 }
+
 // TestIntegration_CenterWeightedEnergy verifies that energy nodes are biased
 // toward the map center to force contested energy collection.
 func TestIntegration_CenterWeightedEnergy(t *testing.T) {

@@ -15,10 +15,10 @@ import (
 
 // Client is an S3-compatible storage client.
 type Client struct {
-	accessKey string
-	secretKey string
-	endpoint  string
-	bucket    string
+	accessKey  string
+	secretKey  string
+	endpoint   string
+	bucket     string
 	httpClient *http.Client
 }
 

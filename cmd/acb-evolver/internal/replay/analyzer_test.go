@@ -24,11 +24,11 @@ func TestAnalyzer_Analyze_BasicMatch(t *testing.T) {
 		StartTime:     time.Now(),
 		EndTime:       time.Now(),
 		Result: &engine.MatchResult{
-			Winner:  0,
-			Reason:  "dominance",
-			Turns:   150,
-			Scores:  []int{120, 45},
-			Energy:  []int{15, 8},
+			Winner:    0,
+			Reason:    "dominance",
+			Turns:     150,
+			Scores:    []int{120, 45},
+			Energy:    []int{15, 8},
 			BotsAlive: []int{8, 2},
 		},
 		Players: []engine.ReplayPlayer{
@@ -96,10 +96,10 @@ func TestAnalyzer_Analyze_EliminationMatch(t *testing.T) {
 	replay := &engine.Replay{
 		MatchID: "elimination-match",
 		Result: &engine.MatchResult{
-			Winner:  1,
-			Reason:  "elimination",
-			Turns:   75,
-			Scores:  []int{10, 85},
+			Winner:    1,
+			Reason:    "elimination",
+			Turns:     75,
+			Scores:    []int{10, 85},
 			BotsAlive: []int{0, 6},
 		},
 		Players: []engine.ReplayPlayer{
@@ -174,10 +174,10 @@ func TestAnalyzer_Analyze_DrawMatch(t *testing.T) {
 	replay := &engine.Replay{
 		MatchID: "draw-match",
 		Result: &engine.MatchResult{
-			Winner:  -1,
-			Reason:  "draw",
-			Turns:   500,
-			Scores:  []int{100, 100},
+			Winner: -1,
+			Reason: "draw",
+			Turns:  500,
+			Scores: []int{100, 100},
 		},
 		Players: []engine.ReplayPlayer{
 			{ID: 0, Name: "Bot1"},
@@ -210,10 +210,10 @@ func TestAnalyzer_Analyze_WithEvents(t *testing.T) {
 	replay := &engine.Replay{
 		MatchID: "eventful-match",
 		Result: &engine.MatchResult{
-			Winner:  0,
-			Reason:  "dominance",
-			Turns:   200,
-			Scores:  []int{200, 50},
+			Winner: 0,
+			Reason: "dominance",
+			Turns:  200,
+			Scores: []int{200, 50},
 		},
 		Players: []engine.ReplayPlayer{
 			{ID: 0, Name: "Aggressor"},

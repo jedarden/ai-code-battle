@@ -49,7 +49,7 @@ type BotRecord struct {
 	BotID       string
 	Name        string
 	EndpointURL string
-	Secret      string  // plaintext (decrypted when encryption key is provided)
+	Secret      string // plaintext (decrypted when encryption key is provided)
 	RatingMu    float64
 }
 
@@ -57,8 +57,8 @@ type BotRecord struct {
 type MatchOutcome struct {
 	OpponentBotID string
 	OpponentName  string
-	CandidateSlot int   // player slot (0 or 1) assigned to the candidate
-	Winner        int   // 0=player0, 1=player1, -1=draw
+	CandidateSlot int // player slot (0 or 1) assigned to the candidate
+	Winner        int // 0=player0, 1=player1, -1=draw
 	Scores        []int
 	Turns         int
 	Err           error

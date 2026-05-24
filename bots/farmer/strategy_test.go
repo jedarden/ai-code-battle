@@ -213,9 +213,9 @@ func TestFarmerAvoidsWalls(t *testing.T) {
 
 func TestDistance2(t *testing.T) {
 	tests := []struct {
-		a, b     Position
+		a, b       Position
 		rows, cols int
-		want     int
+		want       int
 	}{
 		{Position{0, 0}, Position{0, 0}, 20, 20, 0},
 		{Position{0, 0}, Position{0, 3}, 20, 20, 9},
@@ -258,10 +258,10 @@ func TestBFS(t *testing.T) {
 
 func TestSimulateMove(t *testing.T) {
 	tests := []struct {
-		pos      Position
-		dir      string
+		pos        Position
+		dir        string
 		rows, cols int
-		want     Position
+		want       Position
 	}{
 		{Position{5, 5}, "N", 20, 20, Position{4, 5}},
 		{Position{5, 5}, "S", 20, 20, Position{6, 5}},

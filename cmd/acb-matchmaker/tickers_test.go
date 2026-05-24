@@ -99,8 +99,8 @@ func TestSelectOpponents_ParetoDistribution(t *testing.T) {
 	pool := make([]candidateBot, 20)
 	for i := range pool {
 		pool[i] = candidateBot{
-			ID:   fmt.Sprintf("bot_%02d", i),
-			Mu:   1400 + float64(i)*10,
+			ID:           fmt.Sprintf("bot_%02d", i),
+			Mu:           1400 + float64(i)*10,
 			LastPairedAt: time.Time{},
 			Games24h:     0,
 		}
@@ -187,7 +187,7 @@ func TestGridForPlayers(t *testing.T) {
 		minArea int
 		maxArea int
 	}{
-		{2, 1200, 2000},   // 40x40 = 1600 (reduced from 60x60 for combat density)
+		{2, 1200, 2000}, // 40x40 = 1600 (reduced from 60x60 for combat density)
 		{3, 4000, 6000},
 		{4, 5000, 8500},
 		{6, 7000, 12000},

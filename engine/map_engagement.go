@@ -15,7 +15,8 @@ type MapEngagementScore struct {
 // CalculateMapEngagement computes the engagement score for a map based on replay data.
 // The engagement formula (from plan §14.6, extended for combat density) is:
 // score = win_prob_crossings * 3.0 + combat_deaths * 3.0 + critical_moments * 2.0 +
-//         resource_contest_turns * 1.5 + survival_turns * 0.5
+//
+//	resource_contest_turns * 1.5 + survival_turns * 0.5
 func CalculateMapEngagement(replay *Replay) MapEngagementScore {
 	if replay == nil || len(replay.Turns) == 0 {
 		return MapEngagementScore{}

@@ -18,11 +18,11 @@ func newTestServer() *Server {
 			BotTimeoutSecs: 5,
 			MaxConsecFails: 3,
 		},
-		regLimiter:   ratelimit.NewLimiter(5, 5.0/3600),
-		feedbackLtr:  ratelimit.NewLimiter(20, 20.0/3600),
-		predictLtr:   ratelimit.NewLimiter(60, 60.0/3600),
-		submitLtr:    ratelimit.NewLimiter(5, 5.0/86400),
-		voteLtr:      ratelimit.NewLimiter(10, 10.0/3600),
+		regLimiter:  ratelimit.NewLimiter(5, 5.0/3600),
+		feedbackLtr: ratelimit.NewLimiter(20, 20.0/3600),
+		predictLtr:  ratelimit.NewLimiter(60, 60.0/3600),
+		submitLtr:   ratelimit.NewLimiter(5, 5.0/86400),
+		voteLtr:     ratelimit.NewLimiter(10, 10.0/3600),
 	}
 }
 

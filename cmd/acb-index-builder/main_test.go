@@ -88,30 +88,30 @@ func TestGenerateLeaderboard(t *testing.T) {
 		GeneratedAt: time.Date(2026, 3, 29, 12, 0, 0, 0, time.UTC),
 		Bots: []BotData{
 			{
-				ID:               "bot1",
-				Name:             "TestBot1",
-				OwnerID:          "owner1",
-				Rating:           1650.0,
-				RatingDeviation:  50.0,
-				MatchesPlayed:    100,
-				MatchesWon:       75,
-				HealthStatus:     "ACTIVE",
-				Evolved:          false,
-				CreatedAt:        time.Now(),
+				ID:              "bot1",
+				Name:            "TestBot1",
+				OwnerID:         "owner1",
+				Rating:          1650.0,
+				RatingDeviation: 50.0,
+				MatchesPlayed:   100,
+				MatchesWon:      75,
+				HealthStatus:    "ACTIVE",
+				Evolved:         false,
+				CreatedAt:       time.Now(),
 			},
 			{
-				ID:               "bot2",
-				Name:             "TestBot2",
-				OwnerID:          "owner2",
-				Rating:           1550.0,
-				RatingDeviation:  75.0,
-				MatchesPlayed:    50,
-				MatchesWon:       25,
-				HealthStatus:     "ACTIVE",
-				Evolved:          true,
-				Island:           "python",
-				Generation:       5,
-				CreatedAt:        time.Now(),
+				ID:              "bot2",
+				Name:            "TestBot2",
+				OwnerID:         "owner2",
+				Rating:          1550.0,
+				RatingDeviation: 75.0,
+				MatchesPlayed:   50,
+				MatchesWon:      25,
+				HealthStatus:    "ACTIVE",
+				Evolved:         true,
+				Island:          "python",
+				Generation:      5,
+				CreatedAt:       time.Now(),
 			},
 		},
 		Matches: []MatchData{},
@@ -382,8 +382,8 @@ func TestInterestScore(t *testing.T) {
 	now := time.Now()
 	// Close finish + upset + long game → high score
 	m := MatchData{
-		WinnerID:   "bot2",
-		TurnCount:  450,
+		WinnerID:    "bot2",
+		TurnCount:   450,
 		CompletedAt: now,
 		Participants: []ParticipantData{
 			{BotID: "bot1", Score: 3, Won: false, PreMatchRating: 1800},
@@ -397,8 +397,8 @@ func TestInterestScore(t *testing.T) {
 
 	// Boring match → low score
 	m2 := MatchData{
-		WinnerID:   "bot1",
-		TurnCount:  100,
+		WinnerID:    "bot1",
+		TurnCount:   100,
 		CompletedAt: now,
 		Participants: []ParticipantData{
 			{BotID: "bot1", Score: 10, Won: true, PreMatchRating: 1500},
@@ -1095,9 +1095,9 @@ func TestGenerateAllBotCards(t *testing.T) {
 
 func TestGetColorForRating(t *testing.T) {
 	tests := []struct {
-		rating    int
-		name      string
-		checkR    uint8
+		rating int
+		name   string
+		checkR uint8
 	}{
 		{2100, "gold", 255},
 		{1850, "silver", 192},
@@ -1136,9 +1136,9 @@ func TestGetWinRateColor(t *testing.T) {
 
 func TestGetRankBadgeColor(t *testing.T) {
 	tests := []struct {
-		rank    int
-		name    string
-		checkR  uint8
+		rank   int
+		name   string
+		checkR uint8
 	}{
 		{1, "gold", 255},
 		{2, "silver", 192},

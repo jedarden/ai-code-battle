@@ -262,9 +262,10 @@ type RetiredCandidate struct {
 }
 
 // EnforcePolicy auto-retires evolved bots that meet any of these criteria:
-//   1. Display rating below cfg.RatingThreshold (bottom 10%)
-//   2. 7 consecutive days below rating threshold (per rating_history)
-//   3. Population cap exceeded (cfg.PopCap)
+//  1. Display rating below cfg.RatingThreshold (bottom 10%)
+//  2. 7 consecutive days below rating threshold (per rating_history)
+//  3. Population cap exceeded (cfg.PopCap)
+//
 // The slice is ordered lowest-rated first so the weakest bots are retired
 // first when enforcing the cap.
 func (p *Promoter) EnforcePolicy(ctx context.Context) ([]RetiredCandidate, error) {
@@ -910,8 +911,8 @@ func (p *Promoter) getWorkflowStatus(ctx context.Context, wfName string) (status
 
 	var wfResp struct {
 		Status struct {
-			Phase   string `json:"phase"`
-			StartedAt string `json:"startedAt"`
+			Phase      string `json:"phase"`
+			StartedAt  string `json:"startedAt"`
 			FinishedAt string `json:"finishedAt"`
 		} `json:"status"`
 	}

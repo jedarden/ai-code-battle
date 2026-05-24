@@ -22,21 +22,21 @@ type Config struct {
 	BuildTimeout   time.Duration // Timeout for each build cycle (default: 10m)
 
 	// Cloudflare configuration
-	CloudflareAPIToken string
+	CloudflareAPIToken  string
 	CloudflareAccountID string
-	PagesProjectName   string
+	PagesProjectName    string
 
 	// R2 configuration for warm cache management
-	R2AccessKey      string
-	R2SecretKey      string
-	R2Endpoint       string
-	R2BucketName     string
+	R2AccessKey  string
+	R2SecretKey  string
+	R2Endpoint   string
+	R2BucketName string
 
 	// B2 configuration for cold archive
-	B2AccessKey    string
-	B2SecretKey    string
-	B2Endpoint     string
-	B2BucketName   string
+	B2AccessKey  string
+	B2SecretKey  string
+	B2Endpoint   string
+	B2BucketName string
 
 	// Output directory for generated files
 	OutputDir string

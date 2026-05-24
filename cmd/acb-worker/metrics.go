@@ -28,10 +28,10 @@ type Metrics struct {
 	heartbeatErrors  atomic.Int64
 
 	// Histograms (stored as individual observations)
-	mu                   sync.Mutex
-	matchDurations       []float64 // seconds
+	mu                    sync.Mutex
+	matchDurations        []float64 // seconds
 	replayUploadDurations []float64 // seconds
-	replaySizes          []float64 // bytes
+	replaySizes           []float64 // bytes
 
 	// State
 	startTime time.Time

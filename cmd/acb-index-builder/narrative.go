@@ -24,15 +24,15 @@ const (
 
 // StoryArc represents a detected narrative arc
 type StoryArc struct {
-	Type       StoryArcType `json:"type"`
-	BotID      string       `json:"bot_id,omitempty"`
-	BotName    string       `json:"bot_name,omitempty"`
-	BotBID     string       `json:"bot_b_id,omitempty"`
-	BotBName   string       `json:"bot_b_name,omitempty"`
-	RatingStart int         `json:"rating_start,omitempty"`
-	RatingEnd   int         `json:"rating_end,omitempty"`
-	MatchID    string       `json:"match_id,omitempty"`
-	SeasonName string       `json:"season_name,omitempty"`
+	Type        StoryArcType `json:"type"`
+	BotID       string       `json:"bot_id,omitempty"`
+	BotName     string       `json:"bot_name,omitempty"`
+	BotBID      string       `json:"bot_b_id,omitempty"`
+	BotBName    string       `json:"bot_b_name,omitempty"`
+	RatingStart int          `json:"rating_start,omitempty"`
+	RatingEnd   int          `json:"rating_end,omitempty"`
+	MatchID     string       `json:"match_id,omitempty"`
+	SeasonName  string       `json:"season_name,omitempty"`
 
 	// Context for LLM prompt
 	KeyMatches    []KeyMatch `json:"key_matches,omitempty"`
@@ -573,9 +573,9 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 	arcs := make([]StoryArc, 0)
 
 	pairData := make(map[string]*struct {
-		botAID, botBID   string
-		aWins, bWins     int
-		total            int
+		botAID, botBID string
+		aWins, bWins   int
+		total          int
 	})
 
 	for _, m := range data.Matches {
@@ -590,9 +590,9 @@ func detectRivalryArcs(data *IndexData) []StoryArc {
 
 				if pairData[key] == nil {
 					pairData[key] = &struct {
-						botAID, botBID   string
-						aWins, bWins     int
-						total            int
+						botAID, botBID string
+						aWins, bWins   int
+						total          int
 					}{botAID: aID, botBID: bID}
 				}
 				pairData[key].total++
@@ -1020,7 +1020,6 @@ func getBotRatingHistory(botID string, data *IndexData) []RatingHistoryEntry {
 }
 
 // ─── Weekly Chronicles Generation ────────────────────────────────────────────────
-
 
 // GenerateWeeklyChronicles creates a ~500-word aggregated narrative for the week
 func (c *LLMClient) GenerateWeeklyChronicles(ctx context.Context, req WeeklyChroniclesRequest) (string, error) {

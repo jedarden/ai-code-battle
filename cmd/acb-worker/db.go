@@ -69,16 +69,16 @@ type DBMatch struct {
 
 // DBParticipant represents a match participant.
 type DBParticipant struct {
-	MatchID              string `json:"match_id"`
-	BotID                string `json:"bot_id"`
-	PlayerSlot           int    `json:"player_slot"`
-	Score                int    `json:"score"`
-	RatingMuBefore       float64
-	RatingPhiBefore      float64
-	RatingSigmaBefore    float64
-	RatingMuAfter        *float64
-	RatingPhiAfter       *float64
-	RatingSigmaAfter     *float64
+	MatchID           string `json:"match_id"`
+	BotID             string `json:"bot_id"`
+	PlayerSlot        int    `json:"player_slot"`
+	Score             int    `json:"score"`
+	RatingMuBefore    float64
+	RatingPhiBefore   float64
+	RatingSigmaBefore float64
+	RatingMuAfter     *float64
+	RatingPhiAfter    *float64
+	RatingSigmaAfter  *float64
 }
 
 // DBBotInfo contains bot endpoint and secret information.
@@ -692,16 +692,16 @@ func (c *DBClient) UpdateMapEngagement(ctx context.Context, mapID string, engage
 
 // CompletedMatchForRecalc represents a completed match with participants for rating recalculation.
 type CompletedMatchForRecalc struct {
-	ID          string
-	CompletedAt time.Time
-	Winner      *int      // player_slot of winner, nil for draw
-	WinnerBotID *string   // bot_id of winner (derived from winner player_slot)
+	ID           string
+	CompletedAt  time.Time
+	Winner       *int    // player_slot of winner, nil for draw
+	WinnerBotID  *string // bot_id of winner (derived from winner player_slot)
 	Participants []MatchParticipantForRecalc
 }
 
 // MatchParticipantForRecalc represents a match participant for rating recalculation.
 type MatchParticipantForRecalc struct {
-	BotID string
+	BotID      string
 	PlayerSlot int
 }
 

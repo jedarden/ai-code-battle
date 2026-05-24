@@ -43,26 +43,26 @@ func NewClient(baseURL, apiKey, model string) *Client {
 
 // GenerateCommentaryRequest holds the parameters for generating commentary.
 type GenerateCommentaryRequest struct {
-	MatchID      string
-	ReplayJSON   string // Full replay JSON as string
-	Metadata     MatchMetadata
-	KeyMoments   []KeyMoment
-	WinProbData  string // Sampled win probability data
-	MaxTokens    int
-	Temperature  float64
+	MatchID     string
+	ReplayJSON  string // Full replay JSON as string
+	Metadata    MatchMetadata
+	KeyMoments  []KeyMoment
+	WinProbData string // Sampled win probability data
+	MaxTokens   int
+	Temperature float64
 }
 
 // MatchMetadata contains match information for commentary generation.
 type MatchMetadata struct {
-	Players      []PlayerInfo
-	MapSize      string // e.g. "60x60"
-	TurnCount    int
-	Winner       int
-	Condition    string
-	FinalScores  []int
-	IsUpset      bool
+	Players       []PlayerInfo
+	MapSize       string // e.g. "60x60"
+	TurnCount     int
+	Winner        int
+	Condition     string
+	FinalScores   []int
+	IsUpset       bool
 	IsCloseFinish bool
-	IsFeatured   bool
+	IsFeatured    bool
 }
 
 // PlayerInfo describes a single player/bot in the match.
@@ -91,7 +91,7 @@ type KeyMomentCommentary struct {
 	Turn         int      `json:"turn"`
 	Description  string   `json:"description"`
 	Significance string   `json:"significance"` // "high", "medium", "low"
-	Tags         []string `json:"tags"` // e.g. ["combat", "core_capture", "turning_point"]
+	Tags         []string `json:"tags"`         // e.g. ["combat", "core_capture", "turning_point"]
 }
 
 // GenerateCommentary sends the replay data to the LLM and returns structured commentary.

@@ -9,32 +9,32 @@ import (
 
 // Replay records the complete history of a match for playback.
 type Replay struct {
-	FormatVersion   string            `json:"format_version"` // semver, e.g. "1.0"
-	MatchID         string            `json:"match_id"`
-	Config          Config            `json:"config"`
-	StartTime       time.Time         `json:"start_time"`
-	EndTime         time.Time         `json:"end_time"`
-	Result          *MatchResult      `json:"result"`
-	Players         []ReplayPlayer    `json:"players"`
-	Map             ReplayMap         `json:"map"`
-	Turns           []ReplayTurn      `json:"turns"`
-	WinProb         []WinProbEntry    `json:"win_prob,omitempty"`
-	CriticalMoments []CriticalMoment  `json:"critical_moments,omitempty"`
+	FormatVersion   string           `json:"format_version"` // semver, e.g. "1.0"
+	MatchID         string           `json:"match_id"`
+	Config          Config           `json:"config"`
+	StartTime       time.Time        `json:"start_time"`
+	EndTime         time.Time        `json:"end_time"`
+	Result          *MatchResult     `json:"result"`
+	Players         []ReplayPlayer   `json:"players"`
+	Map             ReplayMap        `json:"map"`
+	Turns           []ReplayTurn     `json:"turns"`
+	WinProb         []WinProbEntry   `json:"win_prob,omitempty"`
+	CriticalMoments []CriticalMoment `json:"critical_moments,omitempty"`
 }
 
 // ReplayPlayer represents player info in a replay.
 type ReplayPlayer struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 // ReplayMap represents the static map data.
 type ReplayMap struct {
-	Rows     int        `json:"rows"`
-	Cols     int        `json:"cols"`
-	Walls    []Position `json:"walls"`
-	Cores    []ReplayCore `json:"cores"`
-	EnergyNodes []Position `json:"energy_nodes"`
+	Rows        int          `json:"rows"`
+	Cols        int          `json:"cols"`
+	Walls       []Position   `json:"walls"`
+	Cores       []ReplayCore `json:"cores"`
+	EnergyNodes []Position   `json:"energy_nodes"`
 }
 
 // ReplayCore represents a core in the replay.
@@ -45,15 +45,15 @@ type ReplayCore struct {
 
 // ReplayTurn represents the state at a single turn.
 type ReplayTurn struct {
-	Turn       int                 `json:"turn"`
-	Bots       []ReplayBot         `json:"bots"`
-	Cores      []ReplayCoreState   `json:"cores"`
-	Energy     []Position          `json:"energy"`
-	Scores     []int               `json:"scores"`
-	EnergyHeld []int               `json:"energy_held"`
-	Events     []Event             `json:"events,omitempty"`
-	Debug      map[int]*DebugInfo  `json:"debug,omitempty"` // optional bot debug telemetry
-	ZoneBounds *ZoneBounds         `json:"zone_bounds,omitempty"` // active zone bounds if enabled
+	Turn       int                `json:"turn"`
+	Bots       []ReplayBot        `json:"bots"`
+	Cores      []ReplayCoreState  `json:"cores"`
+	Energy     []Position         `json:"energy"`
+	Scores     []int              `json:"scores"`
+	EnergyHeld []int              `json:"energy_held"`
+	Events     []Event            `json:"events,omitempty"`
+	Debug      map[int]*DebugInfo `json:"debug,omitempty"`       // optional bot debug telemetry
+	ZoneBounds *ZoneBounds        `json:"zone_bounds,omitempty"` // active zone bounds if enabled
 }
 
 // ReplayBot represents a bot in a replay turn.

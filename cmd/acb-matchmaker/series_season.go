@@ -257,12 +257,12 @@ func (m *Matchmaker) scheduleNextSeriesGames(ctx context.Context) error {
 	defer rows.Close()
 
 	type pendingSeries struct {
-		ID         int64
-		BotAID     string
-		BotBID     string
-		Format     int
-		AWins      int
-		BWins      int
+		ID          int64
+		BotAID      string
+		BotBID      string
+		Format      int
+		AWins       int
+		BWins       int
 		LastGameNum int
 	}
 	var pending []pendingSeries
@@ -828,9 +828,9 @@ func (m *Matchmaker) advanceChampionshipBracket(ctx context.Context) error {
 
 	// Group by season and create semifinal matchups
 	type semifinalPair struct {
-		seasonID  int64
-		position  int
-		winners   []string
+		seasonID int64
+		position int
+		winners  []string
 	}
 	pairs := make(map[string]*semifinalPair)
 	for _, qf := range completed {
@@ -1020,7 +1020,7 @@ func (m *Matchmaker) tickFeaturedSeries(ctx context.Context) {
 	defer rows.Close()
 
 	type botRating struct {
-		ID    string
+		ID     string
 		Rating float64
 	}
 	var topBots []botRating

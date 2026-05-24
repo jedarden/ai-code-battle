@@ -15,14 +15,14 @@ import (
 
 // EnrichmentService manages the AI replay enrichment process.
 type EnrichmentService struct {
-	db           *sql.DB
-	cfg          Config
-	store        *dbstore.Store
-	selector     *selector.Selector
-	generator    *generator.Generator
-	r2Client     *storage.Client
-	b2Client     *storage.Client
-	llmClient    *llm.Client
+	db        *sql.DB
+	cfg       Config
+	store     *dbstore.Store
+	selector  *selector.Selector
+	generator *generator.Generator
+	r2Client  *storage.Client
+	b2Client  *storage.Client
+	llmClient *llm.Client
 }
 
 // NewEnrichmentService creates a new enrichment service.

@@ -50,14 +50,14 @@ func (c *S3Client) listObjects(ctx context.Context, prefix string) ([]R2Object, 
 
 	for {
 		input := &s3.ListObjectsV2Input{
-			Bucket: aws.String(c.bucket),
-			Prefix: aws.String(prefix),
+			Bucket:            aws.String(c.bucket),
+			Prefix:            aws.String(prefix),
 			ContinuationToken: continuationToken,
 		}
 
 		output, err := c.client.ListObjectsV2(ctx, input)
 		if err != nil {
-		return nil, fmt.Errorf("list objects: %w", err)
+			return nil, fmt.Errorf("list objects: %w", err)
 		}
 
 		// Add objects to result

@@ -262,8 +262,8 @@ func (b *GathererBot) getExploreMove(
 
 // RusherBot aggressively rushes toward enemy cores.
 type RusherBot struct {
-	rng              *rand.Rand
-	knownEnemyCores  map[Position]bool
+	rng             *rand.Rand
+	knownEnemyCores map[Position]bool
 }
 
 // NewRusherBot creates a new rusher bot.
@@ -875,8 +875,8 @@ func (b *SwarmBot) maintainsCohesion(newPos, oldPos Position, myBotPositions map
 
 // HunterBot targets isolated enemy units.
 type HunterBot struct {
-	rng            *rand.Rand
-	enemyTrackers  map[Position]*enemyTracker
+	rng           *rand.Rand
+	enemyTrackers map[Position]*enemyTracker
 }
 
 type enemyTracker struct {

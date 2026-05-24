@@ -106,11 +106,11 @@ func BuildRequest(
 	generation int,
 ) Request {
 	return Request{
-		Parents:     parents,
-		Replays:     FromReplayAnalyses(analyses),
-		Meta:        FromMetaDescription(metaDesc),
-		Island:      island,
-		TargetLang:  targetLang,
-		Generation:  generation,
+		Parents:    parents,
+		Replays:    FromReplayAnalyses(analyses),
+		Meta:       FromMetaDescription(metaDesc),
+		Island:     island,
+		TargetLang: targetLang,
+		Generation: generation,
 	}
 }

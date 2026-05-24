@@ -61,11 +61,11 @@ type GameState struct {
 		Energy int `json:"energy"`
 		Score  int `json:"score"`
 	} `json:"you"`
-	Bots   []VisibleBot `json:"bots"`
-	Energy []Position   `json:"energy"`
+	Bots   []VisibleBot  `json:"bots"`
+	Energy []Position    `json:"energy"`
 	Cores  []VisibleCore `json:"cores"`
-	Walls  []Position   `json:"walls"`
-	Dead   []VisibleBot `json:"dead"`
+	Walls  []Position    `json:"walls"`
+	Dead   []VisibleBot  `json:"dead"`
 }
 
 // Direction represents a movement direction.
@@ -91,9 +91,9 @@ type MoveResponse struct {
 
 // Server holds the bot server state.
 type Server struct {
-	config  Config
+	config   Config
 	strategy *GathererStrategy
-	mu      sync.Mutex
+	mu       sync.Mutex
 }
 
 func main() {

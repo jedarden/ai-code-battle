@@ -11,13 +11,13 @@ import (
 
 // MatchRunner orchestrates a match between multiple bots.
 type MatchRunner struct {
-	config   Config
-	bots     []BotInterface
-	names    []string
-	rng      *rand.Rand
-	verbose  bool
-	logger   *log.Logger
-	timeout  time.Duration // per-turn timeout
+	config  Config
+	bots    []BotInterface
+	names   []string
+	rng     *rand.Rand
+	verbose bool
+	logger  *log.Logger
+	timeout time.Duration // per-turn timeout
 }
 
 // MatchOption is a functional option for MatchRunner.
@@ -390,4 +390,3 @@ func (mr *MatchRunner) isValidWallPosition(gs *GameState, pos Position) bool {
 	}
 	return true
 }
-

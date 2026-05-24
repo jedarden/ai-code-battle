@@ -11,12 +11,12 @@ import (
 // computed per island and per language.
 type ValidationLog struct {
 	ID        int64
-	Island    string    // one of IslandAlpha … IslandDelta
-	Language  string    // e.g. "go", "python"
-	Stage     string    // last stage attempted: "syntax", "schema", or "sandbox"
-	Passed    bool      // true when all stages up to (and including) Stage passed
-	ErrorText string    // human-readable failure reason (empty on pass)
-	LLMOutput string    // raw LLM response, for retry / learning
+	Island    string // one of IslandAlpha … IslandDelta
+	Language  string // e.g. "go", "python"
+	Stage     string // last stage attempted: "syntax", "schema", or "sandbox"
+	Passed    bool   // true when all stages up to (and including) Stage passed
+	ErrorText string // human-readable failure reason (empty on pass)
+	LLMOutput string // raw LLM response, for retry / learning
 	CreatedAt time.Time
 }
 
@@ -62,11 +62,11 @@ func (s *Store) IslandPassRates(ctx context.Context) (map[string]float64, error)
 
 // ValidationStats holds aggregate metrics for one island.
 type ValidationStats struct {
-	Island     string
-	Total      int
-	Passed     int
-	PassRate   float64
-	ByStage    map[string]int // count of runs that FAILED at each stage
+	Island   string
+	Total    int
+	Passed   int
+	PassRate float64
+	ByStage  map[string]int // count of runs that FAILED at each stage
 }
 
 // IslandValidationStats returns per-island validation statistics including

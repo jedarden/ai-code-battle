@@ -10,18 +10,18 @@ import (
 // CycleState tracks the current evolution cycle status in real-time.
 // This is updated throughout the cycle and exported to live.json.
 type CycleState struct {
-	mu               sync.RWMutex
-	Generation       int
-	StartedAt        time.Time
-	Phase            string // generating, validating, evaluating, promoting, idle
-	CandidateID      string
-	CandidateIsland  string
-	CandidateLang    string
-	ParentIDs        []string
-	Validation       *CycleValidation
-	Evaluation       *CycleEvaluation
-	PromotionReason  string // Set when promoted/rejected
-	CommunityHint    string // Community hint that influenced this candidate
+	mu              sync.RWMutex
+	Generation      int
+	StartedAt       time.Time
+	Phase           string // generating, validating, evaluating, promoting, idle
+	CandidateID     string
+	CandidateIsland string
+	CandidateLang   string
+	ParentIDs       []string
+	Validation      *CycleValidation
+	Evaluation      *CycleEvaluation
+	PromotionReason string // Set when promoted/rejected
+	CommunityHint   string // Community hint that influenced this candidate
 }
 
 // CycleValidation tracks validation stage progress.
@@ -197,7 +197,7 @@ func (c *CycleState) SetArenaResult(wins, losses, draws, errors int, winRate flo
 	defer c.mu.Unlock()
 	if c.Evaluation == nil {
 		c.Evaluation = &CycleEvaluation{
-			MatchesTotal:  wins + losses + draws + errors,
+			MatchesTotal: wins + losses + draws + errors,
 			Results:      make([]CycleMatchResult, 0),
 		}
 	}
@@ -261,17 +261,17 @@ func (c *CycleState) ToCycleInfo() *CycleInfo {
 		if c.Validation != nil {
 			info.Candidate.Validation = &ValidationStatus{
 				Syntax: &StageResult{
-					Passed:  c.Validation.SyntaxPassed,
-					TimeMs:  c.Validation.SyntaxTimeMs,
-					Error:   c.Validation.LastError,
+					Passed: c.Validation.SyntaxPassed,
+					TimeMs: c.Validation.SyntaxTimeMs,
+					Error:  c.Validation.LastError,
 				},
 				Schema: &StageResult{
-					Passed:  c.Validation.SchemaPassed,
-					TimeMs:  c.Validation.SchemaTimeMs,
+					Passed: c.Validation.SchemaPassed,
+					TimeMs: c.Validation.SchemaTimeMs,
 				},
 				Smoke: &StageResult{
-					Passed:  c.Validation.SmokePassed,
-					TimeMs:  c.Validation.SmokeTimeMs,
+					Passed: c.Validation.SmokePassed,
+					TimeMs: c.Validation.SmokeTimeMs,
 				},
 			}
 		}

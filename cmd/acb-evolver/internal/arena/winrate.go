@@ -4,11 +4,11 @@ import "math"
 
 // WinRateResult holds the observed win rate and its 95% Wilson score confidence interval.
 type WinRateResult struct {
-	Wins   int
-	Total  int     // non-error matches only
-	Rate   float64 // observed win rate (0–1)
-	Lower  float64 // 95% CI lower bound
-	Upper  float64 // 95% CI upper bound
+	Wins  int
+	Total int     // non-error matches only
+	Rate  float64 // observed win rate (0–1)
+	Lower float64 // 95% CI lower bound
+	Upper float64 // 95% CI upper bound
 }
 
 // WinRate computes the win rate and Wilson score 95% confidence interval

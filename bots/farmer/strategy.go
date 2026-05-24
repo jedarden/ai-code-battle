@@ -3,8 +3,8 @@ package main
 import "math"
 
 const (
-	fleeRadius2       = 9  // flee if enemy within 3 cells (squared = 9)
-	dangerBuffer      = 20 // extra buffer beyond attack radius for avoidance
+	fleeRadius2  = 9  // flee if enemy within 3 cells (squared = 9)
+	dangerBuffer = 20 // extra buffer beyond attack radius for avoidance
 )
 
 // FarmerStrategy maximizes energy collection and spawn rate while avoiding combat.

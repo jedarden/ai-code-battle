@@ -37,7 +37,7 @@ func NewMockS3Client() *MockS3Client {
 	return &MockS3Client{
 		Objects:     make(map[string]MockObject),
 		UploadCalls: []UploadCall{},
-		DeleteCalls:  []string{},
+		DeleteCalls: []string{},
 		CopyCalls:   []CopyCall{},
 	}
 }

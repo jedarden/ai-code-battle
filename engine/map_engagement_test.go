@@ -81,7 +81,7 @@ func TestMapEngagement_ResourceContestTurns(t *testing.T) {
 		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
 		Turns: []ReplayTurn{
 			{
-				Turn: 0,
+				Turn:   0,
 				Energy: []Position{{Row: 5, Col: 5}},
 				Bots: []ReplayBot{
 					{Position: Position{Row: 5, Col: 4}, Alive: true, Owner: 0}, // Adjacent to energy
@@ -89,7 +89,7 @@ func TestMapEngagement_ResourceContestTurns(t *testing.T) {
 				},
 			},
 			{
-				Turn: 1,
+				Turn:   1,
 				Energy: []Position{{Row: 10, Col: 10}},
 				Bots: []ReplayBot{
 					{Position: Position{Row: 10, Col: 9}, Alive: true, Owner: 0}, // Only player 0 adjacent
@@ -178,7 +178,7 @@ func TestMapEngagement_Formula(t *testing.T) {
 		},
 		Turns: []ReplayTurn{
 			{
-				Turn: 0,
+				Turn:   0,
 				Energy: []Position{{Row: 5, Col: 5}},
 				Bots: []ReplayBot{
 					{Position: Position{Row: 5, Col: 4}, Alive: true, Owner: 0},
@@ -186,7 +186,7 @@ func TestMapEngagement_Formula(t *testing.T) {
 				},
 			},
 			{
-				Turn: 1,
+				Turn:   1,
 				Energy: []Position{{Row: 10, Col: 10}},
 				Bots: []ReplayBot{
 					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},
@@ -203,8 +203,8 @@ func TestMapEngagement_Formula(t *testing.T) {
 	score := CalculateMapEngagement(replay)
 
 	// Count each metric
-	winProbCrossings := 1.0  // One lead change
-	combatDeaths := 0        // No combat deaths in this replay
+	winProbCrossings := 1.0   // One lead change
+	combatDeaths := 0         // No combat deaths in this replay
 	criticalMoments := 1      // One critical moment
 	resourceContestTurns := 1 // Turn 0 has contested energy
 	survivalTurns := 2        // Both turns have all players alive
@@ -244,14 +244,14 @@ func TestMapEngagement_NoContestedEnergy(t *testing.T) {
 		Result: &MatchResult{Turns: 50, Scores: []int{5, 4}},
 		Turns: []ReplayTurn{
 			{
-				Turn: 0,
+				Turn:   0,
 				Energy: []Position{{Row: 5, Col: 5}},
 				Bots: []ReplayBot{
 					{Position: Position{Row: 5, Col: 4}, Alive: true, Owner: 0}, // Only player 0 adjacent
 				},
 			},
 			{
-				Turn: 1,
+				Turn:   1,
 				Energy: []Position{}, // No energy
 				Bots: []ReplayBot{
 					{Position: Position{Row: 0, Col: 0}, Alive: true, Owner: 0},

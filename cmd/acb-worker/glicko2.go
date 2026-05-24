@@ -6,10 +6,10 @@ import "math"
 
 const (
 	glicko2Scale        = 173.7178
-	glicko2Tau          = 0.5     // Volatility parameter (tau)
+	glicko2Tau          = 0.5 // Volatility parameter (tau)
 	glicko2DefaultMu    = 1500.0
 	glicko2DefaultRD    = 350.0
-	glicko2DefaultSigma = 0.06    // Default volatility/sigma for new bots
+	glicko2DefaultSigma = 0.06 // Default volatility/sigma for new bots
 	glicko2Epsilon      = 1e-6
 )
 

@@ -10,7 +10,7 @@ import (
 // It normalizes case and strips common unicode substitutions before matching.
 type SpamFilter struct {
 	blockedTerms map[string]struct{} // normalized blocked terms
-	minLength    int                  // minimum content length
+	minLength    int                 // minimum content length
 }
 
 // Default embedded block-list of common spam/offensive terms.

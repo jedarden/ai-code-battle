@@ -9,15 +9,15 @@ import (
 
 // ThumbnailConfig configures thumbnail rendering.
 type ThumbnailConfig struct {
-	Width       int
-	Height      int
-	CellSize    int
-	Background  color.Color
-	WallColor   color.Color
-	GridColor   color.Color
+	Width        int
+	Height       int
+	CellSize     int
+	Background   color.Color
+	WallColor    color.Color
+	GridColor    color.Color
 	PlayerColors []color.Color
-	EnergyColor color.Color
-	CoreColor   color.Color
+	EnergyColor  color.Color
+	CoreColor    color.Color
 }
 
 // DefaultThumbnailConfig returns the default thumbnail configuration.
@@ -30,8 +30,8 @@ func DefaultThumbnailConfig() ThumbnailConfig {
 		WallColor:  color.RGBA{60, 60, 70, 255},
 		GridColor:  color.RGBA{30, 30, 40, 255},
 		PlayerColors: []color.Color{
-			color.RGBA{66, 165, 245, 255}, // Blue
-			color.RGBA{239, 83, 80, 255},  // Red
+			color.RGBA{66, 165, 245, 255},  // Blue
+			color.RGBA{239, 83, 80, 255},   // Red
 			color.RGBA{102, 187, 106, 255}, // Green
 			color.RGBA{255, 202, 40, 255},  // Yellow
 			color.RGBA{171, 71, 188, 255},  // Purple

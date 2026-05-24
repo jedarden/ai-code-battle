@@ -220,7 +220,7 @@ func TestHTTPBot_ValidateMoves(t *testing.T) {
 			Score  int `json:"score"`
 		}{ID: 0},
 		Bots: []VisibleBot{
-			{Position: Position{Row: 5, Col: 5}, Owner: 0}, // Our bot
+			{Position: Position{Row: 5, Col: 5}, Owner: 0},   // Our bot
 			{Position: Position{Row: 10, Col: 10}, Owner: 1}, // Enemy bot
 		},
 	}

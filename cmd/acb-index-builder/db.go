@@ -32,17 +32,17 @@ type BotData struct {
 
 // MatchData represents a match for the index
 type MatchData struct {
-	ID           string             `json:"id"`
-	MapID        string             `json:"map_id"`
-	MapName      string             `json:"map_name,omitempty"`
-	WinnerID     string             `json:"winner_id,omitempty"`
-	TurnCount    int                `json:"turn_count"`
-	EndCondition string             `json:"end_condition"`
-	CombatTurns  int                `json:"combat_turns"`  // turns with ≥1 enemy-kill combat death
-	Participants []ParticipantData  `json:"participants"`
-	CreatedAt    time.Time          `json:"created_at"`
-	CompletedAt  time.Time          `json:"completed_at"`
-	PlayedAt     time.Time          `json:"played_at"`
+	ID           string            `json:"id"`
+	MapID        string            `json:"map_id"`
+	MapName      string            `json:"map_name,omitempty"`
+	WinnerID     string            `json:"winner_id,omitempty"`
+	TurnCount    int               `json:"turn_count"`
+	EndCondition string            `json:"end_condition"`
+	CombatTurns  int               `json:"combat_turns"` // turns with ≥1 enemy-kill combat death
+	Participants []ParticipantData `json:"participants"`
+	CreatedAt    time.Time         `json:"created_at"`
+	CompletedAt  time.Time         `json:"completed_at"`
+	PlayedAt     time.Time         `json:"played_at"`
 }
 
 // ParticipantData represents a bot in a match with pre-match rating
@@ -140,13 +140,13 @@ type SeasonData struct {
 
 // PredictionData represents a prediction for the index
 type PredictionData struct {
-	ID          int64      `json:"id"`
-	MatchID     string     `json:"match_id"`
-	PredictorID string     `json:"predictor_id"`
-	PredictedBot string    `json:"predicted_bot"`
-	Correct     *bool      `json:"correct,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
+	ID           int64      `json:"id"`
+	MatchID      string     `json:"match_id"`
+	PredictorID  string     `json:"predictor_id"`
+	PredictedBot string     `json:"predicted_bot"`
+	Correct      *bool      `json:"correct,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	ResolvedAt   *time.Time `json:"resolved_at,omitempty"`
 }
 
 // PredictorStats represents predictor statistics
@@ -168,25 +168,25 @@ type MapData struct {
 	EnergyCount int             `json:"energy_count"`
 	GridWidth   int             `json:"grid_width"`
 	GridHeight  int             `json:"grid_height"`
-	NetVotes    int             `json:"net_votes"`    // Sum of votes from map_votes table
+	NetVotes    int             `json:"net_votes"` // Sum of votes from map_votes table
 	CreatedAt   time.Time       `json:"created_at"`
 	RawJSON     json.RawMessage `json:"-"`
 }
 
 // OpenPredictionMatch represents a pending match open for predictions
 type OpenPredictionMatch struct {
-	MatchID            string    `json:"match_id"`
-	BotAID             string    `json:"bot_a"`
-	BotBID             string    `json:"bot_b"`
-	BotAName           string    `json:"bot_a_name"`
-	BotBName           string    `json:"bot_b_name"`
-	ARating            float64   `json:"a_rating"`
-	BRating            float64   `json:"b_rating"`
-	AEvolved           bool      `json:"a_evolved"`
-	BEvolved           bool      `json:"b_evolved"`
-	CreatedAt          time.Time `json:"created_at"`
-	IsSeriesMatch      bool      `json:"is_series_match"`
-	HeadToHeadRecord   *string   `json:"head_to_head_record,omitempty"`
+	MatchID          string    `json:"match_id"`
+	BotAID           string    `json:"bot_a"`
+	BotBID           string    `json:"bot_b"`
+	BotAName         string    `json:"bot_a_name"`
+	BotBName         string    `json:"bot_b_name"`
+	ARating          float64   `json:"a_rating"`
+	BRating          float64   `json:"b_rating"`
+	AEvolved         bool      `json:"a_evolved"`
+	BEvolved         bool      `json:"b_evolved"`
+	CreatedAt        time.Time `json:"created_at"`
+	IsSeriesMatch    bool      `json:"is_series_match"`
+	HeadToHeadRecord *string   `json:"head_to_head_record,omitempty"`
 }
 
 // FeedbackEntry represents a community replay annotation from §13.6.
@@ -203,18 +203,18 @@ type FeedbackEntry struct {
 
 // IndexData contains all data needed for index generation
 type IndexData struct {
-	GeneratedAt       time.Time
-	Bots              []BotData
-	Matches           []MatchData
-	RatingHistory     []RatingHistoryEntry
-	Series            []SeriesData
-	Seasons           []SeasonData
-	Predictions       []PredictionData
-	PredictorStats    []PredictorStats
-	Maps              []MapData
-	TopPredictors     []PredictorStats
+	GeneratedAt           time.Time
+	Bots                  []BotData
+	Matches               []MatchData
+	RatingHistory         []RatingHistoryEntry
+	Series                []SeriesData
+	Seasons               []SeasonData
+	Predictions           []PredictionData
+	PredictorStats        []PredictorStats
+	Maps                  []MapData
+	TopPredictors         []PredictorStats
 	OpenPredictionMatches []OpenPredictionMatch
-	Feedback          []FeedbackEntry
+	Feedback              []FeedbackEntry
 }
 
 // fetchAllData retrieves all data from PostgreSQL for index generation

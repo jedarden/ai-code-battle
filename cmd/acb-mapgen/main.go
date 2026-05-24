@@ -269,8 +269,8 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 						if ndr == 0 && ndc == 0 {
 							continue
 						}
-						nr := ((r + ndr) % rows + rows) % rows
-						nc := ((c + ndc) % cols + cols) % cols
+						nr := ((r+ndr)%rows + rows) % rows
+						nc := ((c+ndc)%cols + cols) % cols
 						if grid[nr][nc] {
 							neighbors++
 						}
@@ -345,4 +345,3 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 
 	return m
 }
-

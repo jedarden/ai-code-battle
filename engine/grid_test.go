@@ -15,11 +15,11 @@ func TestGridWrap(t *testing.T) {
 	}{
 		{0, 0, Position{0, 0}},
 		{59, 59, Position{59, 59}},
-		{60, 0, Position{0, 0}},   // wrap row
-		{0, 60, Position{0, 0}},   // wrap col
-		{-1, 0, Position{59, 0}},  // negative wrap row
-		{0, -1, Position{0, 59}},  // negative wrap col
-		{65, 65, Position{5, 5}},  // both wrap
+		{60, 0, Position{0, 0}},    // wrap row
+		{0, 60, Position{0, 0}},    // wrap col
+		{-1, 0, Position{59, 0}},   // negative wrap row
+		{0, -1, Position{0, 59}},   // negative wrap col
+		{65, 65, Position{5, 5}},   // both wrap
 		{-5, -5, Position{55, 55}}, // both negative wrap
 	}
 
@@ -45,10 +45,10 @@ func TestGridDistance2(t *testing.T) {
 		{Position{10, 10}, Position{13, 14}, 25},
 
 		// Toroidal wrapping - shorter path across boundary
-		{Position{0, 0}, Position{59, 0}, 1},   // distance 1 via wrap
-		{Position{0, 0}, Position{58, 0}, 4},   // distance 2 via wrap
-		{Position{0, 0}, Position{0, 59}, 1},   // distance 1 via wrap col
-		{Position{0, 0}, Position{59, 59}, 2},  // distance sqrt(2) via corner wrap
+		{Position{0, 0}, Position{59, 0}, 1},  // distance 1 via wrap
+		{Position{0, 0}, Position{58, 0}, 4},  // distance 2 via wrap
+		{Position{0, 0}, Position{0, 59}, 1},  // distance 1 via wrap col
+		{Position{0, 0}, Position{59, 59}, 2}, // distance sqrt(2) via corner wrap
 	}
 
 	for _, tt := range tests {
@@ -269,11 +269,11 @@ func TestINV6_ToroidalBounds(t *testing.T) {
 		rows int
 		cols int
 	}{
-		{30, 30},  // Minimum
-		{40, 60},  // Rectangular
-		{60, 60},  // Standard square
+		{30, 30},   // Minimum
+		{40, 60},   // Rectangular
+		{60, 60},   // Standard square
 		{100, 100}, // Large
-		{120, 80}, // Large rectangular
+		{120, 80},  // Large rectangular
 		{200, 200}, // Maximum
 	}
 
@@ -297,7 +297,7 @@ func testToroidalBoundsScenario(t *testing.T, rng *rand.Rand, rows, cols int) {
 	g := NewGrid(rows, cols)
 
 	// Add random walls
-	numWalls := rng.Intn(rows*cols/20) // Up to 5% wall density
+	numWalls := rng.Intn(rows * cols / 20) // Up to 5% wall density
 	for i := 0; i < numWalls; i++ {
 		row := rng.Intn(rows*3) - rows // Can be negative or >= rows
 		col := rng.Intn(cols*3) - cols
@@ -325,7 +325,7 @@ func testToroidalBoundsScenario(t *testing.T, rng *rand.Rand, rows, cols int) {
 	// Test Move from random positions in all directions
 	testPositions := []Position{
 		{0, 0}, {0, cols - 1}, {rows - 1, 0}, {rows - 1, cols - 1}, // Corners
-		{rows / 2, cols / 2}, // Center
+		{rows / 2, cols / 2},                // Center
 		{0, cols / 2}, {rows - 1, cols / 2}, // Middle of edges
 	}
 

@@ -16,22 +16,22 @@ import (
 
 // LeaderboardIndex represents the leaderboard.json structure
 type LeaderboardIndex struct {
-	UpdatedAt string            `json:"updated_at"`
+	UpdatedAt string             `json:"updated_at"`
 	Entries   []LeaderboardEntry `json:"entries"`
 }
 
 // LeaderboardEntry represents a single bot on the leaderboard
 type LeaderboardEntry struct {
-	Rank           int     `json:"rank"`
-	BotID          string  `json:"bot_id"`
-	Name           string  `json:"name"`
-	OwnerID        string  `json:"owner_id"`
-	Rating         int     `json:"rating"`
+	Rank            int     `json:"rank"`
+	BotID           string  `json:"bot_id"`
+	Name            string  `json:"name"`
+	OwnerID         string  `json:"owner_id"`
+	Rating          int     `json:"rating"`
 	RatingDeviation float64 `json:"rating_deviation"`
-	MatchesPlayed  int     `json:"matches_played"`
-	MatchesWon     int     `json:"matches_won"`
-	WinRate        float64 `json:"win_rate"`
-	HealthStatus   string  `json:"health_status"`
+	MatchesPlayed   int     `json:"matches_played"`
+	MatchesWon      int     `json:"matches_won"`
+	WinRate         float64 `json:"win_rate"`
+	HealthStatus    string  `json:"health_status"`
 }
 
 // BotDirectory represents bots/index.json
@@ -51,38 +51,38 @@ type BotDirectoryEntry struct {
 
 // BotProfile represents data/bots/{bot_id}.json
 type BotProfile struct {
-	ID               string                 `json:"id"`
-	Name             string                 `json:"name"`
-	OwnerID          string                 `json:"owner_id"`
-	Description      string                 `json:"description,omitempty"`
-	Rating           int                    `json:"rating"`
-	RatingDeviation  float64                `json:"rating_deviation"`
-	RatingVolatility float64                `json:"rating_volatility"`
-	MatchesPlayed    int                    `json:"matches_played"`
-	MatchesWon       int                    `json:"matches_won"`
-	WinRate          float64                `json:"win_rate"`
-	HealthStatus     string                 `json:"health_status"`
-	Evolved          bool                   `json:"evolved"`
-	Island           string                 `json:"island,omitempty"`
-	Generation       int                    `json:"generation,omitempty"`
-	DebugPublic      bool                   `json:"debug_public"`
-	CreatedAt        string                 `json:"created_at"`
-	UpdatedAt        string                 `json:"updated_at"`
-	RatingHistory    []RatingHistoryEntry   `json:"rating_history"`
-	RecentMatches    []MatchSummary         `json:"recent_matches"`
+	ID               string               `json:"id"`
+	Name             string               `json:"name"`
+	OwnerID          string               `json:"owner_id"`
+	Description      string               `json:"description,omitempty"`
+	Rating           int                  `json:"rating"`
+	RatingDeviation  float64              `json:"rating_deviation"`
+	RatingVolatility float64              `json:"rating_volatility"`
+	MatchesPlayed    int                  `json:"matches_played"`
+	MatchesWon       int                  `json:"matches_won"`
+	WinRate          float64              `json:"win_rate"`
+	HealthStatus     string               `json:"health_status"`
+	Evolved          bool                 `json:"evolved"`
+	Island           string               `json:"island,omitempty"`
+	Generation       int                  `json:"generation,omitempty"`
+	DebugPublic      bool                 `json:"debug_public"`
+	CreatedAt        string               `json:"created_at"`
+	UpdatedAt        string               `json:"updated_at"`
+	RatingHistory    []RatingHistoryEntry `json:"rating_history"`
+	RecentMatches    []MatchSummary       `json:"recent_matches"`
 }
 
 // MatchSummary represents a match in listings
 type MatchSummary struct {
-	ID           string               `json:"id"`
-	CompletedAt  string               `json:"completed_at"`
+	ID           string                    `json:"id"`
+	CompletedAt  string                    `json:"completed_at"`
 	Participants []MatchParticipantSummary `json:"participants"`
-	WinnerID     string               `json:"winner_id,omitempty"`
-	MapID        string               `json:"map_id,omitempty"`
-	Turns        int                  `json:"turns"`
-	EndReason    string               `json:"end_reason"`
-	Enriched     bool                 `json:"enriched"`
-	CombatTurns  int                  `json:"combat_turns"` // turns with ≥1 enemy-kill combat death
+	WinnerID     string                    `json:"winner_id,omitempty"`
+	MapID        string                    `json:"map_id,omitempty"`
+	Turns        int                       `json:"turns"`
+	EndReason    string                    `json:"end_reason"`
+	Enriched     bool                      `json:"enriched"`
+	CombatTurns  int                       `json:"combat_turns"` // turns with ≥1 enemy-kill combat death
 }
 
 // MatchParticipantSummary represents a bot in a match summary
@@ -464,13 +464,13 @@ func generatePredictionsIndex(data *IndexData, outputDir string) error {
 // evolved bot vs top-10).
 func generatePredictionsOpen(data *IndexData, outputDir string) error {
 	type OpenMatchEntry struct {
-		MatchID           string  `json:"match_id"`
-		BotA              string  `json:"bot_a"`
-		BotB              string  `json:"bot_b"`
-		ARating           int     `json:"a_rating"`
-		BRating           int     `json:"b_rating"`
-		OpenUntil         string  `json:"open_until"`
-		HeadToHeadRecord  *string `json:"head_to_head_record,omitempty"`
+		MatchID          string  `json:"match_id"`
+		BotA             string  `json:"bot_a"`
+		BotB             string  `json:"bot_b"`
+		ARating          int     `json:"a_rating"`
+		BRating          int     `json:"b_rating"`
+		OpenUntil        string  `json:"open_until"`
+		HeadToHeadRecord *string `json:"head_to_head_record,omitempty"`
 	}
 
 	type OpenPredictionsIndex struct {
@@ -722,12 +722,12 @@ func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]
 				thumbMatchID = curatedMatches[0].ID
 			}
 			summaries = append(summaries, PlaylistSummary{
-				Slug:            def.slug,
-				Title:           def.title,
-				Description:     def.description,
-				Category:        def.category,
-				MatchCount:      len(curatedMatches),
-				UpdatedAt:       data.GeneratedAt.Format(time.RFC3339),
+				Slug:             def.slug,
+				Title:            def.title,
+				Description:      def.description,
+				Category:         def.category,
+				MatchCount:       len(curatedMatches),
+				UpdatedAt:        data.GeneratedAt.Format(time.RFC3339),
 				ThumbnailMatchID: thumbMatchID,
 			})
 			continue
@@ -748,12 +748,12 @@ func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]
 			thumbMatchID = filtered[0].ID
 		}
 		summaries = append(summaries, PlaylistSummary{
-			Slug:            def.slug,
-			Title:           def.title,
-			Description:     def.description,
-			Category:        def.category,
-			MatchCount:      len(filtered),
-			UpdatedAt:       data.GeneratedAt.Format(time.RFC3339),
+			Slug:             def.slug,
+			Title:            def.title,
+			Description:      def.description,
+			Category:         def.category,
+			MatchCount:       len(filtered),
+			UpdatedAt:        data.GeneratedAt.Format(time.RFC3339),
 			ThumbnailMatchID: thumbMatchID,
 		})
 	}
@@ -766,8 +766,8 @@ func generatePlaylists(data *IndexData, outputDir string, botNameMap map[string]
 }
 
 type PlaylistIndex struct {
-	UpdatedAt string             `json:"updated_at"`
-	Playlists []PlaylistSummary  `json:"playlists"`
+	UpdatedAt string            `json:"updated_at"`
+	Playlists []PlaylistSummary `json:"playlists"`
 }
 
 type PlaylistSummary struct {
@@ -1373,22 +1373,22 @@ func isRivalryMatch(m MatchData, data *IndexData) bool {
 // ─── Rivalry Detection (§13.5) ─────────────────────────────────────────────────
 
 const (
-	rivalryMinMatches = 10   // minimum h2h matches to qualify
-	rivalryTopK       = 20   // max rivalries to emit
+	rivalryMinMatches   = 10   // minimum h2h matches to qualify
+	rivalryTopK         = 20   // max rivalries to emit
 	rivalryRecencyDecay = 0.95 // per-day decay for recency weighting
 )
 
 // RivalryEntry represents a detected rivalry pair for data/meta/rivalries.json.
 type RivalryEntry struct {
-	BotA         RivalryBot    `json:"bot_a"`
-	BotB         RivalryBot    `json:"bot_b"`
-	TotalMatches int           `json:"matches"`
-	Record       RivalryRecord `json:"record"`
-	ClosestMatch string        `json:"closest_match,omitempty"`
+	BotA          RivalryBot     `json:"bot_a"`
+	BotB          RivalryBot     `json:"bot_b"`
+	TotalMatches  int            `json:"matches"`
+	Record        RivalryRecord  `json:"record"`
+	ClosestMatch  string         `json:"closest_match,omitempty"`
 	LongestStreak *RivalryStreak `json:"longest_streak,omitempty"`
-	RecentMatches []string     `json:"recent_matches"`
-	Narrative    string        `json:"narrative"`
-	Score        float64       `json:"score"`
+	RecentMatches []string       `json:"recent_matches"`
+	Narrative     string         `json:"narrative"`
+	Score         float64        `json:"score"`
 }
 
 type RivalryBot struct {
@@ -1534,15 +1534,15 @@ func computeRivalries(data *IndexData, botNameMap map[string]string) []RivalryEn
 		bName := botNameMap[rec.botBID]
 
 		candidates = append(candidates, RivalryEntry{
-			BotA: RivalryBot{ID: rec.botAID, Name: aName},
-			BotB: RivalryBot{ID: rec.botBID, Name: bName},
-			TotalMatches: total,
-			Record: RivalryRecord{AWins: rec.aWins, BWins: rec.bWins, Draws: rec.draws},
-			ClosestMatch: closestMatch,
+			BotA:          RivalryBot{ID: rec.botAID, Name: aName},
+			BotB:          RivalryBot{ID: rec.botBID, Name: bName},
+			TotalMatches:  total,
+			Record:        RivalryRecord{AWins: rec.aWins, BWins: rec.bWins, Draws: rec.draws},
+			ClosestMatch:  closestMatch,
 			LongestStreak: streak,
 			RecentMatches: recentMatches,
-			Narrative: buildRivalryNarrative(aName, bName, rec.botAID, rec.botBID, total, rec.aWins, rec.bWins, rec.draws, streak),
-			Score: score,
+			Narrative:     buildRivalryNarrative(aName, bName, rec.botAID, rec.botBID, total, rec.aWins, rec.bWins, rec.draws, streak),
+			Score:         score,
 		})
 	}
 
@@ -1687,7 +1687,7 @@ type MapIndexEntry struct {
 	EnergyCount int     `json:"energy_count"`
 	GridWidth   int     `json:"grid_width"`
 	GridHeight  int     `json:"grid_height"`
-	NetVotes    int     `json:"net_votes"`    // Sum of +1/-1 votes from map_votes table
+	NetVotes    int     `json:"net_votes"` // Sum of +1/-1 votes from map_votes table
 	CreatedAt   string  `json:"created_at"`
 }
 
@@ -1708,7 +1708,7 @@ type MapDetail struct {
 	EnergyCount int           `json:"energy_count"`
 	GridWidth   int           `json:"grid_width"`
 	GridHeight  int           `json:"grid_height"`
-	NetVotes    int           `json:"net_votes"`    // Sum of +1/-1 votes from map_votes table
+	NetVotes    int           `json:"net_votes"` // Sum of +1/-1 votes from map_votes table
 	CreatedAt   string        `json:"created_at"`
 	Walls       []mapPosition `json:"walls"`
 	Cores       []mapCore     `json:"cores"`
@@ -2086,8 +2086,8 @@ type SitemapURL struct {
 
 // Sitemap represents the root sitemap XML structure
 type Sitemap struct {
-	XMLName xml.Name    `xml:"urlset"`
-	Xmlns   string      `xml:"xmlns,attr"`
+	XMLName xml.Name     `xml:"urlset"`
+	Xmlns   string       `xml:"xmlns,attr"`
 	URLs    []SitemapURL `xml:"url"`
 }
 
@@ -2112,10 +2112,10 @@ func generateSitemap(data *IndexData, outputDir string, siteURL string) error {
 
 	// Bot list page
 	urls = append(urls, SitemapURL{
-		Loc: siteURL + "/bots",
-		LastMod: now,
+		Loc:        siteURL + "/bots",
+		LastMod:    now,
 		ChangeFreq: "daily",
-		Priority: "0.8",
+		Priority:   "0.8",
 	})
 
 	// Individual bot profiles (limit to 1000 for sitemap size)
@@ -2128,10 +2128,10 @@ func generateSitemap(data *IndexData, outputDir string, siteURL string) error {
 			priority = "0.8" // Top bots get higher priority
 		}
 		urls = append(urls, SitemapURL{
-			Loc: siteURL + "/bot/" + bot.ID,
-			LastMod: bot.UpdatedAt.Format("2006-01-02"),
+			Loc:        siteURL + "/bot/" + bot.ID,
+			LastMod:    bot.UpdatedAt.Format("2006-01-02"),
 			ChangeFreq: "daily",
-			Priority: priority,
+			Priority:   priority,
 		})
 	}
 
@@ -2151,57 +2151,57 @@ func generateSitemap(data *IndexData, outputDir string, siteURL string) error {
 			lastMod = m.CreatedAt.Format("2006-01-02")
 		}
 		urls = append(urls, SitemapURL{
-			Loc: siteURL + "/watch/replay/" + m.ID,
-			LastMod: lastMod,
+			Loc:        siteURL + "/watch/replay/" + m.ID,
+			LastMod:    lastMod,
 			ChangeFreq: "monthly",
-			Priority: priority,
+			Priority:   priority,
 		})
 	}
 
 	// Series pages
 	for _, s := range data.Series {
 		urls = append(urls, SitemapURL{
-			Loc: siteURL + "/watch/series/" + fmt.Sprintf("%d", s.ID),
-			LastMod: s.UpdatedAt.Format("2006-01-02"),
+			Loc:        siteURL + "/watch/series/" + fmt.Sprintf("%d", s.ID),
+			LastMod:    s.UpdatedAt.Format("2006-01-02"),
 			ChangeFreq: "weekly",
-			Priority: "0.6",
+			Priority:   "0.6",
 		})
 	}
 
 	// Seasons list page
 	urls = append(urls, SitemapURL{
-		Loc: siteURL + "/season",
-		LastMod: now,
+		Loc:        siteURL + "/season",
+		LastMod:    now,
 		ChangeFreq: "weekly",
-		Priority: "0.7",
+		Priority:   "0.7",
 	})
 
 	// Individual season pages
 	for _, s := range data.Seasons {
 		urls = append(urls, SitemapURL{
-			Loc: siteURL + "/season/" + fmt.Sprintf("%d", s.ID),
-			LastMod: s.StartsAt.Format("2006-01-02"),
+			Loc:        siteURL + "/season/" + fmt.Sprintf("%d", s.ID),
+			LastMod:    s.StartsAt.Format("2006-01-02"),
 			ChangeFreq: "weekly",
-			Priority: "0.7",
+			Priority:   "0.7",
 		})
 	}
 
 	// Rivalries page
 	urls = append(urls, SitemapURL{
-		Loc: siteURL + "/rivalries",
-		LastMod: now,
+		Loc:        siteURL + "/rivalries",
+		LastMod:    now,
 		ChangeFreq: "weekly",
-		Priority: "0.6",
+		Priority:   "0.6",
 	})
 
 	// Docs pages
 	docsPages := []string{"protocol", "replay-format", "getting-started", "starter-kits"}
 	for _, doc := range docsPages {
 		urls = append(urls, SitemapURL{
-			Loc: siteURL + "/compete/docs/" + doc,
-			LastMod: now,
+			Loc:        siteURL + "/compete/docs/" + doc,
+			LastMod:    now,
 			ChangeFreq: "monthly",
-			Priority: "0.5",
+			Priority:   "0.5",
 		})
 	}
 
