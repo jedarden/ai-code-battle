@@ -255,10 +255,11 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	}
 
 	// Place cores for each player using rotational symmetry.
-	// Primary core at radius ~70% from center, additional cores at ~40% radius
-	// offset angularly from the primary.
-	primaryRadius := 0.7
-	secondaryRadius := 0.4
+	// Very tight spawn radius (25% from center) forces immediate bot contact.
+	// At 25% radius on 54x54 grid: ~7 tiles from center, ~12 tiles between 3 players.
+	// Attack radius is 3 tiles, so bots need to close ~9 tiles to engage.
+	primaryRadius := 0.25
+	secondaryRadius := 0.15
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
 
