@@ -1842,6 +1842,9 @@ export class ReplayViewer {
       this.drawCell(wall.row, wall.col, wallColor);
     }
 
+    // Draw shrinking zone (if active)
+    this.drawZone();
+
     // Draw cores
     for (const core of turnData.cores) {
       if (visible && !visible.has(this.posKey(core.position))) continue;
@@ -2570,6 +2573,72 @@ export class ReplayViewer {
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+  }
+
+  private drawZone(): void {
+    const turnData = this.replay?.turns[this.currentTurn];
+    if (!turnData?.zone_bounds) return;
+
+    const { ctx, cellSize } = this;
+    const { center, radius, active } = turnData.zone_bounds;
+
+    // Zone center in world coordinates
+    const cx = center.col * cellSize + cellSize / 2;
+    const cy = center.row * cellSize + cellSize / 2;
+    const cr = radius * cellSize;
+
+    if (!active) {
+      // Zone not active yet — draw subtle outline
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return;
+    }
+
+    // Draw danger area (outside zone) — semi-transparent red overlay
+    const mapW = this.replay!.map.cols * cellSize;
+    const mapH = this.replay!.map.rows * cellSize;
+
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+    ctx.fillRect(0, 0, mapW, mapH);
+
+    // Use destination-out to "cut out" the safe zone circle
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Draw zone boundary circle
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw inner dashed ring for visibility
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, cr - 3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw zone center marker (small cross)
+    const crossSize = 4;
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - crossSize, cy);
+    ctx.lineTo(cx + crossSize, cy);
+    ctx.moveTo(cx, cy - crossSize);
+    ctx.lineTo(cx, cy + crossSize);
+    ctx.stroke();
   }
 
   private drawBot(bot: ReplayBot, color: string): void {

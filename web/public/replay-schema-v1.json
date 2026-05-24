@@ -609,6 +609,29 @@
           "additionalProperties": {
             "$ref": "#/$defs/DebugInfo"
           }
+        },
+        "zone_bounds": {
+          "description": "Active shrinking zone bounds at this turn. Only present when zone is enabled in config.",
+          "$ref": "#/$defs/ZoneBounds"
+        }
+      }
+    },
+    "ZoneBounds": {
+      "type": "object",
+      "description": "Bounds of the shrinking play-zone (storm) at a turn.",
+      "required": ["center", "radius", "active"],
+      "properties": {
+        "center": {
+          "$ref": "#/$defs/Position"
+        },
+        "radius": {
+          "type": "integer",
+          "description": "Radius of the safe zone in tiles. Bots outside this radius are killed.",
+          "minimum": 0
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the zone is currently shrinking. False before zone_start_turn."
         }
       }
     },

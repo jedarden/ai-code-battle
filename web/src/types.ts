@@ -64,6 +64,12 @@ export interface GameEvent {
   details: unknown;
 }
 
+export interface ZoneBounds {
+  center: Position;
+  radius: number;
+  active: boolean;
+}
+
 export interface ReplayTurn {
   turn: number;
   bots: ReplayBot[];
@@ -73,6 +79,7 @@ export interface ReplayTurn {
   energy_held: number[];
   events?: GameEvent[];
   debug?: Record<number, DebugInfo>;
+  zone_bounds?: ZoneBounds;
 }
 
 export interface ReplayCriticalMoment {
