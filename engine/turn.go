@@ -133,7 +133,11 @@ func (gs *GameState) executeZone() {
 		}
 	}
 
-	// Kill bots outside the zone
+	// Kill bots outside the zone (only when zone is active)
+	if !gs.ZoneActive {
+		return
+	}
+
 	for _, b := range gs.Bots {
 		if !b.Alive {
 			continue
