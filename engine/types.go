@@ -250,6 +250,7 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns (vs default 5)
 		cfg.ZoneShrinkStep = 3     // Shrink 3 tiles per interval (1 tile/turn)
 		cfg.ZoneMinRadius = 5      // Tight final zone forces final contact
+		cfg.AttackRadius2 = 12     // 3.5 tiles (same as 2-player for better combat trigger)
 	}
 
 	return cfg
