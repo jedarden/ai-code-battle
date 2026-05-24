@@ -170,19 +170,31 @@ type Config struct {
 	MapID           string `json:"map_id,omitempty"`
 	SeasonID        string `json:"season_id,omitempty"`
 	RulesVersion    string `json:"rules_version,omitempty"`
+
+	// Zone (storm) configuration
+	ZoneEnabled       bool `json:"zone_enabled"`        // whether the shrinking zone is active
+	ZoneStartTurn     int  `json:"zone_start_turn"`     // turn when zone starts shrinking
+	ZoneShrinkInterval int `json:"zone_shrink_interval"` // turns between shrink steps
+	ZoneShrinkStep    int  `json:"zone_shrink_step"`    // tiles to shrink each step
+	ZoneMinRadius     int  `json:"zone_min_radius"`     // minimum zone radius (stops here)
 }
 
 // DefaultConfig returns the default game configuration.
 func DefaultConfig() Config {
 	return Config{
-		Rows:           60,
-		Cols:           60,
-		MaxTurns:       500,
-		VisionRadius2:  49, // ~7 tiles
-		AttackRadius2:  5,  // ~2.24 tiles
-		SpawnCost:      3,
-		EnergyInterval: 10,
-		CoresPerPlayer: 2,
+		Rows:             60,
+		Cols:             60,
+		MaxTurns:         500,
+		VisionRadius2:    49, // ~7 tiles
+		AttackRadius2:    5,  // ~2.24 tiles
+		SpawnCost:        3,
+		EnergyInterval:   10,
+		CoresPerPlayer:   2,
+		ZoneEnabled:      false,
+		ZoneStartTurn:    50,
+		ZoneShrinkInterval: 5,
+		ZoneShrinkStep:   2,
+		ZoneMinRadius:    10,
 	}
 }
 

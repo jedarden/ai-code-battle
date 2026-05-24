@@ -53,6 +53,7 @@ type ReplayTurn struct {
 	EnergyHeld []int               `json:"energy_held"`
 	Events     []Event             `json:"events,omitempty"`
 	Debug      map[int]*DebugInfo  `json:"debug,omitempty"` // optional bot debug telemetry
+	ZoneBounds *ZoneBounds         `json:"zone_bounds,omitempty"` // active zone bounds if enabled
 }
 
 // ReplayBot represents a bot in a replay turn.
@@ -68,6 +69,13 @@ type ReplayCoreState struct {
 	Position Position `json:"position"`
 	Owner    int      `json:"owner"`
 	Active   bool     `json:"active"`
+}
+
+// ZoneBounds represents the active zone bounds at a turn.
+type ZoneBounds struct {
+	Center Position `json:"center"`
+	Radius int      `json:"radius"`
+	Active bool     `json:"active"`
 }
 
 // ReplayWriter records a match as it progresses.
@@ -139,6 +147,15 @@ func (rw *ReplayWriter) RecordTurn(gs *GameState, debug map[int]*DebugInfo) {
 		EnergyHeld: make([]int, len(gs.Players)),
 		Events:     gs.Events,
 		Debug:      debug,
+	}
+
+	// Record zone bounds if enabled
+	if gs.Config.ZoneEnabled {
+		turn.ZoneBounds = &ZoneBounds{
+			Center: gs.ZoneCenter,
+			Radius: gs.ZoneRadius,
+			Active: gs.ZoneActive,
+		}
 	}
 
 	// Record all bots (including dead ones for death animation)

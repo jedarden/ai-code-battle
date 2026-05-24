@@ -30,6 +30,11 @@ type GameState struct {
 	StalemateTurns  int // consecutive turns with no progress
 	LastTotalEnergy int // total energy held by all players at last progress
 	LastTotalBots   int // total living bots at last progress
+
+	// Zone (storm) state
+	ZoneCenter  Position // center of the zone (map center)
+	ZoneRadius  int      // current radius of the safe zone
+	ZoneActive  bool     // whether the zone is currently shrinking
 }
 
 // Event represents something that happened during a turn.
@@ -47,10 +52,14 @@ const (
 	EventCoreCaptured  = "core_captured"
 	EventCombatDeath   = "combat_death"
 	EventCollisionDeath = "collision_death"
+	EventZoneDeath     = "zone_death"
 )
 
 // NewGameState creates a new game state with the given configuration.
 func NewGameState(config Config, rng *rand.Rand) *GameState {
+	center := Position{Row: config.Rows / 2, Col: config.Cols / 2}
+	initialRadius := min(config.Rows, config.Cols) / 2
+
 	return &GameState{
 		Config:    config,
 		Grid:      NewGrid(config.Rows, config.Cols),
@@ -66,6 +75,9 @@ func NewGameState(config Config, rng *rand.Rand) *GameState {
 		DeadBots:  make([]*Bot, 0),
 		Events:    make([]Event, 0),
 		Dominance: make(map[int]int),
+		ZoneCenter: center,
+		ZoneRadius: initialRadius,
+		ZoneActive: false,
 	}
 }
 
@@ -337,6 +349,9 @@ func (gs *GameState) Clone() *GameState {
 		DeadBots:   make([]*Bot, 0),
 		Events:     make([]Event, 0),
 		Dominance:  make(map[int]int),
+		ZoneCenter: gs.ZoneCenter,
+		ZoneRadius: gs.ZoneRadius,
+		ZoneActive: gs.ZoneActive,
 	}
 
 	// Copy grid

@@ -8,6 +8,7 @@ type TurnPhase int
 const (
 	PhaseMove TurnPhase = iota
 	PhaseCombat
+	PhaseZone
 	PhaseCapture
 	PhaseCollect
 	PhaseSpawn
@@ -25,6 +26,9 @@ func (gs *GameState) ExecuteTurn() *MatchResult {
 
 	// Phase: COMBAT - resolve focus-fire algorithm
 	gs.executeCombat()
+
+	// Phase: ZONE - shrinking zone kills bots outside
+	gs.executeZone()
 
 	// Phase: CAPTURE - enemy bots on undefended cores raze them
 	gs.executeCaptures()
@@ -105,6 +109,41 @@ func (gs *GameState) executeMoves() {
 
 		// Move to destination
 		b.Position = dest
+	}
+}
+
+// executeZone handles the shrinking zone (storm) that forces combat.
+func (gs *GameState) executeZone() {
+	if !gs.Config.ZoneEnabled {
+		return
+	}
+
+	// Check if zone should start
+	if !gs.ZoneActive && gs.Turn >= gs.Config.ZoneStartTurn {
+		gs.ZoneActive = true
+	}
+
+	// Check if zone should shrink
+	if gs.ZoneActive && (gs.Turn-gs.Config.ZoneStartTurn)%gs.Config.ZoneShrinkInterval == 0 {
+		if gs.ZoneRadius > gs.Config.ZoneMinRadius {
+			gs.ZoneRadius -= gs.Config.ZoneShrinkStep
+			if gs.ZoneRadius < gs.Config.ZoneMinRadius {
+				gs.ZoneRadius = gs.Config.ZoneMinRadius
+			}
+		}
+	}
+
+	// Kill bots outside the zone
+	for _, b := range gs.Bots {
+		if !b.Alive {
+			continue
+		}
+
+		// Calculate distance from zone center (accounting for toroidal wrap)
+		dist2 := gs.Grid.Distance2(b.Position, gs.ZoneCenter)
+		if dist2 > gs.ZoneRadius*gs.ZoneRadius {
+			gs.KillBot(b, "zone")
+		}
 	}
 }
 
