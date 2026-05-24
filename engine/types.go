@@ -242,13 +242,13 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	if numPlayers == 2 {
 		cfg.ZoneStartTurn = 20     // Start zone early to force combat before farming wins
 		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns (faster pressure)
-		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval
+		cfg.ZoneShrinkStep = 1     // Shrink 1 tile per interval (0.5 tiles/turn, bots can keep up)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) is closer to attack radius (3.5)
 		cfg.AttackRadius2 = 12     // 3.5 tiles (balanced for 2-player)
 	} else {
 		cfg.ZoneStartTurn = 15     // Start zone early for 3+ players (larger gap to close)
 		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns (faster pressure)
-		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval
+		cfg.ZoneShrinkStep = 1     // Shrink 1 tile per interval (0.5 tiles/turn, bots can keep up)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
 		cfg.AttackRadius2 = 12     // 3.5 tiles (same as 2-player for better combat trigger)
 	}
@@ -262,10 +262,10 @@ type MatchResult struct {
 	Reason       string `json:"reason"` // "elimination", "dominance", "turns", "draw"
 	Turns        int    `json:"turns"`
 	Scores       []int  `json:"scores"`
-	Energy       []int  `json:"energy"`         // energy collected per player
+	Energy       []int  `json:"energy"` // energy collected per player
 	BotsAlive    []int  `json:"bots_alive"`
-	Crashed      []bool `json:"crashed"`        // per-player: true if bot was marked crashed during match
-	CombatDeaths []int  `json:"combat_deaths"`  // bots killed in combat per player (focus-fire)
+	Crashed      []bool `json:"crashed"`       // per-player: true if bot was marked crashed during match
+	CombatDeaths []int  `json:"combat_deaths"` // bots killed in combat per player (focus-fire)
 }
 
 // BotInterface defines the interface for bot decision-making.
