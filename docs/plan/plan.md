@@ -454,15 +454,20 @@ Each turn executes in a strict, deterministic sequence:
 3.  Validate all responses against schema
 4.  Phase: MOVE        — execute valid movement orders
 5.  Phase: COMBAT      — resolve focus-fire algorithm, remove dead bots
-6.  Phase: CAPTURE     — enemy bots on undefended cores raze them
+6.  Phase: ZONE        — shrinking zone kills bots outside the safe radius
+                          (Forces bots into contact range for combat engagement.
+                          Zone starts at a configured turn and shrinks over time
+                          until reaching a minimum radius. Bots outside the zone
+                          are killed immediately, creating pressure to fight.)
+7.  Phase: CAPTURE     — enemy bots on undefended cores raze them
                           (A core is undefended if no bot belonging to
                           the core's owner occupies the core's tile after
                           the attack phase resolves. An enemy bot on an
                           undefended core's tile razes it.)
-7.  Phase: COLLECT     — uncontested energy adjacent to bots is collected
-8.  Phase: SPAWN       — players with ≥3 energy spawn bots at eligible cores
-9.  Phase: ENERGY_TICK — energy nodes on their interval produce new energy
-10. Phase: ENDGAME     — check win conditions
+8.  Phase: COLLECT     — uncontested energy adjacent to bots is collected
+9.  Phase: SPAWN       — players with ≥3 energy spawn bots at eligible cores
+10. Phase: ENERGY_TICK — energy nodes on their interval produce new energy
+11. Phase: ENDGAME     — check win conditions
 11. Record turn state for replay
 ```
 
