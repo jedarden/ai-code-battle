@@ -187,7 +187,7 @@ func TestGridForPlayers(t *testing.T) {
 		minArea int
 		maxArea int
 	}{
-		{2, 3000, 4200},   // 60x60 = 3600
+		{2, 1200, 2000},   // 40x40 = 1600 (reduced from 60x60 for combat density)
 		{3, 4000, 6000},
 		{4, 5000, 8500},
 		{6, 7000, 12000},

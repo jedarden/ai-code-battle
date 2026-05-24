@@ -348,11 +348,12 @@ func (m *Matchmaker) selectMapLRU(ctx context.Context, playerCount int, rng *ran
 	return fmt.Sprintf("map_%d", seed%100000), rows, cols, seed
 }
 
-// gridForPlayers returns default grid dimensions for a given player count,
-// mirroring the formula in engine.ConfigForPlayers (~2000 tiles per player).
+// gridForPlayers returns default grid dimensions for a given player count.
+// For 2-player matches, uses 40x40 (down from 60x60) to increase encounter frequency.
+// For 3+ players, targets ~2000 tiles per player.
 func gridForPlayers(n int) (rows, cols int) {
 	if n <= 2 {
-		return 60, 60
+		return 40, 40
 	}
 	side := int(math.Sqrt(float64(2000 * n)))
 	if side < 40 {

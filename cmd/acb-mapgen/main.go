@@ -39,13 +39,14 @@ type Core struct {
 func main() {
 	// Command-line flags
 	players := flag.Int("players", 2, "Number of players (2, 3, 4, or 6)")
-	rows := flag.Int("rows", 60, "Grid rows")
-	cols := flag.Int("cols", 60, "Grid columns")
+	rows := flag.Int("rows", 40, "Grid rows")
+	cols := flag.Int("cols", 40, "Grid columns")
 	wallDensity := flag.Float64("wall-density", 0.15, "Wall density (0.0-0.3)")
 	energyNodes := flag.Int("energy-nodes", 20, "Energy nodes")
 	seed := flag.Int64("seed", time.Now().UnixNano(), "Random seed")
 	output := flag.String("output", "", "Output file (default: stdout)")
 	maxAttempts := flag.Int("max-attempts", 100, "Max attempts to generate a connected map")
+	skirmish := flag.Bool("skirmish", false, "Generate a skirmish map (32x32, higher density)")
 	help := flag.Bool("help", false, "Show help")
 
 	flag.Usage = func() {
@@ -58,6 +59,8 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "  3 players: 120° rotational\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  4 players: 90° rotational\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  6 players: 60° rotational\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Map presets:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  -skirmish    Small dense map (32x32, 0.20 wall density, 15 energy)\n\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "Options:\n")
 		flag.PrintDefaults()
 	}
@@ -67,6 +70,14 @@ func main() {
 	if *help {
 		flag.Usage()
 		os.Exit(0)
+	}
+
+	// Apply skirmish preset if requested
+	if *skirmish {
+		*rows = 32
+		*cols = 32
+		*wallDensity = 0.20
+		*energyNodes = 15
 	}
 
 	// Validate player count
@@ -91,8 +102,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Generate map ID
-	m.ID = generateMapID(rng)
+	// Generate map ID with skirmish prefix if applicable
+	if *skirmish {
+		m.ID = generateMapIDWithPrefix(rng, "skirmish")
+	} else {
+		m.ID = generateMapID(rng)
+	}
 	m.Generated = time.Now().UTC()
 
 	// Output
@@ -114,12 +129,16 @@ func main() {
 }
 
 func generateMapID(rng *rand.Rand) string {
+	return generateMapIDWithPrefix(rng, "map")
+}
+
+func generateMapIDWithPrefix(rng *rand.Rand, prefix string) string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, 8)
 	for i := range b {
 		b[i] = chars[rng.Intn(len(chars))]
 	}
-	return "map_" + string(b)
+	return prefix + "_" + string(b)
 }
 
 func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes int, rng *rand.Rand) *Map {

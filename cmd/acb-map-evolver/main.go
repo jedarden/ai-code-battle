@@ -1047,9 +1047,11 @@ func (e *MapEvolver) saveMap(ctx context.Context, m *Map) error {
 }
 
 // gridForPlayers returns default grid dimensions for a given player count.
+// For 2-player matches, uses 40x40 (down from 60x60) to increase encounter frequency.
+// For 3+ players, targets ~2000 tiles per player.
 func gridForPlayers(n int) (rows, cols int) {
 	if n <= 2 {
-		return 60, 60
+		return 40, 40
 	}
 	side := int(math.Sqrt(float64(2000 * n)))
 	if side < 40 {

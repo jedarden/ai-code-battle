@@ -182,8 +182,8 @@ type Config struct {
 // DefaultConfig returns the default game configuration.
 func DefaultConfig() Config {
 	return Config{
-		Rows:             60,
-		Cols:             60,
+		Rows:             40,
+		Cols:             40,
 		MaxTurns:         500,
 		VisionRadius2:    49, // ~7 tiles
 		AttackRadius2:    5,  // ~2.24 tiles
@@ -199,7 +199,8 @@ func DefaultConfig() Config {
 }
 
 // ConfigForPlayers returns a config scaled for the given player count and cores per player.
-// Uses ~1800-2000 tiles per player (following aichallenge Ants sizing).
+// For 2 players, uses 40x40 (800 tiles per player) to increase encounter frequency.
+// For 3+ players, uses ~2000 tiles per player (following aichallenge Ants sizing).
 func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	cfg := DefaultConfig()
 	cfg.CoresPerPlayer = coresPerPlayer
@@ -207,14 +208,19 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 		cfg.CoresPerPlayer = 1
 	}
 
-	// Scale grid: ~2000 tiles per player, square grid
-	areaPerPlayer := 2000
+	// Scale grid: smaller maps for 2-player, ~2000 tiles/player for 3+ players
+	var areaPerPlayer int
+	if numPlayers == 2 {
+		areaPerPlayer = 800 // 40x40 for 2 players
+	} else {
+		areaPerPlayer = 2000
+	}
 	totalArea := areaPerPlayer * numPlayers
 	side := int(math.Sqrt(float64(totalArea)))
 
 	// Clamp to valid range
-	if side < 40 {
-		side = 40
+	if side < 30 {
+		side = 30
 	}
 	if side > 200 {
 		side = 200
