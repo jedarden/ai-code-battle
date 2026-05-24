@@ -384,8 +384,8 @@ Energy is the sole resource. It is used to spawn new bots.
 Combat uses a **focus fire** algorithm inspired by the aichallenge ants system.
 This rewards formations and positioning over raw unit count.
 
-**Attack radius:** squared Euclidean distance ≤ `attack_radius2` (default: **5**,
-meaning ~2.24 tiles — includes cardinal and diagonal neighbors plus one more ring).
+**Attack radius:** squared Euclidean distance ≤ `attack_radius2` (default: **12**,
+meaning ~3.46 tiles — includes cardinal and diagonal neighbors plus two more rings).
 
 **Resolution (simultaneous):**
 
@@ -537,7 +537,7 @@ Engine                          Bot
     "cols": 60,
     "max_turns": 500,
     "vision_radius2": 49,
-    "attack_radius2": 5,
+    "attack_radius2": 12,
     "spawn_cost": 3,
     "energy_interval": 10
   },
@@ -1085,7 +1085,7 @@ client-side reconstruction of every game turn.
     "cols": 60,
     "max_turns": 500,
     "vision_radius2": 49,
-    "attack_radius2": 5,
+    "attack_radius2": 12,
     "spawn_cost": 3,
     "energy_interval": 10
   },
@@ -4051,7 +4051,7 @@ Seasonal changes are just different values:
 ```
 
 Bots that read `config.attack_radius2` adapt automatically. Bots that
-hardcode `attack_radius2 = 5` still work but use stale assumptions.
+hardcode `attack_radius2 = 12` still work but use stale assumptions.
 `special_tiles` is a new array listing any non-standard tile types in
 play — old bots that don't read it are unaffected.
 
