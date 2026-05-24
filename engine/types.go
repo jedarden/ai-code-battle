@@ -186,7 +186,7 @@ func DefaultConfig() Config {
 		Cols:               40,
 		MaxTurns:           500,
 		VisionRadius2:      49, // ~7 tiles
-		AttackRadius2:      5,  // ~2.24 tiles
+		AttackRadius2:      9,  // 3 tiles (increased from 5 for better combat trigger)
 		SpawnCost:          3,
 		EnergyInterval:     10,
 		CoresPerPlayer:     2,
@@ -208,12 +208,12 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 		cfg.CoresPerPlayer = 1
 	}
 
-	// Scale grid: smaller maps for 2-player, ~2000 tiles/player for 3+ players
+	// Scale grid: smaller maps for 2-player, ~1000 tiles/player for 3+ (high combat density)
 	var areaPerPlayer int
 	if numPlayers == 2 {
 		areaPerPlayer = 800 // 40x40 for 2 players
 	} else {
-		areaPerPlayer = 2000
+		areaPerPlayer = 1000 // Reduced from 2000 to force more contact
 	}
 	totalArea := areaPerPlayer * numPlayers
 	side := int(math.Sqrt(float64(totalArea)))
