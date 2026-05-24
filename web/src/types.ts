@@ -25,6 +25,7 @@ export interface MatchResult {
   scores: number[];
   energy: number[];
   bots_alive: number[];
+  combat_deaths?: number[];
 }
 
 export interface ReplayPlayer {

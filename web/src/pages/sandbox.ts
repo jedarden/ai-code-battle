@@ -870,9 +870,10 @@ function loadMonaco(): Promise<any> {
 function formatResult(result: any, replay: any, _numPlayers: number): string {
   const winnerName = result.winner >= 0 ? replay.players[result.winner].name : 'Draw';
   const winnerClass = result.winner === 0 ? 'win' : result.winner >= 0 ? 'loss' : 'draw';
-  const scoreRows = replay.players.map((p: any, i: number) =>
-    `<div class="result-player"><span class="player-dot" style="background:${PLAYER_COLORS[i % PLAYER_COLORS.length]}"></span>${p.name}: ${result.scores[i]} pts, ${result.bots_alive[i]} bots alive</div>`
-  ).join('');
+  const scoreRows = replay.players.map((p: any, i: number) => {
+    const combatDeaths = result.combat_deaths?.[i] ?? 0;
+    return `<div class="result-player"><span class="player-dot" style="background:${PLAYER_COLORS[i % PLAYER_COLORS.length]}"></span>${p.name}: ${result.scores[i]} pts, ${result.bots_alive[i]} bots alive, ${combatDeaths} combat kills</div>`;
+  }).join('');
   return `
     <div class="result-banner ${winnerClass}">
       <strong>${result.winner >= 0 ? winnerName + ' wins!' : 'Draw'}</strong>
