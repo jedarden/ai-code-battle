@@ -242,7 +242,7 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 		cfg.ZoneStartTurn = 20     // Start shrinking early (vs default 50)
 		cfg.ZoneShrinkInterval = 3 // Shrink every 3 turns (vs default 5)
 		cfg.ZoneShrinkStep = 3     // Shrink 3 tiles per interval (1 tile/turn)
-		cfg.ZoneMinRadius = 15     // Preserve more population for combat
+		cfg.ZoneMinRadius = 12     // Balance proximity and population (50% combat_death observed)
 	}
 
 	return cfg
