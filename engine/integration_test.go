@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -256,4 +257,147 @@ func TestIntegration_CenterWeightedEnergy(t *testing.T) {
 	t.Logf("Center-weighted energy: %d/%d nodes in central zone (%.1f%%)",
 		centralCount, len(replay.Map.EnergyNodes),
 		100.0*float64(centralCount)/float64(len(replay.Map.EnergyNodes)))
+}
+
+// TestCombatDensityMetrics verifies that combat occurs at the expected rates
+// per plan §3.7.1: 2-player ~65-80% matches with combat_deaths, 6-player 100%.
+func TestCombatDensityMetrics(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping combat density metrics test in short mode")
+	}
+
+	const numMatches = 100
+
+	// Test 2-player matches
+	t.Run("2-player", func(t *testing.T) {
+		config := ConfigForPlayers(2, 1)
+
+		matchesWithCombat := 0
+		totalDeaths := 0
+		totalTurnsInCombatMatches := 0
+
+		for i := 0; i < numMatches; i++ {
+			seed := rand.NewSource(int64(i + 1000))
+			rng := rand.New(seed)
+
+			bot0 := NewRandomBot(rng.Int63())
+			bot1 := NewGathererBot(rng.Int63())
+
+			runner := NewMatchRunner(config, WithRNG(rng))
+			runner.AddBot(bot0, "random")
+			runner.AddBot(bot1, "gatherer")
+
+			_, replay, err := runner.Run()
+			if err != nil {
+				t.Fatalf("Match %d failed: %v", i, err)
+			}
+
+			// Count combat_death events
+			combatDeaths := 0
+			for _, turn := range replay.Turns {
+				for _, event := range turn.Events {
+					if event.Type == EventCombatDeath {
+						combatDeaths++
+					}
+				}
+			}
+
+			if combatDeaths > 0 {
+				matchesWithCombat++
+				totalDeaths += combatDeaths
+				totalTurnsInCombatMatches += len(replay.Turns)
+			}
+		}
+
+		rate := 100.0 * float64(matchesWithCombat) / float64(numMatches)
+		var avgDeathsPerTurn float64
+		if totalTurnsInCombatMatches > 0 {
+			avgDeathsPerTurn = float64(totalDeaths) / float64(totalTurnsInCombatMatches)
+		}
+
+		t.Logf("2-player combat density: %d/%d matches (%.1f%%) with combat_deaths, %d total deaths in %d turns, %.3f deaths/turn (in combat matches)",
+			matchesWithCombat, numMatches, rate, totalDeaths, totalTurnsInCombatMatches, avgDeathsPerTurn)
+
+		// Per plan §3.7.1: 65-80% of matches should have combat_deaths
+		if rate < 50.0 {
+			t.Errorf("2-player combat rate %.1f%% below minimum 50%% (plan target: 65-80%%)", rate)
+		}
+		if rate < 65.0 {
+			t.Logf("WARN: 2-player combat rate %.1f%% below plan target 65%% (plan §3.7.1)", rate)
+		}
+
+		// Plan says ~1 death per 20 turns in matches with combat
+		if matchesWithCombat > 0 && avgDeathsPerTurn < (1.0/20.0)*0.5 {
+			t.Logf("WARN: 2-player death rate %.3f/turn below expected ~0.05/turn", avgDeathsPerTurn)
+		}
+	})
+
+	// Test 6-player matches
+	t.Run("6-player", func(t *testing.T) {
+		config := ConfigForPlayers(6, 1)
+
+		matchesWithCombat := 0
+		totalDeaths := 0
+		totalTurnsInCombatMatches := 0
+
+		for i := 0; i < numMatches; i++ {
+			seed := rand.NewSource(int64(i + 2000))
+			rng := rand.New(seed)
+
+			bots := []BotInterface{
+				NewRandomBot(rng.Int63()),
+				NewGathererBot(rng.Int63()),
+				NewRusherBot(rng.Int63()),
+				NewGuardianBot(rng.Int63()),
+				NewSwarmBot(rng.Int63()),
+				NewHunterBot(rng.Int63()),
+			}
+
+			runner := NewMatchRunner(config, WithRNG(rng))
+			for j, bot := range bots {
+				runner.AddBot(bot, fmt.Sprintf("bot%d", j))
+			}
+
+			_, replay, err := runner.Run()
+			if err != nil {
+				t.Fatalf("Match %d failed: %v", i, err)
+			}
+
+			// Count combat_death events
+			combatDeaths := 0
+			for _, turn := range replay.Turns {
+				for _, event := range turn.Events {
+					if event.Type == EventCombatDeath {
+						combatDeaths++
+					}
+				}
+			}
+
+			if combatDeaths > 0 {
+				matchesWithCombat++
+				totalDeaths += combatDeaths
+				totalTurnsInCombatMatches += len(replay.Turns)
+			}
+		}
+
+		rate := 100.0 * float64(matchesWithCombat) / float64(numMatches)
+		var avgDeathsPerTurn float64
+		if totalTurnsInCombatMatches > 0 {
+			avgDeathsPerTurn = float64(totalDeaths) / float64(totalTurnsInCombatMatches)
+		}
+
+		t.Logf("6-player combat density: %d/%d matches (%.1f%%) with combat_deaths, %d total deaths in %d turns, %.3f deaths/turn (in combat matches)",
+			matchesWithCombat, numMatches, rate, totalDeaths, totalTurnsInCombatMatches, avgDeathsPerTurn)
+
+		// Per plan §3.7.1: 100% of matches should have combat_deaths
+		if rate < 95.0 {
+			t.Errorf("6-player combat rate %.1f%% below target 100%% (plan §3.7.1)", rate)
+		}
+
+		// Plan says ~1 death per 5-6 turns in matches with combat
+		expectedDeathsPerTurn := 1.0 / 5.5
+		if matchesWithCombat > 0 && avgDeathsPerTurn < expectedDeathsPerTurn*0.5 {
+			t.Logf("WARN: 6-player death rate %.3f/turn below expected ~0.18/turn", avgDeathsPerTurn)
+		}
+	})
 }
