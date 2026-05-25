@@ -1384,9 +1384,13 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   prevCriticalBtn.addEventListener('click', navigateToPrevCriticalMoment);
   nextCriticalBtn.addEventListener('click', navigateToNextCriticalMoment);
 
-  function showLoadError(msg: string): void {
+  function showLoadError(msg: string, url?: string): void {
     noReplayDiv.style.display = '';
-    noReplayDiv.innerHTML = `<span style="color:#f87171">${escapeHtml(String(msg))}</span>`;
+    let displayMsg = msg;
+    if (url) {
+      displayMsg += `<br><small style="color:#9ca3af">${escapeHtml(url)}</small></small>`;
+    }
+    noReplayDiv.innerHTML = `<span style="color:#f87171">${displayMsg}</span>`;
   }
 
   loadUrlBtn.addEventListener('click', async () => {
@@ -1394,11 +1398,25 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     if (!url) return;
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('HTTP_404');
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
       const replay = await response.json() as Replay;
       loadReplay(replay);
     } catch (err) {
-      showLoadError('Failed to load replay from URL: ' + err);
+      const errMsg = String(err);
+      if (errMsg.includes('HTTP_404')) {
+        showLoadError('This replay is not available yet — it may not have been uploaded.', url);
+      } else if (errMsg.includes('HTTP')) {
+        showLoadError(`Could not load this replay: ${errMsg}`, url);
+      } else if (errMsg.includes('JSON')) {
+        showLoadError('Could not parse replay: invalid JSON format', url);
+      } else {
+        showLoadError(`Could not load this replay: ${escapeHtml(errMsg)}`, url);
+      }
     }
   });
 
