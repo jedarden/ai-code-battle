@@ -262,11 +262,11 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	// combat as zone shrinks, achieving target density: ~1 death per 20 turns for 2-player.
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.28 // ~14 tiles apart (2.3x attack radius of 6)
-		secondaryRadius = 0.22
+		primaryRadius = 0.20 // ~8 tiles apart (1.3x attack radius of 6)
+		secondaryRadius = 0.16
 	} else {
-		primaryRadius = 0.25 // ~16 tiles apart (4.6x attack radius of 3.5)
-		secondaryRadius = 0.20
+		primaryRadius = 0.10 // ~5 tiles apart (1.4x attack radius of 3.5)
+		secondaryRadius = 0.08
 	}
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
