@@ -258,14 +258,14 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	// Spawn radius balances zone forcing function with bot survival.
 	// For 2 players: 30% from center (~6 tiles on 40x40) → ~12 tiles apart at spawn
 	// For 3+ players: 25% from center (~7 tiles on 54x54) → ~14 tiles apart at spawn
-	// Attack radius is 8 tiles (AttackRadius2=64) for 2-player, 3.5 tiles (12) for 3+; zone starts at turn 1 (2p) / turn 15 (3p+).
+	// Attack radius is 6 tiles (AttackRadius2=36) for 2-player, 3.5 tiles (12) for 3+; zone starts at turn 20 (2p) / turn 15 (3p+).
 	// Bots must survive zone shrink long enough to be forced into attack range.
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.30 // Zone starts at turn 1, bots survive until turn 7
+		primaryRadius = 0.30 // Zone starts at turn 20, bots survive until turn ~26
 		secondaryRadius = 0.20
 	} else {
-		primaryRadius = 0.25 // Zone starts at turn 15, bots survive until turn 8
+		primaryRadius = 0.25 // Zone starts at turn 15, bots survive until turn ~21
 		secondaryRadius = 0.15
 	}
 	halfRows := float64(centerRow)

@@ -384,8 +384,15 @@ Energy is the sole resource. It is used to spawn new bots.
 Combat uses a **focus fire** algorithm inspired by the aichallenge ants system.
 This rewards formations and positioning over raw unit count.
 
-**Attack radius:** squared Euclidean distance ≤ `attack_radius2` (default: **12**,
-meaning ~3.46 tiles — includes cardinal and diagonal neighbors plus two more rings).
+**Attack radius:** squared Euclidean distance ≤ `attack_radius2`. Tuned per player count
+to achieve target combat density (65-80% for 2-player, 100% for 3+):
+
+| Player Count | `attack_radius2` | Distance | Rationale |
+|--------------|-----------------|----------|-----------|
+| 2-player | 36 | ~6 tiles | Larger radius compensates for fewer opponents and higher movement variance |
+| 3+ player | 12 | ~3.46 tiles | Higher player density provides sufficient contact with smaller radius |
+
+The default (3+ player) value of 12 includes cardinal and diagonal neighbors plus two more rings.
 
 **Resolution (simultaneous):**
 
