@@ -9,8 +9,12 @@ import (
 // Config holds all configuration for the enrichment service.
 type Config struct {
 	// Database
-	DatabaseURL  string
-	DatabaseName string
+	PostgresHost     string
+	PostgresPort     int
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDatabase string
+	DatabaseName     string
 
 	// LLM
 	LLMBaseURL     string
@@ -47,9 +51,14 @@ type Config struct {
 
 // LoadConfig reads configuration from environment variables.
 func LoadConfig() Config {
-	return Config{
-		DatabaseURL:  envOr("ACB_DATABASE_URL", "postgres://localhost:5432/acb?sslmode=disable"),
-		DatabaseName: envOr("ACB_DATABASE_NAME", "acb"),
+	postgresPort := envInt("ACB_POSTGRES_PORT", 5432)
+	cfg := Config{
+		PostgresHost:     envOr("ACB_POSTGRES_HOST", "localhost"),
+		PostgresPort:     postgresPort,
+		PostgresUser:     envOr("ACB_POSTGRES_USER", "acb"),
+		PostgresPassword: os.Getenv("ACB_POSTGRES_PASSWORD"),
+		PostgresDatabase: envOr("ACB_POSTGRES_DATABASE", "ai_code_battle"),
+		DatabaseName:     envOr("ACB_DATABASE_NAME", "ai_code_battle"),
 
 		LLMBaseURL:     envOr("ACB_LLM_BASE_URL", "https://api.openai.com/v1"),
 		LLMAPIKey:      os.Getenv("ACB_LLM_API_KEY"),
@@ -78,6 +87,13 @@ func LoadConfig() Config {
 		CycleTimeout:  envDuration("ACB_ENRICHMENT_TIMEOUT", 25*time.Minute),
 		MaxLifetime:   envDuration("ACB_ENRICHMENT_MAX_LIFETIME", 4*time.Hour),
 	}
+	return cfg
+}
+
+// DatabaseURL returns the PostgreSQL connection string.
+func (c *Config) DatabaseURL() string {
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		c.PostgresHost, c.PostgresPort, c.PostgresUser, c.PostgresPassword, c.PostgresDatabase)
 }
 
 func envOr(key, fallback string) string {

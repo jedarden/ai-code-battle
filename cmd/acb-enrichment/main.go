@@ -25,7 +25,7 @@ func main() {
 	cfg := LoadConfig()
 
 	// Connect to PostgreSQL
-	db, err := sql.Open("postgres", cfg.DatabaseURL)
+	db, err := sql.Open("postgres", cfg.DatabaseURL())
 	if err != nil {
 		slog.Error("Failed to connect to PostgreSQL", "error", err)
 		os.Exit(1)
