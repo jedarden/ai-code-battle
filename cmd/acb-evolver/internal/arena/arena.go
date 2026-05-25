@@ -283,7 +283,7 @@ func (a *Arena) runMatch(ctx context.Context, candidateURL string, opp BotRecord
 
 	matchID := fmt.Sprintf("eval-%d", time.Now().UnixNano())
 	mr := engine.NewMatchRunner(
-		engine.DefaultConfig(),
+		engine.ConfigForPlayers(2, 2), // 2-player match, 2 cores per player per plan §3.4
 		engine.WithTimeout(a.cfg.BotTimeout),
 		engine.WithRNG(rand.New(rand.NewSource(a.rng.Int63()))),
 	)
