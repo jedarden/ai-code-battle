@@ -3,7 +3,7 @@
 // below-the-fold sections, keyboard-accessible disclose toggles.
 // §14.10: bot profile card generation and sharing
 
-import { fetchBotProfile, type BotProfile } from '../api-types';
+import { fetchBotProfile, fetchRivalries, type BotProfile, type RivalryEntry } from '../api-types';
 import { updateOGTags, getBotProfileOGTags, resetOGTags } from '../og-tags';
 import { initLazySections, lazySection } from '../lib/lazy-section';
 import { downloadBotCard } from '../components/bot-card';
@@ -28,7 +28,10 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
   if (!content) return;
 
   try {
-    const profile = await fetchBotProfile(botId);
+    const [profile, rivalriesData] = await Promise.all([
+      fetchBotProfile(botId),
+      fetchRivalries().catch(() => ({ updated_at: '', rivalries: [] })),
+    ]);
     if (breadcrumbName) breadcrumbName.textContent = profile.name;
 
     updateOGTags(getBotProfileOGTags({
@@ -40,7 +43,7 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
       evolved: profile.evolved,
     }));
 
-    renderProfile(content, profile);
+    renderProfile(content, profile, rivalriesData.rivalries);
   } catch (error) {
     resetOGTags();
     content.innerHTML = `
@@ -53,7 +56,7 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
   }
 }
 
-function renderProfile(container: HTMLElement, profile: BotProfile): void {
+function renderProfile(container: HTMLElement, profile: BotProfile, rivalries: RivalryEntry[] = []): void {
   const losses = profile.matches_played - profile.matches_won;
 
   container.innerHTML = `
@@ -130,6 +133,9 @@ function renderProfile(container: HTMLElement, profile: BotProfile): void {
         </div>
       </div>
 
+      <!-- Expandable: Rivals (collapsed by default) -->
+      ${renderRivalsSection(rivalries, profile.id)}
+
       <!-- Lazy-rendered: Recent Matches (below the fold) -->
       ${lazySection(
         'history',
@@ -199,6 +205,50 @@ function renderMatchItem(match: BotProfile['recent_matches'][number]): string {
       <span class="match-score">${match.participants.map(p => p.score).join(' - ')}</span>
       ${enrichedBadge}
       <a href="#/watch/replay?url=/r2/replays/${match.id}.json.gz" class="btn small">Watch</a>
+    </div>
+  `;
+}
+
+function renderRivalsSection(rivalries: RivalryEntry[], botId: string): string {
+  // Filter rivalries to only those involving this bot
+  const botRivalries = rivalries.filter(r => r.bot_a.id === botId || r.bot_b.id === botId);
+
+  if (botRivalries.length === 0) {
+    return '';
+  }
+
+  const rivalryCards = botRivalries.map(r => {
+    const isBotA = r.bot_a.id === botId;
+    const opponent = isBotA ? r.bot_b : r.bot_a;
+    const opponentWins = isBotA ? r.record.b_wins : r.record.a_wins;
+    const botWins = isBotA ? r.record.a_wins : r.record.b_wins;
+    const total = r.record.a_wins + r.record.b_wins + r.record.draws;
+    const winPct = total > 0 ? ((botWins / total) * 100).toFixed(0) : '50';
+
+    return `
+      <div class="rivalry-item">
+        <a href="#/bot/${opponent.id}" class="rivalry-opponent">${escapeHtml(opponent.name)}</a>
+        <div class="rivalry-stats">
+          <span class="rivalry-record">${botWins}-${opponentWins}${r.record.draws > 0 ? `-${r.record.draws}` : ''}</span>
+          <span class="rivalry-winrate">${winPct}% win rate</span>
+        </div>
+        ${r.closest_match ? `<a href="#/watch/replay?url=/r2/replays/${r.closest_match}.json.gz" class="btn small secondary">Watch closest match</a>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="profile-section rivals expandable-section" data-section="rivals">
+      <button class="section-toggle" type="button" aria-expanded="false" aria-controls="profile-rivals-content">
+        <h2>Rivals</h2>
+        <span class="section-toggle-icon" aria-hidden="true">▸</span>
+      </button>
+      <div class="section-content" id="profile-rivals-content">
+        <div class="rivalry-list">
+          ${rivalryCards}
+        </div>
+        <a href="#/rivalries" class="btn small secondary">View all rivalries</a>
+      </div>
     </div>
   `;
 }

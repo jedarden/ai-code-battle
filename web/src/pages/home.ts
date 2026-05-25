@@ -9,8 +9,10 @@ import {
   fetchSeasonIndex,
   fetchMatchIndex,
   fetchEnrichedIndex,
+  fetchRivalries,
   type Season,
   type MatchSummary,
+  type RivalryEntry,
 } from '../api-types';
 import { initLazySections, lazySection } from '../lib/lazy-section';
 // Featured replay selection: prefer enriched/AI-commentary matches, then most recent
@@ -96,6 +98,29 @@ function renderPlaylistCards(playlists: any[]): string {
       </a>`).join('');
 }
 
+function renderRivalryCards(rivalries: RivalryEntry[]): string {
+  return rivalries.slice(0, 3).map((r: RivalryEntry) => {
+    const total = r.record.a_wins + r.record.b_wins + r.record.draws;
+    const pctA = total > 0 ? (r.record.a_wins / total) * 100 : 50;
+    const pctD = total > 0 ? (r.record.draws / total) * 100 : 0;
+    const pctB = 100 - pctA - pctD;
+    return `
+      <a href="#/rivalries" class="home-rivalry-card">
+        <div class="home-rivalry-matchup">
+          <span class="home-rivalry-bot">${esc(r.bot_a.name)}</span>
+          <span class="home-rivalry-vs">vs</span>
+          <span class="home-rivalry-bot">${esc(r.bot_b.name)}</span>
+        </div>
+        <div class="home-rivalry-bar">
+          <div class="home-rivalry-seg seg-a" style="width:${pctA.toFixed(1)}%"></div>
+          <div class="home-rivalry-seg seg-draw" style="width:${pctD.toFixed(1)}%"></div>
+          <div class="home-rivalry-seg seg-b" style="width:${pctB.toFixed(1)}%"></div>
+        </div>
+        <div class="home-rivalry-record">${r.record.a_wins}-${r.record.b_wins}${r.record.draws > 0 ? `-${r.record.draws}` : ''}</div>
+      </a>`;
+  }).join('');
+}
+
 export async function renderHomePage(): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
@@ -108,6 +133,7 @@ export async function renderHomePage(): Promise<void> {
     evolutionMeta,
     seasonData,
     matchesData,
+    rivalriesData,
   ] = await Promise.all([
     fetchLeaderboard().catch(() => ({ updated_at: '', entries: [] })),
     fetchBlogIndex().catch(() => ({ updated_at: '', posts: [] })),
@@ -131,6 +157,7 @@ export async function renderHomePage(): Promise<void> {
       matches: [],
       pagination: { page: 1, per_page: 50, total: 0 },
     })),
+    fetchRivalries().catch(() => ({ updated_at: '', rivalries: [] })),
   ]);
 
   const top5 = (leaderboardData.entries || []).slice(0, 5);
@@ -242,6 +269,16 @@ export async function renderHomePage(): Promise<void> {
       <a href="#/blog" class="btn small secondary">All stories &rarr;</a>
     </div>
   </section>
+
+  <!-- Top Rivalries -->
+  ${(rivalriesData.rivalries || []).length > 0 ? `
+  <section class="home-rivalries">
+    <h2>Top Rivalries</h2>
+    <div class="home-rivalry-grid">
+      ${renderRivalryCards(rivalriesData.rivalries)}
+    </div>
+    <a href="#/rivalries" class="btn small secondary">All rivalries &rarr;</a>
+  </section>` : ''}
 
   ${playlistsHtml}
   ${seasonHtml}
@@ -502,6 +539,79 @@ export async function renderHomePage(): Promise<void> {
   color: var(--text-muted);
   text-align: center;
   padding: 16px 0;
+}
+
+/* Rivalries section */
+.home-rivalries {
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.home-rivalries h2 {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+.home-rivalry-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.home-rivalry-card {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 12px;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid var(--border);
+}
+.home-rivalry-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-color: var(--accent);
+}
+.home-rivalry-matchup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.home-rivalry-bot {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-rivalry-vs {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.home-rivalry-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.home-rivalry-seg {
+  height: 100%;
+}
+.home-rivalry-seg.seg-a { background: #3b82f6; }
+.home-rivalry-seg.seg-b { background: #ef4444; }
+.home-rivalry-seg.seg-draw { background: #94a3b8; }
+.home-rivalry-record {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-weight: 600;
 }
 
 /* Responsive — phone (<640px) */

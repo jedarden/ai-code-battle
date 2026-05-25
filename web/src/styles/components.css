@@ -1350,3 +1350,45 @@ code {
   margin-top: var(--space-sm);
   width: 100%;
 }
+
+/* Rivalry section */
+.rivalry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.rivalry-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.rivalry-opponent {
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.rivalry-opponent:hover {
+  color: var(--accent);
+}
+
+.rivalry-stats {
+  display: flex;
+  gap: var(--space-md);
+  font-size: 0.875rem;
+}
+
+.rivalry-record {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.rivalry-winrate {
+  color: var(--text-muted);
+}
