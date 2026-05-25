@@ -242,13 +242,13 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	if numPlayers == 2 {
 		cfg.ZoneStartTurn = 10     // Per plan §3.7.1 to force combat before bots can spread
 		cfg.ZoneShrinkInterval = 1 // Per plan §3.7.1
-		cfg.ZoneShrinkStep = 1     // Zone shrinks at same rate as bot movement (1 tile/turn)
+		cfg.ZoneShrinkStep = 2     // Per plan §3.7.1: 2 tiles per step forces engagement
 		cfg.ZoneMinRadius = 2      // Per plan §3.7.1: 2-player min radius
 		cfg.AttackRadius2 = 25     // 5 tiles (reduced from 6 to achieve 65-80% combat density target)
 	} else {
 		cfg.ZoneStartTurn = 10     // Per plan §3.7.1
 		cfg.ZoneShrinkInterval = 1 // Per plan §3.7.1
-		cfg.ZoneShrinkStep = 1     // Zone shrinks at same rate as bot movement (1 tile/turn)
+		cfg.ZoneShrinkStep = 2     // Per plan §3.7.1: 2 tiles per step forces engagement
 		cfg.ZoneMinRadius = 1      // Zone diameter (2) < attack radius (3.5), forces contact
 		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4 (3+ player)
 	}
