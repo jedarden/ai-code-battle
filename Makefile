@@ -1,6 +1,6 @@
 # AI Code Battle Makefile
 
-.PHONY: all build test clean map-library
+.PHONY: all build test clean map-library load-maps
 
 # Default target
 all: build
@@ -38,3 +38,12 @@ map-library:
 clean:
 	go clean ./...
 	rm -rf bin/
+
+# Build acb-maps-loader binary
+acb-maps-loader:
+	go build -o bin/acb-maps-loader ./cmd/acb-maps-loader
+
+# Load map library into database (requires DATABASE_URL or default postgres connection)
+load-maps: acb-maps-loader
+	@echo "Loading map library into database..."
+	@./bin/acb-maps-loader
