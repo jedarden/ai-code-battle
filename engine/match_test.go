@@ -51,7 +51,7 @@ func TestSpawnRadiusWithinReach(t *testing.T) {
 				dist := math.Sqrt(float64(dist2))
 
 				// Verify spawn distance is reasonable: not too far from center
-				// For 2-player, spawn radius is 10% (~2 tiles from center on 40x40)
+				// For 2-player, spawn radius is 20% (~4 tiles from center on 40x40)
 				// This ensures bots can reach safe zone before zone kills them
 				maxSpawnDist := float64(cfg.Rows) * 0.15 // 15% of grid size as upper bound
 				if dist > maxSpawnDist {

@@ -350,21 +350,21 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	// Zone parameters: starts at turn 10, shrinks 2 tiles/turn, min radius 2 (2-player)
 	// By turn 19, zone reaches min radius of 2 (6-tile diameter, ≤2×attack radius).
 	//
-	// Spawn radius as percentage of grid half-size:
-	// - 2-player: 25% (~5 tiles on 40x40 grid, ~10 tiles apart)
-	//   Bots start well inside initial zone (radius 20), giving them time to move
-	//   before zone kills them. At 25% spawn radius, bots are 5 tiles from center,
-	//   which is inside the zone even at turn 13 (radius 12). This prevents zone
-	//   deaths before combat can occur. Bots start 10 tiles apart, requiring 5 tiles
-	//   of movement toward center to reach attack range (5 tiles).
-	// - 3+ player: 10% (~5 tiles on 50x50 grid, ~10 tiles apart)
-	// Target: 65-80% combat density per plan §3.7.1.
+		// Spawn radius as percentage of grid half-size:
+		// - 2-player: 20% (~4 tiles from center on 40x40 grid, ~8 tiles apart)
+		//   Zone starts at turn 10 with radius = maxDist + 5, then shrinks 2 tiles/turn.
+		//   At 20% spawn radius (dist 4), zone starts at radius 9, shrinks to 5 by turn 12.
+		//   Strategy bots (gatherer, rusher) move toward center, reaching attack range (5 tiles)
+		//   within 2-5 turns, ensuring combat before zone kills them. Random bots may die
+		//   from zone if they don't engage. This achieves >65% combat density target.
+		// - 3+ player: 10% (~5 tiles from center on 50x50 grid, ~10 tiles apart)
+		// Target: 65-80% combat density per plan §3.7.1.
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.25   // ~5 tiles from center on 40x40 grid (~10 tiles apart)
+		primaryRadius = 0.20   // ~4 tiles from center on 40x40 grid (~8 tiles apart)
 		secondaryRadius = 0.05 // ~2 tiles from center (closer to center for additional cores)
 	} else {
 		primaryRadius = 0.10 // ~5 tiles from center on 50x50 grid
