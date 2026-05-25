@@ -119,12 +119,43 @@ func (gs *GameState) executeZone() {
 	}
 
 	// Check if zone should start
+	zoneJustStarted := false
 	if !gs.ZoneActive && gs.Turn >= gs.Config.ZoneStartTurn {
 		gs.ZoneActive = true
+		zoneJustStarted = true
+		// When zone starts, set radius to just contain all living bots
+		// This prevents bots from having time to spread out before zone pressure begins
+		gs.updateZoneRadiusToContainBots()
 	}
 
-	// Check if zone should shrink
-	if gs.ZoneActive && (gs.Turn-gs.Config.ZoneStartTurn)%gs.Config.ZoneShrinkInterval == 0 {
+	// Update zone center to midpoint of living bots (forces bots together)
+	// This is the key forcing function: zone shrinks around where bots actually are,
+	// not a fixed map center. Bots moving away from each other increases the zone
+	// size needed to contain them, but the zone shrinks anyway, forcing contact.
+	if gs.ZoneActive {
+		// Find all living bots and update zone center
+		var livingBots []*Bot
+		for _, b := range gs.Bots {
+			if b.Alive {
+				livingBots = append(livingBots, b)
+			}
+		}
+
+		if len(livingBots) > 0 {
+			var sumRow, sumCol int
+			for _, b := range livingBots {
+				sumRow += b.Position.Row
+				sumCol += b.Position.Col
+			}
+			gs.ZoneCenter = Position{
+				Row: sumRow / len(livingBots),
+				Col: sumCol / len(livingBots),
+			}
+		}
+	}
+
+	// Check if zone should shrink (skip the turn zone starts)
+	if gs.ZoneActive && !zoneJustStarted && (gs.Turn-gs.Config.ZoneStartTurn)%gs.Config.ZoneShrinkInterval == 0 {
 		if gs.ZoneRadius > gs.Config.ZoneMinRadius {
 			gs.ZoneRadius -= gs.Config.ZoneShrinkStep
 			if gs.ZoneRadius < gs.Config.ZoneMinRadius {
@@ -165,6 +196,50 @@ func (gs *GameState) executeZone() {
 				},
 			})
 		}
+	}
+}
+
+// updateZoneRadiusToContainBots sets the zone radius to the minimum value needed
+// to contain all living bots, plus a small margin.
+func (gs *GameState) updateZoneRadiusToContainBots() {
+	var livingBots []*Bot
+	for _, b := range gs.Bots {
+		if b.Alive {
+			livingBots = append(livingBots, b)
+		}
+	}
+
+	if len(livingBots) == 0 {
+		return
+	}
+
+	// Find the maximum distance from zone center to any bot
+	maxDist2 := 0
+	for _, b := range livingBots {
+		dist2 := gs.Grid.Distance2(b.Position, gs.ZoneCenter)
+		if dist2 > maxDist2 {
+			maxDist2 = dist2
+		}
+	}
+
+	// Set zone radius to contain all bots plus margin
+	// Start with a larger margin to give bots time to move toward each other
+	maxDist := int(sqrt(maxDist2))
+	gs.ZoneRadius = maxDist + 10 // Larger margin to give bots time to react
+}
+
+// sqrt returns the integer square root of n.
+func sqrt(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	x := n
+	for {
+		y := (x + n/x) / 2
+		if y >= x {
+			return x
+		}
+		x = y
 	}
 }
 
