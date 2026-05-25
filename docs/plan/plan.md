@@ -495,7 +495,7 @@ rather than pure energy farming. Zone parameters are tuned per player count:
 | ZoneStartTurn | 20 | 15 | Turn when zone begins shrinking |
 | ZoneShrinkInterval | 2 | 2 | Turns between shrink steps |
 | ZoneShrinkStep | 2 | 2 | Tiles to shrink each step |
-| ZoneMinRadius | 3 | 3 | Minimum zone radius (stops shrinking) |
+| ZoneMinRadius | 3 | 1 | Minimum zone radius (stops shrinking) |
 
 **Design rationale:**
 - **ZoneStartTurn**: Starts early enough to force combat before energy farming dominates,
@@ -505,8 +505,12 @@ rather than pure energy farming. Zone parameters are tuned per player count:
   being too chaotic.
 - **ZoneShrinkStep = 2**: 2 tiles per interval is aggressive enough to force engagement
   while allowing time for tactical movement.
-- **ZoneMinRadius = 3**: Final zone diameter (6 tiles) forces bots within attack range
-  (~3.5 tiles), ensuring combat occurs before the zone kills everyone.
+- **ZoneMinRadius = 3 (2-player)**: Final zone diameter (6 tiles) forces bots within attack
+  radius (6 tiles), ensuring combat occurs before the zone kills everyone.
+- **ZoneMinRadius = 1 (3+ player)**: Final zone diameter (2 tiles) is smaller than attack
+  radius (3.5 tiles), guaranteeing any two bots in the final zone are within attack range.
+  This is necessary because 3+ player maps have higher player density and a smaller attack
+  radius (3.5 tiles vs 6 tiles for 2-player).
 
 **Combat density metrics** (verified with local testing):
 - 2-player: ~65-80% of matches have combat_deaths; ~1 death per 20 turns
