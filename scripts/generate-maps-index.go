@@ -58,19 +58,19 @@ type MapIndexFile struct {
 
 // MapDetail represents maps/{map_id}.json
 type MapDetail struct {
-	MapID       string        `json:"map_id"`
-	PlayerCount int           `json:"player_count"`
-	Status      string        `json:"status"`
-	Engagement  float64       `json:"engagement"`
-	WallDensity float64       `json:"wall_density"`
-	EnergyCount int           `json:"energy_count"`
-	GridWidth   int           `json:"grid_width"`
-	GridHeight  int           `json:"grid_height"`
-	NetVotes    int           `json:"net_votes"`
-	CreatedAt   string        `json:"created_at"`
-	Walls       []Position    `json:"walls"`
-	Cores       []Core        `json:"cores"`
-	EnergyNodes []Position    `json:"energy_nodes"`
+	MapID       string     `json:"map_id"`
+	PlayerCount int        `json:"player_count"`
+	Status      string     `json:"status"`
+	Engagement  float64    `json:"engagement"`
+	WallDensity float64    `json:"wall_density"`
+	EnergyCount int        `json:"energy_count"`
+	GridWidth   int        `json:"grid_width"`
+	GridHeight  int        `json:"grid_height"`
+	NetVotes    int        `json:"net_votes"`
+	CreatedAt   string     `json:"created_at"`
+	Walls       []Position `json:"walls"`
+	Cores       []Core     `json:"cores"`
+	EnergyNodes []Position `json:"energy_nodes"`
 }
 
 func main() {
@@ -173,7 +173,7 @@ func main() {
 		ByPlayerCount: byPlayerCount,
 	}
 	indexJSON, _ := json.MarshalIndent(index, "", "  ")
-indexPath := filepath.Join(mapsOutDir, "index.json")
+	indexPath := filepath.Join(mapsOutDir, "index.json")
 	if err := os.WriteFile(indexPath, indexJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write maps/index.json: %v\n", err)
 		os.Exit(1)
