@@ -36,7 +36,7 @@ import {
 function getSkeletonHtml(path: string): string {
   if (path === '/leaderboard' || path === '/bots') return skeletonLeaderboard();
   if (path.startsWith('/bot/') || path.startsWith('/compete/bot/')) return skeletonBotProfile();
-  if (path.startsWith('/watch/replay') || path.startsWith('/replay/')) return skeletonReplay();
+  if (path.startsWith('/watch/replay') || path.startsWith('/replay/') || path.startsWith('/embed/')) return skeletonReplay();
   if (path.startsWith('/watch/playlists')) return skeletonPlaylists();
   if (path === '/watch/replays' || path === '/matches') return skeletonMatches();
   if (path === '/evolution') return skeletonEvolution();
@@ -90,6 +90,8 @@ const loadFeedbackPage = () => import('./pages/feedback').then(async m => {
 const loadDocsApiPage = () => import('./pages/docs-api').then(m => m.renderDocsApiPage);
 // Rivalries page (pre-computed from index builder §13.5)
 const loadRivalriesPage = () => import('./pages/rivalries').then(m => m.renderRivalriesPage);
+// Embed page (minimal replay viewer for iframe embedding §13.4)
+const loadEmbedPage = () => import('./pages/embed').then(m => m.renderEmbedPage);
 
 // 404
 const loadNotFoundPage = () => import('./pages/not-found').then(m => m.renderNotFoundPage);
@@ -279,6 +281,7 @@ router
   .on('/feedback', lazyRoute(loadFeedbackPage))
   .on('/compete/feedback', lazyRoute(loadFeedbackPage))
   .on('/compete/docs/api', lazyRoute(loadDocsApiPage))
+  .on('/embed/:id', lazyRoute(loadEmbedPage))
   .notFound(lazyRoute(loadNotFoundPage));
 
 // ─── Initialization ────────────────────────────────────────────────────────────────
