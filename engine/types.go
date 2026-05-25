@@ -192,7 +192,7 @@ func DefaultConfig() Config {
 		CoresPerPlayer:     2,
 		ZoneEnabled:        true,
 		ZoneStartTurn:      20, // 2-player default per plan §3.7.1
-		ZoneShrinkInterval: 2,  // Shrink every 2 turns per plan §3.7.1
+		ZoneShrinkInterval: 1,  // Shrink every turn to force faster combat engagement
 		ZoneShrinkStep:     2,
 		ZoneMinRadius:      3,
 	}
@@ -238,17 +238,17 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	// Scale zone parameters to force combat contact
 	// Zone must start early to force combat before energy farming wins
 	// ZoneMinRadius must be >= spawn radius so bots aren't killed before they can reach attack range
-	// Faster shrink (interval 2) forces quicker engagement
+	// Faster shrink (interval 1) forces quicker engagement
 	if numPlayers == 2 {
-		cfg.ZoneStartTurn = 20     // Start zone at turn 20 for 2-player (per plan §3.7.1)
-		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns
-		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval (1 tile/turn, per plan §3.7.1)
+		cfg.ZoneStartTurn = 1      // Start zone immediately for 2-player to force combat
+		cfg.ZoneShrinkInterval = 1 // Shrink every turn to force faster combat
+		cfg.ZoneShrinkStep = 1     // Shrink 2 tiles per interval (2 tiles/turn)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
-		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4
+		cfg.AttackRadius2 = 64     // 8 tiles for 2-player (plan default is 12; increased for combat density)
 	} else {
 		cfg.ZoneStartTurn = 15     // Start zone at turn 15 for 3+ players (per plan §3.7.1)
-		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns
-		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval (1 tile/turn, per plan §3.7.1)
+		cfg.ZoneShrinkInterval = 1 // Shrink every turn to force faster combat
+		cfg.ZoneShrinkStep = 1     // Shrink 2 tiles per interval (1 tile/turn, per plan §3.7.1)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
 		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4
 	}
