@@ -271,8 +271,8 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.25   // ~5 tiles from center on 40x40 grid
-		secondaryRadius = 0.25 // ~5 tiles from center (must be > zone_min_radius=3, accounting for int truncation)
+		primaryRadius = 0.20   // ~4 tiles from center on 40x40 grid (per plan §3.7.1)
+		secondaryRadius = 0.25 // ~5 tiles from center (> zone_min_radius=3, spawns outside final zone)
 	} else {
 		primaryRadius = 0.10 // ~5 tiles from center on 50x50 grid
 		secondaryRadius = 0.08
