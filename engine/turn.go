@@ -128,31 +128,8 @@ func (gs *GameState) executeZone() {
 		gs.updateZoneRadiusToContainBots()
 	}
 
-	// Update zone center to midpoint of living bots (forces bots together)
-	// This is the key forcing function: zone shrinks around where bots actually are,
-	// not a fixed map center. Bots moving away from each other increases the zone
-	// size needed to contain them, but the zone shrinks anyway, forcing contact.
-	if gs.ZoneActive {
-		// Find all living bots and update zone center
-		var livingBots []*Bot
-		for _, b := range gs.Bots {
-			if b.Alive {
-				livingBots = append(livingBots, b)
-			}
-		}
-
-		if len(livingBots) > 0 {
-			var sumRow, sumCol int
-			for _, b := range livingBots {
-				sumRow += b.Position.Row
-				sumCol += b.Position.Col
-			}
-			gs.ZoneCenter = Position{
-				Row: sumRow / len(livingBots),
-				Col: sumCol / len(livingBots),
-			}
-		}
-	}
+	// Zone center is fixed at map center (set in NewGameState)
+	// This forces bots toward the center as the zone shrinks, ensuring contact.
 
 	// Check if zone should shrink (skip the turn zone starts)
 	if gs.ZoneActive && !zoneJustStarted && (gs.Turn-gs.Config.ZoneStartTurn)%gs.Config.ZoneShrinkInterval == 0 {
@@ -161,6 +138,10 @@ func (gs *GameState) executeZone() {
 			if gs.ZoneRadius < gs.Config.ZoneMinRadius {
 				gs.ZoneRadius = gs.Config.ZoneMinRadius
 			}
+		}
+		// Ensure zone radius is at least the minimum (handles overshoot from shrink step)
+		if gs.ZoneRadius < gs.Config.ZoneMinRadius {
+			gs.ZoneRadius = gs.Config.ZoneMinRadius
 		}
 	}
 
