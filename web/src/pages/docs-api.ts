@@ -246,6 +246,56 @@ const sections: Section[] = [
         description: 'Auto-generated match thumbnail for embed previews.',
         cache: 'max-age=86400 (1 day)',
       },
+      {
+        method: 'GET',
+        path: '/maps/index.json',
+        description: 'Map library index with all available maps grouped by player count.',
+        cache: '~90 min (deploy cycle)',
+        responseExample: `{
+  "updated_at": "2026-05-25T18:55:00Z",
+  "maps": [
+    {
+      "map_id": "map_tq8tx8vk",
+      "player_count": 2,
+      "status": "active",
+      "engagement": 0.0,
+      "wall_density": 0.15,
+      "energy_count": 8,
+      "grid_width": 40,
+      "grid_height": 40,
+      "net_votes": 0,
+      "created_at": "2026-05-25T08:40:00Z"
+    }
+  ],
+  "by_player_count": {
+    "2": [...],
+    "3": [...],
+    "4": [...],
+    "6": [...]
+  }
+}`,
+      },
+      {
+        method: 'GET',
+        path: '/maps/{map_id}.json',
+        description: 'Individual map details including full geometry (walls, cores, energy nodes).',
+        cache: '~90 min (deploy cycle)',
+        responseExample: `{
+  "map_id": "map_tq8tx8vk",
+  "player_count": 2,
+  "status": "active",
+  "engagement": 0.0,
+  "wall_density": 0.15,
+  "energy_count": 8,
+  "grid_width": 40,
+  "grid_height": 40,
+  "net_votes": 0,
+  "created_at": "2026-05-25T08:40:00Z",
+  "walls": [{"row": 0, "col": 8}, ...],
+  "cores": [{"position": {"row": 20, "col": 20}, "owner": 0}, ...],
+  "energy_nodes": [{"row": 10, "col": 10}, ...]
+}`,
+      },
     ],
   },
   {
