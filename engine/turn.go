@@ -204,9 +204,9 @@ func (gs *GameState) updateZoneRadiusToContainBots() {
 	}
 
 	// Set zone radius to contain all bots plus margin
-	// Start with a larger margin to give bots time to move toward each other
+	// Margin is small to force bots together quickly before they can spread out
 	maxDist := int(sqrt(maxDist2))
-	gs.ZoneRadius = maxDist + 10 // Larger margin to give bots time to react
+	gs.ZoneRadius = maxDist + 5 // Smaller margin forces faster engagement
 }
 
 // sqrt returns the integer square root of n.
