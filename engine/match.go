@@ -263,8 +263,8 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 		primaryRadius = 0.15 // 6 tiles apart = exactly attack radius (6)
 		secondaryRadius = 0.12
 	} else {
-		primaryRadius = 0.10 // ~5 tiles apart (1.4x attack radius of 3.5)
-		secondaryRadius = 0.08
+		primaryRadius = 0.063 // ~3.4 tiles apart on toroidal grid (within attack radius of 3.46)
+		secondaryRadius = 0.05
 	}
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
