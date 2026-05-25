@@ -186,7 +186,7 @@ func DefaultConfig() Config {
 		Cols:               40,
 		MaxTurns:           500,
 		VisionRadius2:      49, // ~7 tiles
-		AttackRadius2:      9,  // 3 tiles (increased from 5 for better combat trigger)
+		AttackRadius2:      12, // 3.5 tiles per plan §3.4
 		SpawnCost:          3,
 		EnergyInterval:     10,
 		CoresPerPlayer:     2,
@@ -244,13 +244,13 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns
 		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval (1 tile/turn, per plan §3.7.1)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
-		cfg.AttackRadius2 = 36     // 6 tiles (maximum for 2-player random bots)
+		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4
 	} else {
 		cfg.ZoneStartTurn = 15     // Start zone at turn 15 for 3+ players (per plan §3.7.1)
 		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns
 		cfg.ZoneShrinkStep = 2     // Shrink 2 tiles per interval (1 tile/turn, per plan §3.7.1)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
-		cfg.AttackRadius2 = 12     // 3.5 tiles (same as 2-player for better combat trigger)
+		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4
 	}
 
 	return cfg
