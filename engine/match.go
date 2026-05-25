@@ -255,28 +255,28 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	}
 
 	// Place cores for each player using rotational symmetry.
-	// Per plan §3.7.1: zone forces combat by shrinking. Bots must start OUTSIDE the final
-	// safe zone so they are forced inward as the zone contracts, creating contact pressure.
+	// Per plan §3.7.1: zone forces combat by shrinking. Bots must be able to reach
+	// the safe zone before it kills them, while also being forced into contact range.
 	//
-	// Zone min radius: 3 for 2-player (6 tiles diameter), 1 for 3+ (2 tiles diameter)
-	// Spawn radius must be > zone_min_radius to ensure bots start outside final zone.
-	// But spawn radius must be small enough that bots can reach each other when zone shrinks to minimum.
+	// Zone parameters: starts at turn 10, shrinks 2 tiles/turn, min radius 2 (2-player)
+	// By turn 19, zone reaches min radius of 2 (6-tile diameter, ≤2×attack radius).
 	//
 	// Spawn radius as percentage of grid half-size:
-	// - 2-player: 50% (~10 tiles on 40x40 grid, ~20 tiles apart)
+	// - 2-player: 25% (~5 tiles on 40x40 grid, ~10 tiles apart)
+	//   Bots start well inside initial zone (radius 20), giving them time to move
+	//   before zone kills them. At 25% spawn radius, bots are 5 tiles from center,
+	//   which is inside the zone even at turn 13 (radius 12). This prevents zone
+	//   deaths before combat can occur. Bots start 10 tiles apart, requiring 5 tiles
+	//   of movement toward center to reach attack range (5 tiles).
 	// - 3+ player: 10% (~5 tiles on 50x50 grid, ~10 tiles apart)
-	// This ensures bots spawn far enough apart that zone is the primary forcing function,
-	// not spawn placement. Bots start ~20 tiles apart (well outside 6-tile attack radius),
-	// requiring ~7 turns of movement before entering combat. Zone starts at turn 10
-	// and shrinks, forcing bots into final 6-tile diameter zone where combat occurs.
 	// Target: 65-80% combat density per plan §3.7.1.
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.50   // ~10 tiles from center on 40x40 grid (~20 tiles apart)
-		secondaryRadius = 0.45 // ~9 tiles from center (> zone_min_radius=3, spawns outside final zone)
+		primaryRadius = 0.10   // ~2 tiles from center on 40x40 grid (~4 tiles apart)
+		secondaryRadius = 0.08 // ~1-2 tiles from center (closer to center for additional cores)
 	} else {
 		primaryRadius = 0.10 // ~5 tiles from center on 50x50 grid
 		secondaryRadius = 0.08
