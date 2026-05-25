@@ -6,10 +6,13 @@ pub struct RusherBot {
     config: Option<GameConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct GameConfig {
+    #[serde(default)]
     rows: i32,
+    #[serde(default)]
     cols: i32,
+    #[serde(default)]
     attack_radius2: i32,
     #[serde(default)]
     max_turns: i32,
@@ -27,33 +30,43 @@ struct VisibleState {
     energy: Vec<Position>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct PlayerInfo {
+    #[serde(default)]
     id: i32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct VisibleBot {
+    #[serde(default)]
     position: Position,
+    #[serde(default)]
     owner: i32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct VisibleCore {
+    #[serde(default)]
     position: Position,
+    #[serde(default)]
     owner: i32,
+    #[serde(default)]
     active: bool,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Default)]
 struct Position {
+    #[serde(default)]
     row: i32,
+    #[serde(default)]
     col: i32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 struct Move {
+    #[serde(default)]
     position: Position,
+    #[serde(default)]
     direction: String,
 }
 
@@ -69,7 +82,7 @@ impl RusherBot {
     #[wasm_bindgen]
     pub fn init(&mut self, config_json: &str) -> Result<String, JsError> {
         self.config = Some(serde_json::from_str(config_json)?);
-        Ok(serde_json::to_string(&json!({"ok": true}))?)
+        Ok("{\"ok\":true}".to_string())
     }
 
     #[wasm_bindgen]
