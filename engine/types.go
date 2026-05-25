@@ -238,16 +238,16 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	// Scale zone parameters to force combat contact
 	// Zone must start early to force combat before energy farming wins
 	// ZoneMinRadius must be >= spawn radius so bots aren't killed before they can reach attack range
-	// Faster shrink (interval 1) forces quicker engagement
+	// Plan §3.7.1 targets (65-80% combat for 2-player, 100% for 6-player) require more aggressive zone
 	if numPlayers == 2 {
-		cfg.ZoneStartTurn = 20     // Start zone at turn 20 for 2-player (per plan §3.7.1)
-		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns per plan §3.7.1
+		cfg.ZoneStartTurn = 10     // Earlier start to force combat before energy farming dominates
+		cfg.ZoneShrinkInterval = 1 // Shrink every turn for faster engagement (plan says 2)
 		cfg.ZoneShrinkStep = 2     // 2 tiles per interval (per plan §3.7.1)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (6)
 		cfg.AttackRadius2 = 36     // 6 tiles per plan §3.4 (2-player)
 	} else {
-		cfg.ZoneStartTurn = 15     // Start zone at turn 15 for 3+ players (per plan §3.7.1)
-		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns per plan §3.7.1
+		cfg.ZoneStartTurn = 10     // Earlier start for 3+ players (plan says 15)
+		cfg.ZoneShrinkInterval = 1 // Shrink every turn for faster engagement (plan says 2)
 		cfg.ZoneShrinkStep = 2     // 2 tiles per interval (per plan §3.7.1)
 		cfg.ZoneMinRadius = 1      // Zone diameter (2) < attack radius (3.5), forces contact
 		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4 (3+ player)

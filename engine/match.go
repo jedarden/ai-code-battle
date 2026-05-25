@@ -256,17 +256,17 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 
 	// Place cores for each player using rotational symmetry.
 	// Spawn radius balances zone forcing function with bot survival.
-	// For 2 players: 30% from center (~6 tiles on 40x40) → ~12 tiles apart at spawn
-	// For 3+ players: 25% from center (~7 tiles on 54x54) → ~14 tiles apart at spawn
-	// Attack radius is 6 tiles (AttackRadius2=36) for 2-player, 3.5 tiles (12) for 3+; zone starts at turn 20 (2p) / turn 15 (3p+).
-	// Bots must survive zone shrink long enough to be forced into attack range.
+	// For 2 players: 20% from center (~4 tiles on 40x40) → ~8 tiles apart at spawn
+	// For 3+ players: 20% from center (~5 tiles on 54x54) → ~10 tiles apart at spawn
+	// Reduced spawn radius ensures bots start within attack range (6 tiles for 2p, 3.5 for 3+)
+	// after minimal movement, improving combat density.
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.30 // Zone starts at turn 20, bots survive until turn ~26
-		secondaryRadius = 0.20
-	} else {
-		primaryRadius = 0.25 // Zone starts at turn 15, bots survive until turn ~21
+		primaryRadius = 0.20 // Bots start closer, within attack range sooner
 		secondaryRadius = 0.15
+	} else {
+		primaryRadius = 0.20 // Bots start closer for higher player density
+		secondaryRadius = 0.12
 	}
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
@@ -355,6 +355,9 @@ func (mr *MatchRunner) placeWalls(gs *GameState, numPlayers int) {
 	centerCol := gs.Config.Cols / 2
 
 	// Calculate target number of walls: 5% density (20 passable : 1 wall)
+	// NOTE: Plan §3.1 specifies 15% default, but higher density in match.go
+	// without connectivity validation can isolate bots. Maps generated via
+	// acb-mapgen use 15% with connectivity validation.
 	totalTiles := gs.Config.Rows * gs.Config.Cols
 	targetWalls := totalTiles / 20
 	wallsPerSector := targetWalls / numPlayers
