@@ -69,6 +69,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Bot profiles and leaderboard (read-only, no rate limit)
 	mux.HandleFunc("GET /api/bot/", s.handleGetBot)
 	mux.HandleFunc("GET /api/bots", s.handleListBots)
+	mux.HandleFunc("GET /api/status/", s.handleGetStatus)
 
 	// Community replay feedback — 20/hour per IP
 	fbMW := s.feedbackLtr.Middleware(ipKey, func() {
@@ -864,6 +865,51 @@ func (s *Server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleGetStatus handles GET /api/status/{bot_id}
+// Returns lightweight bot status information (status, last_active).
+// §8.2 public endpoint for checking bot health.
+func (s *Server) handleGetStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Extract bot ID from path: /api/status/{id}
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/status/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		writeError(w, http.StatusBadRequest, "invalid bot ID")
+		return
+	}
+	botID := pathParts[0]
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Query bot status and last_active
+	var botStatus string
+	var lastActive *string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT status, to_char(last_active, 'YYYY-MM-DD"T"HH24:MI:SSZ') as last_active
+		FROM bots WHERE bot_id = $1
+	`, botID).Scan(&botStatus, &lastActive)
+
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "bot not found")
+		return
+	} else if err != nil {
+		log.Printf("database error getting bot status: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	response := map[string]interface{}{
+		"bot_id":      botID,
+		"status":      botStatus,
+		"last_active": lastActive,
+	}
 	writeJSON(w, http.StatusOK, response)
 }
 
