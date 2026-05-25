@@ -19,14 +19,14 @@ var (
 func init() {
 	c := make(chan struct{})
 	js.Global().Set("acbEngine", js.ValueOf(map[string]interface{}{
-		"loadState":   jsWrapper(loadState),
-		"step":        jsWrapper(step),
-		"runMatch":    jsWrapper(runMatch),
-		"getReplay":   jsWrapper(getReplay),
-		"getBots":     jsWrapper(getBots),
-		"getEnergy":   jsWrapper(getEnergy),
-		"getConfig":   jsWrapper(getConfig),
-		"getState":    jsWrapper(getState),
+		"loadState": jsWrapper(loadState),
+		"step":      jsWrapper(step),
+		"runMatch":  jsWrapper(runMatch),
+		"getReplay": jsWrapper(getReplay),
+		"getBots":   jsWrapper(getBots),
+		"getEnergy": jsWrapper(getEnergy),
+		"getConfig": jsWrapper(getConfig),
+		"getState":  jsWrapper(getState),
 	}))
 	fmt.Println("ACB WASM Engine loaded")
 	close(c)

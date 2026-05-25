@@ -39,10 +39,10 @@ func LoadStateJSON(stateJSON string) (*Match, error) {
 func (m *Match) StepTurn(moves map[int]Move) (map[string]interface{}, error) {
 	// Execute the turn using existing turn execution logic
 	result := map[string]interface{}{
-		"turn":    m.state.Turn,
-		"events":  m.state.Events,
-		"bots":    m.state.Bots,
-		"energy":  m.state.Energy,
+		"turn":   m.state.Turn,
+		"events": m.state.Events,
+		"bots":   m.state.Bots,
+		"energy": m.state.Energy,
 	}
 	m.state.Turn++
 	return result, nil
