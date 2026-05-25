@@ -194,7 +194,7 @@ func DefaultConfig() Config {
 		ZoneStartTurn:      10, // Per plan §3.7.1 (both 2-player and 3+)
 		ZoneShrinkInterval: 1,  // Per plan §3.7.1 (both 2-player and 3+)
 		ZoneShrinkStep:     2,  // Per plan §3.7.1 (both 2-player and 3+)
-		ZoneMinRadius:      3,
+		ZoneMinRadius:      1,  // Per plan §3.7.1: 3+ player default (ConfigForPlayers overrides for 2-player)
 	}
 }
 
