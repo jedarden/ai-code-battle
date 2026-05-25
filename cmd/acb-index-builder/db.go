@@ -215,6 +215,8 @@ type IndexData struct {
 	TopPredictors         []PredictorStats
 	OpenPredictionMatches []OpenPredictionMatch
 	Feedback              []FeedbackEntry
+	EvolutionMeta         *EvolutionMeta
+	Lineage               []LineageNode
 }
 
 // fetchAllData retrieves all data from PostgreSQL for index generation
@@ -255,6 +257,10 @@ func fetchAllData(ctx context.Context, db *sql.DB) (*IndexData, error) {
 	if data.Feedback, err = fetchFeedback(ctx, db); err != nil {
 		return nil, err
 	}
+
+	// Evolution data (may be missing if evolver DB is not available)
+	data.EvolutionMeta, _ = fetchEvolutionMeta(ctx, db)
+	data.Lineage, _ = fetchLineage(ctx, db)
 
 	data.TopPredictors = computeTopPredictors(data.PredictorStats)
 
@@ -1005,6 +1011,98 @@ func computeTopPredictors(stats []PredictorStats) []PredictorStats {
 		return stats[:50]
 	}
 	return stats
+}
+
+// ─── Evolution Data (meta.json, lineage.json) ───────────────────────────────────────
+
+// EvolutionMeta represents data/evolution/meta.json
+type EvolutionMeta struct {
+	Generation    int    `json:"generation"`
+	PromotedToday int    `json:"promoted_today"`
+	Top10Count    int    `json:"top_10_count"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+// LineageNode represents a single program in the lineage tree
+type LineageNode struct {
+	ID         int64     `json:"id"`
+	ParentIDs  []int64   `json:"parent_ids"`
+	Generation int       `json:"generation"`
+	Island     string    `json:"island"`
+	Fitness    float64   `json:"fitness"`
+	Promoted   bool      `json:"promoted"`
+	Language   string    `json:"language"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// fetchEvolutionMeta queries the evolver database for evolution statistics.
+// It connects to the evolver database using the same connection parameters.
+func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error) {
+	// Query the programs table in the evolver database
+	// Note: the evolver uses a separate database but same PostgreSQL instance
+	query := `
+		SELECT
+			COALESCE(MAX(generation), 0) as generation,
+			COALESCE(COUNT(*) FILTER (WHERE promoted AND created_at >= CURRENT_DATE), 0) as promoted_today,
+			0 as top_10_count
+		FROM programs
+	`
+
+	var meta EvolutionMeta
+	var updatedAt string = time.Now().UTC().Format(time.RFC3339)
+
+	err := db.QueryRowContext(ctx, query).Scan(&meta.Generation, &meta.PromotedToday, &meta.Top10Count)
+	if err != nil {
+		// If evolver tables don't exist, return empty meta
+		if err == sql.ErrNoRows {
+			return &EvolutionMeta{Generation: 0, PromotedToday: 0, Top10Count: 0, UpdatedAt: updatedAt}, nil
+		}
+		return nil, fmt.Errorf("fetch evolution meta: %w", err)
+	}
+
+	meta.UpdatedAt = updatedAt
+	return &meta, nil
+}
+
+// fetchLineage queries the evolver database for the full lineage tree.
+// Returns all programs with their parent relationships.
+func fetchLineage(ctx context.Context, db *sql.DB) ([]LineageNode, error) {
+	query := `
+		SELECT id, parent_ids, generation, island, fitness, promoted, language, created_at
+		FROM programs
+		ORDER BY generation ASC, id ASC
+	`
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		// If evolver tables don't exist, return empty lineage
+		if err == sql.ErrNoRows {
+			return []LineageNode{}, nil
+		}
+		return nil, fmt.Errorf("fetch lineage: %w", err)
+	}
+	defer rows.Close()
+
+	var nodes []LineageNode
+	for rows.Next() {
+		var node LineageNode
+		var parentJSON string
+
+		err := rows.Scan(&node.ID, &parentJSON, &node.Generation, &node.Island,
+			&node.Fitness, &node.Promoted, &node.Language, &node.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan lineage node: %w", err)
+		}
+
+		// Unmarshal parent_ids from JSONB
+		if err := json.Unmarshal([]byte(parentJSON), &node.ParentIDs); err != nil {
+			return nil, fmt.Errorf("unmarshal parent_ids: %w", err)
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	return nodes, nil
 }
 
 // persistPlaylists writes generated playlist definitions and their match associations

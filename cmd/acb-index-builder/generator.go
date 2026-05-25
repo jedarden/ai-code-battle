@@ -180,6 +180,16 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB, cfg *Conf
 		return fmt.Errorf("community hints: %w", err)
 	}
 
+	// Generate evolution meta (data/evolution/meta.json)
+	if err := generateEvolutionMeta(data, outputDir); err != nil {
+		return fmt.Errorf("evolution meta: %w", err)
+	}
+
+	// Generate lineage (data/evolution/lineage.json)
+	if err := generateLineage(data, outputDir); err != nil {
+		return fmt.Errorf("lineage: %w", err)
+	}
+
 	// Generate per-match feedback (data/matches/{id}/feedback.json)
 	if err := generateMatchFeedback(data, outputDir); err != nil {
 		return fmt.Errorf("match feedback: %w", err)
@@ -2035,6 +2045,38 @@ func generateCommunityHints(data *IndexData, outputDir string) error {
 		Hints:       hints,
 	}
 	return writeJSON(filepath.Join(evolDir, "community_hints.json"), file)
+}
+
+// generateEvolutionMeta creates data/evolution/meta.json with evolution statistics
+func generateEvolutionMeta(data *IndexData, outputDir string) error {
+	evolDir := filepath.Join(outputDir, "data", "evolution")
+	if err := os.MkdirAll(evolDir, 0755); err != nil {
+		return err
+	}
+
+	// If no evolution meta data, write empty placeholder
+	meta := data.EvolutionMeta
+	if meta == nil {
+		meta = &EvolutionMeta{
+			Generation:    0,
+			PromotedToday: 0,
+			Top10Count:    0,
+			UpdatedAt:     data.GeneratedAt.Format(time.RFC3339),
+		}
+	}
+
+	return writeJSON(filepath.Join(evolDir, "meta.json"), meta)
+}
+
+// generateLineage creates data/evolution/lineage.json with the full program lineage tree
+func generateLineage(data *IndexData, outputDir string) error {
+	evolDir := filepath.Join(outputDir, "data", "evolution")
+	if err := os.MkdirAll(evolDir, 0755); err != nil {
+		return err
+	}
+
+	// Lineage is already a slice; empty slice is fine
+	return writeJSON(filepath.Join(evolDir, "lineage.json"), data.Lineage)
 }
 
 // ─── Per-match Feedback (§15.2) ────────────────────────────────────────────────

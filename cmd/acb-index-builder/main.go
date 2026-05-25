@@ -136,6 +136,8 @@ func uploadMetaJSONToR2(ctx context.Context, cfg *Config, outputDir string, data
 		"data/meta/archetypes.json",
 		"data/meta/rivalries.json",
 		"data/evolution/community_hints.json",
+		"data/evolution/meta.json",
+		"data/evolution/lineage.json",
 	}
 
 	for _, rel := range static {
