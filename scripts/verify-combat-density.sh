@@ -15,6 +15,8 @@ run_matches() {
     local bots="$1"
     local count="$2"
     local description="$3"
+    local check_threshold="$4"  # whether to enforce threshold (true for strategy bots, false for random)
+    local threshold="$5"         # threshold percentage
     local with_deaths=0
     local total_deaths=0
 
@@ -35,21 +37,19 @@ run_matches() {
     echo "  Average per match: $(python3 -c "print($total_deaths / $count)")"
     echo
 
-    # Return 1 if rate is below threshold
-    if [ "$description" = "2-player" ] && [ $rate -lt 65 ]; then
-        return 1
-    fi
-    if [ "$description" = "6-player" ] && [ $rate -lt 100 ]; then
+    # Return 1 if rate is below threshold (only for strategy bot matchups)
+    if [ "$check_threshold" = "true" ] && [ $rate -lt $threshold ]; then
+        echo "  FAILED: Expected $threshold% combat density, got $rate%"
         return 1
     fi
     return 0
 }
 
-# Test 2-player matches
-run_matches "random,random" 20 "2-player (random bots)"
-run_matches "gatherer,rusher" 20 "2-player (aggressive bots)"
+# Test random vs random (baseline, no threshold check)
+run_matches "random,random" 20 "2-player (random bots - baseline)" "false" 0
 
-# Test 6-player matches
-run_matches "random,gatherer,rusher,guardian,swarm,hunter" 20 "6-player (mixed bots)"
+# Test strategy bot matchups (with threshold checks per plan §3.7.1)
+run_matches "gatherer,rusher" 20 "2-player (strategy bots)" "true" 65
+run_matches "random,gatherer,rusher,guardian,swarm,hunter" 20 "6-player (strategy bots)" "true" 100
 
 echo "=== Verification Complete ==="
