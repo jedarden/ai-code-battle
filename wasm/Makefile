@@ -1,11 +1,15 @@
-# Makefile for building all WASM bots per plan §11.2
-# Builds: gatherer.wasm, rusher.wasm, swarm.wasm, random.wasm, guardian.wasm, hunter.wasm
+# Makefile for building all WASM artifacts per plan §11.2
+# Builds: engine.wasm, gatherer.wasm, rusher.wasm, swarm.wasm, random.wasm, guardian.wasm, hunter.wasm
 
-.PHONY: all clean gatherer rusher swarm random guardian hunter
+.PHONY: all clean engine gatherer rusher swarm random guardian hunter
 
-all: gatherer rusher swarm random guardian hunter
-	@echo "All WASM bots built successfully"
+all: engine gatherer rusher swarm random guardian hunter
+	@echo "All WASM artifacts built successfully"
 	@ls -lh dist/
+
+engine:
+	@echo "Building engine.wasm..."
+	cd engine && bash build.sh
 
 gatherer:
 	@echo "Building gatherer.wasm..."
