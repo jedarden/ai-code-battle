@@ -191,8 +191,8 @@ func DefaultConfig() Config {
 		EnergyInterval:     10,
 		CoresPerPlayer:     2,
 		ZoneEnabled:        true,
-		ZoneStartTurn:      20, // 2-player default per plan §3.7.1
-		ZoneShrinkInterval: 2,  // Shrink every 2 turns per plan §3.7.1
+		ZoneStartTurn:      10, // Per plan §3.7.1 (both 2-player and 3+)
+		ZoneShrinkInterval: 1,  // Per plan §3.7.1 (both 2-player and 3+)
 		ZoneShrinkStep:     2,
 		ZoneMinRadius:      3,
 	}
