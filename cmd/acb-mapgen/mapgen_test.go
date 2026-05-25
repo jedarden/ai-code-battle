@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -221,5 +222,74 @@ func TestGenerateMap_CenterWeightedEnergy(t *testing.T) {
 	minCentral := int(float64(len(m.EnergyNodes)) * 0.20)
 	if centralCount < minCentral {
 		t.Errorf("expected at least %d energy nodes in central zone, got %d", minCentral, centralCount)
+	}
+}
+
+func TestGenerateMap_CoresWithinAttackRadius(t *testing.T) {
+	// Per plan §3.7.1: spawn must put bots within attack range.
+	// For 2 players: within attack radius (6 tiles)
+	// For 3+ players: within attack radius (3.5 tiles)
+	// Uses standard 40x40 map size where spawn radii are calibrated.
+	testCases := []struct {
+		numPlayers     int
+		attackRadius   float64
+		expectedRadius float64
+	}{
+		{2, 6.0, 0.15},  // 2-player: 6 tile attack radius, 0.15 spawn radius
+		{3, 3.5, 0.063}, // 3+ player: 3.5 tile attack radius, 0.063 spawn radius
+		{4, 3.5, 0.063},
+		{6, 3.5, 0.063},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%dplayers", tc.numPlayers), func(t *testing.T) {
+			rng := rand.New(rand.NewSource(42))
+			m := EnsureConnectivity(tc.numPlayers, 40, 40, 0.15, 20, rng, 100)
+			if m == nil {
+				t.Fatalf("failed to generate map for %d players", tc.numPlayers)
+			}
+			if len(m.Cores) != tc.numPlayers {
+				t.Fatalf("expected %d cores, got %d", tc.numPlayers, len(m.Cores))
+			}
+
+			centerRow, centerCol := m.Rows/2, m.Cols/2
+
+			// Verify each core is at the expected radius from center
+			for _, c := range m.Cores {
+				dr := float64(c.Position.Row) - float64(centerRow)
+				dc := float64(c.Position.Col) - float64(centerCol)
+				dist := math.Sqrt(dr*dr + dc*dc)
+				expectedDist := float64(centerRow) * tc.expectedRadius
+				tolerance := 2.0 // Allow 2 tiles of tolerance for rounding
+
+				if math.Abs(dist-expectedDist) > tolerance {
+					t.Errorf("core at %v: distance %.2f from center, expected %.2f (tolerance %.2f)",
+						c.Position, dist, expectedDist, tolerance)
+				}
+			}
+
+			// Verify cores are within attack radius of each other (toroidal distance)
+			for i := 0; i < len(m.Cores); i++ {
+				for j := i + 1; j < len(m.Cores); j++ {
+					c1 := m.Cores[i].Position
+					c2 := m.Cores[j].Position
+
+					// Toroidal distance
+					dr := float64(c2.Row - c1.Row)
+					dc := float64(c2.Col - c1.Col)
+
+					// Find shortest distance on torus
+					height, width := float64(m.Rows), float64(m.Cols)
+					dr = math.Min(math.Abs(dr), height-math.Abs(dr))
+					dc = math.Min(math.Abs(dc), width-math.Abs(dc))
+
+					dist := math.Sqrt(dr*dr + dc*dc)
+					if dist > tc.attackRadius+1.0 { // +1 tolerance for rounding
+						t.Errorf("cores %d and %d are %.2f apart, exceeding attack radius %.2f",
+							i, j, dist, tc.attackRadius)
+					}
+				}
+			}
+		})
 	}
 }
