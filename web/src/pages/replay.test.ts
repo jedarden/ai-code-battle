@@ -12,6 +12,21 @@ declare global {
 
 describe('replay.ts error handling (URL load button)', () => {
   beforeEach(() => {
+    // Ensure matchMedia is mocked before any module loads
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
     // Setup DOM environment
     document.body.innerHTML = '<div id="app"></div>';
     globalThis.fetch = vi.fn();
