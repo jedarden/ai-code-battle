@@ -14,15 +14,15 @@ import (
 
 // MapFile represents the structure of map JSON files in the maps/ directory.
 type MapFile struct {
-	ID           string      `json:"id"`
-	Players      int         `json:"players"`
-	Rows         int         `json:"rows"`
-	Cols         int         `json:"cols"`
-	WallDensity  float64     `json:"wall_density"`
-	Walls        []Position  `json:"walls"`
-	Cores        []Core      `json:"cores"`
-	EnergyNodes  []Position  `json:"energy_nodes"`
-	Generated    string      `json:"generated,omitempty"`
+	ID          string     `json:"id"`
+	Players     int        `json:"players"`
+	Rows        int        `json:"rows"`
+	Cols        int        `json:"cols"`
+	WallDensity float64    `json:"wall_density"`
+	Walls       []Position `json:"walls"`
+	Cores       []Core     `json:"cores"`
+	EnergyNodes []Position `json:"energy_nodes"`
+	Generated   string     `json:"generated,omitempty"`
 }
 
 // Position represents a row/column position.
@@ -39,9 +39,9 @@ type Core struct {
 
 // MapGeometry represents the geometry stored in map_json.
 type MapGeometry struct {
-	Walls       []Position            `json:"walls"`
-	Cores       []MapDatabaseCore     `json:"cores"`
-	EnergyNodes []Position            `json:"energy_nodes"`
+	Walls       []Position        `json:"walls"`
+	Cores       []MapDatabaseCore `json:"cores"`
+	EnergyNodes []Position        `json:"energy_nodes"`
 }
 
 // MapDatabaseCore represents a core as stored in the database map_json.

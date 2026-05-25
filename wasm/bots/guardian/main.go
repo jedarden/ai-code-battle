@@ -77,10 +77,10 @@ func getMoves(state *engine.VisibleState) []engine.Move {
 
 func main() {
 	js.Global().Set("guardianBot", js.ValueOf(map[string]interface{}{
-		"init": js.FuncOf(jsInit),
+		"init":          js.FuncOf(jsInit),
 		"compute_moves": js.FuncOf(jsComputeMoves),
-		"free_result": js.FuncOf(jsFreeResult),
-		"version": "1.0.0",
+		"free_result":   js.FuncOf(jsFreeResult),
+		"version":       "1.0.0",
 	}))
 	select {}
 }
