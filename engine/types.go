@@ -237,13 +237,13 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 
 	// Scale zone parameters to force combat contact
 	// Zone must start early to force combat before energy farming wins
-	// ZoneMinRadius must be >= spawn radius so bots aren't killed before they can reach attack range
+	// Zone diameter must be <= 2 * attack radius so bots at opposite zone edges can reach each other
 	// Target: 65-80% combat density per plan §3.7.1
 	if numPlayers == 2 {
 		cfg.ZoneStartTurn = 10     // Per plan §3.7.1
 		cfg.ZoneShrinkInterval = 1 // Per plan §3.7.1
 		cfg.ZoneShrinkStep = 2     // 2 tiles per interval (per plan §3.7.1)
-		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (6)
+		cfg.ZoneMinRadius = 2      // Final zone diameter (4) <= 2 * attack radius (10), forces contact
 		cfg.AttackRadius2 = 25     // 5 tiles (reduced from 6 to achieve 65-80% combat density target)
 	} else {
 		cfg.ZoneStartTurn = 10     // Per plan §3.7.1
