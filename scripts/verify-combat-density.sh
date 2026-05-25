@@ -21,7 +21,7 @@ run_matches() {
     echo "Testing: $description"
     for i in $(seq 1 $count); do
         local output="/tmp/verify-$i.json"
-        ./acb-local -bots $bots -max-turns 100 -output $output >/dev/null 2>&1
+        ./acb-local -bots $bots -max-turns 100 -cores 2 -output $output >/dev/null 2>&1
         local deaths=$(python3 -c "import json; r=json.load(open('$output')); print(len([e for t in r['turns'] for e in t.get('events', []) if e.get('type') == 'combat_death']))" 2>/dev/null || echo 0)
         if [ "$deaths" -gt 0 ]; then
             with_deaths=$((with_deaths + 1))
