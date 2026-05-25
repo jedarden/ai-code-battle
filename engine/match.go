@@ -263,17 +263,19 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	// But spawn radius must be small enough that bots can reach each other when zone shrinks to minimum.
 	//
 	// Spawn radius as percentage of grid half-size:
-	// - 2-player: 35% (~7 tiles on 40x40 grid, ~14 tiles apart)
+	// - 2-player: 25% (~5 tiles on 40x40 grid, ~10 tiles apart)
 	// - 3+ player: 10% (~5 tiles on 50x50 grid, ~10 tiles apart)
-	// This ensures bots spawn far enough apart to avoid accidental captures,
-	// while the zone shrinking forces them into attack range (6 tiles for 2p, 3.5 for 3+)
+	// This ensures bots spawn close enough for zone-forced combat contact,
+	// while far enough apart to avoid accidental captures. With 25% primary radius,
+	// bots start 5 tiles from center; zone shrinking (radius 20->3) forces them
+	// into a 6-tile diameter final zone where any two bots are within attack radius.
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.35   // ~7 tiles from center on 40x40 grid (~14 tiles apart)
-		secondaryRadius = 0.30 // ~6 tiles from center (> zone_min_radius=3, spawns outside final zone)
+		primaryRadius = 0.25   // ~5 tiles from center on 40x40 grid (~10 tiles apart)
+		secondaryRadius = 0.22 // ~4.4 tiles from center (> zone_min_radius=3, spawns outside final zone)
 	} else {
 		primaryRadius = 0.10 // ~5 tiles from center on 50x50 grid
 		secondaryRadius = 0.08
