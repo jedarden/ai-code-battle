@@ -389,7 +389,7 @@ to achieve target combat density (65-80% for 2-player, 100% for 3+):
 
 | Player Count | `attack_radius2` | Distance | Rationale |
 |--------------|-----------------|----------|-----------|
-| 2-player | 36 | ~6 tiles | Larger radius compensates for fewer opponents and higher movement variance |
+| 2-player | 25 | ~5 tiles | Tuned with zone_min_radius=2 to achieve 65-80% combat density; zone forces contact |
 | 3+ player | 12 | ~3.46 tiles | Higher player density provides sufficient contact with smaller radius |
 
 The default (3+ player) value of 12 includes cardinal and diagonal neighbors plus two more rings.
@@ -495,7 +495,7 @@ rather than pure energy farming. Zone parameters are tuned per player count:
 | ZoneStartTurn | 10 | 10 | Turn when zone begins shrinking |
 | ZoneShrinkInterval | 1 | 1 | Turns between shrink steps |
 | ZoneShrinkStep | 2 | 2 | Tiles to shrink each step |
-| ZoneMinRadius | 3 | 1 | Minimum zone radius (stops shrinking) |
+| ZoneMinRadius | 2 | 1 | Minimum zone radius (stops shrinking) |
 
 **Design rationale:**
 - **ZoneStartTurn = 10**: Starts early to force combat before energy farming dominates.
@@ -505,12 +505,12 @@ rather than pure energy farming. Zone parameters are tuned per player count:
   the match is decided by energy alone.
 - **ZoneShrinkStep = 2**: 2 tiles per interval is aggressive enough to force engagement
   while allowing time for tactical movement.
-- **ZoneMinRadius = 3 (2-player)**: Final zone diameter (6 tiles) forces bots within attack
-  radius (6 tiles), ensuring combat occurs before the zone kills everyone.
+- **ZoneMinRadius = 2 (2-player)**: Final zone diameter (4 tiles) ≤ 2 × attack radius (10 tiles),
+  ensuring bots at opposite zone edges are within attack range (5 tiles).
 - **ZoneMinRadius = 1 (3+ player)**: Final zone diameter (2 tiles) is smaller than attack
   radius (3.5 tiles), guaranteeing any two bots in the final zone are within attack range.
   This is necessary because 3+ player maps have higher player density and a smaller attack
-  radius (3.5 tiles vs 6 tiles for 2-player).
+  radius (3.5 tiles vs 5 tiles for 2-player).
 
 **Combat density metrics** (verified with local testing):
 - 2-player: ~65-80% of matches have combat_deaths; ~1 death per 20 turns
