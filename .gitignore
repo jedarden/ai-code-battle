@@ -31,6 +31,7 @@ Thumbs.db
 
 # Test outputs
 replay.json
+test-replays/
 
 # Marathon instructions (local only)
 .marathon/
