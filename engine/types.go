@@ -249,7 +249,7 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 		cfg.ZoneStartTurn = 15     // Start zone at turn 15 for 3+ players (per plan §3.7.1)
 		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns per plan §3.7.1
 		cfg.ZoneShrinkStep = 2     // 2 tiles per interval (per plan §3.7.1)
-		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
+		cfg.ZoneMinRadius = 1      // Zone diameter (2) < attack radius (3.5), forces contact
 		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4 (3+ player)
 	}
 
