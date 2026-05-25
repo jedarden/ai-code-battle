@@ -1090,6 +1090,8 @@ export class ReplayViewer {
       switch (e.type) {
         case 'bot_died':
           return `Bot ${(details as { bot_id: number }).bot_id} was destroyed`;
+        case 'zone_death':
+          return `Bot ${(details as { bot_id: number }).bot_id} killed by zone`;
         case 'bot_spawned':
           return `New bot ${(details as { bot_id: number }).bot_id} spawned`;
         case 'energy_collected':
@@ -1151,6 +1153,12 @@ export class ReplayViewer {
     const combatSummary = this.summarizeCombatEvents(turn);
     if (combatSummary) {
       parts.push(combatSummary);
+    }
+
+    // Zone deaths
+    const zoneDeathSummary = this.summarizeZoneDeaths(turn);
+    if (zoneDeathSummary) {
+      parts.push(zoneDeathSummary);
     }
 
     // Core captures
@@ -1303,6 +1311,33 @@ export class ReplayViewer {
     }
 
     return combatParts.join(' ');
+  }
+
+  /**
+   * Summarize zone death events (bots killed by shrinking zone).
+   */
+  private summarizeZoneDeaths(turn: ReplayTurn): string | null {
+    const events = turn.events ?? [];
+    const zoneDeathEvents = events.filter(e => e.type === 'zone_death');
+
+    if (zoneDeathEvents.length === 0) return null;
+
+    // Group zone deaths by player
+    const deathsByPlayer = new Map<number, number>();
+    for (const event of zoneDeathEvents) {
+      const details = event.details as Record<string, unknown>;
+      const owner = details.owner as number ?? 0;
+      const count = deathsByPlayer.get(owner) ?? 0;
+      deathsByPlayer.set(owner, count + 1);
+    }
+
+    const parts: string[] = [];
+    for (const [playerIdx, count] of deathsByPlayer) {
+      const playerName = this.replay!.players[playerIdx].name;
+      parts.push(`${count} ${playerName} bot${count > 1 ? 's' : ''} killed by zone`);
+    }
+
+    return parts.join(', ');
   }
 
   /**
@@ -1619,6 +1654,34 @@ export class ReplayViewer {
           }
           break;
         }
+        case 'zone_death': {
+          const pos = d.position as Position | undefined;
+          if (!pos) break;
+          const cx = pos.col * this.cellSize + this.cellSize / 2;
+          const cy = pos.row * this.cellSize + this.cellSize / 2;
+          // Yellow-amber particles radiating outward (zone/storm effect)
+          const count = 8 + Math.floor(Math.random() * 4);
+          for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.3;
+            const speed = 60 + Math.random() * 80; // Faster particles for zone death
+            borrowParticle(
+              cx, cy,
+              Math.cos(angle) * speed / 1000,
+              Math.sin(angle) * speed / 1000,
+              '#eab308', // Yellow-amber for zone
+              500
+            );
+          }
+          // Shockwave effect
+          const sw = borrowSlot(shockwaves);
+          if (sw) {
+            sw.x = cx; sw.y = cy; sw.radius = 0;
+            sw.maxRadius = this.cellSize * 2.5;
+            sw.color = '#eab308';
+            sw.elapsed = 0; sw.lifetime = 400; sw.active = true;
+          }
+          break;
+        }
         case 'energy_collected': {
           const pos = d.position as Position | undefined;
           if (!pos) break;
@@ -1887,6 +1950,8 @@ export class ReplayViewer {
     const combatDeaths: Array<{pos: Position; owner: number; killers: Array<{bot_id: number; owner: number; position: Position}>}> = [];
     // Collect bot_died events without combat_death (fallback for old replays)
     const deaths: Array<{pos: Position; owner: number}> = [];
+    // Collect zone_death events (killed by shrinking zone)
+    const zoneDeaths: Array<{pos: Position; owner: number; botId: number}> = [];
 
     for (const event of events) {
       if (event.type === 'combat_death') {
@@ -1896,6 +1961,12 @@ export class ReplayViewer {
         if (pos.row === 0 && pos.col === 0 && !d.position && !d.pos) continue;
         const killers = d.killers ?? [];
         combatDeaths.push({pos, owner: d.owner ?? 0, killers});
+      } else if (event.type === 'zone_death') {
+        const d = event.details as any;
+        const rawPos = d.position ?? d.pos ?? d;
+        const pos: Position = {row: rawPos.Row ?? rawPos.row ?? 0, col: rawPos.Col ?? rawPos.col ?? 0};
+        if (pos.row === 0 && pos.col === 0 && !d.position && !d.pos) continue;
+        zoneDeaths.push({pos, owner: d.owner ?? 0, botId: d.bot_id ?? 0});
       } else if (event.type === 'bot_died') {
         const d = event.details as any;
         const rawPos = d.position ?? d.pos ?? d;
@@ -1903,6 +1974,40 @@ export class ReplayViewer {
         if (pos.row === 0 && pos.col === 0 && !d.position && !d.pos) continue;
         deaths.push({pos, owner: d.owner ?? 0});
       }
+    }
+
+    // Handle zone_death events - bots killed by the shrinking zone
+    for (const death of zoneDeaths) {
+      if (visible && !visible.has(this.posKey(death.pos))) continue;
+
+      const dx = death.pos.col * cellSize + cellSize / 2;
+      const dy = death.pos.row * cellSize + cellSize / 2;
+
+      // Draw storm/lightning effect behind the marker
+      const flashRadius = cellSize * 1.0;
+      const gradient = ctx.createRadialGradient(dx, dy, 0, dx, dy, flashRadius);
+      gradient.addColorStop(0, 'rgba(234, 179, 8, 0.7)');  // Yellow-amber for zone death
+      gradient.addColorStop(1, 'rgba(234, 179, 8, 0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(dx, dy, flashRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw lightning bolt marker instead of X
+      const boltSize = cellSize * 0.4;
+      ctx.strokeStyle = '#fde047';  // Bright yellow
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      // Lightning bolt shape: top to bottom, zigzag
+      ctx.moveTo(dx, dy - boltSize);
+      ctx.lineTo(dx - boltSize * 0.3, dy);
+      ctx.lineTo(dx, dy);
+      ctx.lineTo(dx + boltSize * 0.3, dy + boltSize);
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+      ctx.lineJoin = 'miter';
     }
 
     // Handle combat_death events with killers[] array (new format) - directed arrows
