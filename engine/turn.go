@@ -146,7 +146,24 @@ func (gs *GameState) executeZone() {
 		// Calculate distance from zone center (accounting for toroidal wrap)
 		dist2 := gs.Grid.Distance2(b.Position, gs.ZoneCenter)
 		if dist2 > gs.ZoneRadius*gs.ZoneRadius {
-			gs.KillBot(b, "zone")
+			// Mark bot as dead
+			b.Alive = false
+			gs.DeadBots = append(gs.DeadBots, b)
+
+			if b.Owner < len(gs.Players) {
+				gs.Players[b.Owner].BotCount--
+			}
+
+			// Emit zone_death event
+			gs.Events = append(gs.Events, Event{
+				Type: EventZoneDeath,
+				Turn: gs.Turn,
+				Details: map[string]interface{}{
+					"bot_id":   b.ID,
+					"owner":    b.Owner,
+					"position": b.Position,
+				},
+			})
 		}
 	}
 }
