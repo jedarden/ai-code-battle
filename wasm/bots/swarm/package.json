@@ -1,0 +1,11 @@
+{
+  "name": "swarm-wasm",
+  "version": "1.0.0",
+  "description": "SwarmBot WASM build",
+  "scripts": {
+    "build": "asc assembly/index.ts -b build/swarm.wasm"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.0"
+  }
+}
