@@ -492,17 +492,17 @@ rather than pure energy farming. Zone parameters are tuned per player count:
 
 | Parameter | 2-Player | 3+ Player | Description |
 |-----------|----------|-----------|-------------|
-| ZoneStartTurn | 20 | 15 | Turn when zone begins shrinking |
-| ZoneShrinkInterval | 2 | 2 | Turns between shrink steps |
+| ZoneStartTurn | 10 | 10 | Turn when zone begins shrinking |
+| ZoneShrinkInterval | 1 | 1 | Turns between shrink steps |
 | ZoneShrinkStep | 2 | 2 | Tiles to shrink each step |
 | ZoneMinRadius | 3 | 1 | Minimum zone radius (stops shrinking) |
 
 **Design rationale:**
-- **ZoneStartTurn**: Starts early enough to force combat before energy farming dominates,
-  but late enough to allow early-game positioning. 2-player gets 5 extra turns due to
-  smaller maps (faster engagement).
-- **ZoneShrinkInterval = 2**: Shrinks every 2 turns creates steady pressure without
-  being too chaotic.
+- **ZoneStartTurn = 10**: Starts early to force combat before energy farming dominates.
+  Both 2-player and 3+ use the same start turn for consistent forcing function timing.
+- **ZoneShrinkInterval = 1**: Shrinks every turn creates steady, predictable pressure.
+  Faster than the original 2-turn interval to ensure bots reach contact range before
+  the match is decided by energy alone.
 - **ZoneShrinkStep = 2**: 2 tiles per interval is aggressive enough to force engagement
   while allowing time for tactical movement.
 - **ZoneMinRadius = 3 (2-player)**: Final zone diameter (6 tiles) forces bots within attack
