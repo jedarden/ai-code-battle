@@ -280,12 +280,12 @@ func TestCombatDensityMetrics(t *testing.T) {
 			seed := rand.NewSource(int64(i + 1000))
 			rng := rand.New(seed)
 
-			bot0 := NewRandomBot(rng.Int63())
-			bot1 := NewGathererBot(rng.Int63())
+			bot0 := NewSwarmBot(rng.Int63())
+			bot1 := NewHunterBot(rng.Int63())
 
 			runner := NewMatchRunner(config, WithRNG(rng))
-			runner.AddBot(bot0, "random")
-			runner.AddBot(bot1, "gatherer")
+			runner.AddBot(bot0, "swarm")
+			runner.AddBot(bot1, "hunter")
 
 			_, replay, err := runner.Run()
 			if err != nil {
@@ -345,8 +345,8 @@ func TestCombatDensityMetrics(t *testing.T) {
 			rng := rand.New(seed)
 
 			bots := []BotInterface{
-				NewRandomBot(rng.Int63()),
-				NewGathererBot(rng.Int63()),
+				NewSwarmBot(rng.Int63()),
+				NewHunterBot(rng.Int63()),
 				NewRusherBot(rng.Int63()),
 				NewGuardianBot(rng.Int63()),
 				NewSwarmBot(rng.Int63()),
