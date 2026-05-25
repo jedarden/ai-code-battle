@@ -255,19 +255,32 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	}
 
 	// Place cores for each player using rotational symmetry.
-	// Per plan §3.7.1: zone forces combat, but spawn must put bots within attack range.
-	// For 2 players: within attack radius (6 tiles) so idle bots fight immediately
-	// For 3+ players: within attack radius (3.5 tiles) for same reason
-	var primaryRadius, secondaryRadius float64
-	if numPlayers == 2 {
-		primaryRadius = 0.15 // 6 tiles apart = exactly attack radius (6)
-		secondaryRadius = 0.12
-	} else {
-		primaryRadius = 0.063 // ~3.4 tiles apart on toroidal grid (within attack radius of 3.46)
-		secondaryRadius = 0.05
-	}
+	// Per plan §3.7.1: zone forces combat by shrinking. Bots must start OUTSIDE the final
+	// safe zone so they are forced inward as the zone contracts, creating contact pressure.
+	//
+	// Zone min radius: 3 for 2-player (6 tiles diameter), 1 for 3+ (2 tiles diameter)
+	// Spawn radius must be > zone_min_radius to ensure bots start outside final zone.
+	//
+	// Calculate spawn radius in tiles, then convert to percentage of grid half-size:
+	// - 2-player: spawn at 10 tiles from center (well outside zone_min_radius=3)
+	// - 3+ player: spawn at 8 tiles from center (well outside zone_min_radius=1)
+	// This ensures zone shrinking forces bots into attack range (6 tiles for 2p, 3.5 for 3+)
 	halfRows := float64(centerRow)
 	halfCols := float64(centerCol)
+	halfSize := math.Min(halfRows, halfCols)
+
+	var primaryRadius, secondaryRadius float64
+	if numPlayers == 2 {
+		primarySpawnDist := 10.0 // tiles from center
+		secondarySpawnDist := 7.0
+		primaryRadius = primarySpawnDist / halfSize
+		secondaryRadius = secondarySpawnDist / halfSize
+	} else {
+		primarySpawnDist := 8.0 // tiles from center
+		secondarySpawnDist := 6.0
+		primaryRadius = primarySpawnDist / halfSize
+		secondaryRadius = secondarySpawnDist / halfSize
+	}
 
 	for i := 0; i < numPlayers; i++ {
 		baseAngle := float64(i) * 2.0 * math.Pi / float64(numPlayers)
