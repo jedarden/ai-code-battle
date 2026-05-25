@@ -42,6 +42,7 @@ function getSkeletonHtml(path: string): string {
   if (path === '/evolution') return skeletonEvolution();
   if (path.startsWith('/blog')) return skeletonBlog();
   if (path === '/seasons' || path.startsWith('/season/')) return skeletonSeasons();
+  if (path === '/rivalries' || path.startsWith('/rivalry/')) return skeletonGeneric('Rivalries');
   if (path === '/watch/predictions' || path === '/predictions') return skeletonGeneric('Predictions');
   if (path === '/watch') return skeletonGeneric('Watch');
   if (path === '/') return ''; // Home page has its own rich skeleton built in
@@ -90,6 +91,8 @@ const loadFeedbackPage = () => import('./pages/feedback').then(async m => {
 const loadDocsApiPage = () => import('./pages/docs-api').then(m => m.renderDocsApiPage);
 // Rivalries page (pre-computed from index builder §13.5)
 const loadRivalriesPage = () => import('./pages/rivalries').then(m => m.renderRivalriesPage);
+// Individual rivalry page (§13.5)
+const loadRivalryPage = () => import('./pages/rivalry').then(m => m.renderRivalryPage);
 // Embed page (minimal replay viewer for iframe embedding §13.4)
 const loadEmbedPage = () => import('./pages/embed').then(m => m.renderEmbedPage);
 
@@ -281,6 +284,8 @@ router
   .on('/feedback', lazyRoute(loadFeedbackPage))
   .on('/compete/feedback', lazyRoute(loadFeedbackPage))
   .on('/compete/docs/api', lazyRoute(loadDocsApiPage))
+  .on('/rivalries', lazyRoute(loadRivalriesPage))
+  .on('/rivalry/:bot_a/:bot_b', lazyRoute(loadRivalryPage))
   .on('/embed/:id', lazyRoute(loadEmbedPage))
   .notFound(lazyRoute(loadNotFoundPage));
 
