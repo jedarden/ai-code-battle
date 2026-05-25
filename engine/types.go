@@ -192,7 +192,7 @@ func DefaultConfig() Config {
 		CoresPerPlayer:     2,
 		ZoneEnabled:        true,
 		ZoneStartTurn:      20, // 2-player default per plan §3.7.1
-		ZoneShrinkInterval: 1,  // Shrink every turn to force faster combat engagement
+		ZoneShrinkInterval: 2,  // Shrink every 2 turns per plan §3.7.1
 		ZoneShrinkStep:     2,
 		ZoneMinRadius:      3,
 	}
@@ -240,14 +240,14 @@ func ConfigForPlayers(numPlayers, coresPerPlayer int) Config {
 	// ZoneMinRadius must be >= spawn radius so bots aren't killed before they can reach attack range
 	// Faster shrink (interval 1) forces quicker engagement
 	if numPlayers == 2 {
-		cfg.ZoneStartTurn = 20		 // Start zone at turn 20 for 2-player (per plan §3.7.1)
-		cfg.ZoneShrinkInterval = 1 // Shrink every turn to force faster combat
+		cfg.ZoneStartTurn = 20     // Start zone at turn 20 for 2-player (per plan §3.7.1)
+		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns per plan §3.7.1
 		cfg.ZoneShrinkStep = 1     // Shrink 2 tiles per interval (2 tiles/turn)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
 		cfg.AttackRadius2 = 64     // 8 tiles for 2-player (plan default is 12; increased for combat density)
 	} else {
 		cfg.ZoneStartTurn = 15     // Start zone at turn 15 for 3+ players (per plan §3.7.1)
-		cfg.ZoneShrinkInterval = 1 // Shrink every turn to force faster combat
+		cfg.ZoneShrinkInterval = 2 // Shrink every 2 turns per plan §3.7.1
 		cfg.ZoneShrinkStep = 1     // Shrink 2 tiles per interval (1 tile/turn, per plan §3.7.1)
 		cfg.ZoneMinRadius = 3      // Final zone diameter (6) forces bots into attack range (3.5)
 		cfg.AttackRadius2 = 12     // 3.5 tiles per plan §3.4
