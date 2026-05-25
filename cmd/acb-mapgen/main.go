@@ -163,14 +163,19 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 	}
 
 	// Generate cores with rotational symmetry.
-	// Per plan §3.7.1: zone forces combat, but spawn must put bots within attack range.
-	// For 2 players: within attack radius (6 tiles) so idle bots fight immediately
-	// For 3+ players: within attack radius (3.5 tiles) for same reason
+	// Per plan §3.7.1: zone forces combat, bots start outside final zone.
+	// Spawn radius must put bots outside the zone minimum so the zone forcing
+	// function works as designed: bots start apart, zone shrinks, combat occurs.
+	//
+	// For 2 players: 25% spawn radius (10 tiles from center, 20 tiles apart on 40x40)
+	//   - Outside attack radius (5 tiles), so bots don't kill each other immediately
+	//   - Zone shrinks from radius 20 to 2 over time, forcing bots into contact
+	// For 3+ players: 10% spawn radius (5 tiles from center, ~10 tiles apart on 50x50)
 	var radius float64
 	if numPlayers == 2 {
-		radius = 0.15 // 6 tiles apart = exactly attack radius (6)
+		radius = 0.25 // 10 tiles from center, 20 tiles apart on 40x40 (outside attack radius of 5)
 	} else {
-		radius = 0.063 // ~3.4 tiles apart on toroidal grid (within attack radius of 3.46)
+		radius = 0.10 // ~5 tiles from center on 50x50 grid
 	}
 	for p := 0; p < numPlayers; p++ {
 		angle := float64(p) * 2.0 * math.Pi / float64(numPlayers)

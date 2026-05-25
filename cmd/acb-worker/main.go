@@ -307,11 +307,18 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 	config.SeasonID = claimData.Match.SeasonID
 	config.RulesVersion = claimData.Match.RulesVersion
 
-	// Create match runner
+	// Prepare pre-generated map data for the match runner
+	preGenMap := engine.PreGeneratedMap{
+		WallsJSON: claimData.Map.Walls,
+		CoresJSON: claimData.Map.Cores,
+	}
+
+	// Create match runner with pre-generated map
 	runner := engine.NewMatchRunner(config,
 		engine.WithRNG(w.rng),
 		engine.WithVerbose(w.cfg.Verbose),
 		engine.WithTimeout(w.cfg.TurnTimeout),
+		engine.WithMap(preGenMap),
 	)
 
 	// Build bot ID to info lookup

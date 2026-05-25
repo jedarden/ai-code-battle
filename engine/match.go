@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -11,13 +12,20 @@ import (
 
 // MatchRunner orchestrates a match between multiple bots.
 type MatchRunner struct {
-	config  Config
-	bots    []BotInterface
-	names   []string
-	rng     *rand.Rand
-	verbose bool
-	logger  *log.Logger
-	timeout time.Duration // per-turn timeout
+	config          Config
+	bots            []BotInterface
+	names           []string
+	rng             *rand.Rand
+	verbose         bool
+	logger          *log.Logger
+	timeout         time.Duration    // per-turn timeout
+	preGeneratedMap *PreGeneratedMap // pre-generated map from map library (optional)
+}
+
+// PreGeneratedMap contains map data loaded from the map library.
+type PreGeneratedMap struct {
+	WallsJSON string // JSON array of {row, col} positions
+	CoresJSON string // JSON array of {position: {row, col}, owner: int}
 }
 
 // MatchOption is a functional option for MatchRunner.
@@ -48,6 +56,14 @@ func WithTimeout(d time.Duration) MatchOption {
 func WithRNG(rng *rand.Rand) MatchOption {
 	return func(mr *MatchRunner) {
 		mr.rng = rng
+	}
+}
+
+// WithMap sets a pre-generated map from the map library.
+// When provided, the match runner uses this map instead of generating one on-the-fly.
+func WithMap(preGen PreGeneratedMap) MatchOption {
+	return func(mr *MatchRunner) {
+		mr.preGeneratedMap = &preGen
 	}
 }
 
@@ -245,8 +261,81 @@ func (mr *MatchRunner) findBotAtPosition(gs *GameState, pos Position, playerID i
 	return nil
 }
 
+// loadPreGeneratedMap loads a pre-generated map from the map library.
+// Returns true if successful, false if the map data is invalid.
+func (mr *MatchRunner) loadPreGeneratedMap(gs *GameState) bool {
+	if mr.preGeneratedMap == nil {
+		return false
+	}
+
+	// Parse walls JSON
+	type wallPos struct {
+		Row int `json:"row"`
+		Col int `json:"col"`
+	}
+	var walls []wallPos
+	if err := json.Unmarshal([]byte(mr.preGeneratedMap.WallsJSON), &walls); err != nil {
+		mr.logger.Printf("Warning: failed to parse walls JSON: %v — falling back to generated map", err)
+		return false
+	}
+
+	// Parse cores JSON
+	type coreData struct {
+		Position Position `json:"position"`
+		Owner    int      `json:"owner"`
+	}
+	var cores []coreData
+	if err := json.Unmarshal([]byte(mr.preGeneratedMap.CoresJSON), &cores); err != nil {
+		mr.logger.Printf("Warning: failed to parse cores JSON: %v — falling back to generated map", err)
+		return false
+	}
+
+	// Place walls
+	for _, w := range walls {
+		if w.Row >= 0 && w.Row < gs.Config.Rows && w.Col >= 0 && w.Col < gs.Config.Cols {
+			gs.Grid.SetPos(Position{Row: w.Row, Col: w.Col}, TileWall)
+		}
+	}
+
+	// Place cores and spawn initial bots
+	coresPerPlayer := make(map[int]int)
+	for _, c := range cores {
+		if c.Owner < 0 || c.Owner >= len(gs.Players) {
+			mr.logger.Printf("Warning: core owner %d out of range [0, %d) — skipping", c.Owner, len(gs.Players))
+			continue
+		}
+		if c.Position.Row < 0 || c.Position.Row >= gs.Config.Rows || c.Position.Col < 0 || c.Position.Col >= gs.Config.Cols {
+			mr.logger.Printf("Warning: core at (%d, %d) out of grid bounds — skipping", c.Position.Row, c.Position.Col)
+			continue
+		}
+		gs.AddCore(c.Owner, c.Position)
+		gs.SpawnBot(c.Owner, c.Position)
+		coresPerPlayer[c.Owner]++
+	}
+
+	// Verify each player has at least one core
+	for p := range gs.Players {
+		if coresPerPlayer[p] == 0 {
+			mr.logger.Printf("Warning: player %d has no cores in pre-generated map — falling back to generated map", p)
+			return false
+		}
+	}
+
+	// Place energy nodes symmetrically (even with pre-generated walls/cores)
+	mr.placeEnergyNodes(gs, len(gs.Players))
+
+	return true
+}
+
 // generateMap generates a symmetric map for the given number of players.
+// If a pre-generated map is provided via WithMap, it loads that instead.
 func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
+	// Try to load pre-generated map first
+	if mr.loadPreGeneratedMap(gs) {
+		return
+	}
+
+	// Fall back to generating map on-the-fly
 	centerRow := gs.Config.Rows / 2
 	centerCol := gs.Config.Cols / 2
 	coresPerPlayer := gs.Config.CoresPerPlayer
