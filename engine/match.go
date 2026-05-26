@@ -447,6 +447,17 @@ func (mr *MatchRunner) placeEnergyNodes(gs *GameState, numPlayers int) {
 			gs.AddEnergyNode(Position{Row: r, Col: c})
 		}
 	}
+
+	// Initialize ~40% of energy nodes with energy already spawned.
+	// This prevents immediate mutual destruction scenarios by giving bots
+	// energy collection opportunities from turn 0, enabling respawns.
+	initialEnergyRatio := 0.4
+	for _, en := range gs.Energy {
+		if mr.rng.Float64() < initialEnergyRatio {
+			en.HasEnergy = true
+			en.Tick = 0
+		}
+	}
 }
 
 // placeWalls places walls symmetrically.
