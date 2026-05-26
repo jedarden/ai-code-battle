@@ -413,7 +413,23 @@ func (b *RusherBot) GetMoves(state *VisibleState) ([]Move, error) {
 			continue
 		}
 
-		// Priority 2: Opportunistic: grab adjacent energy while rushing
+		// Priority 2: Before zone starts, collect energy instead of rushing
+		// This prevents early mutual destruction; let the zone force combat
+		if state.Zone == nil || !state.Zone.Active {
+			// Zone not active yet: collect adjacent energy or hold
+			for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
+				adj := simulateMove(bot.Position, dir, config.Rows, config.Cols)
+				if energyPositions[adj] && !wallPositions[adj] {
+					moves = append(moves, Move{Position: bot.Position, Direction: dir})
+					delete(energyPositions, adj)
+					goto nextBot
+				}
+			}
+			// No adjacent energy: hold position (don't rush yet)
+			continue
+		}
+
+		// Priority 3: Opportunistic: grab adjacent energy while rushing
 		if len(myBots) <= 2 {
 			for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
 				adj := simulateMove(bot.Position, dir, config.Rows, config.Cols)
