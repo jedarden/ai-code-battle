@@ -1027,14 +1027,14 @@ func computeTopPredictors(stats []PredictorStats) []PredictorStats {
 
 // EvolutionMeta represents data/evolution/meta.json
 type EvolutionMeta struct {
-	Generation     int                    `json:"generation"`
-	PromotedToday  int                    `json:"promoted_today"`
-	Top10Count     int                    `json:"top_10_count"`
-	IslandPopulations map[string]int      `json:"island_populations"` // island -> program count
-	BestRatings    []EvolvedBotRating     `json:"best_ratings"`        // top 10 evolved bots
-	TotalPromoted  int                    `json:"total_promoted"`      // all-time promoted count
-	PromotionRate  float64                `json:"promotion_rate"`      // promoted/total
-	UpdatedAt      string                 `json:"updated_at"`
+	Generation        int                `json:"generation"`
+	PromotedToday     int                `json:"promoted_today"`
+	Top10Count        int                `json:"top_10_count"`
+	IslandPopulations map[string]int     `json:"island_populations"` // island -> program count
+	BestRatings       []EvolvedBotRating `json:"best_ratings"`       // top 10 evolved bots
+	TotalPromoted     int                `json:"total_promoted"`     // all-time promoted count
+	PromotionRate     float64            `json:"promotion_rate"`     // promoted/total
+	UpdatedAt         string             `json:"updated_at"`
 }
 
 // EvolvedBotRating represents an evolved bot's rating info
