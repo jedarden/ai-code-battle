@@ -175,6 +175,11 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB, cfg *Conf
 		return fmt.Errorf("archetypes: %w", err)
 	}
 
+	// Generate meta directory index (data/meta/index.json)
+	if err := generateMetaIndex(outputDir); err != nil {
+		return fmt.Errorf("meta index: %w", err)
+	}
+
 	// Generate community hints (data/evolution/community_hints.json)
 	if err := generateCommunityHints(data, outputDir); err != nil {
 		return fmt.Errorf("community hints: %w", err)
@@ -1898,6 +1903,18 @@ type ArchetypesIndex struct {
 	Archetypes []ArchetypeEntry `json:"archetypes"`
 }
 
+// MetaFileEntry represents a single meta data file in the meta directory index.
+type MetaFileEntry struct {
+	Name        string `json:"name"`        // e.g., "archetypes.json"
+	Description string `json:"description"` // e.g., "Bot archetype classifications"
+}
+
+// MetaIndex is the top-level structure for data/meta/index.json.
+type MetaIndex struct {
+	UpdatedAt string          `json:"updated_at"`
+	Files     []MetaFileEntry `json:"files"`
+}
+
 // classifyArchetype infers a behavioral archetype from bot name when the
 // archetype field is empty.
 func classifyArchetype(bot BotData) string {
@@ -1981,6 +1998,26 @@ func generateArchetypes(data *IndexData, outputDir string) error {
 		Archetypes: archetypes,
 	}
 	return writeJSON(filepath.Join(metaDir, "archetypes.json"), index)
+}
+
+// generateMetaIndex builds data/meta/index.json listing all available meta data files.
+func generateMetaIndex(outputDir string) error {
+	metaDir := filepath.Join(outputDir, "data", "meta")
+	if err := os.MkdirAll(metaDir, 0755); err != nil {
+		return err
+	}
+
+	// List all available meta data files with descriptions
+	files := []MetaFileEntry{
+		{Name: "archetypes.json", Description: "Bot archetype classifications and statistics"},
+		{Name: "rivalries.json", Description: "Top rivalries between bots"},
+	}
+
+	index := MetaIndex{
+		UpdatedAt: time.Now().Format(time.RFC3339),
+		Files:     files,
+	}
+	return writeJSON(filepath.Join(metaDir, "index.json"), index)
 }
 
 // ─── Community Hints (§15.2 / §13.6) ──────────────────────────────────────────

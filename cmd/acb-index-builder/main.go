@@ -124,6 +124,7 @@ func uploadMetaJSONToR2(ctx context.Context, cfg *Config, outputDir string, data
 	}
 
 	static := []string{
+		"data/meta/index.json",
 		"data/meta/archetypes.json",
 		"data/meta/rivalries.json",
 		"data/evolution/community_hints.json",

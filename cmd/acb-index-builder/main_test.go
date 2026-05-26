@@ -1546,3 +1546,52 @@ func TestGenerateMapsIndex(t *testing.T) {
 		t.Errorf("Expected 0 cores for map_def456, got %d", len(detail2.Cores))
 	}
 }
+
+func TestGenerateMetaIndex(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := generateMetaIndex(tmpDir); err != nil {
+		t.Fatalf("generateMetaIndex failed: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "data", "meta", "index.json"))
+	if err != nil {
+		t.Fatalf("Failed to read meta/index.json: %v", err)
+	}
+
+	var index MetaIndex
+	if err := json.Unmarshal(content, &index); err != nil {
+		t.Fatalf("Failed to parse meta/index.json: %v", err)
+	}
+
+	if len(index.Files) != 2 {
+		t.Errorf("Expected 2 files in meta index, got %d", len(index.Files))
+	}
+	if index.UpdatedAt == "" {
+		t.Error("UpdatedAt should not be empty")
+	}
+
+	// Verify archetypes.json entry
+	foundArchetypes := false
+	foundRivalries := false
+	for _, f := range index.Files {
+		if f.Name == "archetypes.json" {
+			foundArchetypes = true
+			if f.Description == "" {
+				t.Error("archetypes.json should have a description")
+			}
+		}
+		if f.Name == "rivalries.json" {
+			foundRivalries = true
+			if f.Description == "" {
+				t.Error("rivalries.json should have a description")
+			}
+		}
+	}
+	if !foundArchetypes {
+		t.Error("Expected archetypes.json entry in meta index")
+	}
+	if !foundRivalries {
+		t.Error("Expected rivalries.json entry in meta index")
+	}
+}
