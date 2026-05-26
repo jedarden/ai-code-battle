@@ -6,6 +6,81 @@ import (
 	"math/rand"
 )
 
+// getZoneEscapeDirection returns the direction toward the zone center if the bot is outside
+// or near the edge of the safe zone radius. Returns DirNone if the bot is safe or zone is disabled.
+func getZoneEscapeDirection(botPos Position, state *VisibleState) Direction {
+	if state.Zone == nil || !state.Zone.Active {
+		return DirNone
+	}
+
+	// Calculate distance from zone center (toroidal)
+	rows := state.Config.Rows
+	cols := state.Config.Cols
+	center := state.Zone.Center
+
+	dr := botPos.Row - center.Row
+	dc := botPos.Col - center.Col
+
+	// Account for wrapping
+	if dr > rows/2 {
+		dr -= rows
+	} else if dr < -rows/2 {
+		dr += rows
+	}
+	if dc > cols/2 {
+		dc -= cols
+	} else if dc < -cols/2 {
+		dc += cols
+	}
+
+	dist2 := dr*dr + dc*dc
+	radius2 := state.Zone.Radius * state.Zone.Radius
+
+	// Safety margin: move toward center if within 2 tiles of zone edge
+	// This anticipates the shrinking zone and prevents getting caught outside
+	safetyMargin2 := 4 // (2 tiles)^2
+	if dist2 >= radius2 - safetyMargin2 {
+		// Move toward center: choose direction that reduces distance
+		bestDir := DirNone
+		bestReduction := 0
+
+		for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
+			ddr, ddc := dir.Delta()
+			newPos := Position{
+				Row: ((botPos.Row + ddr) % rows + rows) % rows,
+				Col: ((botPos.Col + ddc) % cols + cols) % cols,
+			}
+
+			newDr := newPos.Row - center.Row
+			newDc := newPos.Col - center.Col
+
+			// Account for wrapping
+			if newDr > rows/2 {
+				newDr -= rows
+			} else if newDr < -rows/2 {
+				newDr += rows
+			}
+			if newDc > cols/2 {
+				newDc -= cols
+			} else if newDc < -cols/2 {
+				newDc += cols
+			}
+
+			newDist2 := newDr*newDr + newDc*newDc
+			reduction := dist2 - newDist2
+
+			if reduction > bestReduction {
+				bestReduction = reduction
+				bestDir = dir
+			}
+		}
+
+		return bestDir
+	}
+
+	return DirNone
+}
+
 // GathererBot prioritizes energy collection while avoiding combat.
 type GathererBot struct {
 	rng *rand.Rand
@@ -58,7 +133,7 @@ func (b *GathererBot) GetMoves(state *VisibleState) ([]Move, error) {
 	usedEnergy := make(map[Position]bool)
 
 	for _, bot := range myBots {
-		move := b.computeBotMove(bot, myBots, enemyPositions, energyPositions, usedEnergy, wallPositions, config)
+		move := b.computeBotMove(bot, myBots, enemyPositions, energyPositions, usedEnergy, wallPositions, config, state)
 		if move != nil {
 			moves = append(moves, *move)
 		}
@@ -72,8 +147,17 @@ func (b *GathererBot) computeBotMove(
 	myBots []VisibleBot,
 	enemyPositions, energyPositions, usedEnergy, wallPositions map[Position]bool,
 	config Config,
+	state *VisibleState,
 ) *Move {
-	// Check if we should flee from enemies
+	// Priority 1: Escape zone if threatened
+	if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		return &Move{
+			Position:  bot.Position,
+			Direction: zoneDir,
+		}
+	}
+
+	// Priority 2: Check if we should flee from enemies
 	if b.shouldFlee(bot.Position, enemyPositions, config) {
 		fleeDir := b.getFleeDirection(bot.Position, enemyPositions, wallPositions, config)
 		if fleeDir != DirNone {
@@ -323,7 +407,13 @@ func (b *RusherBot) GetMoves(state *VisibleState) ([]Move, error) {
 	moves := make([]Move, 0, len(myBots))
 
 	for _, bot := range myBots {
-		// Opportunistic: grab adjacent energy while rushing
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+			continue
+		}
+
+		// Priority 2: Opportunistic: grab adjacent energy while rushing
 		if len(myBots) <= 2 {
 			for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
 				adj := simulateMove(bot.Position, dir, config.Rows, config.Cols)
