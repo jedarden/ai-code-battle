@@ -401,7 +401,7 @@ function initFeedback(): void {
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function replayUrlForMatch(m: MatchSummary): string {
-  return `/r2/replays/${m.id}.json.gz`;
+  return `/data/replays/${m.id}.json.gz`;
 }
 
 function formatDate(s: string | null): string {

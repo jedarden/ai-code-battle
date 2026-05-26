@@ -28,6 +28,7 @@ import {
 import { THEATER_STYLES, TheaterMode } from '../components/theater';
 import { setActiveReplay } from '../components/pip-registry';
 import { getPipMatchId, restorePip } from '../components/pip';
+import { fetchReplayFromUrl } from '../lib/replay-data';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -46,7 +47,7 @@ export function renderReplayPage(params: Record<string, string>): void {
 
   loadReplayViewer().then(({ ReplayViewer }) => {
     // If params.url is not set but params.id is, construct the URL from the match ID
-    const replayUrl = params.url || (params.id ? `/r2/replays/${params.id}.json.gz` : undefined);
+    const replayUrl = params.url || (params.id ? `/data/replays/${params.id}.json.gz` : undefined);
     initReplayViewerWithClass(ReplayViewer, replayUrl);
   });
 }
@@ -1397,18 +1398,11 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     const url = urlInput.value.trim();
     if (!url) return;
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('HTTP_404');
-        }
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const replay = await response.json() as Replay;
+      const replay = await fetchReplayFromUrl(url);
       loadReplay(replay);
     } catch (err) {
       const errMsg = String(err);
-      if (errMsg.includes('HTTP_404')) {
+      if (errMsg.includes('HTTP 404')) {
         showLoadError('This replay is not available yet — it may not have been uploaded.', url);
       } else if (errMsg.includes('HTTP')) {
         showLoadError(`Could not load this replay: ${errMsg}`, url);

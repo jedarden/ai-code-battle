@@ -2,6 +2,7 @@
 import { ReplayViewer } from './replay-viewer';
 import type { Replay } from './types';
 import { fetchCommentary } from './api-types';
+import { fetchReplayFromUrl, replayUrl } from './lib/replay-data';
 
 // Player colors matching replay-viewer.ts
 const PLAYER_COLORS = [
@@ -14,8 +15,6 @@ const PLAYER_COLORS = [
 ];
 
 // Configuration
-const R2_BASE = '/r2';
-const B2_BASE = 'https://b2.aicodebattle.com';
 const PAGES_BASE = 'https://ai-code-battle.pages.dev';
 
 interface EmbedConfig {
@@ -178,28 +177,8 @@ class EmbedViewer {
   }
 
   private async fetchReplay(matchId: string): Promise<Replay> {
-    // Try R2 warm cache first
-    const r2Url = `${R2_BASE}/replays/${matchId}.json.gz`;
-    try {
-      const response = await fetch(r2Url);
-      if (response.ok) {
-        // Note: For gzipped content, browser handles decompression automatically
-        // if Content-Encoding: gzip is set, or we can use DecompressionStream
-        const replay = await response.json();
-        return replay as Replay;
-      }
-    } catch (e) {
-      console.warn('R2 fetch failed, trying B2:', e);
-    }
-
-    // Fall back to B2 cold archive
-    const b2Url = `${B2_BASE}/replays/${matchId}.json.gz`;
-    const response = await fetch(b2Url);
-    if (!response.ok) {
-      throw new Error(`Replay not found: ${matchId}`);
-    }
-    const replay = await response.json();
-    return replay as Replay;
+    // Replays are gzipped static assets bundled into the Pages deploy under /data/replays/.
+    return fetchReplayFromUrl(replayUrl(matchId));
   }
 
   private async fetchDemoReplay(): Promise<Replay> {

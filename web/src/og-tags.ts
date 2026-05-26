@@ -68,7 +68,7 @@ export function getBotProfileOGTags(bot: {
 	win_rate: number;
 	evolved?: boolean;
 }): OGTags {
-	const cardUrl = `/r2/cards/${bot.id}.png`;
+	const cardUrl = `/data/cards/${bot.id}.png`;
 
 	return {
 		title: `${bot.name} - Bot Profile`,
@@ -89,7 +89,7 @@ export function getReplayOGTags(match: {
 }): OGTags {
 	const winner = match.participants.find(p => p.won);
 	const winnerName = winner ? winner.name : 'Draw';
-	const thumbnailUrl = `/r2/thumbnails/${match.id}.png`;
+	const thumbnailUrl = `/data/thumbnails/${match.id}.png`;
 
 	return {
 		title: `Match: ${match.participants.map(p => p.name).join(' vs ')}`,

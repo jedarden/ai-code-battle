@@ -241,13 +241,13 @@ export async function registerBot(request: RegisterRequest): Promise<RegisterRes
   return response.json();
 }
 
-// R2_BASE_URL is the Cloudflare R2 bucket custom domain for live data.
-// The evolver writes live.json here every cycle with Cache-Control: max-age=10.
-const R2_BASE_URL = '/r2';
+// Evolution live data is bundled into the Pages deploy under /data/ by the index builder.
+// The evolver writes live.json every cycle with Cache-Control: max-age=10.
+const DATA_BASE_URL = '/data';
 
 export async function fetchEvolutionData(): Promise<EvolutionLiveData> {
   // Evolution data changes every ~10s — bypass SWR, always fetch fresh
-  const response = await fetch(`${R2_BASE_URL}/evolution/live.json`);
+  const response = await fetch(`${DATA_BASE_URL}/evolution/live.json`);
   if (!response.ok) throw new Error(`Failed to fetch evolution data: ${response.status}`);
   return response.json();
 }

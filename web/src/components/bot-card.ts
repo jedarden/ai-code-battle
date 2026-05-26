@@ -392,7 +392,7 @@ function wrapText(
  * Generate a shareable bot card URL
  */
 export function getBotCardURL(botId: string): string {
-  return `/r2/cards/${botId}.png`;
+  return `/data/cards/${botId}.png`;
 }
 
 /**

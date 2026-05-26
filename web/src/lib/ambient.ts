@@ -223,7 +223,7 @@ export function startAmbientPolling(intervalMs = 30_000): void {
     try {
       // Fetch evolution live data for generation changes
       const evoResp = await fetch(
-        '/r2/evolution/live.json',
+        '/data/evolution/live.json',
       );
       if (evoResp.ok) {
         const evoData: LiveJSON = await evoResp.json();

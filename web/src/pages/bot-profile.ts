@@ -204,7 +204,7 @@ function renderMatchItem(match: BotProfile['recent_matches'][number]): string {
       <span class="match-opponent">${opponent ? escapeHtml(opponent.name) : 'Unknown'}</span>
       <span class="match-score">${match.participants.map(p => p.score).join(' - ')}</span>
       ${enrichedBadge}
-      <a href="#/watch/replay?url=/r2/replays/${match.id}.json.gz" class="btn small">Watch</a>
+      <a href="#/watch/replay?url=/data/replays/${match.id}.json.gz" class="btn small">Watch</a>
     </div>
   `;
 }
@@ -232,7 +232,7 @@ function renderRivalsSection(rivalries: RivalryEntry[], botId: string): string {
           <span class="rivalry-record">${botWins}-${opponentWins}${r.record.draws > 0 ? `-${r.record.draws}` : ''}</span>
           <span class="rivalry-winrate">${winPct}% win rate</span>
         </div>
-        ${r.closest_match ? `<a href="#/watch/replay?url=/r2/replays/${r.closest_match}.json.gz" class="btn small secondary">Watch closest match</a>` : ''}
+        ${r.closest_match ? `<a href="#/watch/replay?url=/data/replays/${r.closest_match}.json.gz" class="btn small secondary">Watch closest match</a>` : ''}
       </div>
     `;
   }).join('');

@@ -14,8 +14,8 @@
     "replay_viewer": "replay.html"
   },
   "data_paths": {
-    "pages_data": "https://aicodebattle.com/data",
-    "r2_data": "https://r2.aicodebattle.com"
+    "pages_data": "/data",
+    "replay_data": "/data/replays (gzipped static assets bundled into the deploy by the index builder)"
   },
   "deployment": {
     "method": "wrangler pages deploy",

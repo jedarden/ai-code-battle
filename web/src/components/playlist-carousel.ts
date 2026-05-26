@@ -4,6 +4,7 @@
 
 import type { Playlist, PlaylistMatch } from '../api-types';
 import type { Replay } from '../types';
+import { fetchReplayFromUrl, replayUrl } from '../lib/replay-data';
 import {
   computeAllDensities,
   computeSpeedSchedule,
@@ -43,8 +44,6 @@ export interface CarouselOptions {
 const DEFAULT_AUTO_ADVANCE_DELAY = 3000;
 const METADATA_PANEL_WIDTH = 280;
 const TRANSITION_MS = 300;
-const R2_BASE = '/r2';
-const B2_FALLBACK = 'https://b2.aicodebattle.com';
 const SWIPE_THRESHOLD = 50; // min px to trigger advance
 const VELOCITY_THRESHOLD = 0.3; // px/ms — fast flick triggers even below threshold
 const REDUCED_MOTION = typeof window !== 'undefined'
@@ -373,19 +372,7 @@ export class PlaylistCarousel {
   }
 
   private async fetchReplay(matchId: string): Promise<Replay> {
-    const urls = [
-      `${R2_BASE}/replays/${matchId}.json.gz`,
-      `${B2_FALLBACK}/replays/${matchId}.json.gz`,
-    ];
-    for (const url of urls) {
-      try {
-        const resp = await fetch(url);
-        if (resp.ok) return await resp.json();
-      } catch { /* try next */ }
-    }
-    const resp = await fetch(`/replays/${matchId}.json.gz`);
-    if (!resp.ok) throw new Error(`Failed to fetch replay ${matchId}`);
-    return resp.json();
+    return fetchReplayFromUrl(replayUrl(matchId));
   }
 
   private preloadNext(index: number): void {
@@ -435,7 +422,7 @@ export class PlaylistCarousel {
       btn.addEventListener('click', () => {
         const id = (btn as HTMLElement).dataset.matchId!;
         this.destroy();
-        window.location.hash = `/watch/replay?url=/replays/${id}.json.gz`;
+        window.location.hash = `/watch/replay?url=${replayUrl(id)}`;
       });
     }
   }

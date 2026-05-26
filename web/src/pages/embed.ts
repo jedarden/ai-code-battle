@@ -1,5 +1,6 @@
 // Embeddable replay viewer - minimal chrome for iframe embedding
 // §13.4: /embed/{id} - auto-play, ~50KB, Open Graph tags
+import { fetchReplayFromUrl } from '../lib/replay-data';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -37,7 +38,7 @@ export function renderEmbedPage(params: Record<string, string>): void {
   }
 
   loadReplayViewer().then(({ ReplayViewer }) => {
-    const replayUrl = params.id ? `/r2/replays/${params.id}.json.gz` : undefined;
+    const replayUrl = params.id ? `/data/replays/${params.id}.json.gz` : undefined;
     if (!replayUrl) {
       const noReplay = document.getElementById('no-replay');
       if (noReplay) noReplay.textContent = 'No replay specified';
@@ -69,12 +70,8 @@ export function renderEmbedPage(params: Record<string, string>): void {
       }
     };
 
-    // Load replay
-    fetch(replayUrl)
-      .then(resp => {
-        if (!resp.ok) throw new Error(`Failed to load replay: ${resp.status}`);
-        return resp.json();
-      })
+    // Load replay (gzipped static asset → fetchReplayFromUrl gunzips it)
+    fetchReplayFromUrl(replayUrl)
       .then((replay: any) => {
         viewer.loadReplay(replay);
         viewer.setTurn(startTurn);

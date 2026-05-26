@@ -88,7 +88,7 @@ function renderPlaylistCards(playlists: any[]): string {
       <a href="#/watch/playlists/${pl.slug}" class="home-pl-card">
         <div class="home-pl-thumb">
           ${pl.thumbnail_match_id
-            ? `<img src="/r2/thumbnails/${pl.thumbnail_match_id}.png" alt="${esc(pl.title)}" loading="lazy">`
+            ? `<img src="/data/thumbnails/${pl.thumbnail_match_id}.png" alt="${esc(pl.title)}" loading="lazy">`
             : '<div class="home-pl-placeholder">&#9876;</div>'}
         </div>
         <div class="home-pl-info">
@@ -178,7 +178,7 @@ export async function renderHomePage(): Promise<void> {
     ? `${featuredReplay!.participants.map((p) => `<strong>${esc(p.name)}</strong>`).join(' vs ')}${featuredReplay!.winner_id ? ` — Winner: <strong>${esc(featuredReplay!.participants.find((p) => p.bot_id === featuredReplay!.winner_id)?.name || 'Unknown')}</strong>` : ''}`
     : 'Demo Replay — Watch a sample battle';
   const replayLink = hasLiveReplay
-    ? `#/watch/replay?url=/r2/replays/${featuredReplay!.id}.json.gz`
+    ? `#/watch/replay?url=/data/replays/${featuredReplay!.id}.json.gz`
     : '#/watch/replays';
 
   // Build lazy-loaded content for below-the-fold sections
