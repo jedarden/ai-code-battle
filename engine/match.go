@@ -364,7 +364,7 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.20   // ~4 tiles from center on 40x40 grid (~8 tiles apart)
+		primaryRadius = 0.25   // ~10 tiles from center on 40x40 grid (~20 tiles apart) per plan §3.7.1
 		secondaryRadius = 0.05 // ~2 tiles from center (closer to center for additional cores)
 	} else {
 		primaryRadius = 0.10 // ~5 tiles from center on 50x50 grid
