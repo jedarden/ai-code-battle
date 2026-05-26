@@ -361,10 +361,10 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 	// By turn 19, zone reaches min radius of 2 (6-tile diameter, ≤2×attack radius).
 	//
 	// Spawn radius as percentage of grid half-size:
-	// - 2-player: 15% (~3 tiles from center on 40x40 grid, ~6 tiles apart)
+	// - 2-player: 10% (~2 tiles from center on 40x40 grid, ~4 tiles apart)
 	//   Zone starts at turn 10 with radius ~18, then shrinks 1 tile/turn.
-	//   At 15% spawn radius (dist 3), bots start 6 tiles apart (just outside 5-tile attack range).
-	//   Zone forces them into contact within ~5-8 turns, achieving the 65-80% combat density target.
+	//   At 10% spawn radius (dist 2), bots start 4 tiles apart (well within 5-tile attack range).
+	//   Combat begins immediately, achieving the 65-80% combat density target even with random bots.
 	// - 3+ player: 10% (~5 tiles from center on 50x50 grid, ~10 tiles apart)
 	// Target: 65-80% combat density per plan §3.7.1.
 	halfRows := float64(centerRow)
@@ -372,9 +372,9 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.15   // ~3 tiles from center on 40x40 grid (~6 tiles apart)
-		// With attack radius of 5 tiles, bots starting 6 tiles apart are just outside attack range
-		// Zone starting at turn 10 forces them into contact within ~5-8 turns
+		primaryRadius = 0.10 // ~2 tiles from center on 40x40 grid (~4 tiles apart)
+		// With attack radius of 5 tiles, bots starting 4 tiles apart are well within attack range
+		// This ensures combat even with passive random bots, achieving 65-80% combat density
 		secondaryRadius = 0.05 // ~2 tiles from center (closer to center for additional cores)
 	} else {
 		primaryRadius = 0.10 // ~5 tiles from center on 50x50 grid
