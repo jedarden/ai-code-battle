@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -2094,12 +2095,23 @@ func generateEvolutionMeta(data *IndexData, outputDir string) error {
 	// If no evolution meta data, write empty placeholder
 	meta := data.EvolutionMeta
 	if meta == nil {
+		slog.Info("Evolution meta data not available - evolution system not running")
 		meta = &EvolutionMeta{
-			Generation:    0,
-			PromotedToday: 0,
-			Top10Count:    0,
-			UpdatedAt:     data.GeneratedAt.Format(time.RFC3339),
+			Generation:        0,
+			PromotedToday:     0,
+			Top10Count:        0,
+			IslandPopulations: make(map[string]int),
+			BestRatings:       []EvolvedBotRating{},
+			TotalPromoted:     0,
+			PromotionRate:     0,
+			UpdatedAt:         data.GeneratedAt.Format(time.RFC3339),
 		}
+	} else {
+		slog.Info("Writing evolution meta data",
+			"generation", meta.Generation,
+			"promoted_today", meta.PromotedToday,
+			"total_promoted", meta.TotalPromoted,
+			"islands", len(meta.IslandPopulations))
 	}
 
 	return writeJSON(filepath.Join(evolDir, "meta.json"), meta)

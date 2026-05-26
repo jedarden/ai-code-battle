@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -258,9 +259,18 @@ func fetchAllData(ctx context.Context, db *sql.DB) (*IndexData, error) {
 		return nil, err
 	}
 
-	// Evolution data (may be missing if evolver DB is not available)
+	// Evolution data (may be missing if evolver is not running)
 	data.EvolutionMeta, _ = fetchEvolutionMeta(ctx, db)
 	data.Lineage, _ = fetchLineage(ctx, db)
+	if data.EvolutionMeta != nil && data.EvolutionMeta.Generation > 0 {
+		slog.Info("Evolution system running",
+			"generation", data.EvolutionMeta.Generation,
+			"promoted_today", data.EvolutionMeta.PromotedToday,
+			"total_promoted", data.EvolutionMeta.TotalPromoted,
+			"islands", len(data.EvolutionMeta.IslandPopulations))
+	} else {
+		slog.Info("Evolution system not initialized or not running")
+	}
 
 	data.TopPredictors = computeTopPredictors(data.PredictorStats)
 
@@ -1050,6 +1060,7 @@ type LineageNode struct {
 
 // fetchEvolutionMeta queries the evolver database for evolution statistics.
 // It connects to the evolver database using the same connection parameters.
+// Returns empty meta (not an error) if the evolution system is not running.
 func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error) {
 	// Query the programs table in the evolver database
 	// Note: the evolver uses a separate database but same PostgreSQL instance
@@ -1068,20 +1079,19 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 
 	err := db.QueryRowContext(ctx, query).Scan(&meta.Generation, &meta.PromotedToday, &meta.TotalPromoted, &totalPrograms)
 	if err != nil {
-		// If evolver tables don't exist, return empty meta
-		if err == sql.ErrNoRows {
-			return &EvolutionMeta{
-				Generation:        0,
-				PromotedToday:     0,
-				Top10Count:        0,
-				IslandPopulations: make(map[string]int),
-				BestRatings:       []EvolvedBotRating{},
-				TotalPromoted:     0,
-				PromotionRate:     0,
-				UpdatedAt:         updatedAt,
-			}, nil
-		}
-		return nil, fmt.Errorf("fetch evolution meta: %w", err)
+		// If evolver tables don't exist or query fails, return empty meta
+		// This is expected when the evolution system has not been initialized yet
+		slog.Info("Evolution system not running or programs table empty", "error", err)
+		return &EvolutionMeta{
+			Generation:        0,
+			PromotedToday:     0,
+			Top10Count:        0,
+			IslandPopulations: make(map[string]int),
+			BestRatings:       []EvolvedBotRating{},
+			TotalPromoted:     0,
+			PromotionRate:     0,
+			UpdatedAt:         updatedAt,
+		}, nil
 	}
 
 	// Calculate promotion rate

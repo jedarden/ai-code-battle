@@ -187,7 +187,21 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 	}
 	defer db.Close()
 
+	// Initialize database schema and seed initial population if needed
+	ctx := context.Background()
+	if err := evolverdb.EnsureSchema(ctx, db); err != nil {
+		log.Fatalf("ensure schema: %v", err)
+	}
+
+	// Seed initial population if programs table is empty
 	store := evolverdb.NewStore(db)
+	if inserted, err := evolverdb.SeedPopulation(ctx, store); err != nil {
+		log.Fatalf("seed population: %v", err)
+	} else if inserted > 0 {
+		log.Printf("Seeded %d initial programs", inserted)
+	} else {
+		log.Println("Programs table already seeded")
+	}
 
 	// Load config from env with overrides
 	cfg := DefaultRunConfig()
