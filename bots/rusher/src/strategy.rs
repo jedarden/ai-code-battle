@@ -43,14 +43,31 @@ impl RusherStrategy {
         // Build wall lookup
         let walls: HashSet<Position> = state.walls.iter().copied().collect();
 
-        // Find target cores to rush
-        let targets = self.get_rush_targets(state, my_id);
-
-        // Assign each bot to the nearest target
+        // Assign each bot to a move
         let mut moves = Vec::with_capacity(my_bots.len());
         let mut assigned_targets: HashSet<Position> = HashSet::new();
 
         for bot in &my_bots {
+            // Zone awareness: if zone is active and bot is outside, move toward center immediately
+            if let Some(ref zone) = state.zone {
+                if zone.active {
+                    let dist2 = bot.position.distance2(&zone.center, config.rows as i32, config.cols as i32);
+                    if dist2 > zone.radius * zone.radius {
+                        // Bot is outside the zone - survival priority: move toward zone center
+                        if let Some(dir) = self.move_toward_position(bot.position, zone.center, &enemy_positions, &walls, config) {
+                            moves.push(Move {
+                                position: bot.position,
+                                direction: dir,
+                            });
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Find target cores to rush
+            let targets = self.get_rush_targets(state, my_id);
+
             if let Some((dir, _)) = self.find_best_move(
                 bot.position,
                 &targets,
@@ -148,6 +165,9 @@ impl RusherStrategy {
                 }
 
                 // Don't walk into enemy bots (but allow pathing near them)
+                // Note: We avoid enemy tiles to prevent self-collision, but
+                // don't detour around them - RusherBot prefers direct paths
+                // and will engage enemies at range (AttackRadius2)
                 if enemy_positions.contains(&next) {
                     continue;
                 }
@@ -157,7 +177,30 @@ impl RusherStrategy {
             }
         }
 
-        // No path found - pick a random direction
+        // No path found - prefer moving toward nearest enemy for engagement
+        if let Some(&nearest_enemy) = enemy_positions.iter().min_by_key(|e| {
+            start.distance2(e, rows, cols)
+        }) {
+            let mut best_dir = None;
+            let mut best_dist2 = u32::MAX;
+
+            for dir in Direction::all() {
+                let next = start.move_toward(dir, rows, cols);
+                if !walls.contains(&next) && !enemy_positions.contains(&next) {
+                    let dist2 = next.distance2(&nearest_enemy, rows, cols);
+                    if dist2 < best_dist2 {
+                        best_dist2 = dist2;
+                        best_dir = Some(dir);
+                    }
+                }
+            }
+
+            if let Some(dir) = best_dir {
+                return Some((dir, start.move_toward(dir, rows, cols)));
+            }
+        }
+
+        // Fallback: pick a random direction
         for dir in Direction::all() {
             let next = start.move_toward(dir, rows, cols);
             if !walls.contains(&next) && !enemy_positions.contains(&next) {
@@ -188,5 +231,40 @@ impl RusherStrategy {
 impl Default for RusherStrategy {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl RusherStrategy {
+    /// Move toward a target position, avoiding walls and enemies
+    fn move_toward_position(
+        &self,
+        bot_pos: Position,
+        target: Position,
+        enemy_positions: &HashSet<Position>,
+        walls: &HashSet<Position>,
+        config: &GameConfig,
+    ) -> Option<Direction> {
+        let rows = config.rows as i32;
+        let cols = config.cols as i32;
+
+        let mut best_dir = None;
+        let mut best_dist2 = u32::MAX;
+
+        for dir in Direction::all() {
+            let next = bot_pos.move_toward(dir, rows, cols);
+
+            // Skip walls and enemy positions
+            if walls.contains(&next) || enemy_positions.contains(&next) {
+                continue;
+            }
+
+            let dist2 = next.distance2(&target, rows, cols);
+            if dist2 < best_dist2 {
+                best_dist2 = dist2;
+                best_dir = Some(dir);
+            }
+        }
+
+        best_dir
     }
 }

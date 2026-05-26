@@ -82,7 +82,8 @@ export class SwarmStrategy {
         swarmCenter,
         enemyCenter,
         walls,
-        config
+        config,
+        state
       );
       if (move) {
         moves.push(move);
@@ -133,10 +134,20 @@ export class SwarmStrategy {
     swarmCenter: Position,
     enemyCenter: Position | null,
     walls: Set<string>,
-    config: GameConfig
+    config: GameConfig,
+    state: GameState
   ): Move | null {
     const rows = config.rows;
     const cols = config.cols;
+
+    // Zone awareness: if zone is active and bot is outside, move toward center immediately
+    if (state.zone && state.zone.active) {
+      const distToZoneCenter2 = distance2(bot.position, state.zone.center, rows, cols);
+      if (distToZoneCenter2 > state.zone.radius * state.zone.radius) {
+        // Bot is outside the zone - survival priority: move toward zone center
+        return this.moveTowardPosition(bot, state.zone.center, walls, rows, cols);
+      }
+    }
 
     // Find direction that maintains cohesion while advancing toward enemy
     let bestDir: Direction | null = null;
@@ -173,11 +184,16 @@ export class SwarmStrategy {
 
       // Bonus for moving toward nearby enemies (engagement)
       let nearestEnemyDist = Infinity;
+      let currentNearestEnemyDist = Infinity;
       for (const enemy of enemyPositions.values()) {
         const dist = distance2(newPos, enemy.position, rows, cols);
         nearestEnemyDist = Math.min(nearestEnemyDist, dist);
+        const currentDist = distance2(bot.position, enemy.position, rows, cols);
+        currentNearestEnemyDist = Math.min(currentNearestEnemyDist, currentDist);
       }
       if (nearestEnemyDist < Infinity) {
+        // Bonus for getting closer to enemies (encourages active engagement)
+        score += (currentNearestEnemyDist - nearestEnemyDist) * 5;
         // Bonus for being in attack range
         if (nearestEnemyDist <= config.attack_radius2) {
           score += 50;
@@ -195,6 +211,42 @@ export class SwarmStrategy {
     }
 
     // If no good move found, try to stay put or move toward swarm
+    return null;
+  }
+
+  /**
+   * Move toward a target position, avoiding walls
+   */
+  private moveTowardPosition(
+    bot: VisibleBot,
+    target: Position,
+    walls: Set<string>,
+    rows: number,
+    cols: number
+  ): Move | null {
+    let bestDir: Direction | null = null;
+    let bestDist2 = Infinity;
+
+    for (const dir of ALL_DIRECTIONS) {
+      const newPos = moveToward(bot.position, dir, rows, cols);
+      const newPosKey = posKey(newPos);
+
+      // Can't move into walls
+      if (walls.has(newPosKey)) {
+        continue;
+      }
+
+      const dist2 = distance2(newPos, target, rows, cols);
+      if (dist2 < bestDist2) {
+        bestDist2 = dist2;
+        bestDir = dir;
+      }
+    }
+
+    if (bestDir) {
+      return { position: bot.position, direction: bestDir };
+    }
+
     return null;
   }
 
