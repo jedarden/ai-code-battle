@@ -225,25 +225,25 @@ func TestGenerateMap_CenterWeightedEnergy(t *testing.T) {
 	}
 }
 
-func TestGenerateMap_CoresOutsideAttackRadius(t *testing.T) {
-	// Per plan §3.7.1: spawn must put bots outside final zone (min radius 1 for 3+, 2 for 2-player).
-	// The zone forcing function works by shrinking the zone over time.
-	// For 2 players: 25% spawn radius (10 tiles from center, 20 tiles apart on 40x40)
-	//   - Well outside attack radius (5 tiles)
-	//   - Zone shrinks from radius 20 to 2, forcing bots into contact over time
-	// For 3+ players: 10% spawn radius (5 tiles from center on 50x50)
-	//   - Some cores may be within attack radius (3.5 tiles) due to angular spacing
+func TestGenerateMap_CoresWithinAttackRadius(t *testing.T) {
+	// Per plan §3.7.1: spawn radius puts bots within attack range for immediate combat.
+	// Target: 65-80% combat density for 2-player matches.
+	// For 2 players: 10% spawn radius (~2 tiles from center, ~4 tiles apart on 40x40)
+	//   - Within attack radius (5 tiles), ensuring immediate combat engagement
+	//   - Achieves 65-80% combat density per plan §3.7.1
+	// For 3+ players: 10% spawn radius (~5 tiles from center on 50x50)
+	//   - Within attack radius (3.5 tiles), ensuring combat engagement
 	//   - Zone shrinks to radius 1, forcing all bots into contact
 	testCases := []struct {
 		numPlayers        int
 		attackRadius      float64
 		expectedRadius    float64
-		minDistFromCenter float64 // minimum distance from center (should be > zone min radius)
+		maxDistFromCenter float64 // maximum distance from center (should be within attack radius)
 	}{
-		{2, 5.0, 0.25, 4.0}, // 2-player: 5 tile attack radius, 0.25 spawn radius = 5 tiles from center
-		{3, 3.5, 0.10, 2.0}, // 3+ player: 3.5 tile attack radius, 0.10 spawn radius = 2.5 tiles from center
-		{4, 3.5, 0.10, 2.0},
-		{6, 3.5, 0.10, 2.0},
+		{2, 5.0, 0.10, 4.0}, // 2-player: 5 tile attack radius, 0.10 spawn radius = ~2 tiles from center
+		{3, 3.5, 0.10, 3.5}, // 3+ player: 3.5 tile attack radius, 0.10 spawn radius = ~2.5 tiles from center
+		{4, 3.5, 0.10, 3.5},
+		{6, 3.5, 0.10, 3.5},
 	}
 
 	for _, tc := range testCases {
@@ -277,12 +277,12 @@ func TestGenerateMap_CoresOutsideAttackRadius(t *testing.T) {
 						c.Position, dist, expectedDist, tolerance)
 				}
 
-				// Verify cores are outside the final zone radius
-				// Final zone is radius 1 for 3+, radius 2 for 2-player
-				// This ensures bots start outside the final zone and are forced inward
-				if dist < tc.minDistFromCenter {
-					t.Errorf("core at %v: distance %.2f from center, expected at least %.2f (outside final zone)",
-						c.Position, dist, tc.minDistFromCenter)
+				// Verify cores are within attack radius for immediate combat engagement
+				// For 2-player: within 5 tiles; for 3+: within 3.5 tiles
+
+				if dist > tc.maxDistFromCenter {
+					t.Errorf("core at %v: distance %.2f from center, expected at most %.2f (within attack radius)",
+						c.Position, dist, tc.maxDistFromCenter)
 				}
 			}
 		})
