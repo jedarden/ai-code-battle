@@ -204,9 +204,6 @@ func TestIntegration_CenterWeightedEnergy(t *testing.T) {
 	server := createMockBotServer(t, secret, 0)
 	defer server.Close()
 
-	auth := AuthConfig{BotID: "b_test", Secret: secret, MatchID: "m_energy_test"}
-	bot := NewHTTPBot(server.URL, auth, WithHTTPTimeout(5*time.Second))
-
 	config := DefaultConfig()
 	config.Rows = 60
 	config.Cols = 60
@@ -217,8 +214,14 @@ func TestIntegration_CenterWeightedEnergy(t *testing.T) {
 		WithTimeout(5*time.Second),
 	)
 
-	runner.AddBot(bot, "TestBot")
-	runner.AddBot(bot, "TestBot2")
+	// Use separate bot instances to avoid race conditions
+	auth1 := AuthConfig{BotID: "b_test1", Secret: secret, MatchID: "m_energy_test"}
+	bot1 := NewHTTPBot(server.URL, auth1, WithHTTPTimeout(5*time.Second))
+	auth2 := AuthConfig{BotID: "b_test2", Secret: secret, MatchID: "m_energy_test"}
+	bot2 := NewHTTPBot(server.URL, auth2, WithHTTPTimeout(5*time.Second))
+
+	runner.AddBot(bot1, "TestBot")
+	runner.AddBot(bot2, "TestBot2")
 
 	result, replay, err := runner.Run()
 	if err != nil {
