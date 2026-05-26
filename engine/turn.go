@@ -123,9 +123,9 @@ func (gs *GameState) executeZone() {
 	if !gs.ZoneActive && gs.Turn >= gs.Config.ZoneStartTurn {
 		gs.ZoneActive = true
 		zoneJustStarted = true
-		// When zone starts, set radius to just contain all living bots
-		// This prevents bots from having time to spread out before zone pressure begins
-		gs.updateZoneRadiusToContainBots()
+		// When zone starts, set radius to a fixed initial size based on map dimensions
+		// This forces bots toward the center regardless of how far they've spread
+		gs.setInitialZoneRadius()
 	}
 
 	// Zone center is fixed at map center (set in NewGameState)
@@ -180,47 +180,26 @@ func (gs *GameState) executeZone() {
 	}
 }
 
-// updateZoneRadiusToContainBots sets the zone radius to the minimum value needed
-// to contain all living bots, plus a small margin.
-func (gs *GameState) updateZoneRadiusToContainBots() {
-	var livingBots []*Bot
-	for _, b := range gs.Bots {
-		if b.Alive {
-			livingBots = append(livingBots, b)
-		}
+// setInitialZoneRadius sets the zone to a fixed initial radius based on map dimensions.
+// The zone starts at a radius that forces bots inward immediately, ensuring
+// contact is forced before energy farming dominates.
+func (gs *GameState) setInitialZoneRadius() {
+	// Calculate the distance from center to the nearest map edge
+	// For a rectangular grid, this is the minimum of half-rows and half-cols
+	halfRows := gs.Config.Rows / 2
+	halfCols := gs.Config.Cols / 2
+	distToEdge := halfRows
+	if halfCols < distToEdge {
+		distToEdge = halfCols
 	}
 
-	if len(livingBots) == 0 {
-		return
-	}
+	// Set initial zone radius to ~55% of the distance from center to edge
+	// This maximizes combat engagement time while still forcing bots inward
+	gs.ZoneRadius = (distToEdge * 55) / 100
 
-	// Find the maximum distance from zone center to any bot
-	maxDist2 := 0
-	for _, b := range livingBots {
-		dist2 := gs.Grid.Distance2(b.Position, gs.ZoneCenter)
-		if dist2 > maxDist2 {
-			maxDist2 = dist2
-		}
-	}
-
-	// Set zone radius to contain all bots plus margin
-	// Margin gives bots time to reach each other before zone kills them
-	maxDist := int(sqrt(maxDist2))
-	gs.ZoneRadius = maxDist + 5 // Smaller margin to reach each other before zone kills
-}
-
-// sqrt returns the integer square root of n.
-func sqrt(n int) int {
-	if n <= 0 {
-		return 0
-	}
-	x := n
-	for {
-		y := (x + n/x) / 2
-		if y >= x {
-			return x
-		}
-		x = y
+	// Ensure minimum initial radius of 7 for very small maps
+	if gs.ZoneRadius < 7 {
+		gs.ZoneRadius = 7
 	}
 }
 
