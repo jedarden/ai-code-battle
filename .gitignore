@@ -33,6 +33,9 @@ Thumbs.db
 replay.json
 test-replays/
 
+# Generated map data
+web/public/data/maps/
+
 # Marathon instructions (local only)
 .marathon/
 
