@@ -172,9 +172,9 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 	// For 3+ players: 10% spawn radius (~5 tiles from center, ~10 tiles apart on 50x50)
 	var radius float64
 	if numPlayers == 2 {
-		radius = 0.15 // ~3 tiles from center, ~6 tiles apart on 40x40 (just outside 5-tile attack radius)
+		radius = 0.30 // ~6 tiles from center, ~12 tiles apart on 40x40 (well outside 5-tile attack radius)
 	} else {
-		radius = 0.10 // ~5 tiles from center on 50x50 grid
+		radius = 0.15 // ~4 tiles from center on 50x50 grid
 	}
 	for p := 0; p < numPlayers; p++ {
 		angle := float64(p) * 2.0 * math.Pi / float64(numPlayers)

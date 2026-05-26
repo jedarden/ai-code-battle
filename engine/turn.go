@@ -188,8 +188,8 @@ func (gs *GameState) setInitialZoneRadius() {
 	}
 
 	// Set initial zone radius to 90% of the distance from center to edge
-	// This ensures all spawn positions (32% from center) are inside the zone
-	// Bots have time to react before the zone shrinks to force combat
+	// This ensures all spawn positions (30% from center) are inside the zone
+	// Zone shrinks 1 tile/turn, forcing bots toward center over time
 	gs.ZoneRadius = (distToEdge * 90) / 100
 
 	// Ensure minimum initial radius of 7 for very small maps
