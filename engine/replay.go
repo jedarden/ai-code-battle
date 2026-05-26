@@ -20,6 +20,7 @@ type Replay struct {
 	Turns           []ReplayTurn     `json:"turns"`
 	WinProb         []WinProbEntry   `json:"win_prob,omitempty"`
 	CriticalMoments []CriticalMoment `json:"critical_moments,omitempty"`
+	CombatDeaths    []int            `json:"combat_deaths,omitempty"` // bots killed in combat per player (focus-fire)
 }
 
 // ReplayPlayer represents player info in a replay.
@@ -204,6 +205,10 @@ func (rw *ReplayWriter) Finalize(result *MatchResult) {
 	rw.replay.EndTime = time.Now().UTC()
 	rw.replay.Result = result
 	rw.replay.Turns = rw.turns
+	// Copy combat_deaths to top level for easy access (plan §7.1)
+	if result != nil {
+		rw.replay.CombatDeaths = result.CombatDeaths
+	}
 }
 
 // GetReplay returns the completed replay.
