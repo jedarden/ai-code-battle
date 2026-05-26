@@ -166,13 +166,13 @@ func generateMap(numPlayers, rows, cols int, wallDensity float64, numEnergyNodes
 	// Per plan §3.7.1: zone forces combat, spawn radius ensures bots start within attack range.
 	// Target: 65-80% combat density for 2-player matches.
 	//
-	// For 2 players: 10% spawn radius (~2 tiles from center, ~4 tiles apart on 40x40)
-	//   - Within attack radius (5 tiles), ensuring immediate combat engagement
+	// For 2 players: 15% spawn radius (~3 tiles from center, ~6 tiles apart on 40x40)
+	//   - Just outside 5-tile attack radius, zone forces contact over time
 	//   - Achieves 65-80% combat density per plan §3.7.1
 	// For 3+ players: 10% spawn radius (~5 tiles from center, ~10 tiles apart on 50x50)
 	var radius float64
 	if numPlayers == 2 {
-		radius = 0.10 // ~2 tiles from center, ~4 tiles apart on 40x40 (within attack radius of 5)
+		radius = 0.15 // ~3 tiles from center, ~6 tiles apart on 40x40 (just outside 5-tile attack radius)
 	} else {
 		radius = 0.10 // ~5 tiles from center on 50x50 grid
 	}
