@@ -8,7 +8,8 @@ import (
 
 // getZoneEscapeDirection returns the direction toward the zone center if the bot is outside
 // or near the edge of the safe zone radius. Returns DirNone if the bot is safe or zone is disabled.
-func getZoneEscapeDirection(botPos Position, state *VisibleState) Direction {
+// Avoids walls when choosing the escape direction.
+func getZoneEscapeDirection(botPos Position, state *VisibleState, wallSet map[Position]bool) Direction {
 	if state.Zone == nil || !state.Zone.Active {
 		return DirNone
 	}
@@ -40,7 +41,7 @@ func getZoneEscapeDirection(botPos Position, state *VisibleState) Direction {
 	// This accounts for zone shrinking (1 tile/turn) and gives time to reach safety
 	safetyMargin2 := 25 // (5 tiles)^2 - anticipates ~5 turns of zone shrink
 	if dist2 >= radius2-safetyMargin2 {
-		// Move toward center: choose direction that reduces distance
+		// Move toward center: choose direction that reduces distance and avoids walls
 		bestDir := DirNone
 		bestReduction := 0
 
@@ -50,6 +51,13 @@ func getZoneEscapeDirection(botPos Position, state *VisibleState) Direction {
 				Row: ((botPos.Row+ddr)%rows + rows) % rows,
 				Col: ((botPos.Col+ddc)%cols + cols) % cols,
 			}
+
+			// Skip if blocked by wall (only check if wallSet is provided)
+			if wallSet != nil && wallSet[newPos] {
+				continue
+			}
+			// If wallSet is nil, assume all tiles are passable (RandomBot fallback)
+			// This is safe because the engine will ignore moves into walls
 
 			newDr := newPos.Row - center.Row
 			newDc := newPos.Col - center.Col
@@ -150,7 +158,7 @@ func (b *GathererBot) computeBotMove(
 	state *VisibleState,
 ) *Move {
 	// Priority 1: Escape zone if threatened
-	if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+	if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
 		return &Move{
 			Position:  bot.Position,
 			Direction: zoneDir,
@@ -408,7 +416,7 @@ func (b *RusherBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 	for _, bot := range myBots {
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
 			moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
 			continue
 		}
@@ -641,7 +649,7 @@ func (b *GuardianBot) computeBotMove(
 	state *VisibleState,
 ) *Move {
 	// Priority 1: Escape zone if threatened
-	if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+	if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
 		return &Move{Position: bot.Position, Direction: zoneDir}
 	}
 
@@ -868,7 +876,7 @@ func (b *SwarmBot) computeBotMove(
 	state *VisibleState,
 ) *Move {
 	// Priority 1: Escape zone if threatened
-	if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+	if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
 		return &Move{Position: bot.Position, Direction: zoneDir}
 	}
 
@@ -1113,7 +1121,7 @@ func (b *HunterBot) GetMoves(state *VisibleState) ([]Move, error) {
 			}
 
 			// Priority 1: Escape zone if threatened
-			if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
 				moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
 				assignedHunters[bot.Position] = true
 				continue
@@ -1141,7 +1149,7 @@ func (b *HunterBot) GetMoves(state *VisibleState) ([]Move, error) {
 		}
 
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
 			moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
 			continue
 		}

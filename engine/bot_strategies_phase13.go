@@ -61,7 +61,7 @@ func (b *DefenderBot) GetMoves(state *VisibleState) ([]Move, error) {
 		var dir Direction
 
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dir = zoneDir
 		}
 
@@ -155,7 +155,7 @@ func (b *ScoutBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 	for _, bot := range myBots {
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
 			if !claimed[dest] {
 				claimed[dest] = true
@@ -260,7 +260,7 @@ func (b *FarmerBot) GetMoves(state *VisibleState) ([]Move, error) {
 		var dir Direction
 
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dir = zoneDir
 		}
 
@@ -339,7 +339,7 @@ func (b *PacifistBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 	for _, bot := range myBots {
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
 			if !claimed[dest] && !wallSet[dest] {
 				claimed[dest] = true
@@ -427,7 +427,7 @@ func (b *PhalanxBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 	for _, bot := range myBots {
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
 			if !claimed[dest] && !wallSet[dest] {
 				claimed[dest] = true
@@ -518,7 +518,7 @@ func (b *RaiderBot) GetMoves(state *VisibleState) ([]Move, error) {
 			}
 
 			// Priority 1: Escape zone if threatened
-			if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 				dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
 				if !claimed[dest] {
 					claimed[dest] = true
@@ -563,7 +563,7 @@ func (b *RaiderBot) GetMoves(state *VisibleState) ([]Move, error) {
 		var dir Direction
 
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dir = zoneDir
 		}
 
@@ -656,7 +656,7 @@ func (b *NomadBot) GetMoves(state *VisibleState) ([]Move, error) {
 		var dir Direction
 
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dir = zoneDir
 		}
 
@@ -767,7 +767,7 @@ func (b *OpportunistBot) GetMoves(state *VisibleState) ([]Move, error) {
 		var dir Direction
 
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dir = zoneDir
 		}
 
@@ -865,7 +865,7 @@ func (b *AssassinBot) GetMoves(state *VisibleState) ([]Move, error) {
 		var dir Direction
 
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dir = zoneDir
 		}
 
@@ -920,7 +920,7 @@ func (b *KamikazeBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 	for _, bot := range myBots {
 		// Priority 1: Escape zone if threatened
-		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallSet); zoneDir != DirNone {
 			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
 			if !claimed[dest] && !wallSet[dest] {
 				claimed[dest] = true
