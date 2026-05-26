@@ -326,6 +326,15 @@ func (gs *GameState) GetVisibleState(playerID int) *VisibleState {
 		}
 	}
 
+	// Include zone bounds if enabled
+	if gs.Config.ZoneEnabled {
+		vs.Zone = &ZoneBounds{
+			Center: gs.ZoneCenter,
+			Radius: gs.ZoneRadius,
+			Active: gs.ZoneActive,
+		}
+	}
+
 	return vs
 }
 

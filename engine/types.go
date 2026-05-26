@@ -291,6 +291,7 @@ type VisibleState struct {
 	Cores  []VisibleCore `json:"cores"`
 	Walls  []Position    `json:"walls"`
 	Dead   []VisibleBot  `json:"dead"`
+	Zone   *ZoneBounds   `json:"zone,omitempty"` // Current zone state (nil if zone disabled)
 }
 
 // VisibleBot represents a bot visible to a player.
