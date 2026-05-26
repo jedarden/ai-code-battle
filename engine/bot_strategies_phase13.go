@@ -60,12 +60,17 @@ func (b *DefenderBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 		var dir Direction
 
-		// Priority 1: Intercept nearby enemies
-		if nearestEnemy != nil && enemyDist <= 50 {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dir = zoneDir
+		}
+
+		// Priority 2: Intercept nearby enemies
+		if dir == DirNone && nearestEnemy != nil && enemyDist <= 50 {
 			dir = moveToward(bot.Position, *nearestEnemy, wallSet, claimed, config)
 		}
 
-		// Priority 2: Return to core perimeter if too far
+		// Priority 3: Return to core perimeter if too far
 		if dir == DirNone && coreDist > perimeterRadius2 {
 			nearestCore, _ := findNearestPos(bot.Position, coreSet, config)
 			if nearestCore != nil {
@@ -73,7 +78,7 @@ func (b *DefenderBot) GetMoves(state *VisibleState) ([]Move, error) {
 			}
 		}
 
-		// Priority 3: Gather energy within perimeter
+		// Priority 4: Gather energy within perimeter
 		if dir == DirNone && len(energySet) > 0 {
 			nearestEnergy, _ := findNearestPos(bot.Position, energySet, config)
 			if nearestEnergy != nil {
@@ -81,7 +86,7 @@ func (b *DefenderBot) GetMoves(state *VisibleState) ([]Move, error) {
 			}
 		}
 
-		// Priority 4: Patrol near core
+		// Priority 5: Patrol near core
 		if dir == DirNone && len(coreSet) > 0 {
 			nearestCore, _ := findNearestPos(bot.Position, coreSet, config)
 			if nearestCore != nil {
@@ -149,6 +154,16 @@ func (b *ScoutBot) GetMoves(state *VisibleState) ([]Move, error) {
 	claimed := make(map[Position]bool)
 
 	for _, bot := range myBots {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
+			if !claimed[dest] {
+				claimed[dest] = true
+				moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+				continue
+			}
+		}
+
 		if shouldFleeFromEnemies(bot.Position, enemySet, config) {
 			dir := fleeDirection(bot.Position, enemySet, wallSet, config)
 			if dir != DirNone {
@@ -244,7 +259,12 @@ func (b *FarmerBot) GetMoves(state *VisibleState) ([]Move, error) {
 	for _, bot := range myBots {
 		var dir Direction
 
-		if shouldFleeFromEnemies(bot.Position, enemySet, config) {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dir = zoneDir
+		}
+
+		if dir == DirNone && shouldFleeFromEnemies(bot.Position, enemySet, config) {
 			dir = fleeDirection(bot.Position, enemySet, wallSet, config)
 		}
 
@@ -318,6 +338,18 @@ func (b *PacifistBot) GetMoves(state *VisibleState) ([]Move, error) {
 	sortBotsByEnemyDist(myBots, enemySet, config)
 
 	for _, bot := range myBots {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
+			if !claimed[dest] && !wallSet[dest] {
+				claimed[dest] = true
+				moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+			} else {
+				claimed[bot.Position] = true
+			}
+			continue
+		}
+
 		bestDir := DirNone
 		bestScore := float64(math.MinInt64)
 
@@ -394,6 +426,18 @@ func (b *PhalanxBot) GetMoves(state *VisibleState) ([]Move, error) {
 	claimed := make(map[Position]bool)
 
 	for _, bot := range myBots {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
+			if !claimed[dest] && !wallSet[dest] {
+				claimed[dest] = true
+				moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+			} else {
+				claimed[bot.Position] = true
+			}
+			continue
+		}
+
 		bestDir := DirNone
 		bestScore := float64(math.MinInt64)
 
@@ -472,6 +516,18 @@ func (b *RaiderBot) GetMoves(state *VisibleState) ([]Move, error) {
 			if assigned[bot.Position] {
 				continue
 			}
+
+			// Priority 1: Escape zone if threatened
+			if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+				dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
+				if !claimed[dest] {
+					claimed[dest] = true
+					moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+					assigned[bot.Position] = true
+				}
+				continue
+			}
+
 			d := distance2(bot.Position, target.Position, config.Rows, config.Cols)
 			if d < 400 {
 				turns := b.engagementTurns[bot.Position]
@@ -503,8 +559,15 @@ func (b *RaiderBot) GetMoves(state *VisibleState) ([]Move, error) {
 		if assigned[bot.Position] {
 			continue
 		}
-		dir := DirNone
-		if len(energySet) > 0 {
+
+		var dir Direction
+
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dir = zoneDir
+		}
+
+		if dir == DirNone && len(energySet) > 0 {
 			nearest, _ := findNearestPos(bot.Position, energySet, config)
 			if nearest != nil {
 				dir = moveToward(bot.Position, *nearest, wallSet, claimed, config)
@@ -592,7 +655,12 @@ func (b *NomadBot) GetMoves(state *VisibleState) ([]Move, error) {
 	for _, bot := range myBots {
 		var dir Direction
 
-		if shouldFleeFromEnemies(bot.Position, enemySet, config) {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dir = zoneDir
+		}
+
+		if dir == DirNone && shouldFleeFromEnemies(bot.Position, enemySet, config) {
 			dir = fleeDirection(bot.Position, enemySet, wallSet, config)
 		}
 
@@ -698,7 +766,12 @@ func (b *OpportunistBot) GetMoves(state *VisibleState) ([]Move, error) {
 	for _, bot := range myBots {
 		var dir Direction
 
-		if bestTarget != nil {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dir = zoneDir
+		}
+
+		if dir == DirNone && bestTarget != nil {
 			dir = moveToward(bot.Position, *bestTarget, wallSet, claimed, config)
 		}
 
@@ -790,7 +863,13 @@ func (b *AssassinBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 	for _, bot := range myBots {
 		var dir Direction
-		if target != nil {
+
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dir = zoneDir
+		}
+
+		if dir == DirNone && target != nil {
 			dir = moveToward(bot.Position, *target, wallSet, claimed, config)
 		}
 		if dir == DirNone {
@@ -840,6 +919,18 @@ func (b *KamikazeBot) GetMoves(state *VisibleState) ([]Move, error) {
 	sortBotsByEnemyDist(myBots, enemySet, config)
 
 	for _, bot := range myBots {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			dest := simulateMove(bot.Position, zoneDir, config.Rows, config.Cols)
+			if !claimed[dest] && !wallSet[dest] {
+				claimed[dest] = true
+				moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+			} else {
+				claimed[bot.Position] = true
+			}
+			continue
+		}
+
 		nearestEnemy, _ := findNearestPos(bot.Position, enemySet, config)
 
 		bestDir := DirNone

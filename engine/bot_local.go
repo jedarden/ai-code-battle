@@ -76,6 +76,16 @@ func (b *RandomBot) GetMoves(state *VisibleState) ([]Move, error) {
 
 	for _, bot := range state.Bots {
 		if bot.Owner == state.You.ID {
+			// Priority 1: Escape zone if threatened
+			if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+				moves = append(moves, Move{
+					Position:  bot.Position,
+					Direction: zoneDir,
+				})
+				continue
+			}
+
+			// Otherwise, move randomly
 			moves = append(moves, Move{
 				Position:  bot.Position,
 				Direction: directions[b.rng.Intn(len(directions))],

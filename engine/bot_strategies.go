@@ -623,7 +623,7 @@ func (b *GuardianBot) GetMoves(state *VisibleState) ([]Move, error) {
 	usedEnergy := make(map[Position]bool)
 
 	for _, bot := range myBots {
-		move := b.computeBotMove(bot, myCores, enemyBots, enemyPositions, energyPositions, usedEnergy, wallPositions, config)
+		move := b.computeBotMove(bot, myCores, enemyBots, enemyPositions, energyPositions, usedEnergy, wallPositions, config, state)
 		if move != nil {
 			moves = append(moves, *move)
 		}
@@ -638,7 +638,13 @@ func (b *GuardianBot) computeBotMove(
 	enemyBots []VisibleBot,
 	enemyPositions, energyPositions, usedEnergy, wallPositions map[Position]bool,
 	config Config,
+	state *VisibleState,
 ) *Move {
+	// Priority 1: Escape zone if threatened
+	if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		return &Move{Position: bot.Position, Direction: zoneDir}
+	}
+
 	const perimeterRadius = 5
 	const safeZoneRadius = 10
 
@@ -806,7 +812,7 @@ func (b *SwarmBot) GetMoves(state *VisibleState) ([]Move, error) {
 	claimed := make(map[Position]bool) // destinations already claimed by a friendly bot this turn
 
 	for _, bot := range myBots {
-		move := b.computeBotMove(bot, myBotPositions, enemyPositions, energyPositions, swarmCenter, enemyCenter, wallPositions, claimed, config, len(myBots))
+		move := b.computeBotMove(bot, myBotPositions, enemyPositions, energyPositions, swarmCenter, enemyCenter, wallPositions, claimed, config, len(myBots), state)
 		if move != nil {
 			dest := simulateMove(bot.Position, move.Direction, config.Rows, config.Cols)
 			claimed[dest] = true
@@ -859,10 +865,16 @@ func (b *SwarmBot) computeBotMove(
 	wallPositions, claimed map[Position]bool,
 	config Config,
 	friendlyCount int,
+	state *VisibleState,
 ) *Move {
+	// Priority 1: Escape zone if threatened
+	if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+		return &Move{Position: bot.Position, Direction: zoneDir}
+	}
+
 	// Solo mode: when alone or with very few units, gather energy to build the swarm
 	if friendlyCount <= 2 {
-		return b.soloMove(bot, energyPositions, enemyPositions, wallPositions, config)
+		return b.soloMove(bot, energyPositions, enemyPositions, wallPositions, config, state)
 	}
 
 	// Target is enemy center if visible, otherwise map center
@@ -942,6 +954,7 @@ func (b *SwarmBot) soloMove(
 	bot VisibleBot,
 	energyPositions, enemyPositions, wallPositions map[Position]bool,
 	config Config,
+	state *VisibleState,
 ) *Move {
 	bestDir := DirNone
 	bestScore := -math.MaxFloat64
@@ -1099,6 +1112,13 @@ func (b *HunterBot) GetMoves(state *VisibleState) ([]Move, error) {
 				break
 			}
 
+			// Priority 1: Escape zone if threatened
+			if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+				moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+				assignedHunters[bot.Position] = true
+				continue
+			}
+
 			// Check if this bot is close enough to be a hunter
 			dist := distance2(bot.Position, target.Position, config.Rows, config.Cols)
 			if dist < 400 { // Within ~20 tiles
@@ -1117,6 +1137,12 @@ func (b *HunterBot) GetMoves(state *VisibleState) ([]Move, error) {
 	// Remaining bots gather or explore
 	for _, bot := range myBots {
 		if assignedHunters[bot.Position] {
+			continue
+		}
+
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state); zoneDir != DirNone {
+			moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
 			continue
 		}
 
