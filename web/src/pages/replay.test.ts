@@ -79,8 +79,8 @@ describe('replay.ts error handling (URL load button)', () => {
     const { renderReplayPage } = await import('./replay');
     renderReplayPage({});
 
-    // Wait for async module loading
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for async module loading (first import takes longer)
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Get the URL input and load button
     const urlInput = document.getElementById('url-input') as HTMLInputElement;
