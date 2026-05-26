@@ -1,52 +1,56 @@
 {
   "format_version": "1.0",
-  "match_id": "m_645z7iuh",
+  "match_id": "m_pstcxfsi",
   "config": {
     "rows": 40,
     "cols": 40,
-    "max_turns": 500,
+    "max_turns": 320,
     "vision_radius2": 49,
-    "attack_radius2": 12,
+    "attack_radius2": 25,
     "spawn_cost": 3,
     "energy_interval": 10,
-    "cores_per_player": 3,
+    "cores_per_player": 1,
     "zone_enabled": true,
-    "zone_start_turn": 20,
-    "zone_shrink_interval": 2,
+    "zone_start_turn": 10,
+    "zone_shrink_interval": 1,
     "zone_shrink_step": 2,
-    "zone_min_radius": 5
+    "zone_min_radius": 2
   },
-  "start_time": "2026-05-24T21:44:48.75511944Z",
-  "end_time": "2026-05-24T21:44:48.884910274Z",
+  "start_time": "2026-05-26T01:10:05.902799378Z",
+  "end_time": "2026-05-26T01:10:05.955522123Z",
   "result": {
-    "winner": 0,
-    "reason": "elimination",
-    "turns": 15,
+    "winner": -1,
+    "reason": "draw",
+    "turns": 6,
     "scores": [
-      9,
-      3
+      1,
+      1
     ],
     "energy": [
-      2,
+      0,
       0
     ],
     "bots_alive": [
-      2,
+      0,
       0
     ],
     "crashed": [
       false,
       false
+    ],
+    "combat_deaths": [
+      1,
+      1
     ]
   },
   "players": [
     {
       "id": 0,
-      "name": "random"
+      "name": "gatherer"
     },
     {
       "id": 1,
-      "name": "idle"
+      "name": "rusher"
     }
   ],
   "map": {
@@ -54,308 +58,300 @@
     "cols": 40,
     "walls": [
       {
-        "row": 23,
-        "col": 24
-      },
-      {
         "row": 22,
-        "col": 22
-      },
-      {
-        "row": 24,
-        "col": 22
-      },
-      {
-        "row": 16,
-        "col": 18
-      },
-      {
-        "row": 31,
-        "col": 29
-      },
-      {
-        "row": 9,
-        "col": 7
-      },
-      {
-        "row": 23,
-        "col": 30
+        "col": 10
       },
       {
         "row": 30,
         "col": 25
       },
       {
+        "row": 23,
+        "col": 18
+      },
+      {
+        "row": 25,
+        "col": 23
+      },
+      {
+        "row": 7,
+        "col": 13
+      },
+      {
+        "row": 12,
+        "col": 16
+      },
+      {
+        "row": 20,
+        "col": 24
+      },
+      {
+        "row": 37,
+        "col": 20
+      },
+      {
+        "row": 25,
+        "col": 34
+      },
+      {
+        "row": 30,
+        "col": 7
+      },
+      {
+        "row": 32,
+        "col": 21
+      },
+      {
+        "row": 10,
+        "col": 33
+      },
+      {
+        "row": 33,
+        "col": 27
+      },
+      {
         "row": 29,
-        "col": 29
+        "col": 14
+      },
+      {
+        "row": 25,
+        "col": 8
+      },
+      {
+        "row": 22,
+        "col": 20
+      },
+      {
+        "row": 24,
+        "col": 12
+      },
+      {
+        "row": 12,
+        "col": 35
+      },
+      {
+        "row": 16,
+        "col": 10
+      },
+      {
+        "row": 28,
+        "col": 24
       },
       {
         "row": 20,
         "col": 5
       },
       {
-        "row": 4,
-        "col": 25
+        "row": 23,
+        "col": 13
       },
       {
-        "row": 9,
-        "col": 14
-      },
-      {
-        "row": 19,
-        "col": 22
-      },
-      {
-        "row": 11,
-        "col": 30
-      },
-      {
-        "row": 22,
-        "col": 6
+        "row": 18,
+        "col": 19
       },
       {
         "row": 20,
+        "col": 3
+      },
+      {
+        "row": 11,
         "col": 26
       },
       {
-        "row": 26,
-        "col": 29
+        "row": 21,
+        "col": 15
       },
       {
-        "row": 14,
-        "col": 11
+        "row": 18,
+        "col": 20
+      },
+      {
+        "row": 28,
+        "col": 5
+      },
+      {
+        "row": 15,
+        "col": 6
+      },
+      {
+        "row": 8,
+        "col": 19
+      },
+      {
+        "row": 37,
+        "col": 22
+      },
+      {
+        "row": 24,
+        "col": 16
+      },
+      {
+        "row": 24,
+        "col": 33
+      },
+      {
+        "row": 28,
+        "col": 10
+      },
+      {
+        "row": 22,
+        "col": 21
+      },
+      {
+        "row": 28,
+        "col": 20
+      },
+      {
+        "row": 12,
+        "col": 20
+      },
+      {
+        "row": 20,
+        "col": 16
+      },
+      {
+        "row": 20,
+        "col": 18
+      },
+      {
+        "row": 12,
+        "col": 30
+      },
+      {
+        "row": 31,
+        "col": 26
+      },
+      {
+        "row": 16,
+        "col": 28
+      },
+      {
+        "row": 26,
+        "col": 13
       },
       {
         "row": 20,
         "col": 35
       },
       {
-        "row": 28,
-        "col": 30
-      },
-      {
-        "row": 29,
-        "col": 10
-      },
-      {
-        "row": 20,
-        "col": 14
-      },
-      {
-        "row": 20,
-        "col": 23
-      },
-      {
-        "row": 15,
-        "col": 28
-      },
-      {
-        "row": 28,
-        "col": 34
-      },
-      {
-        "row": 20,
+        "row": 19,
         "col": 25
       },
       {
-        "row": 15,
-        "col": 8
-      },
-      {
-        "row": 34,
-        "col": 18
-      },
-      {
-        "row": 18,
-        "col": 7
-      },
-      {
-        "row": 25,
-        "col": 12
-      },
-      {
-        "row": 17,
+        "row": 19,
         "col": 10
-      },
-      {
-        "row": 17,
-        "col": 20
-      },
-      {
-        "row": 20,
-        "col": 15
-      },
-      {
-        "row": 3,
-        "col": 17
-      },
-      {
-        "row": 12,
-        "col": 10
-      },
-      {
-        "row": 37,
-        "col": 23
-      },
-      {
-        "row": 35,
-        "col": 15
-      },
-      {
-        "row": 9,
-        "col": 11
-      },
-      {
-        "row": 17,
-        "col": 16
-      },
-      {
-        "row": 5,
-        "col": 23
-      },
-      {
-        "row": 18,
-        "col": 34
-      },
-      {
-        "row": 14,
-        "col": 20
-      },
-      {
-        "row": 31,
-        "col": 26
-      },
-      {
-        "row": 5,
-        "col": 25
-      },
-      {
-        "row": 11,
-        "col": 11
-      },
-      {
-        "row": 22,
-        "col": 36
-      },
-      {
-        "row": 11,
-        "col": 25
-      },
-      {
-        "row": 6,
-        "col": 22
-      },
-      {
-        "row": 20,
-        "col": 17
-      },
-      {
-        "row": 16,
-        "col": 29
-      },
-      {
-        "row": 24,
-        "col": 11
-      },
-      {
-        "row": 4,
-        "col": 24
-      },
-      {
-        "row": 22,
-        "col": 33
-      },
-      {
-        "row": 23,
-        "col": 18
-      },
-      {
-        "row": 26,
-        "col": 21
-      },
-      {
-        "row": 21,
-        "col": 18
-      },
-      {
-        "row": 23,
-        "col": 20
       },
       {
         "row": 10,
         "col": 15
       },
       {
+        "row": 20,
+        "col": 22
+      },
+      {
         "row": 18,
+        "col": 30
+      },
+      {
+        "row": 14,
+        "col": 27
+      },
+      {
+        "row": 14,
+        "col": 19
+      },
+      {
+        "row": 30,
+        "col": 27
+      },
+      {
+        "row": 10,
+        "col": 13
+      },
+      {
+        "row": 3,
         "col": 18
       },
       {
-        "row": 31,
-        "col": 33
+        "row": 22,
+        "col": 14
       },
       {
-        "row": 16,
-        "col": 22
+        "row": 20,
+        "col": 17
       },
       {
-        "row": 12,
-        "col": 6
-      },
-      {
-        "row": 26,
-        "col": 22
-      },
-      {
-        "row": 29,
-        "col": 15
-      },
-      {
-        "row": 26,
+        "row": 15,
         "col": 20
       },
       {
-        "row": 32,
+        "row": 20,
+        "col": 37
+      },
+      {
+        "row": 19,
+        "col": 28
+      },
+      {
+        "row": 21,
+        "col": 12
+      },
+      {
+        "row": 26,
+        "col": 21
+      },
+      {
+        "row": 15,
         "col": 17
       },
       {
-        "row": 18,
-        "col": 4
+        "row": 25,
+        "col": 20
       },
       {
-        "row": 36,
-        "col": 15
+        "row": 3,
+        "col": 20
       },
       {
-        "row": 35,
-        "col": 17
-      },
-      {
-        "row": 36,
-        "col": 16
+        "row": 21,
+        "col": 30
       },
       {
         "row": 17,
         "col": 22
       },
       {
-        "row": 8,
-        "col": 23
+        "row": 16,
+        "col": 24
       },
       {
         "row": 24,
-        "col": 18
+        "col": 30
       },
       {
-        "row": 14,
-        "col": 18
+        "row": 20,
+        "col": 23
       },
       {
-        "row": 25,
+        "row": 18,
+        "col": 26
+      },
+      {
+        "row": 15,
         "col": 32
       },
       {
-        "row": 14,
-        "col": 19
+        "row": 17,
+        "col": 27
+      },
+      {
+        "row": 9,
+        "col": 14
+      },
+      {
+        "row": 16,
+        "col": 7
       }
     ],
     "cores": [
@@ -368,35 +364,7 @@
       },
       {
         "position": {
-          "row": 22,
-          "col": 20
-        },
-        "owner": 0
-      },
-      {
-        "position": {
-          "row": 22,
-          "col": 20
-        },
-        "owner": 0
-      },
-      {
-        "position": {
           "row": 16,
-          "col": 20
-        },
-        "owner": 1
-      },
-      {
-        "position": {
-          "row": 18,
-          "col": 20
-        },
-        "owner": 1
-      },
-      {
-        "position": {
-          "row": 18,
           "col": 20
         },
         "owner": 1
@@ -404,20 +372,12 @@
     ],
     "energy_nodes": [
       {
-        "row": 19,
-        "col": 21
-      },
-      {
         "row": 21,
-        "col": 19
-      },
-      {
-        "row": 21,
-        "col": 24
+        "col": 20
       },
       {
         "row": 19,
-        "col": 16
+        "col": 20
       },
       {
         "row": 18,
@@ -428,20 +388,28 @@
         "col": 15
       },
       {
-        "row": 14,
-        "col": 28
+        "row": 20,
+        "col": 25
       },
       {
-        "row": 26,
-        "col": 12
+        "row": 20,
+        "col": 15
       },
       {
-        "row": 9,
-        "col": 22
+        "row": 30,
+        "col": 24
       },
       {
-        "row": 31,
-        "col": 18
+        "row": 10,
+        "col": 16
+      },
+      {
+        "row": 24,
+        "col": 29
+      },
+      {
+        "row": 16,
+        "col": 11
       }
     ]
   },
@@ -460,45 +428,9 @@
         },
         {
           "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
           "owner": 1,
           "position": {
             "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
             "col": 20
           },
           "alive": true
@@ -515,39 +447,7 @@
         },
         {
           "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
             "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
             "col": 20
           },
           "owner": 1,
@@ -556,8 +456,8 @@
       ],
       "energy": [],
       "scores": [
-        3,
-        3
+        1,
+        1
       ],
       "energy_held": [
         0,
@@ -581,57 +481,9 @@
           "turn": 0,
           "details": {
             "bot_id": 1,
-            "owner": 0,
-            "pos": {
-              "row": 22,
-              "col": 20
-            }
-          }
-        },
-        {
-          "type": "bot_spawned",
-          "turn": 0,
-          "details": {
-            "bot_id": 2,
-            "owner": 0,
-            "pos": {
-              "row": 22,
-              "col": 20
-            }
-          }
-        },
-        {
-          "type": "bot_spawned",
-          "turn": 0,
-          "details": {
-            "bot_id": 3,
             "owner": 1,
             "pos": {
               "row": 16,
-              "col": 20
-            }
-          }
-        },
-        {
-          "type": "bot_spawned",
-          "turn": 0,
-          "details": {
-            "bot_id": 4,
-            "owner": 1,
-            "pos": {
-              "row": 18,
-              "col": 20
-            }
-          }
-        },
-        {
-          "type": "bot_spawned",
-          "turn": 0,
-          "details": {
-            "bot_id": 5,
-            "owner": 1,
-            "pos": {
-              "row": 18,
               "col": 20
             }
           }
@@ -653,55 +505,19 @@
           "id": 0,
           "owner": 0,
           "position": {
-            "row": 24,
-            "col": 21
+            "row": 23,
+            "col": 20
           },
           "alive": true
         },
         {
           "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 22,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
           "owner": 1,
           "position": {
             "row": 16,
-            "col": 20
+            "col": 21
           },
           "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
         }
       ],
       "cores": [
@@ -715,39 +531,7 @@
         },
         {
           "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
             "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
             "col": 20
           },
           "owner": 1,
@@ -756,40 +540,12 @@
       ],
       "energy": [],
       "scores": [
-        3,
-        3
+        1,
+        1
       ],
       "energy_held": [
         0,
         0
-      ],
-      "events": [
-        {
-          "type": "bot_died",
-          "turn": 1,
-          "details": {
-            "bot_id": 4,
-            "owner": 1,
-            "pos": {
-              "row": 18,
-              "col": 20
-            },
-            "reason": "self_collision"
-          }
-        },
-        {
-          "type": "bot_died",
-          "turn": 1,
-          "details": {
-            "bot_id": 5,
-            "owner": 1,
-            "pos": {
-              "row": 18,
-              "col": 20
-            },
-            "reason": "self_collision"
-          }
-        }
       ],
       "zone_bounds": {
         "center": {
@@ -807,55 +563,19 @@
           "id": 0,
           "owner": 0,
           "position": {
-            "row": 24,
+            "row": 23,
             "col": 21
           },
           "alive": true
         },
         {
           "id": 1,
-          "owner": 0,
+          "owner": 1,
           "position": {
-            "row": 22,
-            "col": 18
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 22,
+            "row": 17,
             "col": 21
           },
           "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
         }
       ],
       "cores": [
@@ -869,39 +589,7 @@
         },
         {
           "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
             "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
             "col": 20
           },
           "owner": 1,
@@ -910,8 +598,8 @@
       ],
       "energy": [],
       "scores": [
-        3,
-        3
+        1,
+        1
       ],
       "energy_held": [
         0,
@@ -933,55 +621,19 @@
           "id": 0,
           "owner": 0,
           "position": {
-            "row": 25,
-            "col": 21
+            "row": 23,
+            "col": 20
           },
           "alive": true
         },
         {
           "id": 1,
-          "owner": 0,
+          "owner": 1,
           "position": {
-            "row": 22,
-            "col": 18
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 23,
+            "row": 18,
             "col": 21
           },
           "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
         }
       ],
       "cores": [
@@ -995,39 +647,7 @@
         },
         {
           "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
             "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
             "col": 20
           },
           "owner": 1,
@@ -1036,8 +656,8 @@
       ],
       "energy": [],
       "scores": [
-        3,
-        3
+        1,
+        1
       ],
       "energy_held": [
         0,
@@ -1059,55 +679,19 @@
           "id": 0,
           "owner": 0,
           "position": {
-            "row": 25,
-            "col": 22
+            "row": 24,
+            "col": 20
           },
           "alive": true
         },
         {
           "id": 1,
-          "owner": 0,
+          "owner": 1,
           "position": {
-            "row": 22,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 23,
+            "row": 19,
             "col": 21
           },
           "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
         }
       ],
       "cores": [
@@ -1121,39 +705,7 @@
         },
         {
           "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
             "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
             "col": 20
           },
           "owner": 1,
@@ -1162,8 +714,8 @@
       ],
       "energy": [],
       "scores": [
-        3,
-        3
+        1,
+        1
       ],
       "energy_held": [
         0,
@@ -1185,55 +737,19 @@
           "id": 0,
           "owner": 0,
           "position": {
-            "row": 25,
-            "col": 22
+            "row": 24,
+            "col": 19
           },
           "alive": true
         },
         {
           "id": 1,
-          "owner": 0,
+          "owner": 1,
           "position": {
-            "row": 22,
-            "col": 18
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 24,
+            "row": 18,
             "col": 21
           },
           "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
         }
       ],
       "cores": [
@@ -1247,39 +763,7 @@
         },
         {
           "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
             "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
             "col": 20
           },
           "owner": 1,
@@ -1288,8 +772,8 @@
       ],
       "energy": [],
       "scores": [
-        3,
-        3
+        1,
+        1
       ],
       "energy_held": [
         0,
@@ -1311,1384 +795,17 @@
           "id": 0,
           "owner": 0,
           "position": {
-            "row": 25,
-            "col": 23
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 22,
+            "row": 23,
             "col": 19
           },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
           "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        0,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 7,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 26,
-            "col": 23
-          },
-          "alive": true
         },
         {
           "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 21,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 24,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
           "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        0,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 8,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 27,
-            "col": 23
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 20,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 25,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        0,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 9,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 26,
-            "col": 23
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 20,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 25,
-            "col": 18
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        0,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 10,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 27,
-            "col": 23
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 21,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 25,
-            "col": 18
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [
-        {
-          "row": 19,
-          "col": 21
-        },
-        {
-          "row": 21,
-          "col": 19
-        },
-        {
-          "row": 21,
-          "col": 24
-        },
-        {
-          "row": 19,
-          "col": 16
-        },
-        {
-          "row": 18,
-          "col": 25
-        },
-        {
-          "row": 22,
-          "col": 15
-        },
-        {
-          "row": 14,
-          "col": 28
-        },
-        {
-          "row": 26,
-          "col": 12
-        },
-        {
-          "row": 9,
-          "col": 22
-        },
-        {
-          "row": 31,
-          "col": 18
-        }
-      ],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        0,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 11,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 26,
-            "col": 23
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 20,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 25,
-            "col": 18
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [
-        {
-          "row": 21,
-          "col": 24
-        },
-        {
-          "row": 19,
-          "col": 16
-        },
-        {
-          "row": 18,
-          "col": 25
-        },
-        {
-          "row": 22,
-          "col": 15
-        },
-        {
-          "row": 14,
-          "col": 28
-        },
-        {
-          "row": 26,
-          "col": 12
-        },
-        {
-          "row": 9,
-          "col": 22
-        },
-        {
-          "row": 31,
-          "col": 18
-        }
-      ],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        2,
-        0
-      ],
-      "events": [
-        {
-          "type": "energy_collected",
-          "turn": 11,
-          "details": {
-            "player": 0,
-            "pos": {
-              "row": 19,
-              "col": 21
-            }
-          }
-        },
-        {
-          "type": "energy_collected",
-          "turn": 11,
-          "details": {
-            "player": 0,
-            "pos": {
-              "row": 21,
-              "col": 19
-            }
-          }
-        }
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 12,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 27,
-            "col": 23
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 21,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 25,
-            "col": 18
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [
-        {
-          "row": 21,
-          "col": 24
-        },
-        {
-          "row": 19,
-          "col": 16
-        },
-        {
-          "row": 18,
-          "col": 25
-        },
-        {
-          "row": 22,
-          "col": 15
-        },
-        {
-          "row": 14,
-          "col": 28
-        },
-        {
-          "row": 26,
-          "col": 12
-        },
-        {
-          "row": 9,
-          "col": 22
-        },
-        {
-          "row": 31,
-          "col": 18
-        }
-      ],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        2,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 13,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 27,
-            "col": 24
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 21,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 25,
-            "col": 17
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [
-        {
-          "row": 21,
-          "col": 24
-        },
-        {
-          "row": 19,
-          "col": 16
-        },
-        {
-          "row": 18,
-          "col": 25
-        },
-        {
-          "row": 22,
-          "col": 15
-        },
-        {
-          "row": 14,
-          "col": 28
-        },
-        {
-          "row": 26,
-          "col": 12
-        },
-        {
-          "row": 9,
-          "col": 22
-        },
-        {
-          "row": 31,
-          "col": 18
-        }
-      ],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        2,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 14,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 27,
-            "col": 23
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
-          "position": {
-            "row": 20,
-            "col": 19
-          },
-          "alive": true
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 25,
-            "col": 16
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": true
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        }
-      ],
-      "cores": [
-        {
-          "position": {
-            "row": 24,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        }
-      ],
-      "energy": [
-        {
-          "row": 21,
-          "col": 24
-        },
-        {
-          "row": 19,
-          "col": 16
-        },
-        {
-          "row": 18,
-          "col": 25
-        },
-        {
-          "row": 22,
-          "col": 15
-        },
-        {
-          "row": 14,
-          "col": 28
-        },
-        {
-          "row": 26,
-          "col": 12
-        },
-        {
-          "row": 9,
-          "col": 22
-        },
-        {
-          "row": 31,
-          "col": 18
-        }
-      ],
-      "scores": [
-        3,
-        3
-      ],
-      "energy_held": [
-        2,
-        0
-      ],
-      "zone_bounds": {
-        "center": {
-          "row": 20,
-          "col": 20
-        },
-        "radius": 20,
-        "active": false
-      }
-    },
-    {
-      "turn": 15,
-      "bots": [
-        {
-          "id": 0,
-          "owner": 0,
-          "position": {
-            "row": 27,
-            "col": 24
-          },
-          "alive": true
-        },
-        {
-          "id": 1,
-          "owner": 0,
           "position": {
             "row": 19,
-            "col": 19
-          },
-          "alive": false
-        },
-        {
-          "id": 2,
-          "owner": 0,
-          "position": {
-            "row": 24,
-            "col": 16
-          },
-          "alive": true
-        },
-        {
-          "id": 3,
-          "owner": 1,
-          "position": {
-            "row": 16,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 4,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "alive": false
-        },
-        {
-          "id": 5,
-          "owner": 1,
-          "position": {
-            "row": 18,
-            "col": 20
+            "col": 21
           },
           "alive": false
         }
@@ -2704,129 +821,64 @@
         },
         {
           "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 22,
-            "col": 20
-          },
-          "owner": 0,
-          "active": true
-        },
-        {
-          "position": {
             "row": 16,
             "col": 20
           },
           "owner": 1,
           "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
-        },
-        {
-          "position": {
-            "row": 18,
-            "col": 20
-          },
-          "owner": 1,
-          "active": true
         }
       ],
-      "energy": [
-        {
-          "row": 21,
-          "col": 24
-        },
-        {
-          "row": 19,
-          "col": 16
-        },
-        {
-          "row": 18,
-          "col": 25
-        },
-        {
-          "row": 22,
-          "col": 15
-        },
-        {
-          "row": 14,
-          "col": 28
-        },
-        {
-          "row": 26,
-          "col": 12
-        },
-        {
-          "row": 9,
-          "col": 22
-        },
-        {
-          "row": 31,
-          "col": 18
-        }
-      ],
+      "energy": [],
       "scores": [
-        9,
-        3
+        1,
+        1
       ],
       "energy_held": [
-        2,
+        0,
         0
       ],
       "events": [
         {
           "type": "combat_death",
-          "turn": 15,
+          "turn": 6,
           "details": {
-            "bot_id": 1,
+            "bot_id": 0,
             "killers": [
               {
-                "bot_id": 3,
+                "bot_id": 1,
                 "owner": 1,
                 "position": {
-                  "row": 16,
-                  "col": 20
+                  "row": 19,
+                  "col": 21
                 }
               }
             ],
             "owner": 0,
             "position": {
-              "row": 19,
+              "row": 23,
               "col": 19
             }
           }
         },
         {
           "type": "combat_death",
-          "turn": 15,
+          "turn": 6,
           "details": {
-            "bot_id": 3,
+            "bot_id": 1,
             "killers": [
               {
-                "bot_id": 1,
+                "bot_id": 0,
                 "owner": 0,
                 "position": {
-                  "row": 19,
+                  "row": 23,
                   "col": 19
                 }
               }
             ],
             "owner": 1,
             "position": {
-              "row": 16,
-              "col": 20
+              "row": 19,
+              "col": 21
             }
           }
         }
@@ -2843,82 +895,58 @@
   ],
   "win_prob": [
     [
-      0.42,
-      0.48
+      0.24,
+      0.24
     ],
     [
-      0.62,
-      0.27
+      0.4,
+      0.18
     ],
     [
-      0.72,
-      0.15
+      0.16,
+      0.18
     ],
     [
-      0.67,
-      0.22
+      0.08,
+      0.09
     ],
     [
-      0.71,
-      0.2
-    ],
-    [
-      0.67,
-      0.22
-    ],
-    [
-      0.73,
-      0.21
-    ],
-    [
-      0.87,
-      0.11
-    ],
-    [
-      0.91,
+      0.02,
       0.08
     ],
     [
-      0.95,
-      0.03
+      0.03,
+      0.42
     ],
     [
-      0.89,
-      0.08
-    ],
-    [
-      0.92,
-      0.04
-    ],
-    [
-      0.84,
-      0.1
-    ],
-    [
-      0.87,
-      0.1
-    ],
-    [
-      0.96,
-      0.02
-    ],
-    [
-      1,
+      0,
       0
     ]
   ],
   "critical_moments": [
     {
       "turn": 1,
-      "delta": 0.2,
+      "delta": 0.16,
       "player": 0,
-      "description": "Player 0 win probability rises to 20%"
+      "description": "Player 0 win probability rises to 16%"
     },
     {
-      "turn": 1,
-      "delta": -0.21,
+      "turn": 2,
+      "delta": -0.24,
+      "player": 0,
+      "description": "Player 0 win probability drops to 24%"
+    },
+    {
+      "turn": 5,
+      "delta": 0.34,
       "player": 1,
-      "description": "Player 1 win probability drops to 21%"
+      "description": "Player 1 win probability rises to 34%"
+    },
+    {
+      "turn": 6,
+      "delta": -0.42,
+      "player": 1,
+      "description": "Player 1 win probability drops to 42%"
     }
   ]
 }
