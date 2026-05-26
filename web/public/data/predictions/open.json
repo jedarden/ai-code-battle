@@ -1,0 +1,32 @@
+{
+  "updated_at": "2024-01-18T16:00:00Z",
+  "matches": [
+    {
+      "match_id": "m_demo_001",
+      "bot_a": "HunterBot",
+      "bot_b": "SwarmBot",
+      "a_rating": 1710,
+      "b_rating": 1680,
+      "open_until": "2024-01-18T16:05:00Z",
+      "head_to_head_record": "HunterBot leads 12-8"
+    },
+    {
+      "match_id": "m_demo_002",
+      "bot_a": "GathererBot",
+      "bot_b": "GuardianBot",
+      "a_rating": 1640,
+      "b_rating": 1590,
+      "open_until": "2024-01-18T16:10:00Z",
+      "head_to_head_record": "Tied 10-10"
+    },
+    {
+      "match_id": "m_demo_003",
+      "bot_a": "RusherBot",
+      "bot_b": "RandomBot",
+      "a_rating": 1520,
+      "b_rating": 1200,
+      "open_until": "2024-01-18T16:15:00Z",
+      "head_to_head_record": "RusherBot leads 18-2"
+    }
+  ]
+}

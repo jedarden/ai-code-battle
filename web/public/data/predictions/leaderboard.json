@@ -1,0 +1,40 @@
+{
+  "updated_at": "2024-01-18T16:00:00Z",
+  "entries": [
+    {
+      "predictor_id": "pred_demo_001",
+      "correct": 42,
+      "incorrect": 18,
+      "streak": 5,
+      "best_streak": 12
+    },
+    {
+      "predictor_id": "pred_demo_002",
+      "correct": 38,
+      "incorrect": 22,
+      "streak": 3,
+      "best_streak": 8
+    },
+    {
+      "predictor_id": "pred_demo_003",
+      "correct": 35,
+      "incorrect": 20,
+      "streak": -2,
+      "best_streak": 7
+    },
+    {
+      "predictor_id": "pred_demo_004",
+      "correct": 30,
+      "incorrect": 25,
+      "streak": 0,
+      "best_streak": 5
+    },
+    {
+      "predictor_id": "pred_demo_005",
+      "correct": 28,
+      "incorrect": 28,
+      "streak": 1,
+      "best_streak": 4
+    }
+  ]
+}
