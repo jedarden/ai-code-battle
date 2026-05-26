@@ -62,15 +62,15 @@ type You struct {
 
 // VisibleState represents the fog-filtered game state visible to this player.
 type VisibleState struct {
-	MatchID string       `json:"match_id"`
-	Turn    int          `json:"turn"`
+	MatchID string         `json:"match_id"`
+	Turn    int            `json:"turn"`
 	Config  map[string]any `json:"config"`
-	You     You          `json:"you"`
-	Bots    []VisibleBot `json:"bots"`
-	Energy  []Position   `json:"energy"`
-	Cores   []VisibleCore `json:"cores"`
-	Walls   []Position   `json:"walls"`
-	Dead    []VisibleBot `json:"dead"`
+	You     You            `json:"you"`
+	Bots    []VisibleBot   `json:"bots"`
+	Energy  []Position     `json:"energy"`
+	Cores   []VisibleCore  `json:"cores"`
+	Walls   []Position     `json:"walls"`
+	Dead    []VisibleBot   `json:"dead"`
 }
 
 // Move represents a bot's movement order.

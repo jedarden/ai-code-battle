@@ -39,7 +39,7 @@ func getZoneEscapeDirection(botPos Position, state *VisibleState) Direction {
 	// Safety margin: move toward center if within 2 tiles of zone edge
 	// This anticipates the shrinking zone and prevents getting caught outside
 	safetyMargin2 := 4 // (2 tiles)^2
-	if dist2 >= radius2 - safetyMargin2 {
+	if dist2 >= radius2-safetyMargin2 {
 		// Move toward center: choose direction that reduces distance
 		bestDir := DirNone
 		bestReduction := 0
@@ -47,8 +47,8 @@ func getZoneEscapeDirection(botPos Position, state *VisibleState) Direction {
 		for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
 			ddr, ddc := dir.Delta()
 			newPos := Position{
-				Row: ((botPos.Row + ddr) % rows + rows) % rows,
-				Col: ((botPos.Col + ddc) % cols + cols) % cols,
+				Row: ((botPos.Row+ddr)%rows + rows) % rows,
+				Col: ((botPos.Col+ddc)%cols + cols) % cols,
 			}
 
 			newDr := newPos.Row - center.Row

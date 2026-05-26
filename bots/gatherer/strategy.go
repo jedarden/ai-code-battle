@@ -52,7 +52,7 @@ func (s *GathererStrategy) ComputeMoves(state *GameState) []Move {
 
 	for _, bot := range myBots {
 		move := s.computeBotMove(bot, myBots, enemyBots, enemyPositions,
-			energyPositions, usedEnergy, config)
+			energyPositions, usedEnergy, config, state)
 		if move != nil {
 			moves = append(moves, *move)
 			// Mark energy as targeted if bot will collect it
@@ -71,7 +71,17 @@ func (s *GathererStrategy) computeBotMove(
 	myBots, enemyBots []VisibleBot,
 	enemyPositions, energyPositions, usedEnergy map[Position]bool,
 	config GameConfig,
+	state *GameState,
 ) *Move {
+	// Zone awareness: if zone is active and bot is outside, move toward center immediately
+	if state.Zone != nil && state.Zone.Active {
+		dist2 := distance2(bot.Position, state.Zone.Center, config)
+		if dist2 > state.Zone.Radius*state.Zone.Radius {
+			// Bot is outside the zone - survival priority: move toward zone center
+			return s.moveTowardPosition(bot, state.Zone.Center, enemyPositions, config)
+		}
+	}
+
 	// First check if we should flee from enemies
 	if s.shouldFlee(bot.Position, enemyBots, config) {
 		fleeDir := s.getFleeDirection(bot.Position, enemyBots, config)
@@ -295,4 +305,36 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// moveTowardPosition returns a move that approaches the target position, avoiding walls and enemies.
+func (s *GathererStrategy) moveTowardPosition(
+	bot VisibleBot,
+	target Position,
+	enemyPositions map[Position]bool,
+	config GameConfig,
+) *Move {
+	directions := []Direction{DirN, DirE, DirS, DirW}
+	bestDir := DirN
+	bestDist2 := 999999
+
+	for _, dir := range directions {
+		newPos := simulateMove(bot.Position, dir, config)
+
+		// Skip if moving towards enemy
+		if s.isNearEnemy(newPos, enemyPositions, config) {
+			continue
+		}
+
+		dist2 := distance2(newPos, target, config)
+		if dist2 < bestDist2 {
+			bestDist2 = dist2
+			bestDir = dir
+		}
+	}
+
+	return &Move{
+		Position:  bot.Position,
+		Direction: bestDir,
+	}
 }

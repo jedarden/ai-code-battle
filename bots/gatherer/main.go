@@ -51,6 +51,13 @@ type VisibleCore struct {
 	Active   bool     `json:"active"`
 }
 
+// ZoneBounds represents the active zone bounds.
+type ZoneBounds struct {
+	Center Position `json:"center"`
+	Radius int      `json:"radius"`
+	Active bool     `json:"active"`
+}
+
 // GameState represents the fog-filtered state visible to this bot.
 type GameState struct {
 	MatchID string     `json:"match_id"`
@@ -66,6 +73,7 @@ type GameState struct {
 	Cores  []VisibleCore `json:"cores"`
 	Walls  []Position    `json:"walls"`
 	Dead   []VisibleBot  `json:"dead"`
+	Zone   *ZoneBounds   `json:"zone,omitempty"`
 }
 
 // Direction represents a movement direction.

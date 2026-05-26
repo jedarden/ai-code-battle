@@ -34,6 +34,12 @@ export interface VisibleCore {
   active: boolean;
 }
 
+export interface ZoneBounds {
+  center: Position;
+  radius: number;
+  active: boolean;
+}
+
 export interface GameState {
   match_id: string;
   turn: number;
@@ -44,6 +50,7 @@ export interface GameState {
   cores: VisibleCore[];
   walls: Position[];
   dead: VisibleBot[];
+  zone?: ZoneBounds;
 }
 
 export type Direction = 'N' | 'E' | 'S' | 'W';

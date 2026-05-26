@@ -44,6 +44,14 @@ pub struct VisibleCore {
     pub active: bool,
 }
 
+/// Zone bounds (shrinking storm)
+#[derive(Debug, Clone, Deserialize)]
+pub struct ZoneBounds {
+    pub center: Position,
+    pub radius: u32,
+    pub active: bool,
+}
+
 /// Fog-filtered game state visible to this bot
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameState {
@@ -61,6 +69,8 @@ pub struct GameState {
     pub walls: Vec<Position>,
     #[serde(default)]
     pub dead: Vec<VisibleBot>,
+    #[serde(default)]
+    pub zone: Option<ZoneBounds>,
 }
 
 /// Movement direction
