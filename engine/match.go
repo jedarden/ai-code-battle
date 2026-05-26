@@ -137,6 +137,16 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 	// Run the match
 	var result *MatchResult
 	for gs.Turn < mr.config.MaxTurns {
+		// Activate zone BEFORE getting moves on the turn when it starts
+		// This gives bots a chance to see the zone is active and react
+		if !gs.ZoneActive && (gs.Turn+1) >= gs.Config.ZoneStartTurn {
+			if mr.verbose {
+				mr.logger.Printf("Activating zone at turn %d (next turn will be %d)", gs.Turn, gs.Turn+1)
+			}
+			gs.ZoneActive = true
+			gs.setInitialZoneRadius()
+		}
+
 		// Get moves from all bots concurrently
 		moves := mr.getMovesFromBots(gs)
 
@@ -364,7 +374,7 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.32   // ~6.4 tiles from center on 40x40 grid (~13 tiles apart)
+		primaryRadius = 0.28   // ~5.6 tiles from center on 40x40 grid (~11.2 tiles apart)
 		secondaryRadius = 0.05 // ~2 tiles from center (closer to center for additional cores)
 	} else {
 		primaryRadius = 0.10 // ~5 tiles from center on 50x50 grid

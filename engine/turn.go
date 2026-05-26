@@ -118,21 +118,15 @@ func (gs *GameState) executeZone() {
 		return
 	}
 
-	// Check if zone should start
-	zoneJustStarted := false
-	if !gs.ZoneActive && gs.Turn >= gs.Config.ZoneStartTurn {
-		gs.ZoneActive = true
-		zoneJustStarted = true
-		// When zone starts, set radius to a fixed initial size based on map dimensions
-		// This forces bots toward the center regardless of how far they've spread
-		gs.setInitialZoneRadius()
-	}
+	// Zone is now activated BEFORE getting moves (in RunMatch)
+	// This allows bots to see the zone is active and react accordingly
 
 	// Zone center is fixed at map center (set in NewGameState)
 	// This forces bots toward the center as the zone shrinks, ensuring contact.
 
 	// Check if zone should shrink (skip the turn zone starts)
-	if gs.ZoneActive && !zoneJustStarted && (gs.Turn-gs.Config.ZoneStartTurn)%gs.Config.ZoneShrinkInterval == 0 {
+	// The zone starts at turn ZoneStartTurn, so we skip shrinking on that turn
+	if gs.ZoneActive && gs.Turn > gs.Config.ZoneStartTurn && (gs.Turn-gs.Config.ZoneStartTurn)%gs.Config.ZoneShrinkInterval == 0 {
 		if gs.ZoneRadius > gs.Config.ZoneMinRadius {
 			gs.ZoneRadius -= gs.Config.ZoneShrinkStep
 			if gs.ZoneRadius < gs.Config.ZoneMinRadius {
@@ -193,9 +187,10 @@ func (gs *GameState) setInitialZoneRadius() {
 		distToEdge = halfCols
 	}
 
-	// Set initial zone radius to ~55% of the distance from center to edge
-	// This maximizes combat engagement time while still forcing bots inward
-	gs.ZoneRadius = (distToEdge * 55) / 100
+	// Set initial zone radius to 90% of the distance from center to edge
+	// This ensures all spawn positions (32% from center) are inside the zone
+	// Bots have time to react before the zone shrinks to force combat
+	gs.ZoneRadius = (distToEdge * 90) / 100
 
 	// Ensure minimum initial radius of 7 for very small maps
 	if gs.ZoneRadius < 7 {

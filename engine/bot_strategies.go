@@ -36,9 +36,9 @@ func getZoneEscapeDirection(botPos Position, state *VisibleState) Direction {
 	dist2 := dr*dr + dc*dc
 	radius2 := state.Zone.Radius * state.Zone.Radius
 
-	// Safety margin: move toward center if within 2 tiles of zone edge
-	// This anticipates the shrinking zone and prevents getting caught outside
-	safetyMargin2 := 4 // (2 tiles)^2
+	// Safety margin: move toward center if within 5 tiles of zone edge
+	// This accounts for zone shrinking (1 tile/turn) and gives time to reach safety
+	safetyMargin2 := 25 // (5 tiles)^2 - anticipates ~5 turns of zone shrink
 	if dist2 >= radius2-safetyMargin2 {
 		// Move toward center: choose direction that reduces distance
 		bestDir := DirNone
@@ -416,16 +416,38 @@ func (b *RusherBot) GetMoves(state *VisibleState) ([]Move, error) {
 		// Priority 2: Before zone starts, collect energy instead of rushing
 		// This prevents early mutual destruction; let the zone force combat
 		if state.Zone == nil || !state.Zone.Active {
-			// Zone not active yet: collect adjacent energy or hold
+			// Zone not active yet: collect adjacent energy only if toward center
+			center := Position{Row: state.Config.Rows / 2, Col: state.Config.Cols / 2}
+			bestDir := DirNone
+			bestDist2 := -1
 			for _, dir := range []Direction{DirN, DirE, DirS, DirW} {
 				adj := simulateMove(bot.Position, dir, config.Rows, config.Cols)
-				if energyPositions[adj] && !wallPositions[adj] {
-					moves = append(moves, Move{Position: bot.Position, Direction: dir})
-					delete(energyPositions, adj)
-					goto nextBot
+				if !wallPositions[adj] && !enemyPositions[adj] {
+					dr := adj.Row - center.Row
+					dc := adj.Col - center.Col
+					dist2 := dr*dr + dc*dc
+					// Prefer energy if it's toward center
+					if energyPositions[adj] {
+						if bestDir == DirNone || dist2 < bestDist2 {
+							bestDir = dir
+							bestDist2 = dist2
+						}
+					} else if bestDir == DirNone {
+						// No energy at this position: consider it as fallback
+						if dist2 < bestDist2 || bestDist2 == -1 {
+							bestDir = dir
+							bestDist2 = dist2
+						}
+					}
 				}
 			}
-			// No adjacent energy: hold position (don't rush yet)
+			if bestDir != DirNone {
+				moves = append(moves, Move{Position: bot.Position, Direction: bestDir})
+				adjPos := simulateMove(bot.Position, bestDir, config.Rows, config.Cols)
+				if energyPositions[adjPos] {
+					delete(energyPositions, adjPos)
+				}
+			}
 			continue
 		}
 
