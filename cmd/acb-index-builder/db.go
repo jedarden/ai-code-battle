@@ -1017,10 +1017,23 @@ func computeTopPredictors(stats []PredictorStats) []PredictorStats {
 
 // EvolutionMeta represents data/evolution/meta.json
 type EvolutionMeta struct {
-	Generation    int    `json:"generation"`
-	PromotedToday int    `json:"promoted_today"`
-	Top10Count    int    `json:"top_10_count"`
-	UpdatedAt     string `json:"updated_at"`
+	Generation     int                    `json:"generation"`
+	PromotedToday  int                    `json:"promoted_today"`
+	Top10Count     int                    `json:"top_10_count"`
+	IslandPopulations map[string]int      `json:"island_populations"` // island -> program count
+	BestRatings    []EvolvedBotRating     `json:"best_ratings"`        // top 10 evolved bots
+	TotalPromoted  int                    `json:"total_promoted"`      // all-time promoted count
+	PromotionRate  float64                `json:"promotion_rate"`      // promoted/total
+	UpdatedAt      string                 `json:"updated_at"`
+}
+
+// EvolvedBotRating represents an evolved bot's rating info
+type EvolvedBotRating struct {
+	BotID    string  `json:"bot_id"`
+	Name     string  `json:"name"`
+	Rating   float64 `json:"rating"`
+	Island   string  `json:"island"`
+	Language string  `json:"language"`
 }
 
 // LineageNode represents a single program in the lineage tree
@@ -1044,21 +1057,78 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 		SELECT
 			COALESCE(MAX(generation), 0) as generation,
 			COALESCE(COUNT(*) FILTER (WHERE promoted AND created_at >= CURRENT_DATE), 0) as promoted_today,
-			0 as top_10_count
+			COALESCE(COUNT(*) FILTER (WHERE promoted), 0) as total_promoted,
+				COALESCE(COUNT(*), 0) as total_programs
 		FROM programs
 	`
 
 	var meta EvolutionMeta
 	var updatedAt string = time.Now().UTC().Format(time.RFC3339)
+	var totalPrograms int
 
-	err := db.QueryRowContext(ctx, query).Scan(&meta.Generation, &meta.PromotedToday, &meta.Top10Count)
+	err := db.QueryRowContext(ctx, query).Scan(&meta.Generation, &meta.PromotedToday, &meta.TotalPromoted, &totalPrograms)
 	if err != nil {
 		// If evolver tables don't exist, return empty meta
 		if err == sql.ErrNoRows {
-			return &EvolutionMeta{Generation: 0, PromotedToday: 0, Top10Count: 0, UpdatedAt: updatedAt}, nil
+			return &EvolutionMeta{
+				Generation:        0,
+				PromotedToday:     0,
+				Top10Count:        0,
+				IslandPopulations: make(map[string]int),
+				BestRatings:       []EvolvedBotRating{},
+				TotalPromoted:     0,
+				PromotionRate:     0,
+				UpdatedAt:         updatedAt,
+			}, nil
 		}
 		return nil, fmt.Errorf("fetch evolution meta: %w", err)
 	}
+
+	// Calculate promotion rate
+	if totalPrograms > 0 {
+		meta.PromotionRate = float64(meta.TotalPromoted) / float64(totalPrograms)
+	}
+
+	// Fetch island populations
+	meta.IslandPopulations = make(map[string]int)
+	islandRows, err := db.QueryContext(ctx, `
+		SELECT island, COUNT(*) FROM programs GROUP BY island
+	`)
+	if err == nil {
+		for islandRows.Next() {
+			var island string
+			var count int
+			if islandRows.Scan(&island, &count) == nil {
+				meta.IslandPopulations[island] = count
+			}
+		}
+		islandRows.Close()
+	}
+
+	// Fetch best ratings (top 10 evolved bots by rating)
+	// Join with bots table to get current ratings
+	bestRows, err := db.QueryContext(ctx, `
+		SELECT
+			p.bot_id, b.name, b.rating_mu - 2*b.rating_phi as rating,
+			p.island, p.language
+		FROM programs p
+		JOIN bots b ON p.bot_id = b.bot_id
+		WHERE b.status = 'active'
+		ORDER BY b.rating_mu DESC
+		LIMIT 10
+	`)
+	if err == nil {
+		for bestRows.Next() {
+			var rating EvolvedBotRating
+			if bestRows.Scan(&rating.BotID, &rating.Name, &rating.Rating, &rating.Island, &rating.Language) == nil {
+				meta.BestRatings = append(meta.BestRatings, rating)
+			}
+		}
+		bestRows.Close()
+	}
+
+	// Count evolved bots in top 10
+	meta.Top10Count = len(meta.BestRatings)
 
 	meta.UpdatedAt = updatedAt
 	return &meta, nil
