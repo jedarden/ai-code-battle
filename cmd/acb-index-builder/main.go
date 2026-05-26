@@ -242,18 +242,9 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	}
 
 	// Bundle warm-set assets (replays, thumbnails, cards, evolution) from B2 into Pages deploy
-	warmMatchIDs, err := bundleWarmAssetsForCycle(ctx, db, cfg, data)
-	if err != nil {
+	if err := bundleWarmAssetsForCycle(ctx, db, cfg, data); err != nil {
 		slog.Error("Failed to bundle warm assets", "error", err)
 		// Non-fatal
-	}
-
-	// Promote recent replays from B2 to R2 warm cache (plan §8.2.5)
-	if len(warmMatchIDs) > 0 {
-		if err := promoteRecentReplays(ctx, cfg, warmMatchIDs); err != nil {
-			slog.Error("Failed to promote replays to R2", "error", err)
-			// Non-fatal
-		}
 	}
 
 	// Enrich featured replays with AI commentary (§13.3)
@@ -273,17 +264,16 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 
 // bundleWarmAssetsForCycle bundles warm-set assets from B2 into the Pages deploy directory.
 // This includes replays, thumbnails, bot cards, and evolution live.json.
-// Returns the deduplicated match IDs that were bundled (for R2 promotion).
-func bundleWarmAssetsForCycle(ctx context.Context, db *sql.DB, cfg *Config, data *IndexData) ([]string, error) {
+func bundleWarmAssetsForCycle(ctx context.Context, db *sql.DB, cfg *Config, data *IndexData) error {
 	// Get recent match IDs from the last 24 hours
 	recentMatchIDs, err := fetchRecentMatchIDs(ctx, db, 24*time.Hour)
 	if err != nil {
-		return nil, fmt.Errorf("fetch recent match IDs: %w", err)
+		return fmt.Errorf("fetch recent match IDs: %w", err)
 	}
 
 	if len(recentMatchIDs) == 0 {
 		slog.Debug("No recent matches to bundle")
-		return nil, nil
+		return nil
 	}
 
 	// Get exempt match IDs (playlists, series, seasons) - these are also part of warm set
@@ -311,7 +301,7 @@ func bundleWarmAssetsForCycle(ctx context.Context, db *sql.DB, cfg *Config, data
 
 	if len(dedupedMatchIDs) == 0 {
 		slog.Debug("No matches to bundle")
-		return nil, nil
+		return nil
 	}
 
 	slog.Info("Bundling warm assets from B2",
@@ -322,7 +312,7 @@ func bundleWarmAssetsForCycle(ctx context.Context, db *sql.DB, cfg *Config, data
 	// Create B2 client for bundling
 	b2Client, err := getB2Client(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create B2 client: %w", err)
+		return fmt.Errorf("create B2 client: %w", err)
 	}
 
 	// Bundle replays
@@ -355,7 +345,7 @@ func bundleWarmAssetsForCycle(ctx context.Context, db *sql.DB, cfg *Config, data
 		// Continue
 	}
 
-	return dedupedMatchIDs, nil
+	return nil
 }
 
 // fetchRecentMatchIDs retrieves match IDs from the last duration
