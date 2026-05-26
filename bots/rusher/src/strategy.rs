@@ -48,12 +48,14 @@ impl RusherStrategy {
         let mut assigned_targets: HashSet<Position> = HashSet::new();
 
         for bot in &my_bots {
-            // Zone awareness: if zone is active and bot is outside, move toward center immediately
+            // Zone awareness: if zone is active and bot is outside or near edge, move toward center immediately
+            // Use a 2-tile safety margin to anticipate the shrinking zone and prevent getting caught outside
             if let Some(ref zone) = state.zone {
                 if zone.active {
                     let dist2 = bot.position.distance2(&zone.center, config.rows as i32, config.cols as i32);
-                    if dist2 > zone.radius * zone.radius {
-                        // Bot is outside the zone - survival priority: move toward zone center
+                    let safety_margin2 = 4; // (2 tiles)^2
+                    if dist2 >= zone.radius * zone.radius - safety_margin2 {
+                        // Bot is outside or near edge of zone - survival priority: move toward zone center
                         if let Some(dir) = self.move_toward_position(bot.position, zone.center, &enemy_positions, &walls, config) {
                             moves.push(Move {
                                 position: bot.position,

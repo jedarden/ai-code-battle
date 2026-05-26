@@ -73,11 +73,13 @@ func (s *GathererStrategy) computeBotMove(
 	config GameConfig,
 	state *GameState,
 ) *Move {
-	// Zone awareness: if zone is active and bot is outside, move toward center immediately
+	// Zone awareness: if zone is active and bot is outside or near edge, move toward center immediately
+	// Use a 2-tile safety margin to anticipate the shrinking zone and prevent getting caught outside
 	if state.Zone != nil && state.Zone.Active {
 		dist2 := distance2(bot.Position, state.Zone.Center, config)
-		if dist2 > state.Zone.Radius*state.Zone.Radius {
-			// Bot is outside the zone - survival priority: move toward zone center
+		safetyMargin2 := 4 // (2 tiles)^2
+		if dist2 >= state.Zone.Radius*state.Zone.Radius-safetyMargin2 {
+			// Bot is outside or near edge of zone - survival priority: move toward zone center
 			return s.moveTowardPosition(bot, state.Zone.Center, enemyPositions, config)
 		}
 	}

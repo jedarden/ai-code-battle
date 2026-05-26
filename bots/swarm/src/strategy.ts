@@ -140,11 +140,13 @@ export class SwarmStrategy {
     const rows = config.rows;
     const cols = config.cols;
 
-    // Zone awareness: if zone is active and bot is outside, move toward center immediately
+    // Zone awareness: if zone is active and bot is outside or near edge, move toward center immediately
+    // Use a 2-tile safety margin to anticipate the shrinking zone and prevent getting caught outside
     if (state.zone && state.zone.active) {
       const distToZoneCenter2 = distance2(bot.position, state.zone.center, rows, cols);
-      if (distToZoneCenter2 > state.zone.radius * state.zone.radius) {
-        // Bot is outside the zone - survival priority: move toward zone center
+      const safetyMargin2 = 4; // (2 tiles)^2
+      if (distToZoneCenter2 >= state.zone.radius * state.zone.radius - safetyMargin2) {
+        // Bot is outside or near edge of zone - survival priority: move toward zone center
         return this.moveTowardPosition(bot, state.zone.center, walls, rows, cols);
       }
     }
