@@ -42,6 +42,7 @@ function getSkeletonHtml(path: string): string {
   if (path === '/evolution') return skeletonEvolution();
   if (path.startsWith('/blog')) return skeletonBlog();
   if (path === '/seasons' || path.startsWith('/season/')) return skeletonSeasons();
+  if (path === '/maps') return skeletonGeneric('Maps');
   if (path === '/rivalries' || path.startsWith('/rivalry/')) return skeletonGeneric('Rivalries');
   if (path === '/watch/predictions' || path === '/predictions') return skeletonGeneric('Predictions');
   if (path === '/watch') return skeletonGeneric('Watch');
@@ -76,6 +77,7 @@ const loadDocsDataPage = () => import('./pages/docs-data').then(m => m.renderDoc
 // Bot-related pages
 const loadBotProfilePage = () => import('./pages/bot-profile').then(m => m.renderBotProfilePage);
 const loadEvolutionPage = () => import('./pages/evolution').then(m => m.renderEvolutionPage);
+const loadMapsPage = () => import('./pages/maps').then(m => m.renderMapsPage);
 
 // Blog & seasons
 const loadBlogPages = () => import('./pages/blog').then(m => ({ renderBlogPage: m.renderBlogPage, renderBlogPostPage: m.renderBlogPostPage }));
@@ -292,6 +294,7 @@ router
   .on('/rivalries', lazyRoute(loadRivalriesPage))
   .on('/rivalry/:bot_a/:bot_b', lazyRoute(loadRivalryPage))
   .on('/embed/:id', lazyRoute(loadEmbedPage))
+  .on('/maps', lazyRoute(loadMapsPage))
   .notFound(lazyRoute(loadNotFoundPage));
 
 // ─── Initialization ────────────────────────────────────────────────────────────────

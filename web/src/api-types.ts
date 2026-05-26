@@ -605,3 +605,29 @@ export async function fetchMapVotes(mapId: string): Promise<MapVotesResponse> {
   if (!response.ok) throw new Error(`Failed to fetch map votes: ${response.status}`);
   return response.json();
 }
+
+// Map browsing types (§14.6)
+
+export interface MapData {
+  map_id: string;
+  player_count: number;
+  status: string;
+  engagement: number;
+  wall_density: number;
+  energy_count: number;
+  grid_width: number;
+  grid_height: number;
+  net_votes: number;
+  created_at: string;
+}
+
+export interface MapsIndex {
+  updated_at: string;
+  maps: MapData[];
+}
+
+export async function fetchMapsIndex(): Promise<MapsIndex> {
+  const response = await fetch('/maps/index.json');
+  if (!response.ok) throw new Error(`Failed to fetch maps index: ${response.status}`);
+  return response.json();
+}
