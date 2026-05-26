@@ -449,13 +449,16 @@ export interface EvolutionMeta {
   promoted_today: number;
   top_10_count: number;
   updated_at: string;
+  matches_today?: number;   // plan §16.18: matches completed today
+  active_bots?: number;     // plan §16.18: active bot count
 }
 
 export async function fetchEvolutionMeta(): Promise<EvolutionMeta> {
   return swr('evolution-meta', async () => {
     const response = await fetch('/data/evolution/meta.json');
     if (!response.ok) {
-      return { generation: 0, promoted_today: 0, top_10_count: 0, updated_at: '' };
+      const fallback: EvolutionMeta = { generation: 0, promoted_today: 0, top_10_count: 0, updated_at: '', matches_today: 0, active_bots: 0 };
+      return fallback;
     }
     return response.json();
   });

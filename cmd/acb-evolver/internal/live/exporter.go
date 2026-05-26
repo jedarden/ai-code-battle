@@ -133,6 +133,8 @@ type Totals struct {
 	HighestEvolvedRating int     `json:"highest_evolved_rating"`
 	EvolvedInTop10       int     `json:"evolved_in_top_10"`
 	MutationsPerHour     float64 `json:"mutations_per_hour"`
+	MatchesToday         int     `json:"matches_today"`         // plan §16.18: matches completed today
+	ActiveBots           int     `json:"active_bots"`           // plan §16.18: active bot count
 }
 
 // LiveData is the full evolution dashboard payload written to live.json (plan §14 format).
@@ -312,6 +314,24 @@ func fillTotals(ctx context.Context, db *sql.DB, data *LiveData) error {
 		mutationsLastHour = 0
 	}
 
+	// Matches today (plan §16.18: completed matches since midnight UTC)
+	var matchesToday int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM matches
+		WHERE completed_at >= $1::date`, today).Scan(&matchesToday)
+	if err != nil {
+		matchesToday = 0
+	}
+
+	// Active bots (plan §16.18: bots with status = 'active')
+	var activeBots int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM bots
+		WHERE status = 'active'`).Scan(&activeBots)
+	if err != nil {
+		activeBots = 0
+	}
+
 	data.Totals = Totals{
 		GenerationsTotal:     maxGen,
 		CandidatesToday:      candidatesToday,
@@ -320,6 +340,8 @@ func fillTotals(ctx context.Context, db *sql.DB, data *LiveData) error {
 		HighestEvolvedRating: highestRating,
 		EvolvedInTop10:       top10Count,
 		MutationsPerHour:     round3(float64(mutationsLastHour)),
+		MatchesToday:         matchesToday,
+		ActiveBots:           activeBots,
 	}
 
 	return nil

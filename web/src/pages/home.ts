@@ -146,6 +146,8 @@ export async function renderHomePage(): Promise<void> {
       promoted_today: 0,
       top_10_count: 0,
       updated_at: '',
+      matches_today: 0,
+      active_bots: 0,
     })),
     fetchSeasonIndex().catch(() => ({
       updated_at: '',
@@ -200,7 +202,8 @@ export async function renderHomePage(): Promise<void> {
 
   const evoHtml = lazySection(
     'home-evo',
-    `<section class="home-evo"><div class="home-evo-info"><span class="home-evo-icon">&#129516;</span><span class="home-evo-text"><strong>Evolution Observatory</strong> &mdash; Gen #${evolutionMeta.generation}${evolutionMeta.promoted_today > 0 ? ` &middot; ${evolutionMeta.promoted_today} promoted today` : ''}${evolutionMeta.top_10_count > 0 ? ` &middot; ${evolutionMeta.top_10_count} in top 10` : ''}</span></div><a href="#/evolution" class="btn small secondary">Watch evolution live &rarr;</a></section>`,
+    `<section class="home-evo"><div class="home-evo-info"><span class="home-evo-icon">&#129516;</span><span class="home-evo-text"><strong>Evolution Observatory</strong> &mdash; Gen #${evolutionMeta.generation}${evolutionMeta.promoted_today > 0 ? ` &middot; ${evolutionMeta.promoted_today} promoted today` : ''}${evolutionMeta.top_10_count > 0 ? ` &middot; ${evolutionMeta.top_10_count} in top 10` : ''}</span></div><a href="#/evolution" class="btn small secondary">Watch evolution live &rarr;</a></section>
+<div class="home-live-stats"><span class="home-live-icon">&#9876;</span><span class="home-live-text">${(evolutionMeta.matches_today ?? 0).toLocaleString()} matches today &middot; ${(evolutionMeta.active_bots ?? 0).toLocaleString()} bots active &middot; Gen #${evolutionMeta.generation} evolving</span></div>`,
     { placeholder: '<div class="lazy-placeholder" style="min-height:60px"></div>' }
   );
 
@@ -534,6 +537,22 @@ export async function renderHomePage(): Promise<void> {
   font-size: 0.8rem;
 }
 .home-evo-text strong { color: var(--text-primary); }
+
+/* Live stats bar (plan §16.18) */
+.home-live-stats {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.home-live-icon { font-size: 1rem; }
+.home-live-text {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
 
 .home-empty {
   color: var(--text-muted);

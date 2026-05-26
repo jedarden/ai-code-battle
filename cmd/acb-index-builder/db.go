@@ -1035,6 +1035,8 @@ type EvolutionMeta struct {
 	TotalPromoted     int                `json:"total_promoted"`     // all-time promoted count
 	PromotionRate     float64            `json:"promotion_rate"`     // promoted/total
 	UpdatedAt         string             `json:"updated_at"`
+	MatchesToday      int                `json:"matches_today"`      // plan §16.18: matches completed today
+	ActiveBots        int                `json:"active_bots"`        // plan §16.18: active bot count
 }
 
 // EvolvedBotRating represents an evolved bot's rating info
@@ -1091,6 +1093,8 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 			TotalPromoted:     0,
 			PromotionRate:     0,
 			UpdatedAt:         updatedAt,
+			MatchesToday:      0,
+			ActiveBots:        0,
 		}, nil
 	}
 
@@ -1139,6 +1143,28 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 
 	// Count evolved bots in top 10
 	meta.Top10Count = len(meta.BestRatings)
+
+	// Fetch matches today (plan §16.18: completed matches since midnight UTC)
+	var matchesToday int
+	matchErr := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM matches
+		WHERE completed_at >= CURRENT_DATE
+	`).Scan(&matchesToday)
+	if matchErr != nil {
+		matchesToday = 0
+	}
+	meta.MatchesToday = matchesToday
+
+	// Fetch active bots count (plan §16.18: bots with status = 'active')
+	var activeBots int
+	botErr := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM bots
+		WHERE status = 'active'
+	`).Scan(&activeBots)
+	if botErr != nil {
+		activeBots = 0
+	}
+	meta.ActiveBots = activeBots
 
 	meta.UpdatedAt = updatedAt
 	return &meta, nil
