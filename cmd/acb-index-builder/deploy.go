@@ -16,6 +16,12 @@ import (
 	"github.com/aicodebattle/acb/metrics"
 )
 
+// B2Client defines the interface for B2 operations needed by bundling functions.
+// This allows both real S3Client and mock clients to be used.
+type B2Client interface {
+	downloadObject(ctx context.Context, key string) (io.ReadCloser, error)
+}
+
 // fetchExemptMatchIDs retrieves match IDs that should never be pruned (from
 // series, seasons, and playlists).
 func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map[string]bool, error) {
@@ -425,6 +431,175 @@ func copyWebAssets(cfg *Config, webDistDir string) error {
 	}
 
 	slog.Info("Copied web assets to output directory", "source", webDistDir)
+	return nil
+}
+
+// bundleWarmReplays copies warm-set replays from B2 into dist/data/replays/
+// as gzipped files to be served as static Pages assets.
+func bundleWarmReplays(ctx context.Context, cfg *Config, b2Client B2Client, matchIDs []string) error {
+	if len(matchIDs) == 0 {
+		return nil
+	}
+
+	// Create output directory
+	replayDir := filepath.Join(cfg.OutputDir, "data", "replays")
+	if err := os.MkdirAll(replayDir, 0755); err != nil {
+		return fmt.Errorf("create replay dir: %w", err)
+	}
+
+	bundled := 0
+	for _, matchID := range matchIDs {
+		// Try .json.gz first (standard format)
+		b2Key := fmt.Sprintf("replays/%s.json.gz", matchID)
+		body, err := b2Client.downloadObject(ctx, b2Key)
+		if err != nil {
+			slog.Warn("Failed to download replay from B2", "match_id", matchID, "error", err)
+			continue
+		}
+
+		destPath := filepath.Join(replayDir, matchID+".json.gz")
+		destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			body.Close()
+			slog.Error("Failed to create replay file", "match_id", matchID, "error", err)
+			continue
+		}
+
+		if _, err := io.Copy(destFile, body); err != nil {
+			destFile.Close()
+			body.Close()
+			slog.Error("Failed to write replay file", "match_id", matchID, "error", err)
+			continue
+		}
+
+		destFile.Close()
+		body.Close()
+		bundled++
+	}
+
+	slog.Info("Bundled warm replays", "count", bundled, "total", len(matchIDs))
+	return nil
+}
+
+// bundleWarmThumbnails copies warm-set thumbnails from B2 into dist/data/thumbnails/
+func bundleWarmThumbnails(ctx context.Context, cfg *Config, b2Client B2Client, matchIDs []string) error {
+	if len(matchIDs) == 0 {
+		return nil
+	}
+
+	// Create output directory
+	thumbDir := filepath.Join(cfg.OutputDir, "data", "thumbnails")
+	if err := os.MkdirAll(thumbDir, 0755); err != nil {
+		return fmt.Errorf("create thumbnail dir: %w", err)
+	}
+
+	bundled := 0
+	for _, matchID := range matchIDs {
+		b2Key := fmt.Sprintf("thumbnails/%s.png", matchID)
+		body, err := b2Client.downloadObject(ctx, b2Key)
+		if err != nil {
+			// Thumbnails are optional - don't log as error
+			continue
+		}
+
+		destPath := filepath.Join(thumbDir, matchID+".png")
+		destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			body.Close()
+			slog.Error("Failed to create thumbnail file", "match_id", matchID, "error", err)
+			continue
+		}
+
+		if _, err := io.Copy(destFile, body); err != nil {
+			destFile.Close()
+			body.Close()
+			slog.Error("Failed to write thumbnail file", "match_id", matchID, "error", err)
+			continue
+		}
+
+		destFile.Close()
+		body.Close()
+		bundled++
+	}
+
+	slog.Info("Bundled warm thumbnails", "count", bundled)
+	return nil
+}
+
+// bundleWarmCards copies bot profile cards from B2 into dist/data/cards/
+func bundleWarmCards(ctx context.Context, cfg *Config, b2Client B2Client, botIDs []string) error {
+	if len(botIDs) == 0 {
+		return nil
+	}
+
+	// Create output directory
+	cardsDir := filepath.Join(cfg.OutputDir, "data", "cards")
+	if err := os.MkdirAll(cardsDir, 0755); err != nil {
+		return fmt.Errorf("create cards dir: %w", err)
+	}
+
+	bundled := 0
+	for _, botID := range botIDs {
+		b2Key := fmt.Sprintf("cards/%s.png", botID)
+		body, err := b2Client.downloadObject(ctx, b2Key)
+		if err != nil {
+			// Cards are optional - don't log as error
+			continue
+		}
+
+		destPath := filepath.Join(cardsDir, botID+".png")
+		destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			body.Close()
+			slog.Error("Failed to create card file", "bot_id", botID, "error", err)
+			continue
+		}
+
+		if _, err := io.Copy(destFile, body); err != nil {
+			destFile.Close()
+			body.Close()
+			slog.Error("Failed to write card file", "bot_id", botID, "error", err)
+			continue
+		}
+
+		destFile.Close()
+		body.Close()
+		bundled++
+	}
+
+	slog.Info("Bundled warm cards", "count", bundled)
+	return nil
+}
+
+// bundleEvolutionLive copies evolution live.json from B2 into dist/data/evolution/
+func bundleEvolutionLive(ctx context.Context, cfg *Config, b2Client B2Client) error {
+
+	// Create output directory
+	evolutionDir := filepath.Join(cfg.OutputDir, "data", "evolution")
+	if err := os.MkdirAll(evolutionDir, 0755); err != nil {
+		return fmt.Errorf("create evolution dir: %w", err)
+	}
+
+	b2Key := "evolution/live.json"
+	body, err := b2Client.downloadObject(ctx, b2Key)
+	if err != nil {
+		slog.Debug("No evolution live.json in B2", "error", err)
+		return nil // Not an error - live.json may not exist yet
+	}
+	defer body.Close()
+
+	destPath := filepath.Join(evolutionDir, "live.json")
+	destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("create live.json file: %w", err)
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, body); err != nil {
+		return fmt.Errorf("write live.json: %w", err)
+	}
+
+	slog.Info("Bundled evolution live.json")
 	return nil
 }
 

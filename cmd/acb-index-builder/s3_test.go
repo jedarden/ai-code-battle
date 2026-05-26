@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -253,3 +255,177 @@ func TestMockS3ClientList(t *testing.T) {
 		t.Error("expected objects sorted oldest first")
 	}
 }
+
+// Test bundleWarmReplays with mock B2 client
+func TestBundleWarmReplays(t *testing.T) {
+	ctx := context.Background()
+	mockClient := NewMockS3Client()
+
+	// Add mock replays to B2
+	mockClient.Objects["replays/match1.json.gz"] = MockObject{
+		Content:      []byte(`{"turn": 1, "events": []}`),
+		LastModified: time.Now(),
+	}
+	mockClient.Objects["replays/match2.json.gz"] = MockObject{
+		Content:      []byte(`{"turn": 1, "events": []}`),
+		LastModified: time.Now(),
+	}
+
+	// Create temporary output directory
+	tmpDir, err := os.MkdirTemp("", "bundle-test-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{OutputDir: tmpDir}
+	matchIDs := []string{"match1", "match2"}
+
+	// Bundle replays
+	err = bundleWarmReplays(ctx, cfg, mockClient, matchIDs)
+	if err != nil {
+		t.Fatalf("bundleWarmReplays failed: %v", err)
+	}
+
+	// Verify files were created
+	for _, matchID := range matchIDs {
+		expectedPath := filepath.Join(tmpDir, "data", "replays", matchID+".json.gz")
+		if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+			t.Errorf("expected replay file not created: %s", expectedPath)
+		}
+	}
+}
+
+// Test bundleWarmThumbnails with mock B2 client
+func TestBundleWarmThumbnails(t *testing.T) {
+	ctx := context.Background()
+	mockClient := NewMockS3Client()
+
+	// Add mock thumbnails to B2
+	mockClient.Objects["thumbnails/match1.png"] = MockObject{
+		Content:      []byte("fake-png-data"),
+		LastModified: time.Now(),
+	}
+
+	// Create temporary output directory
+	tmpDir, err := os.MkdirTemp("", "bundle-test-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{OutputDir: tmpDir}
+	matchIDs := []string{"match1"}
+
+	// Bundle thumbnails
+	err = bundleWarmThumbnails(ctx, cfg, mockClient, matchIDs)
+	if err != nil {
+		t.Fatalf("bundleWarmThumbnails failed: %v", err)
+	}
+
+	// Verify file was created
+	expectedPath := filepath.Join(tmpDir, "data", "thumbnails", "match1.png")
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Errorf("expected thumbnail file not created: %s", expectedPath)
+	}
+}
+
+// Test bundleWarmCards with mock B2 client
+func TestBundleWarmCards(t *testing.T) {
+	ctx := context.Background()
+	mockClient := NewMockS3Client()
+
+	// Add mock cards to B2
+	mockClient.Objects["cards/bot1.png"] = MockObject{
+		Content:      []byte("fake-png-data"),
+		LastModified: time.Now(),
+	}
+
+	// Create temporary output directory
+	tmpDir, err := os.MkdirTemp("", "bundle-test-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{OutputDir: tmpDir}
+	botIDs := []string{"bot1"}
+
+	// Bundle cards
+	err = bundleWarmCards(ctx, cfg, mockClient, botIDs)
+	if err != nil {
+		t.Fatalf("bundleWarmCards failed: %v", err)
+	}
+
+	// Verify file was created
+	expectedPath := filepath.Join(tmpDir, "data", "cards", "bot1.png")
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Errorf("expected card file not created: %s", expectedPath)
+	}
+}
+
+// Test bundleEvolutionLive with mock B2 client
+func TestBundleEvolutionLive(t *testing.T) {
+	ctx := context.Background()
+	mockClient := NewMockS3Client()
+
+	// Add mock live.json to B2
+	liveData := `{"updated_at": "2026-05-26T00:00:00Z", "lineage": []}`
+	mockClient.Objects["evolution/live.json"] = MockObject{
+		Content:      []byte(liveData),
+		LastModified: time.Now(),
+	}
+
+	// Create temporary output directory
+	tmpDir, err := os.MkdirTemp("", "bundle-test-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{OutputDir: tmpDir}
+
+	// Bundle evolution live.json
+	err = bundleEvolutionLive(ctx, cfg, mockClient)
+	if err != nil {
+		t.Fatalf("bundleEvolutionLive failed: %v", err)
+	}
+
+	// Verify file was created
+	expectedPath := filepath.Join(tmpDir, "data", "evolution", "live.json")
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Errorf("expected live.json file not created: %s", expectedPath)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatalf("failed to read live.json: %v", err)
+	}
+	if string(content) != liveData {
+		t.Errorf("live.json content mismatch, got %s", string(content))
+	}
+}
+
+// Test bundleWarmReplays with missing B2 objects (graceful handling)
+func TestBundleWarmReplaysMissingObjects(t *testing.T) {
+	ctx := context.Background()
+	mockClient := NewMockS3Client() // Empty - no objects
+
+	// Create temporary output directory
+	tmpDir, err := os.MkdirTemp("", "bundle-test-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{OutputDir: tmpDir}
+	matchIDs := []string{"nonexistent"}
+
+	// Should not error when objects are missing
+	err = bundleWarmReplays(ctx, cfg, mockClient, matchIDs)
+	if err != nil {
+		t.Errorf("bundleWarmReplays should not error on missing objects, got: %v", err)
+	}
+}
+

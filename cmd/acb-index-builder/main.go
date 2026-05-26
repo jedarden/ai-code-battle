@@ -108,15 +108,6 @@ func main() {
 				slog.Info("Deployed to Cloudflare Pages")
 			}
 
-			// Run R2 pruning once per week (Monday)
-			if time.Now().Weekday() == time.Monday {
-				slog.Info("Running weekly R2 pruning")
-				if err := pruneR2Cache(context.Background(), cfg); err != nil {
-					slog.Error("R2 pruning failed", "error", err)
-				} else {
-					slog.Info("R2 pruning completed")
-				}
-			}
 		}
 
 		// Sleep until next cycle
@@ -243,21 +234,15 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 		// Non-fatal - continue with rest of build
 	}
 
-	// Upload cards to R2 warm cache
-	if err := uploadCardsToR2(ctx, cfg, cfg.OutputDir); err != nil {
-		slog.Error("Failed to upload cards to R2", "error", err)
-		// Non-fatal
-	}
-
-	// Upload cards to B2 cold archive
+	// Upload cards to B2 cold archive (primary storage)
 	if err := uploadCardsToB2(ctx, cfg, cfg.OutputDir); err != nil {
 		slog.Error("Failed to upload cards to B2", "error", err)
 		// Non-fatal
 	}
 
-	// Promote recent replays from B2 to R2 warm cache
-	if err := promoteRecentReplaysForCycle(ctx, db, cfg); err != nil {
-		slog.Error("Failed to promote recent replays", "error", err)
+	// Bundle warm-set assets (replays, thumbnails, cards, evolution) from B2 into Pages deploy
+	if err := bundleWarmAssetsForCycle(ctx, db, cfg, data); err != nil {
+		slog.Error("Failed to bundle warm assets", "error", err)
 		// Non-fatal
 	}
 
@@ -276,8 +261,9 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
 	return nil
 }
 
-// promoteRecentReplaysForCycle promotes recent replays from B2 to R2
-func promoteRecentReplaysForCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
+// bundleWarmAssetsForCycle bundles warm-set assets from B2 into the Pages deploy directory.
+// This includes replays, thumbnails, bot cards, and evolution live.json.
+func bundleWarmAssetsForCycle(ctx context.Context, db *sql.DB, cfg *Config, data *IndexData) error {
 	// Get recent match IDs from the last 24 hours
 	recentMatchIDs, err := fetchRecentMatchIDs(ctx, db, 24*time.Hour)
 	if err != nil {
@@ -285,34 +271,80 @@ func promoteRecentReplaysForCycle(ctx context.Context, db *sql.DB, cfg *Config) 
 	}
 
 	if len(recentMatchIDs) == 0 {
-		slog.Debug("No recent matches to promote")
+		slog.Debug("No recent matches to bundle")
 		return nil
 	}
 
-	// Get exempt match IDs (playlists, series, seasons)
+	// Get exempt match IDs (playlists, series, seasons) - these are also part of warm set
 	exemptMatchIDs, err := fetchExemptMatchIDs(ctx, db, cfg.OutputDir)
 	if err != nil {
-		slog.Warn("Failed to fetch exempt match IDs, promoting all", "error", err)
+		slog.Warn("Failed to fetch exempt match IDs, bundling only recent", "error", err)
 		exemptMatchIDs = make(map[string]bool)
 	}
 
-	// Combine recent and exempt matches for promotion
-	matchIDsToPromote := recentMatchIDs
+	// Combine recent and exempt matches for bundling
+	matchIDsToBundle := recentMatchIDs
 	for matchID := range exemptMatchIDs {
-		matchIDsToPromote = append(matchIDsToPromote, matchID)
+		matchIDsToBundle = append(matchIDsToBundle, matchID)
 	}
 
-	if len(matchIDsToPromote) == 0 {
-		slog.Debug("No matches to promote")
+	// Deduplicate match IDs
+	uniqueMatchIDs := make(map[string]bool)
+	for _, id := range matchIDsToBundle {
+		uniqueMatchIDs[id] = true
+	}
+	var dedupedMatchIDs []string
+	for id := range uniqueMatchIDs {
+		dedupedMatchIDs = append(dedupedMatchIDs, id)
+	}
+
+	if len(dedupedMatchIDs) == 0 {
+		slog.Debug("No matches to bundle")
 		return nil
 	}
 
-	slog.Info("Promoting replays to R2",
+	slog.Info("Bundling warm assets from B2",
 		"recent_count", len(recentMatchIDs),
 		"exempt_count", len(exemptMatchIDs),
-		"total", len(matchIDsToPromote))
+		"total_unique", len(dedupedMatchIDs))
 
-	return promoteRecentReplays(ctx, cfg, matchIDsToPromote)
+	// Create B2 client for bundling
+	b2Client, err := getB2Client(cfg)
+	if err != nil {
+		return fmt.Errorf("create B2 client: %w", err)
+	}
+
+	// Bundle replays
+	if err := bundleWarmReplays(ctx, cfg, b2Client, dedupedMatchIDs); err != nil {
+		slog.Error("Failed to bundle warm replays", "error", err)
+		// Continue with other assets
+	}
+
+	// Bundle thumbnails
+	if err := bundleWarmThumbnails(ctx, cfg, b2Client, dedupedMatchIDs); err != nil {
+		slog.Error("Failed to bundle warm thumbnails", "error", err)
+		// Continue
+	}
+
+	// Bundle bot cards for all active bots
+	var botIDs []string
+	for _, bot := range data.Bots {
+		botIDs = append(botIDs, bot.ID)
+	}
+	if len(botIDs) > 0 {
+		if err := bundleWarmCards(ctx, cfg, b2Client, botIDs); err != nil {
+			slog.Error("Failed to bundle warm cards", "error", err)
+			// Continue
+		}
+	}
+
+	// Bundle evolution live.json
+	if err := bundleEvolutionLive(ctx, cfg, b2Client); err != nil {
+		slog.Error("Failed to bundle evolution live.json", "error", err)
+		// Continue
+	}
+
+	return nil
 }
 
 // fetchRecentMatchIDs retrieves match IDs from the last duration
