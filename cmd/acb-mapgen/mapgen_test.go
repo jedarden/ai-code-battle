@@ -227,24 +227,24 @@ func TestGenerateMap_CenterWeightedEnergy(t *testing.T) {
 
 func TestGenerateMap_CoresWithinAttackRadius(t *testing.T) {
 	// Per plan §3.7.1: spawn radius puts bots within attack range for immediate combat.
-	// Target: 65-80% combat density for 2-player matches.
-	// For 2 players: 10% spawn radius (~2 tiles from center, ~4 tiles apart on 40x40)
-	//   - Within attack radius (5 tiles), ensuring immediate combat engagement
-	//   - Achieves 65-80% combat density per plan §3.7.1
-	// For 3+ players: 10% spawn radius (~5 tiles from center on 50x50)
-	//   - Within attack radius (3.5 tiles), ensuring combat engagement
-	//   - Zone shrinks to radius 1, forcing all bots into contact
-	testCases := []struct {
-		numPlayers        int
-		attackRadius      float64
-		expectedRadius    float64
-		maxDistFromCenter float64 // maximum distance from center (should be within attack radius)
-	}{
-		{2, 5.0, 0.10, 4.0}, // 2-player: 5 tile attack radius, 0.10 spawn radius = ~2 tiles from center
-		{3, 3.5, 0.10, 3.5}, // 3+ player: 3.5 tile attack radius, 0.10 spawn radius = ~2.5 tiles from center
-		{4, 3.5, 0.10, 3.5},
-		{6, 3.5, 0.10, 3.5},
-	}
+		// Target: 65-80% combat density for 2-player matches.
+		// For 2 players: 30% spawn radius (~6 tiles from center, ~12 tiles apart on 40x40)
+		//   - Outside attack radius (5 tiles), zone forces contact over time
+		//   - Increased from 15% to prevent immediate mutual destruction at spawn
+		//   - Zone shrink (1 tile/turn from turn 10) forces bots toward center for combat
+		// For 3+ players: 15% spawn radius (~4 tiles from center, ~8 tiles apart on 50x50)
+		//   - Outside attack radius (3.5 tiles), zone forces contact over time
+		testCases := []struct {
+			numPlayers        int
+			attackRadius      float64
+			expectedRadius    float64
+			maxDistFromCenter float64 // maximum distance from center
+		}{
+			{2, 5.0, 0.30, 7.0}, // 2-player: 5 tile attack radius, 0.30 spawn radius = ~6 tiles from center (outside attack radius, zone forces contact)
+			{3, 3.5, 0.15, 5.0}, // 3+ player: 3.5 tile attack radius, 0.15 spawn radius = ~4 tiles from center (outside attack radius, zone forces contact)
+			{4, 3.5, 0.15, 5.0},
+			{6, 3.5, 0.15, 5.0},
+		}
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%dplayers", tc.numPlayers), func(t *testing.T) {
