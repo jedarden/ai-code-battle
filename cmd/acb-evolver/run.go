@@ -188,7 +188,7 @@ func RunEvolutionLoop(ctx context.Context, dbURL string, args []string) {
 	defer db.Close()
 
 	// Initialize database schema and seed initial population if needed
-	ctx := context.Background()
+	ctx = context.Background()
 	if err := evolverdb.EnsureSchema(ctx, db); err != nil {
 		log.Fatalf("ensure schema: %v", err)
 	}
