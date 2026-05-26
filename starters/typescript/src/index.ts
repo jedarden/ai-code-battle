@@ -12,7 +12,7 @@ import Fastify, { FastifyRequest, FastifyReply } from "fastify";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { GameState, MoveResponse } from "./types.js";
+import type { VisibleState, TurnResponse } from "./types.js";
 import {
   verifySignature,
   signResponse,
@@ -90,7 +90,7 @@ app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
   }
 
   // Parse game state JSON (already parsed by our custom parser)
-  const state: GameState = request.body as GameState;
+  const state: VisibleState = request.body as VisibleState;
 
   // Log match start (turn 0)
   if (state.turn === 0) {
@@ -106,7 +106,7 @@ app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
   const moves = computeMoves(state);
 
   // Build response
-  const responseBody: MoveResponse = { moves };
+  const responseBody: TurnResponse = { moves };
   const responseJson = JSON.stringify(responseBody);
 
   // Sign response

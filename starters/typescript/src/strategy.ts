@@ -5,7 +5,7 @@
  * The computeMoves function is called each turn with the current game state.
  */
 
-import type { GameState, Move, Direction } from "./types.js";
+import type { VisibleState, Move, Direction } from "./types.js";
 import { toroidalManhattan, cardinalNeighbors } from "./grid.js";
 
 /**
@@ -17,7 +17,7 @@ import { toroidalManhattan, cardinalNeighbors } from "./grid.js";
  * @param state - Current game state (fog-filtered for your player)
  * @returns Array of moves for your bots
  */
-export function computeMoves(state: GameState): Move[] {
+export function computeMoves(state: VisibleState): Move[] {
   const moves: Move[] = [];
   const { rows, cols } = state.config;
   const myBotId = state.you.id;
@@ -44,17 +44,18 @@ export function computeMoves(state: GameState): Move[] {
  * @returns Move command, or undefined to hold position
  */
 function decideBotMove(
-  bot: { row: number; col: number; owner: number },
-  state: GameState
+  bot: { position: { row: number; col: number }; owner: number },
+  state: VisibleState
 ): Move | undefined {
   const { rows, cols } = state.config;
+  const { row, col } = bot.position;
 
   // If there's energy visible, move toward the nearest one
   if (state.energy.length > 0) {
     let bestDir: Direction | null = null;
     let bestDist = Infinity;
 
-    for (const { pos, dir } of cardinalNeighbors(bot.row, bot.col, rows, cols)) {
+    for (const { pos, dir } of cardinalNeighbors(row, col, rows, cols)) {
       // Skip if there's a wall
       if (state.walls.some((w) => w.row === pos.row && w.col === pos.col)) {
         continue;
@@ -71,7 +72,7 @@ function decideBotMove(
     }
 
     if (bestDir) {
-      return { row: bot.row, col: bot.col, direction: bestDir };
+      return { position: { row, col }, direction: bestDir };
     }
   }
 
@@ -86,7 +87,7 @@ function decideBotMove(
 export function isSafe(
   row: number,
   col: number,
-  state: GameState,
+  state: VisibleState,
   radius2: number = 5
 ): boolean {
   const { rows, cols } = state.config;
@@ -95,8 +96,8 @@ export function isSafe(
   for (const enemy of state.bots) {
     if (enemy.owner === myBotId) continue;
 
-    const dr = Math.min(Math.abs(row - enemy.row), rows - Math.abs(row - enemy.row));
-    const dc = Math.min(Math.abs(col - enemy.col), cols - Math.abs(col - enemy.col));
+    const dr = Math.min(Math.abs(row - enemy.position.row), rows - Math.abs(row - enemy.position.row));
+    const dc = Math.min(Math.abs(col - enemy.position.col), cols - Math.abs(col - enemy.position.col));
     const dist2 = dr * dr + dc * dc;
 
     if (dist2 <= radius2) {
@@ -111,8 +112,8 @@ export function isSafe(
  * Example: Find a position to gather energy safely.
  */
 export function findSafeGatherTarget(
-  bot: { row: number; col: number },
-  state: GameState
+  bot: { position: { row: number; col: number } },
+  state: VisibleState
 ): { row: number; col: number } | null {
   const { rows, cols } = state.config;
 

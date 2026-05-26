@@ -1,132 +1,124 @@
 #!/usr/bin/env python3
-"""AI Code Battle - Python Starter Kit.
+"""
+AI Code Battle - Python Starter Bot
 
-Flask-based HTTP bot with HMAC authentication. Implement your strategy
-in compute_moves() below.
-
-Usage:
-    BOT_SECRET=your-secret python3 main.py
+A minimal HTTP bot server with HMAC authentication.
 """
 
 import hashlib
 import hmac
 import json
 import os
-import time
-from typing import List, Dict, Any
-
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
-SECRET = os.environ.get("BOT_SECRET", "")
-DIRECTIONS = ["N", "E", "S", "W"]
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from strategy import compute_moves
 
 
-def verify_signature(body: bytes, match_id: str, turn: str,
-                     timestamp: str, signature: str) -> bool:
-    """Verify HMAC-SHA256 signature from engine."""
-    try:
-        ts = int(timestamp)
-        now = int(time.time())
-        if abs(now - ts) > 30:
-            return False
-    except (ValueError, TypeError):
-        return False
+class BotHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for the bot."""
 
-    body_hash = hashlib.sha256(body).hexdigest()
-    signing_string = f"{match_id}.{turn}.{timestamp}.{body_hash}"
-    expected = hmac.new(
-        SECRET.encode(), signing_string.encode(), hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(signature, expected)
+    # Class variable set from environment
+    secret: str = ""
 
-
-def sign_response(body: bytes, match_id: str, turn: int) -> str:
-    """Generate HMAC-SHA256 signature for response."""
-    body_hash = hashlib.sha256(body).hexdigest()
-    signing_string = f"{match_id}.{turn}.{body_hash}"
-    return hmac.new(
-        SECRET.encode(), signing_string.encode(), hashlib.sha256
-    ).hexdigest()
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    """Health check endpoint."""
-    return "OK", 200
-
-
-@app.route("/turn", methods=["POST"])
-def turn():
-    """Main game turn endpoint."""
-    match_id = request.headers.get("X-ACB-Match-Id", "")
-    turn_str = request.headers.get("X-ACB-Turn", "0")
-    timestamp = request.headers.get("X-ACB-Timestamp", "")
-    signature = request.headers.get("X-ACB-Signature", "")
-
-    body = request.get_data()
-    if not signature or not verify_signature(body, match_id, turn_str, timestamp, signature):
-        return "Invalid signature", 401
-
-    try:
-        state = json.loads(body)
-    except json.JSONDecodeError:
-        return "Invalid JSON", 400
-
-    moves = compute_moves(state)
-    turn_num = int(turn_str)
-
-    response_data = {"moves": moves}
-    response_body = json.dumps(response_data).encode()
-    response_sig = sign_response(response_body, match_id, turn_num)
-
-    response = jsonify(response_data)
-    response.headers["X-ACB-Signature"] = response_sig
-    return response
-
-
-def compute_moves(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """YOUR STRATEGY GOES HERE.
-
-    Args:
-        state: Game state dict with keys:
-            - match_id: str
-            - turn: int
-            - config: dict (rows, cols, max_turns, vision_radius2, attack_radius2, etc.)
-            - you: dict (id, energy, score)
-            - bots: list of dict (each has row, col, owner)
-            - energy: list of dict (each has row, col)
-            - cores: list of dict (each has row, col, owner, active)
-            - walls: list of dict (each has row, col)
-            - dead: list of dict (each has row, col, owner)
-
-    Returns:
-        List of move dicts, each with:
-            - row: int (your bot's current row)
-            - col: int (your bot's current col)
-            - direction: "N" | "E" | "S" | "W"
-    """
-    import random
-
-    my_id = state["you"]["id"]
-    rows, cols = state["config"]["rows"], state["config"]["cols"]
-
-    moves = []
-    for bot in state.get("bots", []):
-        if bot["owner"] != my_id:
-            continue
-
-        # STUB: hold all bots in place (return empty list)
-        # Replace this with your strategy!
+    def log_message(self, format, *args):
+        """Suppress default logging."""
         pass
 
-    return moves
+    def send_json_response(self, status: int, data: dict, match_id: str = "", turn: int = 0):
+        """Send a JSON response with HMAC signature."""
+        body = json.dumps(data).encode("utf-8")
+
+        # Sign response
+        sig = self.sign_response(body, match_id, turn)
+
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("X-ACB-Signature", sig)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def sign_response(self, body: bytes, match_id: str, turn: int) -> str:
+        """Generate HMAC signature for response."""
+        body_hash = hashlib.sha256(body).hexdigest()
+        signing_string = f"{match_id}.{turn}.{body_hash}"
+        sig = hmac.new(
+            self.secret.encode("utf-8"),
+            signing_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        return sig
+
+    def verify_signature(self, body: bytes, match_id: str, turn: str,
+                         timestamp: str, signature: str) -> bool:
+        """Verify HMAC signature of incoming request."""
+        body_hash = hashlib.sha256(body).hexdigest()
+        signing_string = f"{match_id}.{turn}.{body_hash}"
+        expected_sig = hmac.new(
+            self.secret.encode("utf-8"),
+            signing_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(signature, expected_sig)
+
+    def do_GET(self):
+        """Handle GET requests (health check)."""
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_error(404, "Not Found")
+
+    def do_POST(self):
+        """Handle POST requests (turn)."""
+        if self.path != "/turn":
+            self.send_error(404, "Not Found")
+            return
+
+        # Read body
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+
+        # Get auth headers
+        match_id = self.headers.get("X-ACB-Match-Id", "")
+        turn = self.headers.get("X-ACB-Turn", "0")
+        timestamp = self.headers.get("X-ACB-Timestamp", "")
+        signature = self.headers.get("X-ACB-Signature", "")
+
+        # Verify signature (optional but recommended)
+        if not self.verify_signature(body, match_id, turn, timestamp, signature):
+            self.send_error(401, "Invalid signature")
+            return
+
+        # Parse state
+        try:
+            state = json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        # Compute moves using your strategy
+        moves = compute_moves(state)
+
+        # Send response
+        self.send_json_response(200, {"moves": moves}, match_id, int(turn))
+
+
+def main():
+    """Start the bot server."""
+    # Get shared secret from environment
+    secret = os.environ.get("SHARED_SECRET", "")
+    if not secret:
+        raise ValueError("SHARED_SECRET environment variable must be set")
+
+    BotHandler.secret = secret
+
+    # Start server
+    port = int(os.environ.get("PORT", "8080"))
+    server = HTTPServer(("0.0.0.0", port), BotHandler)
+    print(f"Bot listening on port {port}")
+    server.serve_forever()
 
 
 if __name__ == "__main__":
-    if not SECRET:
-        print("ERROR: BOT_SECRET environment variable is required")
-        exit(1)
-
-    port = int(os.environ.get("BOT_PORT", "8080"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    main()

@@ -1,282 +1,117 @@
-//! AI Code Battle - Rust Starter Kit
-//!
-//! A minimal bot scaffold with HMAC authentication and a placeholder
-//! random strategy. Replace `compute_moves()` with your own logic.
-
-mod grid;
+mod strategy;
+mod types;
 
 use axum::{
-    body::Bytes,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
 use hmac::{Hmac, Mac};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::env;
+use serde_json::json;
+use sha2::Sha256;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 type HmacSha256 = Hmac<Sha256>;
 
-// Engine constants
-const DIRECTIONS: [&str; 4] = ["N", "E", "S", "W"];
-
-#[derive(Deserialize)]
-struct GameState {
-    match_id: String,
-    turn: u32,
-    config: GameConfig,
-    you: You,
-    bots: Vec<VisibleBot>,
-    energy: Vec<Position>,
-    cores: Vec<VisibleCore>,
-    walls: Vec<Position>,
-    dead: Vec<VisibleBot>,
-}
-
-#[derive(Deserialize)]
-struct GameConfig {
-    rows: u32,
-    cols: u32,
-    max_turns: u32,
-    vision_radius2: u32,
-    attack_radius2: u32,
-    spawn_cost: u32,
-    energy_interval: u32,
-    #[serde(default)]
-    season_id: Option<String>,
-    #[serde(default)]
-    rules_version: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct You {
-    id: u32,
-    energy: u32,
-    score: u32,
-}
-
-#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
-pub struct Position {
-    pub row: u32,
-    pub col: u32,
-}
-
-#[derive(Deserialize)]
-struct VisibleBot {
-    position: Position,
-    owner: u32,
-}
-
-#[derive(Deserialize)]
-struct VisibleCore {
-    position: Position,
-    owner: u32,
-    active: bool,
-}
-
-#[derive(Serialize)]
-struct MoveResponse {
-    moves: Vec<Move>,
-}
-
-#[derive(Serialize)]
-struct Move {
-    position: Position,
-    direction: String,
-}
-
 #[derive(Clone)]
 struct AppState {
-    secret: String,
+    secret: Arc<String>,
 }
 
 #[tokio::main]
 async fn main() {
-    let port = env::var("BOT_PORT").unwrap_or_else(|_| "8080".into());
-    let secret = env::var("BOT_SECRET").expect("BOT_SECRET is required");
+    let secret = std::env::var("SHARED_SECRET")
+        .expect("SHARED_SECRET environment variable must be set");
 
-    let state = AppState { secret };
+    let state = AppState {
+        secret: Arc::new(secret),
+    };
+
     let app = Router::new()
-        .route("/turn", post(handle_turn))
-        .route("/health", get(handle_health))
+        .route("/health", get(health))
+        .route("/turn", post(turn))
         .with_state(state);
 
-    let addr = format!("0.0.0.0:{}", port);
-    println!("Bot listening on {}", addr);
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = SocketAddr::from(([0, 0, 0, 0], port.parse().unwrap()));
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    println!("Bot listening on port {}", port);
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("Failed to bind");
+    axum::serve(listener, app)
+        .await
+        .expect("Server error");
 }
 
-async fn handle_health() -> &'static str {
+async fn health() -> &'static str {
     "OK"
 }
 
-async fn handle_turn(
+async fn turn(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Bytes,
-) -> Result<(StatusCode, [(String, String); 2], String), StatusCode> {
-    let signature = headers
-        .get("X-ACB-Signature")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let match_id = headers
-        .get("X-ACB-Match-Id")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let turn_str = headers
-        .get("X-ACB-Turn")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("0");
-    let timestamp = headers
-        .get("X-ACB-Timestamp")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    Json(req_state): Json<types::VisibleState>,
+) -> Result<Response, StatusCode> {
+    // Verify signature (optional but recommended)
+    if let Some(signature) = headers.get("x-acb-signature") {
+        let match_id = headers
+            .get("x-acb-match-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let turn = headers
+            .get("x-acb-turn")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("0");
 
-    if signature.is_empty()
-        || !verify_signature(
-            &state.secret,
-            match_id,
-            turn_str,
-            timestamp,
-            &body,
-            signature,
-        )
-    {
-        return Err(StatusCode::UNAUTHORIZED);
+        let body = serde_json::to_vec(&req_state).unwrap();
+        if !verify_signature(&body, match_id, turn, signature.to_str().unwrap(), &state.secret) {
+            return Err(StatusCode::UNAUTHORIZED);
+        }
     }
 
-    let game_state: GameState =
-        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    // Compute moves
+    let moves = strategy::compute_moves(&req_state);
 
-    if game_state.turn == 0 {
-        let season_id = game_state.config.season_id.as_deref().unwrap_or("");
-        let rules_version = game_state.config.rules_version.as_deref().unwrap_or("");
-        println!(
-            "match={} season_id={} rules_version={} rows={} cols={}",
-            game_state.match_id, season_id, rules_version,
-            game_state.config.rows, game_state.config.cols
-        );
-    }
+    // Build response
+    let response = json!({ "moves": moves });
+    let body = serde_json::to_vec(&response).unwrap();
 
-    let moves = compute_moves(&game_state);
-    let response = MoveResponse { moves };
-    let response_body = serde_json::to_string(&response).unwrap();
-
-    let turn: u32 = turn_str.parse().unwrap_or(0);
-    let response_sig = sign_response(&state.secret, match_id, turn, response_body.as_bytes());
+    let turn = req_state.turn;
+    let match_id = &req_state.match_id;
+    let sig = sign_response(&body, match_id, turn, &state.secret);
 
     Ok((
-        StatusCode::OK,
-        [
-            ("Content-Type".to_owned(), "application/json".to_owned()),
-            ("X-ACB-Signature".to_owned(), response_sig),
-        ],
-        response_body,
-    ))
+        [(header::HeaderName::from_static("x-acb-signature"), HeaderValue::from_str(&sig).unwrap())],
+        Json(response),
+    )
+        .into_response())
 }
 
-fn compute_moves(state: &GameState) -> Vec<Move> {
-    // Replace this with your strategy!
-    let rows = state.config.rows;
-    let cols = state.config.cols;
-    let mut moves = Vec::new();
-    let mut rng = rand::thread_rng();
-
-    let cardinal: [(i32, i32, &str); 4] = [
-        (-1, 0, "N"),
-        (0, 1, "E"),
-        (1, 0, "S"),
-        (0, -1, "W"),
-    ];
-
-    for bot in &state.bots {
-        if bot.owner != state.you.id {
-            continue;
-        }
-
-        // Find direction toward nearest energy using toroidal distance
-        if !state.energy.is_empty() {
-            let mut best_dist = u32::MAX;
-            let mut best_dir: Option<&str> = None;
-            for (dr, dc, dir) in &cardinal {
-                let nr = (bot.position.row as i32 + dr).rem_euclid(rows as i32) as u32;
-                let nc = (bot.position.col as i32 + dc).rem_euclid(cols as i32) as u32;
-                let step = Position { row: nr, col: nc };
-                for e in &state.energy {
-                    let d = grid::toroidal_manhattan(&step, e, rows, cols);
-                    if d < best_dist {
-                        best_dist = d;
-                        best_dir = Some(dir);
-                    }
-                }
-            }
-            if let Some(dir) = best_dir {
-                moves.push(Move {
-                    position: bot.position.clone(),
-                    direction: dir.to_string(),
-                });
-                continue;
-            }
-        }
-
-        if rand::Rng::gen_ratio(&mut rng, 1, 2) {
-            let dir = DIRECTIONS[rand::Rng::gen_range(&mut rng, 0..4)];
-            moves.push(Move {
-                position: bot.position.clone(),
-                direction: dir.to_string(),
-            });
-        }
-    }
-    moves
-}
-
-fn verify_signature(
-    secret: &str,
-    match_id: &str,
-    turn: &str,
-    timestamp: &str,
-    body: &[u8],
-    signature: &str,
-) -> bool {
-    let body_hash = sha2::Sha256::digest(body);
-    let signing_string = format!(
-        "{}.{}.{}.{}",
-        match_id,
-        turn,
-        timestamp,
-        hex::encode(body_hash)
-    );
-
-    let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC key error");
-    mac.update(signing_string.as_bytes());
-    let expected = hex::encode(mac.finalize().into_bytes());
-
-    hmac_equal(signature, &expected)
-}
-
-/// Constant-time string comparison
-fn hmac_equal(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.as_bytes()
-        .iter()
-        .zip(b.as_bytes().iter())
-        .fold(0, |acc, (x, y)| acc | (x ^ y))
-        == 0
-}
-
-fn sign_response(secret: &str, match_id: &str, turn: u32, body: &[u8]) -> String {
+fn verify_signature(body: &[u8], match_id: &str, turn: &str, signature: &str, secret: &str) -> bool {
+    use sha2::Digest;
     let body_hash = sha2::Sha256::digest(body);
     let signing_string = format!("{}.{}.{}", match_id, turn, hex::encode(body_hash));
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+    mac.update(signing_string.as_bytes());
+    let expected_sig = hex::encode(mac.finalize().into_bytes());
 
-    let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC key error");
+    // Constant-time comparison to prevent timing attacks
+    if signature.len() != expected_sig.len() {
+        return false;
+    }
+    signature.bytes().zip(expected_sig.bytes()).all(|(a, b)| a == b)
+}
+
+fn sign_response(body: &[u8], match_id: &str, turn: i32, secret: &str) -> String {
+    use sha2::Digest;
+    let body_hash = sha2::Sha256::digest(body);
+    let signing_string = format!("{}.{}.{}", match_id, turn, hex::encode(body_hash));
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
     mac.update(signing_string.as_bytes());
     hex::encode(mac.finalize().into_bytes())
 }

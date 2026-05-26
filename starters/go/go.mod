@@ -1,3 +1,3 @@
-module acb-starter-go
+module acb-starter-bot
 
 go 1.24
