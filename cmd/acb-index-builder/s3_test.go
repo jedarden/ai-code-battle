@@ -428,4 +428,3 @@ func TestBundleWarmReplaysMissingObjects(t *testing.T) {
 		t.Errorf("bundleWarmReplays should not error on missing objects, got: %v", err)
 	}
 }
-
