@@ -69,6 +69,9 @@ const loadSandboxPage = () => import('./pages/sandbox').then(m => m.renderSandbo
 const loadRegisterPage = () => import('./pages/register').then(m => m.renderRegisterPage);
 const loadCompeteHubPage = () => import('./pages/compete-hub').then(m => m.renderCompeteHubPage);
 const loadDocsPage = () => import('./pages/docs').then(m => m.renderDocsPage);
+// Public data documentation pages (§15.2)
+const loadDocsReplayFormatPage = () => import('./pages/docs-replay-format').then(m => m.renderDocsReplayFormatPage);
+const loadDocsDataPage = () => import('./pages/docs-data').then(m => m.renderDocsDataPage);
 
 // Bot-related pages
 const loadBotProfilePage = () => import('./pages/bot-profile').then(m => m.renderBotProfilePage);
@@ -279,6 +282,8 @@ router
   .on('/bots', redirect('/leaderboard'))
   .on('/docs/api', lazyRoute(loadDocsApiPage))
   .on('/docs', redirect('/compete/docs'))
+  .on('/docs/replay-format', lazyRoute(loadDocsReplayFormatPage))
+  .on('/docs/data', lazyRoute(loadDocsDataPage))
   .on('/clip-maker', redirect('/watch/replays'))
   .on('/rivalries', lazyRoute(loadRivalriesPage))
   .on('/feedback', lazyRoute(loadFeedbackPage))
