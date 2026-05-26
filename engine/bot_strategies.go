@@ -899,7 +899,7 @@ func (b *SwarmBot) computeBotMove(
 }
 
 // soloMove handles movement when the swarm is too small for formation tactics.
-// Gathers energy to spawn more units, avoids enemies.
+// Gathers energy to spawn more units, advances toward enemies to build swarm via combat.
 func (b *SwarmBot) soloMove(
 	bot VisibleBot,
 	energyPositions, enemyPositions, wallPositions map[Position]bool,
@@ -916,9 +916,9 @@ func (b *SwarmBot) soloMove(
 
 		score := 0.0
 
-		// Strong bonus for energy
+		// Strong bonus for energy (primary goal in solo mode: build swarm economy)
 		if energyPositions[newPos] {
-			score += 100
+			score += 120
 		}
 
 		// Move toward nearest energy
@@ -926,15 +926,22 @@ func (b *SwarmBot) soloMove(
 			dist := float64(distance2(newPos, ePos, config.Rows, config.Cols))
 			currentDist := float64(distance2(bot.Position, ePos, config.Rows, config.Cols))
 			if dist < currentDist {
-				score += 20.0 / (dist + 1)
+				score += 25.0 / (dist + 1)
 			}
 		}
 
-		// Avoid enemies
+		// Advance toward enemies (per plan §5.5: "advance as a group toward enemies")
+		// Bonus for moving closer to enemies, but secondary to energy gathering
 		for ePos := range enemyPositions {
-			dist := distance2(newPos, ePos, config.Rows, config.Cols)
-			if dist <= config.AttackRadius2+4 {
-				score -= 200
+			dist := float64(distance2(newPos, ePos, config.Rows, config.Cols))
+			currentDist := float64(distance2(bot.Position, ePos, config.Rows, config.Cols))
+			if dist < currentDist {
+				// Moving toward enemy - bonus increases as we get closer
+				score += 40.0 / (dist + 1)
+			}
+			// Moderate bonus for being in attack range (encourages combat but doesn't override energy)
+			if dist <= float64(config.AttackRadius2) {
+				score += 35
 			}
 		}
 
