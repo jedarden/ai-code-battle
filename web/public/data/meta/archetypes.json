@@ -1,0 +1,36 @@
+{
+  "updated_at": "2026-04-25T14:18:07Z",
+  "archetypes": [
+    {
+      "name": "balanced",
+      "bot_count": 2,
+      "avg_rating": 1500.0,
+      "win_rate": 50.0,
+      "bots": [
+        {
+          "id": "b_656f050a7ed3",
+          "name": "RandomBot",
+          "rating": 1500.0
+        },
+        {
+          "id": "b_2fa5681bf0ff",
+          "name": "GathererBot",
+          "rating": 1500.0
+        }
+      ]
+    },
+    {
+      "name": "swarm",
+      "bot_count": 1,
+      "avg_rating": 1500.0,
+      "win_rate": 0.0,
+      "bots": [
+        {
+          "id": "b_62beeb03c196",
+          "name": "SwarmBot",
+          "rating": 1500.0
+        }
+      ]
+    }
+  ]
+}
