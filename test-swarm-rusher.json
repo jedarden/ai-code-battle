@@ -1,0 +1,2315 @@
+{
+  "format_version": "1.0",
+  "match_id": "m_8jkd8osf",
+  "config": {
+    "rows": 40,
+    "cols": 40,
+    "max_turns": 200,
+    "vision_radius2": 49,
+    "attack_radius2": 25,
+    "spawn_cost": 3,
+    "energy_interval": 10,
+    "cores_per_player": 1,
+    "zone_enabled": true,
+    "zone_start_turn": 10,
+    "zone_shrink_interval": 1,
+    "zone_shrink_step": 1,
+    "zone_min_radius": 2
+  },
+  "start_time": "2026-05-26T21:41:45.761720673Z",
+  "end_time": "2026-05-26T21:41:46.329140957Z",
+  "result": {
+    "winner": 0,
+    "reason": "elimination",
+    "turns": 18,
+    "scores": [
+      3,
+      1
+    ],
+    "energy": [
+      2,
+      0
+    ],
+    "bots_alive": [
+      1,
+      0
+    ],
+    "crashed": [
+      false,
+      false
+    ],
+    "combat_deaths": [
+      1,
+      1
+    ]
+  },
+  "players": [
+    {
+      "id": 0,
+      "name": "swarm"
+    },
+    {
+      "id": 1,
+      "name": "rusher"
+    }
+  ],
+  "map": {
+    "rows": 40,
+    "cols": 40,
+    "walls": [
+      {
+        "row": 22,
+        "col": 21
+      },
+      {
+        "row": 20,
+        "col": 12
+      },
+      {
+        "row": 20,
+        "col": 10
+      },
+      {
+        "row": 31,
+        "col": 26
+      },
+      {
+        "row": 9,
+        "col": 14
+      },
+      {
+        "row": 10,
+        "col": 21
+      },
+      {
+        "row": 15,
+        "col": 29
+      },
+      {
+        "row": 30,
+        "col": 17
+      },
+      {
+        "row": 20,
+        "col": 28
+      },
+      {
+        "row": 7,
+        "col": 13
+      },
+      {
+        "row": 8,
+        "col": 25
+      },
+      {
+        "row": 32,
+        "col": 15
+      },
+      {
+        "row": 28,
+        "col": 34
+      },
+      {
+        "row": 23,
+        "col": 24
+      },
+      {
+        "row": 18,
+        "col": 28
+      },
+      {
+        "row": 7,
+        "col": 29
+      },
+      {
+        "row": 19,
+        "col": 31
+      },
+      {
+        "row": 13,
+        "col": 22
+      },
+      {
+        "row": 27,
+        "col": 18
+      },
+      {
+        "row": 27,
+        "col": 34
+      },
+      {
+        "row": 28,
+        "col": 14
+      },
+      {
+        "row": 25,
+        "col": 11
+      },
+      {
+        "row": 21,
+        "col": 26
+      },
+      {
+        "row": 18,
+        "col": 8
+      },
+      {
+        "row": 26,
+        "col": 19
+      },
+      {
+        "row": 16,
+        "col": 33
+      },
+      {
+        "row": 23,
+        "col": 8
+      },
+      {
+        "row": 12,
+        "col": 18
+      },
+      {
+        "row": 19,
+        "col": 28
+      },
+      {
+        "row": 22,
+        "col": 19
+      },
+      {
+        "row": 13,
+        "col": 6
+      },
+      {
+        "row": 19,
+        "col": 14
+      },
+      {
+        "row": 21,
+        "col": 9
+      },
+      {
+        "row": 27,
+        "col": 19
+      },
+      {
+        "row": 14,
+        "col": 10
+      },
+      {
+        "row": 20,
+        "col": 16
+      },
+      {
+        "row": 20,
+        "col": 15
+      },
+      {
+        "row": 21,
+        "col": 12
+      },
+      {
+        "row": 14,
+        "col": 21
+      },
+      {
+        "row": 13,
+        "col": 21
+      },
+      {
+        "row": 28,
+        "col": 28
+      },
+      {
+        "row": 30,
+        "col": 19
+      },
+      {
+        "row": 28,
+        "col": 22
+      },
+      {
+        "row": 24,
+        "col": 31
+      },
+      {
+        "row": 26,
+        "col": 30
+      },
+      {
+        "row": 6,
+        "col": 11
+      },
+      {
+        "row": 20,
+        "col": 24
+      },
+      {
+        "row": 17,
+        "col": 32
+      },
+      {
+        "row": 12,
+        "col": 26
+      },
+      {
+        "row": 17,
+        "col": 22
+      },
+      {
+        "row": 18,
+        "col": 20
+      },
+      {
+        "row": 22,
+        "col": 12
+      },
+      {
+        "row": 34,
+        "col": 29
+      },
+      {
+        "row": 17,
+        "col": 16
+      },
+      {
+        "row": 18,
+        "col": 21
+      },
+      {
+        "row": 18,
+        "col": 19
+      },
+      {
+        "row": 12,
+        "col": 12
+      },
+      {
+        "row": 16,
+        "col": 9
+      },
+      {
+        "row": 33,
+        "col": 11
+      },
+      {
+        "row": 12,
+        "col": 6
+      },
+      {
+        "row": 20,
+        "col": 25
+      },
+      {
+        "row": 18,
+        "col": 11
+      },
+      {
+        "row": 33,
+        "col": 27
+      },
+      {
+        "row": 22,
+        "col": 20
+      },
+      {
+        "row": 23,
+        "col": 18
+      },
+      {
+        "row": 20,
+        "col": 30
+      },
+      {
+        "row": 24,
+        "col": 7
+      },
+      {
+        "row": 10,
+        "col": 23
+      },
+      {
+        "row": 22,
+        "col": 29
+      },
+      {
+        "row": 22,
+        "col": 32
+      }
+    ],
+    "cores": [
+      {
+        "position": {
+          "row": 23,
+          "col": 20
+        },
+        "owner": 0
+      },
+      {
+        "position": {
+          "row": 17,
+          "col": 20
+        },
+        "owner": 1
+      }
+    ],
+    "energy_nodes": [
+      {
+        "row": 22,
+        "col": 23
+      },
+      {
+        "row": 18,
+        "col": 17
+      },
+      {
+        "row": 17,
+        "col": 24
+      },
+      {
+        "row": 23,
+        "col": 16
+      },
+      {
+        "row": 16,
+        "col": 26
+      },
+      {
+        "row": 24,
+        "col": 14
+      },
+      {
+        "row": 16,
+        "col": 27
+      },
+      {
+        "row": 24,
+        "col": 13
+      },
+      {
+        "row": 24,
+        "col": 27
+      },
+      {
+        "row": 16,
+        "col": 13
+      }
+    ]
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 23,
+          "col": 16
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0
+      ],
+      "events": [
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 0,
+            "owner": 0,
+            "pos": {
+              "row": 23,
+              "col": 20
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 1,
+            "owner": 1,
+            "pos": {
+              "row": 17,
+              "col": 20
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 1,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 19
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 16,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 23,
+          "col": 16
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 2,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 24,
+            "col": 19
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 15,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 23,
+          "col": 16
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 3,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 24,
+            "col": 18
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 14,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 23,
+          "col": 16
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 4,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 24,
+            "col": 17
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 13,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        1,
+        0
+      ],
+      "events": [
+        {
+          "type": "energy_collected",
+          "turn": 4,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 23,
+              "col": 16
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 5,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 24,
+            "col": 16
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 12,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        1,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 6,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 24,
+            "col": 15
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 11,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        1,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 7,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 24,
+            "col": 14
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 10,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "events": [
+        {
+          "type": "energy_collected",
+          "turn": 7,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 24,
+              "col": 13
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 8,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 14
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 9,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 9,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 22,
+            "col": 14
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 8,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 20,
+        "active": false
+      }
+    },
+    {
+      "turn": 10,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 21,
+            "col": 14
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 9,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 22,
+          "col": 23
+        },
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 24,
+          "col": 14
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 18,
+        "active": true
+      }
+    },
+    {
+      "turn": 11,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 22,
+            "col": 14
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 10,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 22,
+          "col": 23
+        },
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 24,
+          "col": 14
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 17,
+        "active": true
+      }
+    },
+    {
+      "turn": 12,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 14
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 11,
+            "col": 20
+          },
+          "alive": true
+        },
+        {
+          "id": 2,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 22,
+          "col": 23
+        },
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0
+      ],
+      "events": [
+        {
+          "type": "energy_collected",
+          "turn": 12,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 24,
+              "col": 14
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 12,
+          "details": {
+            "bot_id": 2,
+            "owner": 0,
+            "pos": {
+              "row": 23,
+              "col": 20
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 16,
+        "active": true
+      }
+    },
+    {
+      "turn": 13,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 22,
+            "col": 14
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 12,
+            "col": 20
+          },
+          "alive": true
+        },
+        {
+          "id": 2,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 21
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 22,
+          "col": 23
+        },
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 23,
+          "col": 16
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 15,
+        "active": true
+      }
+    },
+    {
+      "turn": 14,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 22,
+            "col": 15
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 13,
+            "col": 20
+          },
+          "alive": true
+        },
+        {
+          "id": 2,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 22
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "events": [
+        {
+          "type": "energy_collected",
+          "turn": 14,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 22,
+              "col": 23
+            }
+          }
+        },
+        {
+          "type": "energy_collected",
+          "turn": 14,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 23,
+              "col": 16
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 14,
+        "active": true
+      }
+    },
+    {
+      "turn": 15,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 21,
+            "col": 15
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 14,
+            "col": 20
+          },
+          "alive": true
+        },
+        {
+          "id": 2,
+          "owner": 0,
+          "position": {
+            "row": 23,
+            "col": 23
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 13,
+        "active": true
+      }
+    },
+    {
+      "turn": 16,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 21,
+            "col": 16
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 15,
+            "col": 20
+          },
+          "alive": true
+        },
+        {
+          "id": 2,
+          "owner": 0,
+          "position": {
+            "row": 22,
+            "col": 23
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 12,
+        "active": true
+      }
+    },
+    {
+      "turn": 17,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 21,
+            "col": 17
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 16,
+            "col": 20
+          },
+          "alive": true
+        },
+        {
+          "id": 2,
+          "owner": 0,
+          "position": {
+            "row": 22,
+            "col": 24
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        1,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 11,
+        "active": true
+      }
+    },
+    {
+      "turn": 18,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 20,
+            "col": 17
+          },
+          "alive": false
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 0,
+          "position": {
+            "row": 21,
+            "col": 24
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 23,
+            "col": 20
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 17,
+            "col": 20
+          },
+          "owner": 1,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 18,
+          "col": 17
+        },
+        {
+          "row": 17,
+          "col": 24
+        },
+        {
+          "row": 16,
+          "col": 26
+        },
+        {
+          "row": 16,
+          "col": 27
+        },
+        {
+          "row": 24,
+          "col": 13
+        },
+        {
+          "row": 24,
+          "col": 27
+        },
+        {
+          "row": 16,
+          "col": 13
+        }
+      ],
+      "scores": [
+        3,
+        1
+      ],
+      "energy_held": [
+        2,
+        0
+      ],
+      "events": [
+        {
+          "type": "combat_death",
+          "turn": 18,
+          "details": {
+            "bot_id": 0,
+            "killers": [
+              {
+                "bot_id": 1,
+                "owner": 1,
+                "position": {
+                  "row": 17,
+                  "col": 20
+                }
+              }
+            ],
+            "owner": 0,
+            "position": {
+              "row": 20,
+              "col": 17
+            }
+          }
+        },
+        {
+          "type": "combat_death",
+          "turn": 18,
+          "details": {
+            "bot_id": 1,
+            "killers": [
+              {
+                "bot_id": 0,
+                "owner": 0,
+                "position": {
+                  "row": 20,
+                  "col": 17
+                }
+              }
+            ],
+            "owner": 1,
+            "position": {
+              "row": 17,
+              "col": 20
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 20,
+          "col": 20
+        },
+        "radius": 10,
+        "active": true
+      }
+    }
+  ],
+  "win_prob": [
+    [
+      0.45,
+      0.37
+    ],
+    [
+      0.52,
+      0.34
+    ],
+    [
+      0.57,
+      0.27
+    ],
+    [
+      0.67,
+      0.24
+    ],
+    [
+      0.76,
+      0.17
+    ],
+    [
+      0.79,
+      0.17
+    ],
+    [
+      0.77,
+      0.19
+    ],
+    [
+      0.81,
+      0.14
+    ],
+    [
+      0.9,
+      0.08
+    ],
+    [
+      0.92,
+      0.07
+    ],
+    [
+      0.99,
+      0
+    ],
+    [
+      1,
+      0
+    ],
+    [
+      0.95,
+      0.04
+    ],
+    [
+      0.95,
+      0.03
+    ],
+    [
+      0.91,
+      0.02
+    ],
+    [
+      0.86,
+      0.05
+    ],
+    [
+      0.76,
+      0.06
+    ],
+    [
+      0.88,
+      0.04
+    ],
+    [
+      1,
+      0
+    ]
+  ],
+  "combat_deaths": [
+    1,
+    1
+  ]
+}

@@ -1,0 +1,10 @@
+/home/coding/ai-code-battle/wasm/bots/rusher/target/wasm32-unknown-unknown/debug/deps/buddy_alloc-a451d56b5be0ae01.d: /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/lib.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/buddy_alloc.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/fast_alloc.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/non_threadsafe_alloc.rs
+
+/home/coding/ai-code-battle/wasm/bots/rusher/target/wasm32-unknown-unknown/debug/deps/libbuddy_alloc-a451d56b5be0ae01.rlib: /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/lib.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/buddy_alloc.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/fast_alloc.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/non_threadsafe_alloc.rs
+
+/home/coding/ai-code-battle/wasm/bots/rusher/target/wasm32-unknown-unknown/debug/deps/libbuddy_alloc-a451d56b5be0ae01.rmeta: /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/lib.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/buddy_alloc.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/fast_alloc.rs /home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/non_threadsafe_alloc.rs
+
+/home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/lib.rs:
+/home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/buddy_alloc.rs:
+/home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/fast_alloc.rs:
+/home/coding/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/buddy-alloc-0.5.1/src/non_threadsafe_alloc.rs:

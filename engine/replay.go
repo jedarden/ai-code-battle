@@ -52,7 +52,7 @@ type ReplayTurn struct {
 	Energy     []Position         `json:"energy"`
 	Scores     []int              `json:"scores"`
 	EnergyHeld []int              `json:"energy_held"`
-	Events     []Event            `json:"events,omitempty"`
+	Events     []Event            `json:"events"`
 	Debug      map[int]*DebugInfo `json:"debug,omitempty"`       // optional bot debug telemetry
 	ZoneBounds *ZoneBounds        `json:"zone_bounds,omitempty"` // active zone bounds if enabled
 }
@@ -139,6 +139,10 @@ func (rw *ReplayWriter) SetMap(gs *GameState) {
 // RecordTurn records the state at the end of a turn.
 // debug is an optional map of player ID -> DebugInfo collected from bot responses.
 func (rw *ReplayWriter) RecordTurn(gs *GameState, debug map[int]*DebugInfo) {
+	// Create a copy of events to ensure we always have a valid slice (never nil)
+	events := make([]Event, len(gs.Events))
+	copy(events, gs.Events)
+
 	turn := ReplayTurn{
 		Turn:       gs.Turn,
 		Bots:       make([]ReplayBot, 0),
@@ -146,7 +150,7 @@ func (rw *ReplayWriter) RecordTurn(gs *GameState, debug map[int]*DebugInfo) {
 		Energy:     make([]Position, 0),
 		Scores:     make([]int, len(gs.Players)),
 		EnergyHeld: make([]int, len(gs.Players)),
-		Events:     gs.Events,
+		Events:     events,
 		Debug:      debug,
 	}
 
