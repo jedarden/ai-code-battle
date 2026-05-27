@@ -13,6 +13,9 @@ import {
   type DirectorState,
   type DurationPreset,
 } from './director';
+import { WinProbSparkline } from './win-prob';
+import type { WinProbPoint, CriticalMoment } from './win-prob';
+import { WinProbabilityEngine } from '../win-probability';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -67,6 +70,7 @@ export class PlaylistCarousel {
   private metadataPanel: HTMLDivElement;
   private closeBtn: HTMLButtonElement;
   private countdownRing: HTMLDivElement;
+  private winProbContainer: HTMLDivElement;
 
   // Replay viewer
   private viewer: InstanceType<typeof import('../replay-viewer').ReplayViewer> | null = null;
@@ -78,6 +82,11 @@ export class PlaylistCarousel {
 
   // Preloading
   private preloadedReplays = new Map<number, Replay>();
+
+  // Win probability
+  private winProbData: WinProbPoint[] = [];
+  private criticalMoments: CriticalMoment[] = [];
+  private winProbSparkline: WinProbSparkline | null = null;
 
   // Auto-advance timer
   private autoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -124,6 +133,7 @@ export class PlaylistCarousel {
     this.metadataPanel = this.overlay.querySelector('.carousel-metadata-panel')!;
     this.closeBtn = this.overlay.querySelector('.carousel-close-btn')!;
     this.countdownRing = this.overlay.querySelector('.carousel-countdown-ring')!;
+    this.winProbContainer = this.overlay.querySelector('.carousel-win-prob-container')!;
 
     // Close button
     this.closeBtn.addEventListener('click', () => this.destroy());
@@ -137,6 +147,15 @@ export class PlaylistCarousel {
     // Tap on canvas = play/pause
     this.canvas.addEventListener('click', () => {
       if (this.viewer?.getReplay()) this.viewer.togglePlay();
+    });
+
+    // Tap on score bar = toggle metadata panel (win prob graph)
+    this.scoreBar.addEventListener('click', () => {
+      if (this.metadataOpen) {
+        this.closeMetadata();
+      } else {
+        this.openMetadata();
+      }
     });
 
     // Initialize
@@ -364,6 +383,9 @@ export class PlaylistCarousel {
     // Update event hint
     this.updateEventHint(replay);
 
+    // Compute win probability data
+    await this.computeWinProbability(replay);
+
     // Update metadata panel with full info
     this.updateMetadataContent(match, replay);
 
@@ -415,7 +437,21 @@ export class PlaylistCarousel {
       parts.push(`<div class="carousel-meta-row"><span>Date</span><span>${d.toLocaleDateString()}</span></div>`);
     }
     parts.push(`<button class="carousel-meta-watch-full" data-match-id="${match.match_id}">Watch Full Replay →</button>`);
-    this.metadataPanel.innerHTML = parts.join('');
+
+    // Update the metadata panel content (excluding win prob container which is separate)
+    const existingContent = this.metadataPanel.querySelector('.carousel-meta-content');
+    const contentHtml = parts.join('');
+    if (existingContent) {
+      existingContent.innerHTML = contentHtml;
+    } else {
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'carousel-meta-content';
+      contentDiv.innerHTML = contentHtml;
+      this.metadataPanel.insertBefore(contentDiv, this.winProbContainer);
+    }
+
+    // Render win probability sparkline
+    this.renderWinProbSparkline();
 
     const btn = this.metadataPanel.querySelector('.carousel-meta-watch-full');
     if (btn) {
@@ -425,6 +461,69 @@ export class PlaylistCarousel {
         window.location.hash = `/watch/replay?url=${replayUrl(id)}`;
       });
     }
+  }
+
+  // ── Win probability computation ─────────────────────────────────────────────
+
+  private async computeWinProbability(replay: Replay): Promise<void> {
+    try {
+      const wpEngine = new WinProbabilityEngine(replay as any);
+      await wpEngine.computeAll(30, 5);
+      const points = wpEngine.getSparkline();
+      const critical = wpEngine.getCriticalMoments();
+
+      // Convert to WinProbPoint format for sparkline component
+      this.winProbData = points.map(p => ({
+        turn: p.turn,
+        probs: [p.p0WinProb, p.p1WinProb],
+      }));
+      this.criticalMoments = critical.map(c => ({
+        turn: c.turn,
+        delta: c.deltaP0,
+        description: c.description,
+      }));
+    } catch (e) {
+      console.error('Failed to compute win probability:', e);
+      this.winProbData = [];
+      this.criticalMoments = [];
+    }
+  }
+
+  private renderWinProbSparkline(): void {
+    // Clear existing sparkline
+    this.winProbContainer.innerHTML = '';
+
+    if (this.winProbData.length < 2) {
+      this.winProbContainer.innerHTML = '<div class="carousel-meta-label">Win probability data unavailable</div>';
+      return;
+    }
+
+    // Create title
+    const title = document.createElement('div');
+    title.className = 'carousel-meta-label';
+    title.textContent = 'Win Probability';
+    this.winProbContainer.appendChild(title);
+
+    // Create sparkline
+    const sparklineContainer = document.createElement('div');
+    sparklineContainer.className = 'carousel-sparkline-container';
+    this.winProbContainer.appendChild(sparklineContainer);
+
+    this.winProbSparkline = new WinProbSparkline(sparklineContainer, {
+      width: METADATA_PANEL_WIDTH - 32,
+      height: 80,
+      onTurnClick: (turn) => {
+        if (this.viewer) {
+          this.viewer.setTurn(turn);
+        }
+      },
+    });
+
+    // Get player colors (use default since getPlayerColors is private)
+    const playerColors = ['#3b82f6', '#ef4444'];
+
+    this.winProbSparkline.setData(this.winProbData, playerColors, this.criticalMoments);
+    this.winProbSparkline.setCurrentTurn(this.viewer?.getTurn() ?? 0);
   }
 
   // ── Auto-advance with countdown ring ─────────────────────────────────────
@@ -599,6 +698,10 @@ export class PlaylistCarousel {
   destroy(): void {
     this.stopDirectorTick();
     this.clearAutoAdvance();
+    if (this.winProbSparkline) {
+      this.winProbSparkline.destroy();
+      this.winProbSparkline = null;
+    }
     if (this.viewer) {
       this.viewer.pause();
       this.viewer.destroy();
@@ -640,7 +743,9 @@ const CAROUSEL_HTML = `
 
   <div class="carousel-swipe-hint">↑ swipe for next</div>
 
-  <div class="carousel-metadata-panel"></div>
+  <div class="carousel-metadata-panel">
+    <div class="carousel-win-prob-container"></div>
+  </div>
 
   <button class="carousel-close-btn" aria-label="Close carousel">✕</button>
 </div>
@@ -734,7 +839,8 @@ const CAROUSEL_CSS = `
   color: rgba(255,255,255,0.9);
   font-size: 0.95rem;
   font-weight: 600;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .carousel-vs {
@@ -847,6 +953,34 @@ const CAROUSEL_CSS = `
   font-size: 0.85rem;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+
+.carousel-meta-content {
+  flex-shrink: 0;
+}
+
+.carousel-win-prob-container {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  flex-shrink: 0;
+}
+
+.carousel-meta-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 8px;
+}
+
+.carousel-sparkline-container {
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .carousel-meta-title {
