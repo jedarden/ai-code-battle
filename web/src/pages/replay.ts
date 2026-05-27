@@ -29,6 +29,7 @@ import { THEATER_STYLES, TheaterMode } from '../components/theater';
 import { setActiveReplay } from '../components/pip-registry';
 import { getPipMatchId, restorePip } from '../components/pip';
 import { fetchReplayFromUrl } from '../lib/replay-data';
+import { hapticPulse, isHapticEnabled, setHapticEnabled } from '../lib/ambient';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -219,6 +220,10 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
               <label class="checkbox-label">
                 <input type="checkbox" id="reduced-motion-toggle">
                 Reduced motion
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="haptic-toggle" checked>
+                Haptic feedback (mobile)
               </label>
             </div>
           </div>
@@ -1496,6 +1501,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const shapesToggle = document.getElementById('shapes-toggle') as HTMLInputElement;
   const highContrastToggle = document.getElementById('high-contrast-toggle') as HTMLInputElement;
   const reducedMotionToggle = document.getElementById('reduced-motion-toggle') as HTMLInputElement;
+  const hapticToggle = document.getElementById('haptic-toggle') as HTMLInputElement;
 
   function updateAccessibility(): void {
     viewer.setAccessibility({
@@ -1510,6 +1516,12 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   shapesToggle.addEventListener('change', updateAccessibility);
   highContrastToggle.addEventListener('change', updateAccessibility);
   reducedMotionToggle.addEventListener('change', updateAccessibility);
+
+  // Haptic feedback toggle (§16.18)
+  hapticToggle.checked = isHapticEnabled();
+  hapticToggle.addEventListener('change', () => {
+    setHapticEnabled(hapticToggle.checked);
+  });
 
   // Initialize accessibility from system preferences
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -1536,6 +1548,40 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     viewer.refreshWinProbSparkline();
     updateAnnotationOverlay();
     updateTranscript();
+
+    // Haptic feedback at critical moments (§16.18)
+    if (!isHapticEnabled()) return;
+    const turn = viewer.getTurn();
+    const replay = viewer.getReplay() as Replay | null;
+    if (!replay || !replay.turns[turn]) return;
+
+    const turnData = replay.turns[turn];
+    const events = turnData.events ?? [];
+    let hasCriticalEvent = false;
+
+    // Check for combat deaths and core captures
+    for (const event of events) {
+      if (event.type === 'bot_died' || event.type === 'core_captured') {
+        hasCriticalEvent = true;
+        break;
+      }
+    }
+
+    // Check for win probability shift >15%
+    if (!hasCriticalEvent && replay.win_prob && turn > 0) {
+      const prevProbs = replay.win_prob[turn - 1];
+      const currProbs = replay.win_prob[turn];
+      if (prevProbs && currProbs && prevProbs.length >= 2 && currProbs.length >= 2) {
+        const delta = Math.abs(currProbs[0] - prevProbs[0]);
+        if (delta > 0.15) {
+          hasCriticalEvent = true;
+        }
+      }
+    }
+
+    if (hasCriticalEvent) {
+      hapticPulse(50);
+    }
   };
   viewer.onDebugChange = (debug: Record<number, DebugInfo> | null) => {
     updateDebugDisplay(debug);
