@@ -65,12 +65,39 @@ The deployment manifest has placeholder SHA (`sha256:placeholder` on line 40). T
 4. Get image digest and update deployment manifest manually
 5. Commit and push to declarative-config
 
-## Current State
+## Current State (2026-06-04)
 - **BLOCKER:** Missing iad-ci.kubeconfig for workflow submission
 - **Image Status:** acb-enrichment image does not exist on Docker Hub
 - **Dockerfile:** Verified correct
-- **WorkflowTemplate:** Verified includes enrichment build
-- **Deployment:** Has placeholder SHA, needs real image
+- **WorkflowTemplate:** Verified - `acb-images-build-workflowtemplate.yml` includes enrichment
+- **Deployment:** Has placeholder SHA at line 40, needs real image
+- **iad-ci Proxy:** Confirmed accessible at `http://traefik-iad-ci.tail1b1987.ts.net:8001` but read-only
+
+## Verified Access Attempts (2026-06-04)
+```bash
+# iad-ci proxy exists but is read-only (devpod-observer SA)
+$ kubectl --server=http://traefik-iad-ci.tail1b1987.ts.net:8001 create -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+...
+EOF
+Error from server (Forbidden): User "system:serviceaccount:devpod-observer:devpod-observer" cannot create resource "workflows"
+
+# No workflows with acb-images-build template found
+$ kubectl --server=http://traefik-iad-ci.tail1b1987.ts.net:8001 get workflows -n argo-workflows
+No resources found
+
+# Kubeconfig files not present
+$ ls ~/.kube/*.kubeconfig
+ls: cannot access: No such file or directory
+```
 
 ## Recommendation
 Set up the iad-ci.kubeconfig file. This is a one-time infrastructure task that will unblock all future iad-ci workflow operations. The kubeconfig provides cluster-admin access to the CI/CD cluster where all Argo Workflows run.
+
+## Resolution Path
+1. **External Action Required**: Obtain iad-ci.kubeconfig from Rackspace Spot Console
+2. Submit `acb-images-build` workflow to build enrichment image
+3. Retrieve image SHA from completed workflow
+4. Update deployment manifest in declarative-config
+5. Push to declarative-config (ArgoCD syncs to apexalgo-iad)
