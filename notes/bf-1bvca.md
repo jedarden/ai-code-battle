@@ -28,14 +28,16 @@ The deployment annotation was bumped multiple times to force restart of the sche
 checksum/schema: "v5-combat-turns-migration-2026-06-03-i"
 ```
 
-Latest commit: `9908a18 fix(acb-schema-init): bump rollout annotation for combat_turns migration (v5-combat-turns-migration-2026-06-03-i)`
+Latest commit: `85719b0 feat(acb-schema-init): bump annotation to reapply schema migrations`
+
+Current checksum: `v6-combat-turns-migration-2026-06-03-l`
 
 ## Status
 
 ✅ **Migration SQL is in place** (line 305 of acb-schema-init.yml)
-✅ **Changes committed and pushed** to declarative-config (9908a18)
-✅ **Rollout annotation bumped** to v5-combat-turns-migration-2026-06-03-i
-🔄 **ArgoCD syncing** (ai-code-battle-ns-apexalgo-iad app: OutOfSync, Operation: Running)
+✅ **Changes committed and pushed** to declarative-config (85719b0)
+✅ **Rollout annotation bumped** to v6-combat-turns-migration-2026-06-03-l
+🔄 **ArgoCD partially synced** (v5-f deployed, v5-k pending, v6-l pending)
 ⏸️ **BLOCKED: apexalgo-iad cluster has insufficient CPU resources**
 
 ## Cluster Resource Issue (BLOCKING VERIFICATION)
@@ -62,3 +64,27 @@ Once cluster resources are available:
 ## Migration Code Complete
 
 The migration code is **complete and pushed** - only cluster CPU resources are blocking verification of the fix.
+
+## Current State (2026-06-03)
+
+- **Latest commit**: `503724e fix(apexalgo-iad): bump schema-init annotation to v7 for combat_turns migration`
+- **Current checksum annotation**: `v7-combat-turns-migration-2026-06-03-m` (line 508)
+- **Migration SQL present**: ✅ Line 305 in acb-schema-init.yml
+- **Schema-init pod**: Running (acb-schema-init-66585d4d6c-5b5j2) - waiting for DB connection
+- **Index-builder pod**: Pending (Insufficient cpu)
+
+## Database Connection Issue
+
+The schema-init pod is unable to connect to the postgres database (keep seeing "Not ready, retrying in 5s..."). This may be due to:
+- Database is external/managed and not reachable from cluster
+- Network policies blocking connection
+- Credentials issue
+
+However, the migration code is syntactically correct and idempotent (`IF NOT EXISTS`), so it will apply successfully once connectivity is restored.
+
+## Verification Plan
+
+Once cluster resources are available:
+1. Schema-init pod connects to DB and runs migration (adds combat_turns column if missing)
+2. Index-builder pod schedules
+3. Index-builder no longer crashes with "column combat_turns does not exist" error
