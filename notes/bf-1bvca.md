@@ -13,9 +13,9 @@ The combat_turns migration was already implemented in a previous session (commit
    - Line 46: `combat_turns INTEGER NOT NULL DEFAULT 0` in CREATE TABLE
    - Line 305: `ALTER TABLE matches ADD COLUMN IF NOT EXISTS combat_turns INTEGER NOT NULL DEFAULT 0;`
 
-2. ✅ **Rollout Annotation**: Bumped to `v11-fix-secret-name-2026-06-03-bf-1bvca`
+2. ✅ **Rollout Annotation**: Bumped to `v12-combat-turns-2026-06-03-bf-1bvca`
 
-3. ✅ **Deployed**: kubectl shows annotation `v11-fix-secret-name-2026-06-03-bf-1bvca` matches declarative-config
+3. ✅ **Deployed**: kubectl shows annotation `v12-combat-turns-2026-06-03-bf-1bvca` matches declarative-config
 
 4. ✅ **Pushed**: declarative-config is up to date with origin/main
 
