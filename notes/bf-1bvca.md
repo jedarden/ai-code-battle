@@ -25,7 +25,7 @@ The `combat_turns` column was already present in `~/declarative-config/k8s/apexa
 The deployment annotation was bumped to force a restart of the schema-init pod:
 
 ```yaml
-checksum/schema: "v3-combat-turns-redeploy-2026-06-03"
+checksum/schema: "v4-combat-turns-migration-2026-06-03-b"
 ```
 
 ### 3. Commits Already Pushed
@@ -33,6 +33,7 @@ checksum/schema: "v3-combat-turns-redeploy-2026-06-03"
 All changes were committed and pushed to origin/main:
 
 ```
+137b7c5 fix(acb-schema): bump annotation to force combat_turns migration redeploy
 51e4a36 fix(schema): bump annotation to force schema-init restart for combat_turns column
 f74367f feat(apexalgo-iad): bump schema-init rollout annotation for combat_turns migration
 00e1f5c feat(apexalgo-iad): add acb-schema-init deployment with combat_turns migration
@@ -42,16 +43,27 @@ f74367f feat(apexalgo-iad): bump schema-init rollout annotation for combat_turns
 
 ✅ **Migration SQL is in place** (line 305 of acb-schema-init.yml)
 ✅ **Changes committed and pushed** to declarative-config
-✅ **Rollout annotation bumped** to v3-combat-turns-redeploy-2026-06-03
+✅ **Rollout annotation bumped** to v4-combat-turns-migration-2026-06-03-b
+✅ **ArgoCD has synced** the deployment spec (verified via kubectl)
+⏸️ **BLOCKED: apexalgo-iad cluster has insufficient CPU resources**
 
-## Next Steps
+## Cluster Resource Issue
 
-ArgoCD should automatically sync the changes to apexalgo-iad. Verify by checking:
+All pods in ai-code-battle namespace are stuck in Pending state:
 
-1. ArgoCD app sync status for `ai-code-battle` namespace
-2. acb-schema-init pod restarted with new annotation
-3. acb-index-builder logs show successful queries without combat_turns errors
+```
+acb-api-7c46c9d5b6-jfl9w             0/1     Pending   (Insufficient cpu)
+acb-evolver-85549b574d-pqbjd         0/1     Pending   (Insufficient cpu)
+acb-index-builder-6669fdbc95-nxwhf   0/1     Pending   (Insufficient cpu)
+acb-schema-init-74c6894ddb-9g67p     0/1     Pending   (Insufficient cpu)
+```
 
-## Note
+Error message: `0/3 nodes are available: 3 Insufficient cpu. preemption: 0/3 nodes are available: 3 No preemption victims found for incoming pod.`
 
-The migration was already present in the schema from earlier commits (00e1f5c, f74367f, 51e4a36). The declarative-config repo is clean and up to date with origin/main.
+The schema-init pod cannot schedule to apply the migration. Once cluster resources are available:
+1. New schema-init pod will schedule and apply the migration
+2. Index-builder will no longer crash on "combat_turns does not exist"
+
+## Migration Code Complete
+
+The migration code is **complete and deployed** - only cluster resources are blocking verification.
