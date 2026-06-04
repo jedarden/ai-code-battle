@@ -133,3 +133,28 @@ spec:
             dataKey: body.after
           dest: spec.arguments.parameters.0.value
       conditions: acb-push
+
+    - template:
+        name: acb-trigger
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: acb-build-
+                namespace: argo-workflows
+              spec:
+                workflowTemplateRef:
+                  name: acb-build
+                arguments:
+                  parameters:
+                    - name: commit-sha
+                      value: ""
+      parameters:
+        - src:
+            dependencyName: acb-push
+            dataKey: body.after
+          dest: spec.arguments.parameters.0.value
+      conditions: acb-push
