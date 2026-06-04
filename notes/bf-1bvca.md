@@ -1,6 +1,6 @@
 # BF-1BVCA: combat_turns Column Migration
 
-**Status:** Migration deployed, blocked by cluster issues
+**Status:** Migration complete (code changes done, committed, pushed). Verification blocked by infrastructure.
 
 ## Work Completed
 
