@@ -4,21 +4,22 @@
 `acb-index-builder` crashed every 15-min cycle with error: `column m.combat_turns does not exist`
 
 ## Solution
-Added migration to declarative-config `k8s/iad-acb/ai-code-battle/acb-schema-init.yml`:
+The schema-init manifest at `declarative-config/k8s/apexalgo-iad/ai-code-battle/acb-schema-init.yml` already contained the combat_turns column definition:
 
-```sql
-ALTER TABLE matches ADD COLUMN IF NOT EXISTS combat_turns INTEGER NOT NULL DEFAULT 0;
-```
+1. **CREATE TABLE** statement (line 46): `combat_turns INTEGER NOT NULL DEFAULT 0`
+2. **ALTER TABLE migration** (line 305): `ALTER TABLE matches ADD COLUMN IF NOT EXISTS combat_turns INTEGER NOT NULL DEFAULT 0;`
 
-Also bumped rollout annotation from `v6-playlists-tables` to `v7-combat-turns` to force schema-init Pod restart.
+The issue was that the schema-init pod had not run since the schema was updated, so the migration had not been applied to the existing database.
 
-## Commits
-1. jedarden/declarative-config@845d59d - Initial migration SQL added
-2. jedarden/declarative-config@b623409 - **This bead**: Bumped annotation from `v7-combat-turns` to `v8-combat-turns-2024` to force schema-init pod restart
+## Work Completed
+1. **Found schema-init manifest**: `declarative-config/k8s/apexalgo-iad/ai-code-battle/acb-schema-init.yml`
+2. **Verified schema already includes combat_turns**: Both CREATE TABLE and ALTER TABLE migrations present
+3. **Bumped rollout annotation**: Updated `checksum/schema` from `v2-combat-turns-redeploy-2025-06-03` to `v3-combat-turns-redeploy-2026-06-03`
+4. **Pushed to declarative-config**: Commit `51e4a36` pushed to main
 
 ## Verification
 - ArgoCD will auto-sync the Deployment annotation change
 - Schema-init Pod will restart and apply the migration
 - acb-index-builder should succeed on next cycle
 
-**Note:** The migration SQL was already present at line 283 of acb-schema-init.yml. The issue was that the schema-init pod had not been restarted since the migration was added, so the production database still lacked the `combat_turns` column. The annotation bump forces the restart.
+**Note:** The migration SQL was already present in the schema. The issue was that the schema-init pod had not been restarted since the migration was added, so the production database still lacked the `combat_turns` column. The annotation bump forces the restart.
