@@ -28,11 +28,19 @@ The migration code is correct and committed. However, cluster resource constrain
    - New v13 schema-init pod is Pending waiting for CPU
    - Cannot verify index-builder succeeds until pods can schedule
 
-2. **Cluster Status** (2026-06-04):
-   - declarative-config: Commit `d3e9eab` (v13) pushed
-   - Cluster apexalgo-iad: Stuck at `v11-fix-secret-name-2026-06-03-bf-1bvca`
+2. **Cluster Status** (2026-06-03 → 2026-06-04):
+   - declarative-config: Commit `d3e9eab` (v13) pushed and synced
+   - Cluster apexalgo-iad: Stuck at `v11-fix-secret-name-2026-06-03-bf-1bvca` (v13 Pending due to CPU)
    - Node CPU: 42%, 17%, 42% utilization but pods can't schedule
    - 10+ pods Pending with `FailedScheduling: 0/3 nodes are available: 3 Insufficient cpu`
+
+### Latest Verification (2026-06-03)
+
+Checked cluster status:
+- acb-schema-init-7976d55cb-pwpnn: Running (v11 revision)
+- acb-schema-init-55dcc55d44-wpktm: Pending (v13 revision, waiting for CPU)
+- acb-index-builder-6669fdbc95-nxwhf: Pending (waiting for CPU)
+- declarative-config git: Clean and up to date with origin/main
 
 ### Git History
 
