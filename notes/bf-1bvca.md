@@ -13,24 +13,26 @@ The combat_turns migration was already implemented in a previous session (commit
    - Line 46: `combat_turns INTEGER NOT NULL DEFAULT 0` in CREATE TABLE
    - Line 305: `ALTER TABLE matches ADD COLUMN IF NOT EXISTS combat_turns INTEGER NOT NULL DEFAULT 0;`
 
-2. ✅ **Rollout Annotation**: Bumped to `v12-combat-turns-2026-06-03-bf-1bvca`
+2. ✅ **Rollout Annotation**: Bumped to `v13-combat-turns-2026-06-03-bf-1bvca-sync` (latest)
 
-3. ✅ **Deployed**: kubectl shows annotation `v12-combat-turns-2026-06-03-bf-1bvca` matches declarative-config
+3. ✅ **Deployed**: declarative-config is at v13, ArgoCD sync operation is Running (waiting for healthy state)
 
 4. ✅ **Pushed**: declarative-config is up to date with origin/main
 
 ### Current State (Infrastructure Blockers)
 
-The migration code is correct and committed. However, two external infrastructure issues prevent verification:
+The migration code is correct and committed. However, cluster resource constraints prevent verification:
 
-1. **Postgres Cluster Broken**: `cnpg-apexalgo` in namespace `cnpg` has been Pending for 23 days
-   - Pod `cnpg-apexalgo-3` is Pending (0/1)
-   - Status: "Waiting for the instances to become active"
-   - This blocks schema-init from connecting to apply migrations
-
-2. **Cluster CPU Capacity**: All application pods (api, index-builder, worker, etc.) are stuck Pending due to "Insufficient cpu"
-   - Only schema-init pod is Running (1/1)
+1. **Cluster CPU Capacity**: All application pods (api, index-builder, worker, evolver, matchmaker, etc.) are stuck Pending due to "Insufficient cpu"
+   - Only schema-init pod (old v11 revision) is Running (1/1)
+   - New v13 schema-init pod is Pending waiting for CPU
    - Cannot verify index-builder succeeds until pods can schedule
+
+2. **Cluster Status** (2026-06-04):
+   - declarative-config: Commit `d3e9eab` (v13) pushed
+   - Cluster apexalgo-iad: Stuck at `v11-fix-secret-name-2026-06-03-bf-1bvca`
+   - Node CPU: 42%, 17%, 42% utilization but pods can't schedule
+   - 10+ pods Pending with `FailedScheduling: 0/3 nodes are available: 3 Insufficient cpu`
 
 ### Git History
 
