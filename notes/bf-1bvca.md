@@ -18,15 +18,21 @@
 
 1. **Database Cluster Down**: `cnpg-apexalgo` in `cnpg` namespace shows:
    ```
-   STATUS: Waiting for the instances to become active
-   INSTANCES: 0/3 ready
-   ```
-   The schema-init pod cannot apply migrations without a database connection.
+   NAME            AGE   INSTANCES   READY   STATUS                                       PRIMARY
+   cnpg-apexalgo   91d   0/3         0       Waiting for the instances to become active   cnpg-apexalgo-3
 
-2. **CPU Constraints**: Index-builder pod pending:
+   NAME              READY   STATUS    RESTARTS   AGE
+   cnpg-apexalgo-3   0/1     Pending   0          23d
    ```
-   Warning FailedScheduling: 0/3 nodes are available: 3 Insufficient cpu.
+   Pod condition: `0/3 nodes are available: 3 Insufficient cpu.`
+
+2. **Schema-init Running but Blocked**: Pod is Running but cannot connect to DB:
    ```
+   acb-schema-init-5b698c549d-pwx47     1/1     Running   0          3m24s
+   ```
+   Logs show: "Not ready, retrying in 5s..." (PostgreSQL not accepting connections)
+
+3. **All Workloads Pending**: acb-api, acb-evolver, acb-index-builder, acb-worker all stuck in Pending.
 
 ## Verification Plan
 
