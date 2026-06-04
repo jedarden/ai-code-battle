@@ -4,7 +4,7 @@
 # generates turn-by-turn narrative highlights via LLM, and stores results.
 
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /build
 
