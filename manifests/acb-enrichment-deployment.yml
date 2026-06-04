@@ -38,7 +38,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: enrichment
-          image: forgejo.ardenone.com/ai-code-battle/acb-enrichment:sha-8f1dcc4
+          image: forgejo.ardenone.com/ai-code-battle/acb-enrichment:sha-97b4b0f
           imagePullPolicy: Always
           ports:
             - containerPort: 9090
