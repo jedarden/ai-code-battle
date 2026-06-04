@@ -12,10 +12,13 @@ ALTER TABLE matches ADD COLUMN IF NOT EXISTS combat_turns INTEGER NOT NULL DEFAU
 
 Also bumped rollout annotation from `v6-playlists-tables` to `v7-combat-turns` to force schema-init Pod restart.
 
-## Commit
-jedarden/declarative-config@845d59d
+## Commits
+1. jedarden/declarative-config@845d59d - Initial migration SQL added
+2. jedarden/declarative-config@b623409 - **This bead**: Bumped annotation from `v7-combat-turns` to `v8-combat-turns-2024` to force schema-init pod restart
 
 ## Verification
-- ArgoCD will auto-sync the ConfigMap and Deployment changes
+- ArgoCD will auto-sync the Deployment annotation change
 - Schema-init Pod will restart and apply the migration
 - acb-index-builder should succeed on next cycle
+
+**Note:** The migration SQL was already present at line 283 of acb-schema-init.yml. The issue was that the schema-init pod had not been restarted since the migration was added, so the production database still lacked the `combat_turns` column. The annotation bump forces the restart.
