@@ -82,9 +82,30 @@ The schema-init pod is unable to connect to the postgres database (keep seeing "
 
 However, the migration code is syntactically correct and idempotent (`IF NOT EXISTS`), so it will apply successfully once connectivity is restored.
 
-## Verification Plan
+## Current Status (2026-06-04 03:10 UTC)
 
-Once cluster resources are available:
-1. Schema-init pod connects to DB and runs migration (adds combat_turns column if missing)
-2. Index-builder pod schedules
-3. Index-builder no longer crashes with "column combat_turns does not exist" error
+**Migration code is COMPLETE and PUSHED.** Verification is blocked by cluster CPU resources.
+
+### Committed Changes
+- **Commit**: `503724e fix(apexalgo-iad): bump schema-init annotation to v7 for combat_turns migration`
+- **Pushed**: ✅ to `origin/main`
+- **Migration SQL**: ✅ Present in schema (line 305: `ALTER TABLE matches ADD COLUMN IF NOT EXISTS combat_turns INTEGER NOT NULL DEFAULT 0`)
+- **Rollout annotation**: ✅ Bumped to `v7-combat-turns-migration-2026-06-03-m`
+
+### Cluster Status (BLOCKING)
+- **apexalgo-iad cluster**: All pods stuck in `Pending` state due to `Insufficient cpu`
+- **Schema-init pod**: Running but waiting for postgres connection
+- **Index-builder pod**: Cannot schedule - no CPU available
+
+### Verification Steps (Blocked by cluster resources)
+1. ✅ Migration SQL added to schema
+2. ✅ Changes committed and pushed
+3. ✅ Rollout annotation bumped
+4. ⏸️ Schema-init pod connects to DB and runs migration
+5. ⏸️ Index-builder pod schedules and runs successfully
+6. ⏸️ Verify index-builder logs show no "column combat_turns does not exist" errors
+
+## Notes
+- The migration is idempotent (`ADD COLUMN IF NOT EXISTS`) and will apply correctly once the schema-init pod connects to the database
+- The cluster resource issue (Insufficient cpu) must be resolved before verification can complete
+- Index-builder runs on 15-min cycle; once scheduled, verification will require waiting for the next cycle
