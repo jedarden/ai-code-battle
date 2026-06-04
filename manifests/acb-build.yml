@@ -112,6 +112,17 @@ spec:
                   value: cmd/acb-api/Dockerfile
                 - name: context
                   value: .
+          - name: build-enrichment
+            template: kaniko-build
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image
+                  value: acb-enrichment
+                - name: dockerfile
+                  value: cmd/acb-enrichment/Dockerfile
+                - name: context
+                  value: .
           # --- Strategy bots (context: bots/<name>, Dockerfiles self-contained) ---
           - name: build-bot-random
             template: kaniko-build
