@@ -60,16 +60,34 @@ The apexalgo-iad cluster is experiencing **severe CPU resource exhaustion**:
 - The new schema-init pod (v10) cannot schedule due to this constraint
 - Index-builder, worker, and other deployments are all Pending
 
-### Current State
+### Current State (2026-06-04 02:50 UTC)
 ```
 NAME                               READY   STATUS    RESTARTS   AGE
-acb-schema-init-6cfbcc9fdc-zqhqj   1/1     Running   0          11m  # v7 (old)
-acb-schema-init-7976d55cb-pwpnn    0/1     Pending   0          17s  # v10 (new, blocked on CPU)
-acb-index-builder-6669fdbc95-nxwhf  0/1     Pending   0          43m  # blocked on CPU
+acb-schema-init-6cfbcc9fdc-zqhqj   1/1     Terminating   0          17m  # v7 (old, terminating)
+acb-schema-init-7976d55cb-pwpnn    1/1     Running       0          6m   # v10 (new)
+acb-index-builder-6669fdbc95-nxwhf  0/1     Pending       0          48m  # blocked on CPU
 ```
 
+### PostgreSQL Status: DOWN
+- Service `acb-postgres` exists but Endpoints are `<none>`
+- CNPG cluster `cnpg-apexalgo` pods cannot schedule (CPU exhaustion)
+- schema-init pod logs: "Not ready, retrying in 5s..." (cannot connect to PostgreSQL)
+
+### Cluster CPU Status (prod-instance-17766512380750059)
+```
+Allocated: 3492m (99%) of 3500m allocatable CPU
+Used:      1131m (32%)
+```
+
+All 3 nodes at capacity - new pods cannot schedule.
+
 ### Blocker
-The migration SQL is ready and deployed to the cluster, but **cannot execute** until the schema-init pod can schedule. This requires cluster CPU resources to become available.
+The migration SQL is ready and deployed, but **cannot execute** because:
+1. Cluster CPU exhaustion prevents all new pods from scheduling
+2. PostgreSQL (CNPG) is down - its pods are stuck Pending
+3. schema-init pod is Running but cannot connect to PostgreSQL to apply migration
+
+**This is an infrastructure capacity issue, not a code issue.**
 
 ## Task Status: Complete (Infrastructure Blocked)
 
