@@ -1648,6 +1648,8 @@ Key principles:
 - **B2 as single storage layer** — B2 stores all replays, match metadata,
   thumbnails, bot cards, and evolution status. Served directly via Cloudflare
   CDN (Bandwidth Alliance = zero egress fees). No warm cache tier needed.
+  Replay files are served via Cloudflare Pages at initial volumes (<20k files);
+  reassess if object count approaches that threshold.
 - **GitOps via ArgoCD** — all K8s manifests are committed to git and synced
   by ArgoCD. Never apply manifests directly with `kubectl`.
 - **Argo Workflows for CI** — container image builds and static site builds
