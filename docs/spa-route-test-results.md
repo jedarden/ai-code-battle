@@ -14,7 +14,7 @@
 | **Failed** | 0 |
 | **Total** | 43 |
 
-**Result:** All SPA routes return valid HTML. The /r2/ data paths return 404 (data not yet deployed to R2/Pages Function).
+**Result:** All SPA routes return valid HTML. The /b2/ data paths return 404 (data not yet deployed — B2 bucket not yet publicly accessible and index builder not yet running).
 
 ## Static Routes (All Passed)
 
@@ -67,21 +67,21 @@
 | `/blog/:slug` | Blog post | 200 OK |
 | `/watch/playlists/:slug` | Playlist detail | 200 OK |
 
-Note: Parameterized routes tested with placeholder IDs. Routes return valid SPA shell; actual data loading depends on /r2/ data path.
+Note: Parameterized routes tested with placeholder IDs. Routes return valid SPA shell; actual data loading depends on `/b2/` data paths served from Backblaze B2 via Cloudflare CDN.
 
-## Data Paths (/r2/) - 404 Expected
+## Data Paths (/b2/) - 404 Expected
 
 | Path | Description | Status |
 |------|-------------|--------|
-| `/r2/` | R2 data root | 404 Not Found |
-| `/r2/data/matches/index.json` | Matches index | 404 Not Found |
-| `/r2/data/leaderboard.json` | Leaderboard data | 404 Not Found |
-| `/r2/data/seasons/index.json` | Seasons index | 404 Not Found |
-| `/r2/data/series/index.json` | Series index | 404 Not Found |
-| `/r2/data/blog/index.json` | Blog index | 404 Not Found |
-| `/r2/data/playlists/index.json` | Playlists index | 404 Not Found |
+| `/b2/` | B2 data root | 404 Not Found |
+| `/b2/data/matches/index.json` | Matches index | 404 Not Found |
+| `/b2/data/leaderboard.json` | Leaderboard data | 404 Not Found |
+| `/b2/data/seasons/index.json` | Seasons index | 404 Not Found |
+| `/b2/data/series/index.json` | Series index | 404 Not Found |
+| `/b2/data/blog/index.json` | Blog index | 404 Not Found |
+| `/b2/data/playlists/index.json` | Playlists index | 404 Not Found |
 
-**Note:** These 404s are expected - the data has not been uploaded to R2 or the Pages Function has not been configured yet. This is a data availability issue, not a routing issue. See related bead `bf-cmh1` for end-to-end replay viewer testing.
+**Note:** These 404s are expected — the B2 bucket is not yet publicly accessible and the index builder is not yet running. Data paths are served from Backblaze B2 (not Cloudflare R2). This is a data availability issue, not a routing issue. See related bead `bf-cmh1` for end-to-end replay viewer testing.
 
 ## Test Script
 
