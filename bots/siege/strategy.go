@@ -115,7 +115,7 @@ func (s *SiegeStrategy) ComputeMoves(state *GameState) []Move {
 		}
 
 		// Flee from nearby enemies
-		if s.shouldFlee(bot.Position, enemyBots, config) {
+		if s.shouldFlee(bot.Position, myBots, enemyBots, config) {
 			fleeDir := s.getFleeDirection(bot.Position, enemyBots, wallPositions, config)
 			if fleeDir != DirNone {
 				moves = append(moves, Move{
@@ -280,14 +280,35 @@ func (s *SiegeStrategy) findNearestCore(pos Position, cores []VisibleCore, confi
 }
 
 // shouldFlee returns true if the bot should flee from nearby enemies.
-func (s *SiegeStrategy) shouldFlee(pos Position, enemies []VisibleBot, config GameConfig) bool {
-	for _, enemy := range enemies {
+// Only flees when locally outnumbered (nearbyAllies < nearbyEnemies).
+func (s *SiegeStrategy) shouldFlee(pos Position, myBots, enemyBots []VisibleBot, config GameConfig) bool {
+	// Count nearby enemies within attack radius only (no buffer)
+	nearbyEnemies := 0
+	for _, enemy := range enemyBots {
 		dist2 := distance2(pos, enemy.Position, config)
-		if dist2 <= config.AttackRadius2+4 { // Attack radius + buffer
-			return true
+		if dist2 <= config.AttackRadius2 {
+			nearbyEnemies++
 		}
 	}
-	return false
+
+	if nearbyEnemies == 0 {
+		return false
+	}
+
+	// Count nearby allies within the same radius (attack radius only)
+	nearbyAllies := 0
+	for _, ally := range myBots {
+		if ally.Position == pos {
+			continue // Don't count self
+		}
+		dist2 := distance2(pos, ally.Position, config)
+		if dist2 <= config.AttackRadius2 {
+			nearbyAllies++
+		}
+	}
+
+	// Only flee if outnumbered
+	return nearbyAllies < nearbyEnemies
 }
 
 // getFleeDirection returns the best direction to flee from enemies.

@@ -2,11 +2,6 @@ package main
 
 import "math"
 
-const (
-	fleeRadius2  = 9  // flee if enemy within 3 cells (squared = 9)
-	dangerBuffer = 20 // extra buffer beyond attack radius for avoidance
-)
-
 // FarmerStrategy maximizes energy collection and spawn rate while avoiding combat.
 type FarmerStrategy struct{}
 
@@ -138,29 +133,12 @@ func (s *FarmerStrategy) computeBotMove(
 ) string {
 	pos := bot.Position
 
-	// Priority 1: FLEE if any enemy within flee radius
-	if len(enemyPositions) > 0 {
-		minEnemyDist2 := math.MaxInt32
-		for _, ep := range enemyPositions {
-			d := distance2(pos, ep, rows, cols)
-			if d < minEnemyDist2 {
-				minEnemyDist2 = d
-			}
-		}
-
-		if minEnemyDist2 <= fleeRadius2 {
-			dir := s.fleeDirection(pos, enemyPositions, wallSet, enemySet, rows, cols)
-			if dir != "" {
-				return dir
-			}
-		}
-
-		// Also flee if enemy within attack radius + buffer
-		if minEnemyDist2 <= attackR2+dangerBuffer {
-			dir := s.fleeDirection(pos, enemyPositions, wallSet, enemySet, rows, cols)
-			if dir != "" {
-				return dir
-			}
+	// Priority 1: FLEE if locally outnumbered (nearbyAllies < nearbyEnemies)
+	// Use attack radius + small buffer to define "local" area
+	if s.shouldFlee(pos, state.Bots, myID, attackR2, rows, cols) {
+		dir := s.fleeDirection(pos, enemyPositions, wallSet, enemySet, rows, cols)
+		if dir != "" {
+			return dir
 		}
 	}
 
@@ -279,6 +257,42 @@ func (s *FarmerStrategy) fleeDirection(
 	}
 
 	return bestDir
+}
+
+// shouldFlee returns true if the bot should flee from nearby enemies.
+// Only flees when locally outnumbered (nearbyAllies < nearbyEnemies).
+func (s *FarmerStrategy) shouldFlee(pos Position, bots []VisibleBot, myID, attackR2, rows, cols int) bool {
+	// Use attack radius exactly - only flee when enemies are in combat range
+	localRadius2 := attackR2
+
+	// Count nearby enemies within local radius
+	nearbyEnemies := 0
+	for _, b := range bots {
+		if b.Owner == myID || b.Position == pos {
+			continue
+		}
+		if distance2(pos, b.Position, rows, cols) <= localRadius2 {
+			nearbyEnemies++
+		}
+	}
+
+	if nearbyEnemies == 0 {
+		return false
+	}
+
+	// Count nearby allies within the same radius (excluding self)
+	nearbyAllies := 0
+	for _, b := range bots {
+		if b.Owner != myID || b.Position == pos {
+			continue
+		}
+		if distance2(pos, b.Position, rows, cols) <= localRadius2 {
+			nearbyAllies++
+		}
+	}
+
+	// Only flee if outnumbered
+	return nearbyAllies < nearbyEnemies
 }
 
 // spreadMove picks a direction that moves away from the densest cluster

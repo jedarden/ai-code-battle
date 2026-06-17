@@ -607,21 +607,30 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 	// This encourages combat aggression while still rewarding winning
 	fitness := 0.7*winRate + 0.3*killRate
 
-	// Get behavior vector
+	// Derive behavior vector from actual arena performance (not self-reported)
+	// BehaviorVector[0] = aggression (from kill rate)
+	// BehaviorVector[1] = economy (placeholder - preserve existing if available)
 	var behaviorVec []float64
+	aggression := killRate
+	if aggression > 1.0 {
+		aggression = 1.0
+	}
+
 	if program != nil && len(program.BehaviorVector) >= 2 {
-		behaviorVec = program.BehaviorVector
+		// Preserve existing economy value, update aggression from actual data
+		behaviorVec = []float64{aggression, program.BehaviorVector[1]}
 	} else {
-		behaviorVec = []float64{0.5, 0.5}
+		// No existing data - default economy to 0.5
+		behaviorVec = []float64{aggression, 0.5}
 	}
 
 	// Update fitness in database
 	store.UpdateFitness(ctx, programID, fitness, behaviorVec)
 
 	if verbose {
-		log.Printf("  Arena result: %d W / %d L / %d D / %d err  win_rate=%.3f  kill_rate=%.3f (%d kills/%d matches)  fitness=%.3f",
+		log.Printf("  Arena result: %d W / %d L / %d D / %d err  win_rate=%.3f  kill_rate=%.3f (%d kills/%d matches)  fitness=%.3f  aggression=%.3f (derived)",
 			arenaResult.Wins, arenaResult.Losses, arenaResult.Draws, arenaResult.Errors,
-			winRate, killRate, arenaResult.TotalKills, arenaResult.TotalMatches, fitness)
+			winRate, killRate, arenaResult.TotalKills, arenaResult.TotalMatches, fitness, behaviorVec[0])
 	}
 
 	// 7. Load MAP-Elites grid and apply promotion gate
