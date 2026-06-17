@@ -10,6 +10,31 @@
 
 Backblaze B2 serves as the primary storage layer for AI Code Battle replay files and match metadata. This document provides the exact DNS configuration needed to expose the B2 bucket via `b2.aicodebattle.com` through Cloudflare's Bandwidth Alliance (zero egress fees).
 
+### Current Status (2026-06-17)
+
+**Blockers:**
+1. ❌ The `aicodebattle.com` domain zone does not exist in DNS yet - must be created first
+2. ⚠️ The B2 region is inconsistent across code/config files - requires secret access to verify
+3. ⚠️ B2 API authentication cannot be tested via read-only kubectl proxy
+
+**What Works:**
+- ✅ B2 credentials exist in the cluster (`backblaze-secret` in `ai-code-battle` namespace)
+- ✅ Bucket name confirmed as `acb-data` (via R2 configuration reference)
+- ✅ CNAME target format determined: `{bucket}.s3.{region}.backblazeb2.com`
+
+**What Needs Manual Verification:**
+- ⚠️ B2 bucket public access status (requires Backblaze console)
+- ⚠️ Actual B2 region (requires direct kubeconfig access to `backblaze-secret`)
+- ⚠️ B2 API authentication (requires credentials)
+
+**Next Steps (in order):**
+1. **Create domain zone** for `aicodebattle.com` in Cloudflare
+2. **Verify B2 region** by accessing `backblaze-secret` with direct kubeconfig
+3. **Update this document** with verified region
+4. **Enable public access** on B2 bucket via Backblaze console
+5. **Create CNAME** `b2.aicodebattle.com` → `acb-data.s3.{region}.backblazeb2.com`
+6. **Verify CDN access** with `curl -I https://b2.aicodebattle.com/`
+
 ---
 
 ## B2 Bucket Details
@@ -17,13 +42,29 @@ Backblaze B2 serves as the primary storage layer for AI Code Battle replay files
 | Property | Value |
 |----------|-------|
 | **Bucket Name** | `acb-data` |
-| **Region** | `us-west-002` |
+| **Region** | `us-west-002` (unconfirmed - see note below) |
 | **S3 Endpoint** | `https://s3.us-west-002.backblazeb2.com` |
 | **CNAME Target** | `acb-data.s3.us-west-002.backblazeb2.com` |
 | **Friendly Endpoint** | `f002.backblazeb2.com` |
 
 **Bucket Name Verification (2026-06-17):**
 The bucket name `acb-data` is confirmed via the enrichment deployment configuration (`acb-enrichment-deployment.yml` line 112) which explicitly sets `ACB_R2_BUCKET: "acb-data"`. Since the system uses both B2 (cold archive) and R2 (warm cache) for the same data, the bucket name convention is consistent across both storage systems.
+
+**⚠️ Region Verification Required (2026-06-17):**
+There is a **region inconsistency** across the codebase that needs to be resolved:
+- **notes/b2-cdn-setup.md**: `us-west-002` (this document)
+- **cmd/acb-enrichment/config.go** (line 75): `us-west-004` (code default)
+- **.env.example** (line 14): `us-east-005` (example config)
+
+The actual B2 region can only be determined by accessing the `backblaze-secret` in the cluster, which is not readable via the read-only kubectl proxy. To determine the correct region:
+
+```bash
+# Requires direct kubeconfig access (not proxy):
+kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.endpoint}' | base64 -d
+```
+
+Once the endpoint is known, extract the region from the URL format:
+`https://s3.{region}.backblazeb2.com`
 
 ---
 
@@ -53,12 +94,19 @@ If the proxy is off (DNS-only), you lose Bandwidth Alliance benefits and pay ful
 
 ## B2 Bucket Public Access
 
-### Current Status: Unknown
+### Current Status: Unknown (2026-06-17)
 
 **Status Verification Required:** The bucket's public access setting could not be verified programmatically because:
-1. The B2 credentials are stored in OpenBao on rs-manager (path: `secret/rs-manager/iad-acb/armor`)
-2. Read-only kubectl proxies cannot access ExternalSecret values
-3. Direct B2 API access requires the Application Key which is not accessible via the observer serviceaccount
+1. The B2 credentials are stored in the `backblaze-secret` Kubernetes secret
+2. Read-only kubectl proxies (serviceaccount: `devpod-observer`) cannot read secret values
+3. Direct B2 API access requires the Application Key which is not accessible without direct kubeconfig access
+
+**Attempted verification (2026-06-17):**
+```bash
+# Tried to get secret via read-only proxy - FAILED (Forbidden)
+kubectl --server=http://traefik-apexalgo-iad:8001 get secret backblaze-secret -n ai-code-battle
+# Error: User "system:serviceaccount:devpod-observer:devpod-observer" cannot get resource "secrets"
+```
 
 **Secret Location:** The B2 credentials are stored in OpenBao on the rs-manager cluster at path `secret/rs-manager/iad-acb/armor` and synced to the iad-acb cluster via ExternalSecret `acb-armor-credentials`.
 
@@ -132,6 +180,18 @@ host b2.aicodebattle.com
 # Current status: CNAME does NOT exist yet
 ```
 
+**Additional verification (2026-06-17):**
+```bash
+# Checked base domain aicodebattle.com
+host aicodebattle.com
+# Output: Host aicodebattle.com not found: 3(NXDOMAIN)
+
+host www.aicodebattle.com
+# Output: Host www.aicodebattle.com not found: 3(NXDOMAIN)
+```
+
+**Conclusion:** The entire `aicodebattle.com` domain zone does not exist in public DNS yet. The CNAME for `b2.aicodebattle.com` cannot be created until the domain zone is set up in Cloudflare.
+
 **Expected after creation:**
 ```bash
 dig +short b2.aicodebattle.com
@@ -147,6 +207,48 @@ curl -I https://b2.aicodebattle.com/ 2>&1 | grep -i "cf-ray"
 
 # Expected output should include:
 # cf-ray: <ray-id>...
+```
+
+### 2. Verify B2 API Authentication
+
+**Authentication test NOT performed (2026-06-17):**
+```bash
+# Cannot test without credentials - requires direct access to backblaze-secret
+# The test command would be:
+curl -u "$B2_KEY_ID:$B2_APPLICATION_KEY" "$B2_ENDPOINT/b2api/v2/b2_authorize_account"
+
+# Status: SKIPPED - credentials not accessible via read-only proxy
+```
+
+**To test with actual credentials (requires direct kubeconfig):**
+```bash
+# Get credentials (requires cluster-admin or direct kubeconfig)
+kubectl --kubeconfig=/path/to/kubeconfig get secret backblaze-secret -n ai-code-battle -o json
+
+# Extract and decode values:
+B2_ENDPOINT=$(kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.endpoint}' | base64 -d)
+B2_KEY_ID=$(kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.key-id}' | base64 -d)
+B2_APPLICATION_KEY=$(kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.secret-key}' | base64 -d)
+
+# Test authentication
+curl -s -u "$B2_KEY_ID:$B2_APPLICATION_KEY" "$B2_ENDPOINT/b2api/v2/b2_authorize_account" | jq .
+```
+
+**Expected successful response:**
+```json
+{
+  "accountId": "...',
+  "apiUrl": "https://api...",
+  "downloadUrl": "https://s3...",
+  "allowed": {
+    "capabilities": [
+      "readFiles",
+      "writeFiles",
+      "deleteFiles",
+      "listBuckets"
+    ]
+  }
+}
 ```
 
 ### 3. Verify B2 Public Access
@@ -270,23 +372,74 @@ When you enable public access on the B2 bucket:
 
 | Task | Status |
 |------|--------|
-| B2 bucket created | ✅ Complete (credentials exist in cluster) |
-| Region determined | ✅ Complete (us-west-002) |
-| Bucket name verified | ✅ Complete (acb-data - confirmed via R2 config reference) |
-| CNAME target identified | ✅ Complete (acb-data.s3.us-west-002.backblazeb2.com) |
+| B2 bucket created | ✅ Complete (credentials exist in cluster as `backblaze-secret`) |
+| Region determined | ⚠️ **INCONSISTENT** - code has conflicting regions (us-west-002, us-west-004, us-east-005). Requires secret access to verify actual region. |
+| Bucket name verified | ✅ Complete (acb-data - confirmed via R2 config reference in enrichment deployment) |
+| CNAME target identified | ✅ Complete (format: `acb-data.s3.{region}.backblazeb2.com`) |
+| B2 API auth tested | ❌ **NOT TESTED** - cannot access credentials via read-only proxy |
 | Public access enabled | ⚠️ Unknown (requires Backblaze console access to verify) |
-| CNAME record created | ❌ NOT CREATED - confirmed NXDOMAIN via host command (2026-06-17) |
+| Domain zone exists | ❌ **NOT CREATED** - `aicodebattle.com` zone does not exist in DNS (2026-06-17) |
+| CNAME record created | ❌ **BLOCKED** - domain zone must be created first |
 | Bandwidth Alliance active | ❌ Pending (depends on CNAME + proxy on) |
 
 ---
 
 ## Next Steps
 
-1. **Verify public access** on the `acb-data` bucket via Backblaze console
-2. **Create CNAME record** in Cloudflare DNS (if not already done)
-3. **Test CNAME resolution** with `dig +short b2.aicodebattle.com`
-4. **Verify CDN access** with `curl -I https://b2.aicodebattle.com/`
-5. **Confirm Bandwidth Alliance** is active in Cloudflare dashboard
+### Prerequisites (Must Complete First)
+
+1. **Create the domain zone** `aicodebattle.com` in Cloudflare
+   - Currently the domain does not exist in public DNS at all
+   - This is a hard blocker - CNAME cannot be created until the zone exists
+
+2. **Verify the actual B2 region** from cluster credentials
+   ```bash
+   # Requires direct kubeconfig (not read-only proxy)
+   kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.endpoint}' | base64 -d
+   # Expected output: https://s3.{region}.backblazeb2.com
+   ```
+   - Update the "Region" field in this document's B2 Bucket Details table
+   - Update the CNAME target format accordingly
+
+3. **Test B2 API authentication** (if credentials are available)
+   ```bash
+   # Use the extracted endpoint and credentials
+   B2_ENDPOINT=$(kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.endpoint}' | base64 -d)
+   B2_KEY_ID=$(kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.key-id}' | base64 -d)
+   B2_APPLICATION_KEY=$(kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.secret-key}' | base64 -d)
+   curl -u "$B2_KEY_ID:$B2_APPLICATION_KEY" "$B2_ENDPOINT/b2api/v2/b2_authorize_account"
+   ```
+
+### DNS Configuration
+
+4. **Create CNAME record** in Cloudflare DNS (after domain zone exists)
+   - Type: CNAME
+   - Name: b2
+   - Target: `acb-data.s3.{verified-region}.backblazeb2.com`
+   - Proxy: On (orange cloud) ← REQUIRED for Bandwidth Alliance
+   - TTL: Auto (3600)
+
+5. **Test CNAME resolution**
+   ```bash
+   dig +short b2.aicodebattle.com
+   # Expected: acb-data.s3.{verified-region}.backblazeb2.com.
+   ```
+
+### B2 Configuration
+
+6. **Verify public access** on the `acb-data` bucket via Backblaze console
+   - See "B2 Bucket Public Access" section for detailed steps
+
+7. **Test CDN access**
+   ```bash
+   curl -I https://b2.aicodebattle.com/
+   # Should return 404 from B2 (if bucket public but file not found)
+   # Or 200 if testing an existing file
+   ```
+
+8. **Confirm Bandwidth Alliance** is active in Cloudflare dashboard
+   - Cloudflare Dashboard → Traffic → Bandwidth Alliance tab
+   - Should show Backblaze as an active partner
 
 ---
 
