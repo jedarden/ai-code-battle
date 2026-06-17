@@ -269,6 +269,10 @@ func (gs *GameState) executeCombat() {
 				if e.Owner < len(gs.CombatDeaths) {
 					gs.CombatDeaths[e.Owner]++
 				}
+					// Award score for the kill
+					if e.Owner < len(gs.Players) {
+						gs.Players[e.Owner].Score += gs.Config.KillScore
+					}
 			}
 
 			gs.Events = append(gs.Events, Event{

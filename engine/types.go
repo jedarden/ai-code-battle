@@ -177,6 +177,9 @@ type Config struct {
 	ZoneShrinkInterval int  `json:"zone_shrink_interval"` // turns between shrink steps
 	ZoneShrinkStep     int  `json:"zone_shrink_step"`     // tiles to shrink each step
 	ZoneMinRadius      int  `json:"zone_min_radius"`      // minimum zone radius (stops here)
+
+	// Combat scoring
+	KillScore int `json:"kill_score"` // score awarded per combat kill
 }
 
 // DefaultConfig returns the default game configuration.
@@ -195,6 +198,7 @@ func DefaultConfig() Config {
 		ZoneShrinkInterval: 1,  // Per plan §3.7.1 (both 2-player and 3+)
 		ZoneShrinkStep:     1,  // Zone shrinks at same rate as bot movement (1 tile/turn)
 		ZoneMinRadius:      1,  // Per plan §3.7.1: 3+ player default (ConfigForPlayers overrides for 2-player)
+		KillScore:          1,  // Default score per combat kill
 	}
 }
 
