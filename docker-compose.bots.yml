@@ -21,6 +21,7 @@
 #   BOT_SECRET_OPPORTUNIST - Secret for OpportunistBot
 #   BOT_SECRET_ASSASSIN    - Secret for AssassinBot
 #   BOT_SECRET_KAMIKAZE    - Secret for KamikazeBot
+#   BOT_SECRET_ECONOMIST   - Secret for EconomistBot
 
 services:
   random:
@@ -276,6 +277,22 @@ services:
       - BOT_SECRET=${BOT_SECRET_KAMIKAZE:-dev-secret-kamikaze}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  economist:
+    build:
+      context: ./bots/economist
+      dockerfile: Dockerfile
+    ports:
+      - "8097:8081"
+    environment:
+      - BOT_PORT=8081
+      - BOT_SECRET=${BOT_SECRET_ECONOMIST:-dev-secret-economist}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 30s
       timeout: 5s
       retries: 3

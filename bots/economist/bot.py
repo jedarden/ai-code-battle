@@ -38,10 +38,12 @@ class GameState:
         self.you_id = data["you"]["id"]
         self.you_energy = data["you"]["energy"]
         self.you_score = data["you"]["score"]
+
+        # Bots only have position and owner (no ID!)
         self.bots = data["bots"]
-        self.energy = [tuple(e) for e in data.get("energy", [])]
+        self.energy = [tuple(int(v) for v in e) for e in data.get("energy", [])]
         self.cores = data.get("cores", [])
-        self.walls = [tuple(w) for w in data.get("walls", [])]
+        self.walls = [tuple(int(v) for v in w) for w in data.get("walls", [])]
         self.dead = data.get("dead", [])
 
     @property
@@ -69,8 +71,9 @@ class EconomistStrategy:
     """Implements energy-denial strategy through node contesting."""
 
     def __init__(self):
-        self.contest_assignments: Dict[int, Position] = {}  # bot_id -> energy position to contest
-        self.guard_assignments: Set[int] = set()  # bot_ids assigned to guard cores
+        # Use bot positions as keys (since bots have no IDs)
+        self.contest_assignments: Dict[Position, Position] = {}  # bot_pos -> energy position to contest
+        self.guard_assignments: Set[Position] = set()  # bot positions assigned to guard cores
 
     def compute_moves(self, state: GameState) -> List[dict]:
         """Compute moves for all owned bots."""
@@ -83,162 +86,124 @@ class EconomistStrategy:
 
         # Build position maps
         enemy_positions = {tuple(b["position"]): b for b in enemy_bots}
-        my_bot_positions = {tuple(b["position"]): b for b in my_bots}
+
+        # Use positions as bot identifiers
+        my_bot_positions = {}  # position -> bot dict
+        for bot in my_bots:
+            my_bot_positions[tuple(bot["position"])] = bot
+
         energy_positions = set(state.energy)
 
-        # Build my cores positions
-        my_core_positions = set()
-        for core in state.cores:
-            if core["owner"] == state.you_id:
-                my_core_positions.add(tuple(core["position"]))
-
-        # Check if we should switch to pure collection mode
-        score_lead = state.you_score
-        for enemy in enemy_bots:
-            # Assume enemy has similar score if we can't see it
-            pass  # Simplified - we use our score as proxy
-
-        pure_collection = (state.turn > 200 and
-                          score_lead >= 3)
-
-        # Analyze energy nodes
-        energy_analysis = self._analyze_energy_nodes(
-            state.energy, my_bot_positions, enemy_positions, state
-        )
-
-        # Clear previous assignments for dead/moved bots
-        self._cleanup_assignments(my_bots, energy_positions)
+        # Clear previous assignments for bots that moved or died
+        self._cleanup_assignments(my_bot_positions, energy_positions)
 
         # Assign bots to roles
         moves = []
-        used_bots = set()
+        used_positions = set()
 
-        # Priority 1: Maintain existing contest assignments (stay put)
+        # Priority 1: Maintain existing contest assignments
         for bot in my_bots:
-            bot_id = bot["id"]
             bot_pos = tuple(bot["position"])
 
-            if bot_id in self.contest_assignments:
-                contest_pos = self.contest_assignments[bot_id]
+            if bot_pos in self.contest_assignments:
+                contest_pos = self.contest_assignments[bot_pos]
                 if contest_pos in energy_positions:
-                    # Check if still contesting effectively
+                    used_positions.add(bot_pos)
+                    # If already adjacent, stay to contest; otherwise move toward it
                     dist2 = self._distance2(bot_pos, contest_pos, state)
-                    if dist2 <= APPROACH_THRESHOLD * APPROACH_THRESHOLD:
-                        # Still approaching, continue
-                        used_bots.add(bot_id)
-                        # Only move if not already adjacent
-                        if dist2 > ADJACENT_RADIUS2:
-                            move = self._move_toward(bot_pos, contest_pos, state, enemy_positions)
-                            if move:
-                                moves.append({
-                                    "position": list(bot_pos),
-                                    "direction": move
-                                })
-                        continue
-
-        # Priority 2: Contest threatened nodes (highest priority)
-        if not pure_collection:
-            threatened_energy = [
-                (pos, analysis) for pos, analysis in energy_analysis.items()
-                if analysis["enemy_nearby"] > 0 and analysis["my_adjacent"] == 0
-            ]
-
-            # Sort by contest priority
-            threatened_energy.sort(
-                key=lambda x: x[1]["contest_priority"], reverse=True
-            )
-
-            for energy_pos, analysis in threatened_energy:
-                if energy_pos not in energy_positions:
-                    continue
-
-                # Find nearest unassigned bot
-                nearest_bot = self._find_nearest_bot(
-                    energy_pos, my_bots, used_bots, state
-                )
-
-                if nearest_bot:
-                    bot_id = nearest_bot["id"]
-                    bot_pos = tuple(nearest_bot["position"])
-
-                    used_bots.add(bot_id)
-                    self.contest_assignments[bot_id] = energy_pos
-
-                    # Move toward energy to contest
-                    dist2 = self._distance2(bot_pos, energy_pos, state)
-                    if dist2 > ADJACENT_RADIUS2:
-                        move = self._move_toward(bot_pos, energy_pos, state, enemy_positions)
+                    if dist2 <= ADJACENT_RADIUS2:
+                        # Already adjacent - stay put to contest
+                        pass  # Don't move, maintain contest
+                    else:
+                        # Move toward contest position
+                        move = self._move_toward(bot_pos, contest_pos, state, enemy_positions, avoid_enemies=False)
                         if move:
                             moves.append({
                                 "position": list(bot_pos),
                                 "direction": move
                             })
+                    continue
 
-        # Priority 3: Reserve 1-2 bots to guard cores
-        guards_needed = min(2, len(my_bots) // 3)
-        guards_assigned = 0
+        # Priority 2: Contest visible energy nodes that enemies can also reach
+        energy_by_priority = []
 
-        for core_pos in my_core_positions:
-            if guards_assigned >= guards_needed:
-                break
+        for energy_pos in energy_positions:
+            # Count how many of MY bots can reach this energy quickly (within 8 tiles = 2 turns)
+            my_reachable = 0
+            nearest_my_dist = float('inf')
+            for bot in my_bots:
+                bot_pos = tuple(bot["position"])
+                if bot_pos in used_positions:
+                    continue
+                dist2 = self._distance2(bot_pos, energy_pos, state)
+                if dist2 <= 64:  # Within 8 tiles
+                    my_reachable += 1
+                nearest_my_dist = min(nearest_my_dist, dist2)
+
+            # Count how many ENEMY bots can reach this energy quickly
+            enemy_reachable = 0
+            nearest_enemy_dist = float('inf')
+            if enemy_positions:
+                for enemy_pos in enemy_positions:
+                    dist2 = self._distance2(enemy_pos, energy_pos, state)
+                    if dist2 <= 64:  # Within 8 tiles
+                        enemy_reachable += 1
+                    nearest_enemy_dist = min(nearest_enemy_dist, dist2)
+            else:
+                # No enemies visible yet - prioritize nodes closer to map center
+                center = (state.rows // 2, state.cols // 2)
+                dist_to_center = self._distance2(energy_pos, center, state)
+                nearest_enemy_dist = dist_to_center  # Use as proxy
+                enemy_reachable = 1 if dist_to_center < 100 else 0
+
+            # Contest priority: nodes that BOTH sides can reach quickly
+            if enemy_reachable > 0:
+                # Enemies visible and reachable - HIGH contest priority
+                priority = 10000.0 / (nearest_enemy_dist + nearest_my_dist + 1)
+            elif nearest_enemy_dist < 100:
+                # No enemies visible but node is near center - MEDIUM priority
+                priority = 1000.0 / (nearest_my_dist + 1)
+            else:
+                # Node far from center - LOW priority
+                priority = 100.0 / (nearest_my_dist + 1)
+
+            energy_by_priority.append((energy_pos, priority, nearest_my_dist))
+
+        # Sort by priority descending (highest first)
+        energy_by_priority.sort(key=lambda x: x[1], reverse=True)
+
+        for energy_pos, priority, nearest_my_dist in energy_by_priority:
+            if energy_pos not in energy_positions:
+                continue
 
             # Find nearest unassigned bot
             nearest_bot = self._find_nearest_bot(
-                core_pos, my_bots, used_bots, state
+                energy_pos, my_bots, used_positions, state
             )
 
             if nearest_bot:
-                bot_id = nearest_bot["id"]
                 bot_pos = tuple(nearest_bot["position"])
+                used_positions.add(bot_pos)
+                self.contest_assignments[bot_pos] = energy_pos
 
-                dist2 = self._distance2(bot_pos, core_pos, state)
-                if dist2 > ADJACENT_RADIUS2:
-                    # Move toward core to guard
-                    move = self._move_toward(bot_pos, core_pos, state, enemy_positions)
-                    if move:
-                        moves.append({
-                            "position": list(bot_pos),
-                            "direction": move
-                        })
-
-                used_bots.add(bot_id)
-                self.guard_assignments.add(bot_id)
-                guards_assigned += 1
-
-        # Priority 4: Collect uncontested energy
-        unthreatened_energy = [
-            pos for pos, analysis in energy_analysis.items()
-            if analysis["enemy_nearby"] == 0 and pos in energy_positions
-        ]
-
-        for energy_pos in unthreatened_energy:
-            # Find nearest unassigned bot
-            nearest_bot = self._find_nearest_bot(
-                energy_pos, my_bots, used_bots, state
-            )
-
-            if nearest_bot:
-                bot_id = nearest_bot["id"]
-                bot_pos = tuple(nearest_bot["position"])
-
-                used_bots.add(bot_id)
-
-                # Move toward energy to collect
+                # Move toward energy to contest, but stay if already adjacent
                 dist2 = self._distance2(bot_pos, energy_pos, state)
                 if dist2 > ADJACENT_RADIUS2:
-                    move = self._move_toward(bot_pos, energy_pos, state, enemy_positions)
+                    move = self._move_toward(bot_pos, energy_pos, state, enemy_positions, avoid_enemies=False)
                     if move:
                         moves.append({
                             "position": list(bot_pos),
                             "direction": move
                         })
+                # If already adjacent, stay put to contest (no move added)
 
-        # Remaining bots: explore toward map center
+        # Priority 3: Remaining bots explore toward visible energy or map center
         center = (state.rows // 2, state.cols // 2)
         for bot in my_bots:
-            if bot["id"] not in used_bots:
-                bot_pos = tuple(bot["position"])
-                move = self._move_toward(bot_pos, center, state, enemy_positions)
+            bot_pos = tuple(bot["position"])
+            if bot_pos not in used_positions:
+                # Move toward center to find energy
+                move = self._move_toward(bot_pos, center, state, enemy_positions, avoid_enemies=False)
                 if move:
                     moves.append({
                         "position": list(bot_pos),
@@ -247,81 +212,29 @@ class EconomistStrategy:
 
         return moves
 
-    def _analyze_energy_nodes(
-        self,
-        energy_nodes: List[Position],
-        my_bot_positions: Dict[Position, dict],
-        enemy_positions: Dict[Position, dict],
-        state: GameState
-    ) -> Dict[Position, dict]:
-        """Analyze energy nodes to determine contest priorities."""
-        analysis = {}
-
-        for energy_pos in energy_nodes:
-            enemy_nearby = 0
-            enemy_approaching = 0
-            my_adjacent = 0
-            my_nearby = 0
-            nearest_enemy_dist = float('inf')
-            nearest_my_dist = float('inf')
-
-            # Count nearby bots
-            for bot_pos, bot in my_bot_positions.items():
-                dist2 = self._distance2(bot_pos, energy_pos, state)
-                if dist2 <= ADJACENT_RADIUS2:
-                    my_adjacent += 1
-                if dist2 <= APPROACH_THRESHOLD * APPROACH_THRESHOLD:
-                    my_nearby += 1
-                nearest_my_dist = min(nearest_my_dist, dist2)
-
-            for enemy_pos, enemy in enemy_positions.items():
-                dist2 = self._distance2(enemy_pos, energy_pos, state)
-                if dist2 <= APPROACH_THRESHOLD * APPROACH_THRESHOLD:
-                    enemy_nearby += 1
-                    nearest_enemy_dist = min(nearest_enemy_dist, dist2)
-                    if dist2 <= APPROACH_THRESHOLD * APPROACH_THRESHOLD:
-                        enemy_approaching += 1
-
-            # Calculate contest priority
-            # Priority = (enemy_count_nearby * energy_value) / distance
-            # Energy value is always 1 in current rules
-            distance_factor = math.sqrt(max(nearest_enemy_dist, 1))
-            contest_priority = (enemy_approaching * 1.0) / distance_factor
-
-            analysis[energy_pos] = {
-                "enemy_nearby": enemy_nearby,
-                "enemy_approaching": enemy_approaching,
-                "my_adjacent": my_adjacent,
-                "my_nearby": my_nearby,
-                "nearest_enemy_dist": nearest_enemy_dist,
-                "contest_priority": contest_priority if enemy_approaching > 0 else 0,
-            }
-
-        return analysis
-
-    def _cleanup_assignments(self, my_bots: List[dict], energy_positions: Set[Position]):
-        """Remove assignments for dead bots or consumed energy."""
-        active_bot_ids = {b["id"] for b in my_bots}
-
-        # Remove assignments for dead bots
+    def _cleanup_assignments(self, current_bot_positions: Dict[Position, dict], energy_positions: Set[Position]):
+        """Remove assignments for bots that moved or died, or consumed energy."""
+        # Remove assignments for bots no longer at their assigned position
         to_remove = []
-        for bot_id in self.contest_assignments:
-            if bot_id not in active_bot_ids:
-                to_remove.append(bot_id)
-            elif self.contest_assignments[bot_id] not in energy_positions:
-                to_remove.append(bot_id)
+        for bot_pos in self.contest_assignments:
+            if bot_pos not in current_bot_positions:
+                # Bot moved or died
+                to_remove.append(bot_pos)
+            elif self.contest_assignments[bot_pos] not in energy_positions:
+                # Energy was collected
+                to_remove.append(bot_pos)
 
-        for bot_id in to_remove:
-            del self.contest_assignments[bot_id]
+        for bot_pos in to_remove:
+            del self.contest_assignments[bot_pos]
 
         # Clean up guard assignments
-        self.guard_assignments = self.guard_assignments.intersection(active_bot_ids)
+        self.guard_assignments = self.guard_assignments.intersection(current_bot_positions.keys())
 
     def _find_nearest_bot(
         self,
         target: Position,
         my_bots: List[dict],
-        used_bots: Set[int],
+        used_positions: Set[Position],
         state: GameState
     ) -> Optional[dict]:
         """Find the nearest unused bot to the target position."""
@@ -329,10 +242,11 @@ class EconomistStrategy:
         nearest_dist = float('inf')
 
         for bot in my_bots:
-            if bot["id"] in used_bots:
+            bot_pos = tuple(bot["position"])
+            if bot_pos in used_positions:
                 continue
 
-            dist2 = self._distance2(tuple(bot["position"]), target, state)
+            dist2 = self._distance2(bot_pos, target, state)
             if dist2 < nearest_dist:
                 nearest_dist = dist2
                 nearest_bot = bot
@@ -344,9 +258,24 @@ class EconomistStrategy:
         from_pos: Position,
         to_pos: Position,
         state: GameState,
-        enemy_positions: Dict[Position, dict]
+        enemy_positions: Dict[Position, dict],
+        avoid_enemies: bool = False,
+        stay_if_adjacent: bool = False
     ) -> Optional[str]:
-        """Calculate best direction to move toward target, avoiding enemies."""
+        """Calculate best direction to move toward target.
+
+        Args:
+            from_pos: Starting position
+            to_pos: Target position
+            state: Game state
+            enemy_positions: Map of enemy bot positions
+            avoid_enemies: If True, avoid positions adjacent to enemies.
+            stay_if_adjacent: If True and already adjacent to target, return None (stay put).
+        """
+        # If staying put is requested and we're already adjacent, don't move
+        if stay_if_adjacent and self._distance2(from_pos, to_pos, state) <= ADJACENT_RADIUS2:
+            return None
+
         directions = ["N", "E", "S", "W"]
         best_dir = None
         best_dist2 = float('inf')
@@ -354,8 +283,8 @@ class EconomistStrategy:
         for direction in directions:
             new_pos = self._simulate_move(from_pos, direction, state)
 
-            # Avoid positions adjacent to enemies (combat avoidance)
-            if self._is_near_enemy(new_pos, enemy_positions, state):
+            # Optionally avoid positions adjacent to enemies
+            if avoid_enemies and self._is_near_enemy(new_pos, enemy_positions, state):
                 continue
 
             dist2 = self._distance2(new_pos, to_pos, state)
