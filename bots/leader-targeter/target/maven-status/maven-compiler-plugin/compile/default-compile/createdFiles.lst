@@ -1,0 +1,12 @@
+com/acb/targeter/MoveResponse.class
+com/acb/targeter/VisibleBot.class
+com/acb/targeter/GameState.class
+com/acb/targeter/LeaderTargeterStrategy.class
+com/acb/targeter/GameConfig.class
+com/acb/targeter/Position$1.class
+com/acb/targeter/Direction.class
+com/acb/targeter/App.class
+com/acb/targeter/Move.class
+com/acb/targeter/PlayerInfo.class
+com/acb/targeter/Position.class
+com/acb/targeter/VisibleCore.class
