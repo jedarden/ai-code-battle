@@ -61,6 +61,7 @@ type MatchOutcome struct {
 	Winner        int // 0=player0, 1=player1, -1=draw
 	Scores        []int
 	Turns         int
+	CombatDeaths  []int // bots killed in combat per player (kills credited to killer)
 	Err           error
 }
 
@@ -84,6 +85,11 @@ type Result struct {
 	Losses int
 	Draws  int
 	Errors int
+
+	// Kill statistics across all matches (errors excluded).
+	TotalKills   int    // total kills credited to candidate
+	TotalMatches int    // non-error matches for kill rate normalization
+	KillRate     float64 // kills per match
 
 	// OpponentWinRates maps opponent BotID → candidate win rate vs that bot.
 	OpponentWinRates map[string]float64
@@ -193,6 +199,25 @@ func (a *Arena) Run(ctx context.Context, code, language string) (*Result, error)
 		if total > 0 {
 			result.OpponentWinRates[id] = float64(oppWins[id]) / float64(total)
 		}
+	}
+
+	// Compute kill statistics (combat kills credited to candidate).
+	totalKills := 0
+	totalMatches := 0
+	for _, o := range result.Outcomes {
+		if o.Err != nil {
+			continue
+		}
+		totalMatches++
+		// CombatDeaths[player_idx] contains kills credited to that player
+		if o.CandidateSlot < len(o.CombatDeaths) {
+			totalKills += o.CombatDeaths[o.CandidateSlot]
+		}
+	}
+	result.TotalKills = totalKills
+	result.TotalMatches = totalMatches
+	if totalMatches > 0 {
+		result.KillRate = float64(totalKills) / float64(totalMatches)
 	}
 
 	// Build ordered win-rate vector for PSRO (one entry per distinct opponent).
@@ -312,6 +337,7 @@ func (a *Arena) runMatch(ctx context.Context, candidateURL string, opp BotRecord
 	outcome.Winner = res.Winner
 	outcome.Scores = res.Scores
 	outcome.Turns = res.Turns
+	outcome.CombatDeaths = res.CombatDeaths
 	return outcome
 }
 

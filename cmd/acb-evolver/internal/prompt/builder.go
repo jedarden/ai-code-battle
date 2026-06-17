@@ -150,6 +150,13 @@ func writeSystemContext(sb *strings.Builder, targetLang string) {
 	sb.WriteString("- Collect energy tiles (uncontested adjacent bots only) to gain energy.\n")
 	sb.WriteString("- Win by: sole survivor, dominance (≥80% bots for 100 turns), or highest score at turn 500.\n")
 	sb.WriteString("- Vision radius²=49 (~7 tiles). Fog of war: you only see tiles within vision of your bots.\n\n")
+
+	sb.WriteString("## Fitness Function\n")
+	sb.WriteString("- Your evolved bot will be evaluated using fitness = 0.7 * win_rate + 0.3 * kill_rate\n")
+	sb.WriteString("- Win rate: percentage of matches won\n")
+	sb.WriteString("- Kill rate: average kills per match (combat aggression is rewarded)\n")
+	sb.WriteString("- This means: combat kills and eliminations are valuable, not just resource foraging\n")
+	sb.WriteString("- Aggressive combat strategies that secure kills while winning are strongly favored\n\n")
 	sb.WriteString("## HTTP Protocol\n")
 	sb.WriteString("- Your bot is an HTTP server listening on port 8080.\n")
 	sb.WriteString("- Engine POSTs game state (JSON) to /turn each turn. You have 3 seconds to respond.\n")

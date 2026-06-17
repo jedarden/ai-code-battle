@@ -598,9 +598,14 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 		return false, fmt.Errorf("arena: %w", err)
 	}
 
-	// Compute fitness (overall win rate)
+	// Compute fitness (weighted combination of win rate and kill rate)
 	wr := arena.ComputeFromResult(arenaResult)
-	fitness := wr.Rate
+	winRate := wr.Rate
+	killRate := arenaResult.KillRate
+
+	// Fitness = 70% win rate + 30% kill rate
+	// This encourages combat aggression while still rewarding winning
+	fitness := 0.7*winRate + 0.3*killRate
 
 	// Get behavior vector
 	var behaviorVec []float64
@@ -614,8 +619,9 @@ func runCycle(ctx context.Context, db *sql.DB, store *evolverdb.Store,
 	store.UpdateFitness(ctx, programID, fitness, behaviorVec)
 
 	if verbose {
-		log.Printf("  Arena result: %d W / %d L / %d D / %d err  win rate=%.3f",
-			arenaResult.Wins, arenaResult.Losses, arenaResult.Draws, arenaResult.Errors, fitness)
+		log.Printf("  Arena result: %d W / %d L / %d D / %d err  win_rate=%.3f  kill_rate=%.3f (%d kills/%d matches)  fitness=%.3f",
+			arenaResult.Wins, arenaResult.Losses, arenaResult.Draws, arenaResult.Errors,
+			winRate, killRate, arenaResult.TotalKills, arenaResult.TotalMatches, fitness)
 	}
 
 	// 7. Load MAP-Elites grid and apply promotion gate
