@@ -23,6 +23,7 @@ var availableBots = map[string]func(int64) engine.BotInterface{
 	"guardian": func(seed int64) engine.BotInterface { return engine.NewGuardianBot(seed) },
 	"swarm":    func(seed int64) engine.BotInterface { return engine.NewSwarmBot(seed) },
 	"hunter":   func(seed int64) engine.BotInterface { return engine.NewHunterBot(seed) },
+	"siege":    func(seed int64) engine.BotInterface { return engine.NewSiegeBot(seed) },
 }
 
 func main() {

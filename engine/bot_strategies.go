@@ -1302,3 +1302,555 @@ func abs(x int) int {
 	}
 	return x
 }
+
+// SiegeBot implements spawn-lockout: surround enemy cores to prevent spawning.
+type SiegeBot struct {
+	rng             *rand.Rand
+	knownEnemyCores map[Position]bool
+}
+
+// NewSiegeBot creates a new siege bot.
+func NewSiegeBot(seed int64) *SiegeBot {
+	return &SiegeBot{
+		rng:             rand.New(rand.NewSource(seed)),
+		knownEnemyCores: make(map[Position]bool),
+	}
+}
+
+// GetMoves returns moves focused on surrounding enemy cores to block spawning.
+func (b *SiegeBot) GetMoves(state *VisibleState) ([]Move, error) {
+	if len(state.Bots) == 0 {
+		return nil, nil
+	}
+
+	myID := state.You.ID
+	config := state.Config
+
+	// Update known enemy cores
+	for _, core := range state.Cores {
+		if core.Owner != myID && core.Active {
+			b.knownEnemyCores[core.Position] = true
+		}
+	}
+
+	// Separate my bots from enemies
+	myBots := make([]VisibleBot, 0)
+	enemyBots := make([]VisibleBot, 0)
+	for _, bot := range state.Bots {
+		if bot.Owner == myID {
+			myBots = append(myBots, bot)
+		} else {
+			enemyBots = append(enemyBots, bot)
+		}
+	}
+
+	// Build enemy positions and cores maps
+	enemyPositions := make(map[Position]bool)
+	for _, enemy := range enemyBots {
+		enemyPositions[enemy.Position] = true
+	}
+
+	// Find all enemy cores (visible + known)
+	enemyCores := make([]VisibleCore, 0)
+	for _, core := range state.Cores {
+		if core.Owner != myID && core.Active {
+			enemyCores = append(enemyCores, core)
+		}
+	}
+	// Add known cores that aren't currently visible
+	for pos := range b.knownEnemyCores {
+		found := false
+		for _, core := range enemyCores {
+			if core.Position == pos {
+				found = true
+				break
+			}
+		}
+		if !found {
+			enemyCores = append(enemyCores, VisibleCore{Position: pos, Owner: 1 - myID, Active: true})
+		}
+	}
+
+	// Early game: prioritize economy (act like gatherer) until we have 3+ bots
+	if len(myBots) < 3 && (state.Zone == nil || !state.Zone.Active) {
+		return b.exploreAndForage(myBots, enemyPositions, state)
+	}
+
+	// If no enemy cores visible, explore/forage
+	if len(enemyCores) == 0 {
+		return b.exploreAndForage(myBots, enemyPositions, state)
+	}
+
+	// Build wall positions map
+	wallPositions := make(map[Position]bool)
+	for _, wall := range state.Walls {
+		wallPositions[wall] = true
+	}
+
+	// Build core positions map
+	corePositions := make(map[Position]bool)
+	for _, core := range state.Cores {
+		corePositions[core.Position] = true
+	}
+
+	// Build lockout positions for each enemy core
+	type LockoutTarget struct {
+		core     VisibleCore
+		position Position
+		distance int
+	}
+
+	// Collect all lockout positions (neighbors of enemy cores)
+	lockoutTargets := make([]LockoutTarget, 0)
+	for _, core := range enemyCores {
+		// Get all 8 neighbors (including diagonals)
+		neighbors := b.getAllNeighbors(core.Position, config)
+
+		for _, neighbor := range neighbors {
+			// Skip if wall
+			if wallPositions[neighbor] {
+				continue
+			}
+			// Skip if enemy bot is there (they'd block us anyway)
+			if enemyPositions[neighbor] {
+				continue
+			}
+			// Skip if another core is there
+			if corePositions[neighbor] {
+				continue
+			}
+			lockoutTargets = append(lockoutTargets, LockoutTarget{
+				core:     core,
+				position: neighbor,
+				distance: -1, // Will compute per bot
+			})
+		}
+	}
+
+	// If no lockout targets available, explore
+	if len(lockoutTargets) == 0 {
+		return b.exploreAndForage(myBots, enemyPositions, state)
+	}
+
+	// Track which bots and targets are assigned
+	assignedBots := make(map[Position]bool)
+	assignedTargets := make(map[Position]bool)
+	moves := make([]Move, 0)
+
+	// Greedy assignment: nearest bot to nearest target
+	// Iterate multiple times to handle assignment chains
+	for i := 0; i < len(myBots); i++ {
+		bestPair := struct {
+			botIdx    int
+			targetIdx int
+			dist      int
+		}{-1, -1, math.MaxInt32}
+
+		// Find closest bot-target pair among unassigned
+		for botIdx := range myBots {
+			bot := myBots[botIdx]
+			if assignedBots[bot.Position] {
+				continue
+			}
+
+			for targetIdx := range lockoutTargets {
+				target := lockoutTargets[targetIdx]
+				if assignedTargets[target.position] {
+					continue
+				}
+
+				// Compute distance from bot to target
+				dist := distance2(bot.Position, target.position, config.Rows, config.Cols)
+				if dist < bestPair.dist {
+					bestPair.botIdx = botIdx
+					bestPair.targetIdx = targetIdx
+					bestPair.dist = dist
+				}
+			}
+		}
+
+		// If no valid pair found, we're done
+		if bestPair.botIdx == -1 {
+			break
+		}
+
+		// Assign this bot to this target
+		bot := myBots[bestPair.botIdx]
+		target := lockoutTargets[bestPair.targetIdx]
+
+		assignedBots[bot.Position] = true
+		assignedTargets[target.position] = true
+
+		// Compute path to target
+		path := b.findPath(bot.Position, target.position, wallPositions, enemyPositions, config)
+
+		if len(path) > 0 {
+			moves = append(moves, Move{
+				Position:  bot.Position,
+				Direction: path[0],
+			})
+		}
+	}
+
+	// Remaining bots: check if they should rush fully-sieged cores or forage
+	for _, bot := range myBots {
+		if assignedBots[bot.Position] {
+			continue
+		}
+
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
+			moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+			continue
+		}
+
+		// Priority 2: Collect energy if nearby (immediate gain)
+		energyCollected := false
+		for _, e := range state.Energy {
+			dist := distance2(bot.Position, e, config.Rows, config.Cols)
+			if dist <= 2 { // Energy is adjacent or very close
+				path := b.findPath(bot.Position, e, wallPositions, enemyPositions, config)
+				if len(path) > 0 && len(path) <= 2 {
+					moves = append(moves, Move{
+						Position:  bot.Position,
+						Direction: path[0],
+					})
+					energyCollected = true
+					break
+				}
+			}
+		}
+
+		if energyCollected {
+			continue
+		}
+
+		// Priority 3: Check if any core is fully surrounded
+		coreRushed := false
+		for _, core := range enemyCores {
+			if b.isCoreFullySieged(core, assignedTargets, config) {
+				// Rush this core
+				path := b.findPath(bot.Position, core.Position, wallPositions, enemyPositions, config)
+				if len(path) > 0 {
+					moves = append(moves, Move{
+						Position:  bot.Position,
+						Direction: path[0],
+					})
+					coreRushed = true
+					break
+				}
+			}
+		}
+
+		if !coreRushed {
+			// Forage for energy or advance toward nearest enemy core
+			move := b.getForageMove(bot, enemyCores, wallPositions, enemyPositions, state)
+			if move != nil {
+				moves = append(moves, *move)
+			}
+		}
+	}
+
+	return moves, nil
+}
+
+// isCoreFullySieged checks if all lockout positions around a core are assigned.
+func (b *SiegeBot) isCoreFullySieged(core VisibleCore, assignedTargets map[Position]bool, config Config) bool {
+	neighbors := b.getAllNeighbors(core.Position, config)
+	assignedCount := 0
+	for _, neighbor := range neighbors {
+		if assignedTargets[neighbor] {
+			assignedCount++
+		}
+	}
+	// Consider fully sieged if >= 50% of neighbors are assigned (more aggressive rushing)
+	return assignedCount*2 >= len(neighbors)
+}
+
+// findPath uses BFS to find a path from start to target, avoiding walls and enemies.
+func (b *SiegeBot) findPath(start, target Position, wallPositions, enemyPositions map[Position]bool, config Config) []Direction {
+	type queueItem struct {
+		pos  Position
+		path []Direction
+	}
+
+	visited := make(map[Position]bool)
+	queue := list.New()
+	queue.PushBack(queueItem{pos: start, path: []Direction{}})
+
+	for queue.Len() > 0 {
+		item := queue.Remove(queue.Front()).(queueItem)
+		pos := item.pos
+		path := item.path
+
+		if visited[pos] {
+			continue
+		}
+		visited[pos] = true
+
+		if pos == target {
+			return path
+		}
+
+		directions := []Direction{DirN, DirE, DirS, DirW}
+		for _, dir := range directions {
+			nextPos := simulateMove(pos, dir, config.Rows, config.Cols)
+
+			// Skip walls
+			if wallPositions[nextPos] {
+				continue
+			}
+
+			// Skip positions occupied by enemies (but allow adjacent tiles for faster movement)
+			if enemyPositions[nextPos] {
+				continue
+			}
+
+			if !visited[nextPos] && len(path) < 30 { // Increase path length limit for more flexibility
+				newPath := make([]Direction, len(path)+1)
+				copy(newPath, path)
+				newPath[len(path)] = dir
+				queue.PushBack(queueItem{pos: nextPos, path: newPath})
+			}
+		}
+	}
+
+	// No path found - try direct approach even if risky
+	return b.getDirectionToward(start, target, wallPositions, config)
+}
+
+// isNearEnemy checks if a position is adjacent to any enemy.
+func (b *SiegeBot) isNearEnemy(pos Position, enemyPositions map[Position]bool, config Config) bool {
+	directions := []Direction{DirN, DirE, DirS, DirW}
+	for _, dir := range directions {
+		adj := simulateMove(pos, dir, config.Rows, config.Cols)
+		if enemyPositions[adj] {
+			return true
+		}
+	}
+	return false
+}
+
+// getDirectionToward returns the first direction toward a target.
+func (b *SiegeBot) getDirectionToward(start, target Position, wallPositions map[Position]bool, config Config) []Direction {
+	dr := target.Row - start.Row
+	dc := target.Col - start.Col
+
+	// Handle wrapping
+	if dr > config.Rows/2 {
+		dr -= config.Rows
+	} else if dr < -config.Rows/2 {
+		dr += config.Rows
+	}
+	if dc > config.Cols/2 {
+		dc -= config.Cols
+	} else if dc < -config.Cols/2 {
+		dc += config.Cols
+	}
+
+	// Return primary direction
+	if abs(dr) > abs(dc) {
+		if dr > 0 {
+			return []Direction{DirS}
+		}
+		return []Direction{DirN}
+	}
+	if dc > 0 {
+		return []Direction{DirE}
+	}
+	return []Direction{DirW}
+}
+
+// getForageMove returns a move for foraging energy when not assigned to siege.
+func (b *SiegeBot) getForageMove(
+	bot VisibleBot,
+	enemyCores []VisibleCore,
+	wallPositions, enemyPositions map[Position]bool,
+	state *VisibleState,
+) *Move {
+	config := state.Config
+
+	// Build energy positions map
+	energyPositions := make(map[Position]bool)
+	for _, e := range state.Energy {
+		energyPositions[e] = true
+	}
+
+	// Find nearest energy
+	_, path := b.findNearestEnergy(bot.Position, energyPositions, wallPositions, enemyPositions, config)
+	if path != nil && len(path) > 0 {
+		return &Move{
+			Position:  bot.Position,
+			Direction: path[0],
+		}
+	}
+
+	// No energy - advance toward nearest enemy core
+	if len(enemyCores) > 0 {
+		nearestCore := enemyCores[0]
+		bestDist := math.MaxInt32
+		for _, core := range enemyCores {
+			dist := distance2(bot.Position, core.Position, config.Rows, config.Cols)
+			if dist < bestDist {
+				bestDist = dist
+				nearestCore = core
+			}
+		}
+		path := b.findPath(bot.Position, nearestCore.Position, wallPositions, enemyPositions, config)
+		if path != nil && len(path) > 0 {
+			return &Move{
+				Position:  bot.Position,
+				Direction: path[0],
+			}
+		}
+	}
+
+	// Spread out to explore
+	return b.getExploreMove(bot, wallPositions, enemyPositions, config)
+}
+
+// exploreAndForage handles exploration when no enemy cores are visible.
+func (b *SiegeBot) exploreAndForage(myBots []VisibleBot, enemyPositions map[Position]bool, state *VisibleState) ([]Move, error) {
+	moves := make([]Move, 0, len(myBots))
+	config := state.Config
+
+	// Build wall positions map
+	wallPositions := make(map[Position]bool)
+	for _, wall := range state.Walls {
+		wallPositions[wall] = true
+	}
+
+	// Build energy positions map
+	energyPositions := make(map[Position]bool)
+	for _, e := range state.Energy {
+		energyPositions[e] = true
+	}
+
+	usedEnergy := make(map[Position]bool)
+
+	for _, bot := range myBots {
+		// Priority 1: Escape zone if threatened
+		if zoneDir := getZoneEscapeDirection(bot.Position, state, wallPositions); zoneDir != DirNone {
+			moves = append(moves, Move{Position: bot.Position, Direction: zoneDir})
+			continue
+		}
+
+		// Find nearest energy
+		_, path := b.findNearestEnergy(bot.Position, energyPositions, wallPositions, enemyPositions, config)
+		if path != nil && len(path) > 0 {
+			moves = append(moves, Move{
+				Position:  bot.Position,
+				Direction: path[0],
+			})
+			nextPos := simulateMove(bot.Position, path[0], config.Rows, config.Cols)
+			usedEnergy[nextPos] = true
+			continue
+		}
+
+		// Explore
+		move := b.getExploreMove(bot, wallPositions, enemyPositions, config)
+		if move != nil {
+			moves = append(moves, *move)
+		}
+	}
+
+	return moves, nil
+}
+
+// findNearestEnergy finds the nearest energy using BFS.
+func (b *SiegeBot) findNearestEnergy(
+	start Position,
+	energyPositions, wallPositions, enemyPositions map[Position]bool,
+	config Config,
+) (Position, []Direction) {
+	type queueItem struct {
+		pos  Position
+		path []Direction
+	}
+
+	visited := make(map[Position]bool)
+	queue := list.New()
+	queue.PushBack(queueItem{pos: start, path: []Direction{}})
+
+	var nearestEnergy Position
+	var bestPath []Direction
+
+	for queue.Len() > 0 {
+		item := queue.Remove(queue.Front()).(queueItem)
+		pos := item.pos
+		path := item.path
+
+		if visited[pos] {
+			continue
+		}
+		visited[pos] = true
+
+		if energyPositions[pos] {
+			nearestEnergy = pos
+			bestPath = path
+			break
+		}
+
+		// Don't path through enemy-adjacent tiles
+		if len(path) > 0 && b.isNearEnemy(pos, enemyPositions, config) {
+			continue
+		}
+
+		directions := []Direction{DirN, DirE, DirS, DirW}
+		for _, dir := range directions {
+			nextPos := simulateMove(pos, dir, config.Rows, config.Cols)
+			if wallPositions[nextPos] {
+				continue
+			}
+			if !visited[nextPos] && len(path) < 20 {
+				newPath := make([]Direction, len(path)+1)
+				copy(newPath, path)
+				newPath[len(path)] = dir
+				queue.PushBack(queueItem{pos: nextPos, path: newPath})
+			}
+		}
+	}
+
+	return nearestEnergy, bestPath
+}
+
+// getExploreMove returns a move for exploring.
+func (b *SiegeBot) getExploreMove(
+	bot VisibleBot,
+	wallPositions, enemyPositions map[Position]bool,
+	config Config,
+) *Move {
+	directions := []Direction{DirN, DirE, DirS, DirW}
+	for _, dir := range directions {
+		newPos := simulateMove(bot.Position, dir, config.Rows, config.Cols)
+		if !wallPositions[newPos] && !b.isNearEnemy(newPos, enemyPositions, config) {
+			return &Move{
+				Position:  bot.Position,
+				Direction: dir,
+			}
+		}
+	}
+	// No safe move, stay put (return first valid direction)
+	return &Move{
+		Position:  bot.Position,
+		Direction: DirN,
+	}
+}
+
+// getAllNeighbors returns all 8 neighbors (including diagonals) of a position.
+func (b *SiegeBot) getAllNeighbors(pos Position, config Config) []Position {
+	neighbors := make([]Position, 0, 8)
+	deltas := []struct{ dr, dc int }{
+		{-1, -1}, {-1, 0}, {-1, 1},
+		{0, -1}, {0, 1},
+		{1, -1}, {1, 0}, {1, 1},
+	}
+
+	for _, delta := range deltas {
+		newRow := (pos.Row + delta.dr + config.Rows) % config.Rows
+		newCol := (pos.Col + delta.dc + config.Cols) % config.Cols
+		neighbors = append(neighbors, Position{Row: newRow, Col: newCol})
+	}
+
+	return neighbors
+}
