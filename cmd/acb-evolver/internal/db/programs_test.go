@@ -393,3 +393,55 @@ func TestGetLineage(t *testing.T) {
 		t.Errorf("expected 3 ancestors in lineage, got %d: %v", len(lineage), lineage)
 	}
 }
+
+func TestSeedPopulation(t *testing.T) {
+	db := openTestDB(t)
+	setupTestSchema(t, db)
+	s := NewStore(db)
+	ctx := context.Background()
+
+	// Verify DB is empty
+	total, err := s.TotalCount(ctx)
+	if err != nil {
+		t.Fatalf("TotalCount: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("expected empty DB, got %d programs", total)
+	}
+
+	// Seed population
+	inserted, err := SeedPopulation(ctx, s)
+	if err != nil {
+		t.Fatalf("SeedPopulation: %v", err)
+	}
+	if inserted != 9 {
+		t.Errorf("expected 9 seeds inserted, got %d", inserted)
+	}
+
+	// Verify final count
+	total, err = s.TotalCount(ctx)
+	if err != nil {
+		t.Fatalf("TotalCount after seed: %v", err)
+	}
+	if total != 9 {
+		t.Errorf("expected 9 programs in DB, got %d", total)
+	}
+
+	// Verify idempotence: second call should insert 0
+	inserted2, err := SeedPopulation(ctx, s)
+	if err != nil {
+		t.Fatalf("SeedPopulation second call: %v", err)
+	}
+	if inserted2 != 0 {
+		t.Errorf("expected 0 inserts on second call, got %d", inserted2)
+	}
+
+	// Count should still be 9
+	total, err = s.TotalCount(ctx)
+	if err != nil {
+		t.Fatalf("TotalCount after second seed: %v", err)
+	}
+	if total != 9 {
+		t.Errorf("expected 9 programs after second call, got %d", total)
+	}
+}

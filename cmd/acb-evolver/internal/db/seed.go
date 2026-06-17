@@ -24,6 +24,15 @@ var hunterCode string
 //go:embed seeds/random_main.py.txt
 var randomCode string
 
+//go:embed seeds/phalanx_strategy.rs.txt
+var phalanxCode string
+
+//go:embed seeds/assassin_strategy.rs.txt
+var assassinCode string
+
+//go:embed seeds/opportunist_strategy.go.txt
+var opportunistCode string
+
 // seedProgram describes a built-in strategy bot used to bootstrap the
 // programs database.
 type seedProgram struct {
@@ -35,7 +44,7 @@ type seedProgram struct {
 	code       string
 }
 
-// seeds is the initial population of 6 built-in strategy bots distributed
+// seeds is the initial population of 9 built-in strategy bots distributed
 // across all 4 islands.  Each bot is assigned a behavior vector that captures
 // its play-style on the aggression × economy axes.
 var seeds = []seedProgram{
@@ -47,6 +56,14 @@ var seeds = []seedProgram{
 		aggression: 0.1,
 		economy:    0.9,
 		code:       gathererCode,
+	},
+	{
+		name:       "opportunist",
+		language:   "go",
+		island:     IslandBeta,
+		aggression: 0.55,
+		economy:    0.55,
+		code:       opportunistCode,
 	},
 	{
 		name:       "guardian",
@@ -64,6 +81,22 @@ var seeds = []seedProgram{
 		aggression: 0.9,
 		economy:    0.2,
 		code:       rusherCode,
+	},
+	{
+		name:       "phalanx",
+		language:   "rust",
+		island:     IslandAlpha,
+		aggression: 0.85,
+		economy:    0.1,
+		code:       phalanxCode,
+	},
+	{
+		name:       "assassin",
+		language:   "rust",
+		island:     IslandAlpha,
+		aggression: 1.0,
+		economy:    0.0,
+		code:       assassinCode,
 	},
 	{
 		name:       "swarm",
@@ -93,7 +126,7 @@ var seeds = []seedProgram{
 	},
 }
 
-// SeedPopulation inserts the 6 built-in strategy bots as generation-0
+// SeedPopulation inserts the 9 built-in strategy bots as generation-0
 // programs if the programs table is empty.  It is idempotent: a second call
 // is a no-op.
 func SeedPopulation(ctx context.Context, s *Store) (int, error) {
