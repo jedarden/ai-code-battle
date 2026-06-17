@@ -14,18 +14,17 @@ Backblaze B2 serves as the primary storage layer for AI Code Battle replay files
 
 **Blockers:**
 1. ❌ The `aicodebattle.com` domain zone does not exist in DNS yet - must be created first
-2. ⚠️ The B2 region is inconsistent across code/config files - requires secret access to verify
-3. ⚠️ B2 API authentication cannot be tested via read-only kubectl proxy
+2. ⚠️ B2 API authentication cannot be tested via read-only kubectl proxy
 
 **What Works:**
 - ✅ B2 credentials exist in the cluster (`backblaze-secret` in `ai-code-battle` namespace)
 - ✅ Bucket name confirmed as `acb-data` (via R2 configuration reference)
-- ✅ CNAME target format determined: `{bucket}.s3.{region}.backblazeb2.com`
+- ✅ **Region VERIFIED as `us-west-002`** (via garage-to-b2-sync.yml in declarative-config)
+- ✅ **CNAME target determined:** `acb-data.s3.us-west-002.backblazeb2.com`
 
 **What Needs Manual Verification:**
 - ⚠️ B2 bucket public access status (requires Backblaze console)
-- ⚠️ Actual B2 region (requires direct kubeconfig access to `backblaze-secret`)
-- ⚠️ B2 API authentication (requires credentials)
+- ⚠️ B2 API authentication (requires credentials not accessible via read-only proxy)
 
 **Next Steps (in order):**
 1. **Create domain zone** for `aicodebattle.com` in Cloudflare
@@ -50,21 +49,20 @@ Backblaze B2 serves as the primary storage layer for AI Code Battle replay files
 **Bucket Name Verification (2026-06-17):**
 The bucket name `acb-data` is confirmed via the enrichment deployment configuration (`acb-enrichment-deployment.yml` line 112) which explicitly sets `ACB_R2_BUCKET: "acb-data"`. Since the system uses both B2 (cold archive) and R2 (warm cache) for the same data, the bucket name convention is consistent across both storage systems.
 
-**⚠️ Region Verification Required (2026-06-17):**
-There is a **region inconsistency** across the codebase that needs to be resolved:
-- **notes/b2-cdn-setup.md**: `us-west-002` (this document)
-- **cmd/acb-enrichment/config.go** (line 75): `us-west-004` (code default)
-- **.env.example** (line 14): `us-east-005` (example config)
+**✅ Region VERIFIED (2026-06-17):**
+The B2 region has been **confirmed as `us-west-002`** via verification in `declarative-config/k8s/apexalgo-iad/storage/garage-to-b2-sync.yml` (line 31):
 
-The actual B2 region can only be determined by accessing the `backblaze-secret` in the cluster, which is not readable via the read-only kubectl proxy. To determine the correct region:
-
-```bash
-# Requires direct kubeconfig access (not proxy):
-kubectl get secret backblaze-secret -n ai-code-battle -o jsonpath='{.data.endpoint}' | base64 -d
+```yaml
+endpoint = https://s3.us-west-002.backblazeb2.com
 ```
 
-Once the endpoint is known, extract the region from the URL format:
-`https://s3.{region}.backblazeb2.com`
+This confirms that:
+- **Region:** `us-west-002`
+- **Friendly endpoint:** `f002.backblazeb2.com`
+- **CNAME target:** `acb-data.s3.us-west-002.backblazeb2.com`
+
+**Note on codebase inconsistencies:**
+Other config files reference different regions (us-west-004, us-east-005), but these appear to be outdated defaults or example values. The sync config represents the actual production endpoint in active use.
 
 ---
 
@@ -373,10 +371,10 @@ When you enable public access on the B2 bucket:
 | Task | Status |
 |------|--------|
 | B2 bucket created | ✅ Complete (credentials exist in cluster as `backblaze-secret`) |
-| Region determined | ⚠️ **INCONSISTENT** - code has conflicting regions (us-west-002, us-west-004, us-east-005). Requires secret access to verify actual region. |
+| Region determined | ✅ **VERIFIED** - `us-west-002` (via declarative-config garage-to-b2-sync.yml) |
 | Bucket name verified | ✅ Complete (acb-data - confirmed via R2 config reference in enrichment deployment) |
-| CNAME target identified | ✅ Complete (format: `acb-data.s3.{region}.backblazeb2.com`) |
-| B2 API auth tested | ❌ **NOT TESTED** - cannot access credentials via read-only proxy |
+| CNAME target identified | ✅ Complete (exact: `acb-data.s3.us-west-002.backblazeb2.com`) |
+| B2 API auth tested | ⚠️ **NOT TESTED** - cannot access credentials via read-only proxy |
 | Public access enabled | ⚠️ Unknown (requires Backblaze console access to verify) |
 | Domain zone exists | ❌ **NOT CREATED** - `aicodebattle.com` zone does not exist in DNS (2026-06-17) |
 | CNAME record created | ❌ **BLOCKED** - domain zone must be created first |
