@@ -1,0 +1,17 @@
+{
+  "name": "coordinator-bot",
+  "version": "1.0.0",
+  "description": "CoordinatorBot - Dynamic role allocation strategy for AI Code Battle",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "ts-node": "^10.9.0"
+  }
+}

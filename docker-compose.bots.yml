@@ -1,27 +1,28 @@
 # AI Code Battle - Bot Host Deployment
-# Runs all 16 strategy bots as a single deployable unit
+# Runs all 17 strategy bots as a single deployable unit
 #
 # Usage:
 #   docker-compose -f docker-compose.bots.yml up -d
 #
 # Environment variables (set in .env or pass directly):
-#   BOT_SECRET_RANDOM      - Secret for RandomBot
-#   BOT_SECRET_GATHERER    - Secret for GathererBot
-#   BOT_SECRET_RUSHER      - Secret for RusherBot
-#   BOT_SECRET_GUARDIAN    - Secret for GuardianBot
-#   BOT_SECRET_SWARM       - Secret for SwarmBot
-#   BOT_SECRET_HUNTER      - Secret for HunterBot
-#   BOT_SECRET_DEFENDER    - Secret for DefenderBot
-#   BOT_SECRET_SCOUT       - Secret for ScoutBot
-#   BOT_SECRET_FARMER      - Secret for FarmerBot
-#   BOT_SECRET_PACIFIST    - Secret for PacifistBot
-#   BOT_SECRET_PHALANX     - Secret for PhalanxBot
-#   BOT_SECRET_RAIDER      - Secret for RaiderBot
-#   BOT_SECRET_NOMAD       - Secret for NomadBot
-#   BOT_SECRET_OPPORTUNIST - Secret for OpportunistBot
-#   BOT_SECRET_ASSASSIN    - Secret for AssassinBot
-#   BOT_SECRET_KAMIKAZE    - Secret for KamikazeBot
-#   BOT_SECRET_ECONOMIST   - Secret for EconomistBot
+#   BOT_SECRET_RANDOM       - Secret for RandomBot
+#   BOT_SECRET_GATHERER     - Secret for GathererBot
+#   BOT_SECRET_RUSHER       - Secret for RusherBot
+#   BOT_SECRET_GUARDIAN     - Secret for GuardianBot
+#   BOT_SECRET_SWARM        - Secret for SwarmBot
+#   BOT_SECRET_HUNTER       - Secret for HunterBot
+#   BOT_SECRET_DEFENDER     - Secret for DefenderBot
+#   BOT_SECRET_SCOUT        - Secret for ScoutBot
+#   BOT_SECRET_FARMER       - Secret for FarmerBot
+#   BOT_SECRET_PACIFIST     - Secret for PacifistBot
+#   BOT_SECRET_PHALANX      - Secret for PhalanxBot
+#   BOT_SECRET_RAIDER       - Secret for RaiderBot
+#   BOT_SECRET_NOMAD        - Secret for NomadBot
+#   BOT_SECRET_OPPORTUNIST  - Secret for OpportunistBot
+#   BOT_SECRET_ASSASSIN     - Secret for AssassinBot
+#   BOT_SECRET_KAMIKAZE     - Secret for KamikazeBot
+#   BOT_SECRET_ECONOMIST    - Secret for EconomistBot
+#   BOT_SECRET_COORDINATOR  - Secret for CoordinatorBot
 
 services:
   random:
@@ -293,6 +294,22 @@ services:
       - BOT_SECRET=${BOT_SECRET_ECONOMIST:-dev-secret-economist}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  coordinator:
+    build:
+      context: ./bots/coordinator
+      dockerfile: Dockerfile
+    ports:
+      - "8098:8084"
+    environment:
+      - BOT_PORT=8084
+      - BOT_SECRET=${BOT_SECRET_COORDINATOR:-dev-secret-coordinator}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
       interval: 30s
       timeout: 5s
       retries: 3
