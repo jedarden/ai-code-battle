@@ -18,9 +18,9 @@ export function renderDocsReplayFormatPage(): void {
 
         <section>
           <h2>Fetching Replays</h2>
-          <p>Replays are served from Cloudflare R2 (warm cache) with B2 (cold archive) fallback:</p>
+          <p>Replays are served from Backblaze B2 (warm cache) with R2 (cold archive) fallback:</p>
           <pre><code># Try warm cache first
-curl https://r2.aicodebattle.com/replays/\${match_id}.json.gz
+curl https://b2.aicodebattle.com/replays/\${match_id}.json.gz
 
 # Fallback to cold archive
 curl https://b2.aicodebattle.com/replays/\${match_id}.json.gz</code></pre>

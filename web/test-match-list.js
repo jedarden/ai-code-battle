@@ -169,8 +169,8 @@ async function main() {
 
     // Check if replay file exists
     const replayPath = path.join(publicDir, 'replays', `${firstMatch.id}.json.gz`);
-    // Note: Replays are on R2, not in public folder, so we just check the format
-    logInfo(`Replay files served from R2: https://r2.aicodebattle.com${expectedUrl}`);
+    // Note: Replays are on B2, not in public folder, so we just check the format
+    logInfo(`Replay files served from B2: https://b2.aicodebattle.com${expectedUrl}`);
     warned++;
   }
 
@@ -218,10 +218,10 @@ async function main() {
     failed++;
   }
 
-  // Test 5: Check thumbnails (R2)
+  // Test 5: Check thumbnails (B2)
   logInfo('\nTest 5: Checking thumbnail availability...');
-  logInfo('Thumbnails served from R2: https://r2.aicodebattle.com/thumbnails/{match_id}.png');
-  logWarn('R2 thumbnail upload is broken (ESO credentials issue - known issue)');
+  logInfo('Thumbnails served from B2: https://b2.aicodebattle.com/thumbnails/{match_id}.png');
+  logWarn('B2 thumbnail upload is broken (ESO credentials issue - known issue)');
   logWarn('Thumbnails will 404 or show placeholders - UI should handle gracefully');
   warned++;
 

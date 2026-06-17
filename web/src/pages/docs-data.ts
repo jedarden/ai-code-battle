@@ -15,8 +15,8 @@ export function renderDocsDataPage(): void {
           <p>All platform data is available as static JSON files served from Cloudflare Pages (indexes) and Cloudflare R2 (replays, metadata). No authentication, no API keys, no rate limiting.</p>
           <p><strong>Base URLs:</strong></p>
           <pre><code>const PAGES = ''                    // Same origin (Cloudflare Pages)
-const R2    = 'https://r2.aicodebattle.com'     // Warm replay cache
-const B2    = 'https://b2.aicodebattle.com'     // Cold archive</code></pre>
+const B2    = 'https://b2.aicodebattle.com'     // Warm replay cache
+const B2    = 'https://b2.aicodebattle.com'     // Warm replay cache</code></pre>
         </section>
 
         <section>
@@ -77,16 +77,16 @@ GET /maps/{map_id}.json               # Individual map definition</code></pre>
         </section>
 
         <section>
-          <h2>Replay Data (Cloudflare R2)</h2>
-          <p>Uploaded in real-time by match workers. R2 is a warm cache for recent replays; B2 is the permanent cold archive.</p>
+          <h2>Replay Data (Backblaze B2)</h2>
+          <p>Uploaded in real-time by match workers. B2 is a warm cache for recent replays; R2 is the permanent cold archive.</p>
 
           <h3>Replay Files</h3>
           <pre><code>GET /replays/{match_id}.json.gz</code></pre>
           <p>Gzipped replay JSON. Browser handles decompression automatically.</p>
-          <pre><code># Fetch from R2 (warm cache)
-curl https://r2.aicodebattle.com/replays/m_7f3a9b2c.json.gz
+          <pre><code># Fetch from B2 (warm cache)
+curl https://b2.aicodebattle.com/replays/m_7f3a9b2c.json.gz
 
-# Fallback to B2 (cold archive)
+# Fallback to R2 (cold archive)
 curl https://b2.aicodebattle.com/replays/m_7f3a9b2c.json.gz</code></pre>
 
           <h3>Match Metadata</h3>
@@ -107,17 +107,17 @@ GET /cards/{bot_id}.png</code></pre>
             <tr><td>Bot profiles</td><td>Every ~90 min</td><td>Index builder → Pages</td></tr>
             <tr><td>Match index</td><td>Every ~90 min</td><td>Index builder → Pages</td></tr>
             <tr><td>Playlists</td><td>Every ~90 min</td><td>Index builder → Pages</td></tr>
-            <tr><td>Replays</td><td>Real-time</td><td>Match worker → R2/B2</td></tr>
-            <tr><td>Match metadata</td><td>Real-time</td><td>Match worker → R2/B2</td></tr>
-            <tr><td>Evolution data</td><td>Every cycle (~15 min)</td><td>Evolver → R2 live.json</td></tr>
+            <tr><td>Replays</td><td>Real-time</td><td>Match worker → B2/R2</td></tr>
+            <tr><td>Match metadata</td><td>Real-time</td><td>Match worker → B2/R2</td></tr>
+            <tr><td>Evolution data</td><td>Every cycle (~15 min)</td><td>Evolver → B2 live.json</td></tr>
           </table>
         </section>
 
         <section>
           <h2>Cache Behavior</h2>
           <p><strong>Pages (indexes):</strong> Deployed every ~90 minutes. Cached by Cloudflare CDN globally. Invalidated on deploy.</p>
-          <p><strong>R2 (replays):</strong> Served with <code>Cache-Control: immutable, max-age=31536000</code> (content-addressed, never changes).</p>
-          <p><strong>B2 (archive):</strong> Same cache headers as R2. Free egress via Cloudflare Bandwidth Alliance.</p>
+          <p><strong>B2 (replays):</strong> Served with <code>Cache-Control: immutable, max-age=31536000</code> (content-addressed, never changes).</p>
+          <p><strong>R2 (archive):</strong> Same cache headers as B2.</p>
         </section>
 
         <section>
@@ -125,10 +125,10 @@ GET /cards/{bot_id}.png</code></pre>
           <pre><code>// SPA shell + index data from Pages (same origin)
 const leaderboard = await fetch('/data/leaderboard.json').then(r => r.json())
 
-// Replay from R2 warm cache, with B2 fallback
+// Replay from B2 warm cache, with R2 fallback
 async function fetchReplay(matchId) {
-  const r2 = await fetch(\`https://r2.aicodebattle.com/replays/\${matchId}.json.gz\`)
-  if (r2.ok) return r2
+  const b2 = await fetch(\`https://b2.aicodebattle.com/replays/\${matchId}.json.gz\`)
+  if (b2.ok) return b2
   return fetch(\`https://b2.aicodebattle.com/replays/\${matchId}.json.gz\`)
 }</code></pre>
         </section>

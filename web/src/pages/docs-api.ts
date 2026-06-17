@@ -17,7 +17,6 @@ interface Section {
 }
 
 const PAGES_BASE = 'https://ai-code-battle.pages.dev';
-const R2_BASE = '/r2';
 const B2_BASE = 'https://b2.aicodebattle.com';
 
 const sections: Section[] = [
@@ -189,8 +188,8 @@ const sections: Section[] = [
     ],
   },
   {
-    title: 'R2 Endpoints (Warm Cache)',
-    description: 'Recent replays and real-time data served from Cloudflare R2. Free tier capped at 10GB. Try R2 first, fall back to B2 for older data.',
+    title: 'B2 Endpoints (Warm Cache)',
+    description: 'Recent replays and real-time data served from Backblaze B2. Free egress via Cloudflare Bandwidth Alliance. Try B2 first, fall back to R2 for older data.',
     endpoints: [
       {
         method: 'GET',
@@ -299,8 +298,8 @@ const sections: Section[] = [
     ],
   },
   {
-    title: 'B2 Endpoints (Cold Archive)',
-    description: 'Permanent archive for ALL replays and match data. Free egress via Cloudflare Bandwidth Alliance. Use as fallback when R2 returns 404.',
+    title: 'B2 Endpoints (Archive)',
+    description: 'Permanent archive for ALL replays and match data served from Backblaze B2.',
     endpoints: [
       {
         method: 'GET',
@@ -312,7 +311,7 @@ const sections: Section[] = [
       {
         method: 'GET',
         path: '/matches/{match_id}.json',
-        description: 'Per-match metadata. Same structure as R2 endpoint.',
+        description: 'Per-match metadata.',
         cache: 'immutable (content-addressed)',
       },
       {
@@ -546,16 +545,8 @@ export function renderDocsApiPage(): void {
 
       <section id="fetching-pattern" class="pattern-section">
         <h2>Recommended Fetching Pattern</h2>
-        <p>For replays and match metadata, always try R2 first and fall back to B2:</p>
+        <p>For replays and match metadata, fetch directly from B2:</p>
         <pre><code>async function fetchReplay(matchId: string): Promise<Replay> {
-  // Try R2 warm cache first
-  const r2Url = \`/r2/replays/\${matchId}.json.gz\`;
-  const r2Resp = await fetch(r2Url);
-  if (r2Resp.ok) {
-    return decompress(await r2Resp.arrayBuffer());
-  }
-
-  // Fall back to B2 cold archive
   const b2Url = \`https://b2.aicodebattle.com/replays/\${matchId}.json.gz\`;
   const b2Resp = await fetch(b2Url);
   if (!b2Resp.ok) throw new Error(\`Replay not found: \${matchId}\`);
@@ -565,9 +556,8 @@ export function renderDocsApiPage(): void {
         <h3>Cache Behavior</h3>
         <ul>
           <li><strong>Pages</strong>: ~90 min stale max (deploy cycle)</li>
-          <li><strong>R2 replays</strong>: immutable, cache forever</li>
-          <li><strong>R2 live.json</strong>: 10 second max-age</li>
-          <li><strong>B2</strong>: immutable, cache forever</li>
+          <li><strong>B2 replays</strong>: immutable, cache forever</li>
+          <li><strong>B2 live.json</strong>: 10 second max-age</li>
         </ul>
 
         <h3>Rate Limits</h3>
@@ -772,8 +762,7 @@ function renderSection(section: Section): string {
 
 function renderEndpoint(endpoint: EndpointDoc, sectionTitle: string): string {
   let baseUrl = '';
-  if (sectionTitle.includes('R2')) baseUrl = R2_BASE;
-  else if (sectionTitle.includes('B2')) baseUrl = B2_BASE;
+  if (sectionTitle.includes('B2')) baseUrl = B2_BASE;
   else baseUrl = PAGES_BASE;
 
   return `

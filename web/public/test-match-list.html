@@ -228,7 +228,7 @@
 
         if (matchData.matches && matchData.matches.length > 0) {
           const firstMatch = matchData.matches[0];
-          const thumbnailUrl = `https://r2.aicodebattle.com/thumbnails/${firstMatch.id}.png`;
+          const thumbnailUrl = `https://b2.aicodebattle.com/thumbnails/${firstMatch.id}.png`;
 
           try {
             const thumbResponse = await fetch(thumbnailUrl, { method: 'HEAD' });
@@ -236,11 +236,11 @@
               addResult('Thumbnail accessible', 'pass', 'Thumbnail file exists on R2');
             } else {
               addResult('Thumbnail accessible', 'warn',
-                `Thumbnail returns ${thumbResponse.status} (R2 may not be seeded - known issue)`);
+                `Thumbnail returns ${thumbResponse.status} (B2 may not be seeded - known issue)`);
             }
           } catch (e) {
             addResult('Thumbnail accessible', 'warn',
-              'Cannot fetch thumbnail (R2 may not be accessible - known issue)');
+              'Cannot fetch thumbnail (B2 may not be accessible - known issue)');
           }
         }
       } catch (error) {
