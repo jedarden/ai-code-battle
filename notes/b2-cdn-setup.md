@@ -144,7 +144,7 @@ kubectl --server=http://traefik-apexalgo-iad:8001 get secret backblaze-secret -n
 
 The Cloudflare Bandwidth Alliance with Backblaze B2 activates automatically when:
 
-1. ✅ **CNAME points to B2** (`acb-data.s3.us-west-004.backblazeb2.com`)
+1. ✅ **CNAME points to B2** (`acb-data.s3.us-west-002.backblazeb2.com`)
 2. ✅ **Cloudflare proxy is ON** (orange cloud)
 3. ✅ **Bucket is publicly accessible** (see above)
 
