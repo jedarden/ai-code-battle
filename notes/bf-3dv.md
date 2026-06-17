@@ -39,3 +39,27 @@ Total changes: 8 files, 636 insertions(+)
 ## Note
 
 The bead description mentions "6 strategy bots" but the actual implementation includes 7 bots (random, farmer, gatherer, guardian, hunter, rusher, swarm). All 7 are present and properly configured.
+
+## Re-verification (2026-06-16)
+
+Verified all manifests follow the required pattern:
+
+| Bot | Language | Image | BOT_PORT | Secret Key | Service |
+|-----|----------|-------|----------|------------|---------|
+| random | Python | ronaldraygun/acb-strategy-random:latest | 8080 | random-secret | ClusterIP:8080 |
+| farmer | - | ronaldraygun/acb-strategy-farmer:latest | 8080 | farmer-secret | ClusterIP:8080 |
+| gatherer | Go | ronaldraygun/acb-strategy-gatherer:latest | 8080 | gatherer-secret | ClusterIP:8080 |
+| guardian | PHP | ronaldraygun/acb-strategy-guardian:latest | 8080 | guardian-secret | ClusterIP:8080 |
+| hunter | Java | ronaldraygun/acb-strategy-hunter:latest | 8080 | hunter-secret | ClusterIP:8080 |
+| rusher | Rust | ronaldraygun/acb-strategy-rusher:latest | 8080 | rusher-secret | ClusterIP:8080 |
+| swarm | TypeScript | ronaldraygun/acb-strategy-swarm:latest | 8080 | swarm-secret | ClusterIP:8080 |
+
+All files verified present in `/home/coding/declarative-config/k8s/apexalgo-iad/ai-code-battle/`:
+- acb-bot-secrets.yml.template (contains all 7 secret keys)
+- acb-strategy-random-deployment.yml
+- acb-strategy-farmer-deployment.yml
+- acb-strategy-gatherer-deployment.yml
+- acb-strategy-guardian-deployment.yml
+- acb-strategy-hunter-deployment.yml
+- acb-strategy-rusher-deployment.yml
+- acb-strategy-swarm-deployment.yml
