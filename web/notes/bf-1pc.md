@@ -1,21 +1,30 @@
-# bf-1pc: SPA R2→B2 Path Migration
+# bf-1pc: Fix SPA TypeScript - Replace /r2/ with /b2/
 
-## Task
-Fix SPA TypeScript source: replace `/r2/` data path prefix with `/b2/` for B2 migration.
+## Status: ✓ Already Complete
 
-## Status: Already Complete
+This task was completed in commit `76369b5` on 2026-06-16.
 
-This work was already completed in commits:
-- `76369b5`: "fix(spa): replace /r2/ data path prefix with /b2/"
-- `724f516`: "fix(spa): replace r2.aicodebattle.com with b2.aicodebattle.com"
+## Changes Made
 
-## Acceptance Criteria Verified
+### Commit 76369b5: "fix(spa): replace /r2/ data path prefix with /b2/"
+- **File changed:** `web/src/api-types.ts`
+- **Change:** `const R2_COMMENTARY_BASE = '/r2';` → `const R2_COMMENTARY_BASE = '/b2';`
+- **Lines:** 1 insertion(+), 1 deletion(-)
 
-1. ✓ `grep -r "/r2/" src/` returns no hits (exit code 1 = no matches)
-2. ✓ `npm run build` succeeds (completed in 3.38s)
-3. ✓ `grep -r "r2.aicodebattle" dist/` returns no hits (exit code 1 = no matches)
+### Commit 724f516: "fix(spa): replace r2.aicodebattle.com with b2.aicodebattle.com"
+- Updated domain references (earlier commit)
+
+## Acceptance Criteria Verification (2026-06-16)
+
+1. ✓ `grep -r "/r2/" web/src/` returns no hits
+2. ✓ `npm run build` succeeds (completed in 2.65s)
+3. ✓ `grep -r "r2.aicodebattle" web/dist/` returns no hits
 
 ## Current State
-- All `/r2/` paths have been replaced with `/b2/`
-- All `r2.aicodebattle.com` references replaced with `b2.aicodebattle.com`
-- Build artifacts in `dist/` are clean (no R2 references)
+
+The constant in `src/api-types.ts`:
+```typescript
+const R2_COMMENTARY_BASE = '/b2';
+```
+
+All data-fetch URLs now use `/b2/` prefix and `b2.aicodebattle.com` subdomain.
