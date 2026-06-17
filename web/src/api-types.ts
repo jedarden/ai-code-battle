@@ -503,7 +503,7 @@ export interface EnrichedIndex {
   entries: EnrichedMatchEntry[];
 }
 
-const R2_COMMENTARY_BASE = '/r2';
+const R2_COMMENTARY_BASE = '/b2';
 
 export async function fetchCommentary(matchId: string): Promise<EnrichedCommentary | null> {
   try {
