@@ -41,7 +41,7 @@ Backblaze B2 serves as the primary storage layer for AI Code Battle replay files
 | Property | Value |
 |----------|-------|
 | **Bucket Name** | `acb-data` |
-| **Region** | `us-west-002` (unconfirmed - see note below) |
+| **Region** | `us-west-002` ✅ VERIFIED |
 | **S3 Endpoint** | `https://s3.us-west-002.backblazeb2.com` |
 | **CNAME Target** | `acb-data.s3.us-west-002.backblazeb2.com` |
 | **Friendly Endpoint** | `f002.backblazeb2.com` |
