@@ -139,7 +139,7 @@ func New(db *sql.DB, cfg Config) *Arena {
 // Run executes a mini-tournament for the candidate bot.
 //
 // code is the candidate's source code; language is one of
-// go|python|rust|typescript|java|php.
+// go|python|rust|typescript|java|php|csharp.
 //
 // The candidate is built and started as a local subprocess, then played
 // against cfg.NumMatches opponents sampled from the live bot fleet.
@@ -469,6 +469,26 @@ func buildCandidate(ctx context.Context, code, language, dir string) (string, []
 			return "", nil, err
 		}
 		return "php", []string{src}, nil
+
+	case "csharp":
+		src := dir + "/bot.cs"
+		if err := os.WriteFile(src, []byte(code), 0o600); err != nil {
+			return "", nil, err
+		}
+		// Check for dotnet-script first (no compilation needed)
+		if _, err := exec.LookPath("dotnet-script"); err == nil {
+			return "dotnet-script", []string{src}, nil
+		}
+		// Fallback to mcs (Mono C# compiler)
+		if _, err := exec.LookPath("mcs"); err == nil {
+			exe := dir + "/bot.exe"
+			cmd := exec.CommandContext(ctx, "mcs", "-out:"+exe, src)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return "", nil, fmt.Errorf("mcs: %s", truncate(string(out), 512))
+			}
+			return "mono", []string{exe}, nil
+		}
+		return "", nil, fmt.Errorf("csharp requires dotnet-script or mcs (mono)")
 
 	default:
 		return "", nil, fmt.Errorf("unsupported language: %s", language)

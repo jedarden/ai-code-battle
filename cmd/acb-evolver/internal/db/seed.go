@@ -33,6 +33,9 @@ var assassinCode string
 //go:embed seeds/opportunist_strategy.go.txt
 var opportunistCode string
 
+//go:embed seeds/defender_strategy.cs.txt
+var defenderCode string
+
 // seedProgram describes a built-in strategy bot used to bootstrap the
 // programs database.
 type seedProgram struct {
@@ -114,6 +117,14 @@ var seeds = []seedProgram{
 		aggression: 0.7,
 		economy:    0.3,
 		code:       hunterCode,
+	},
+	{
+		name:       "defender",
+		language:   "csharp",
+		island:     IslandGamma,
+		aggression: 0.3,
+		economy:    0.4,
+		code:       defenderCode,
 	},
 	// delta island – baseline / experimental
 	{

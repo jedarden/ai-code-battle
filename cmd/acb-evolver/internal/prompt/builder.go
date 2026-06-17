@@ -95,7 +95,7 @@ type Request struct {
 	// Island is the island this candidate will compete on.
 	Island string
 	// TargetLang is the programming language for the evolved bot
-	// (e.g. "go", "python", "rust", "typescript", "java", "php").
+	// (e.g. "go", "python", "rust", "typescript", "java", "php", "csharp").
 	TargetLang string
 	// Generation is the current evolution generation number.
 	Generation int
@@ -315,6 +315,8 @@ func langDisplayName(lang string) string {
 		return "Java"
 	case "php":
 		return "PHP"
+	case "csharp":
+		return "C#"
 	default:
 		return lang
 	}
