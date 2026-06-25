@@ -645,6 +645,7 @@ func fetchSeasonSnapshots(ctx context.Context, db *sql.DB, seasonID int64) ([]Se
 		JOIN bots b ON ss.bot_id = b.bot_id
 		WHERE ss.season_id = $1
 		ORDER BY ss.rank
+		LIMIT 10000
 	`, seasonID)
 	if err != nil {
 		return nil, err
@@ -679,6 +680,7 @@ func fetchChampionshipBracket(ctx context.Context, db *sql.DB, seasonID int64) (
 		        WHEN 'final' THEN 2
 		    END,
 		    s.bracket_position
+		LIMIT 500
 	`, seasonID)
 	if err != nil {
 		return nil, err
