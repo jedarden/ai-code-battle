@@ -289,6 +289,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		FROM bots
 		WHERE status != 'retired'
 		ORDER BY rating_mu DESC
+		LIMIT 10000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -467,6 +468,7 @@ func fetchSeries(ctx context.Context, db *sql.DB) ([]SeriesData, error) {
 		JOIN bots ba ON s.bot_a_id = ba.bot_id
 		JOIN bots bb ON s.bot_b_id = bb.bot_id
 		ORDER BY s.created_at DESC
+		LIMIT 5000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -1171,12 +1173,13 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 }
 
 // fetchLineage queries the evolver database for the full lineage tree.
-// Returns all programs with their parent relationships.
+// Returns up to 50000 most recent programs with their parent relationships.
 func fetchLineage(ctx context.Context, db *sql.DB) ([]LineageNode, error) {
 	query := `
 		SELECT id, parent_ids, generation, island, fitness, promoted, language, created_at
 		FROM programs
 		ORDER BY generation ASC, id ASC
+		LIMIT 50000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
