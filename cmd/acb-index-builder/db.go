@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -507,6 +508,7 @@ func fetchSeries(ctx context.Context, db *sql.DB) ([]SeriesData, error) {
 	defer rows.Close()
 
 	var series []SeriesData
+	var seriesIDs []int64
 	for rows.Next() {
 		var s SeriesData
 		var winnerID sql.NullString
@@ -526,14 +528,76 @@ func fetchSeries(ctx context.Context, db *sql.DB) ([]SeriesData, error) {
 			s.WinnerID = winnerID.String
 		}
 		series = append(series, s)
+		seriesIDs = append(seriesIDs, s.ID)
 	}
 
-	for i := range series {
-		games, err := fetchSeriesGames(ctx, db, series[i].ID)
-		if err != nil {
-			return nil, err
+	if len(series) == 0 {
+		return series, nil
+	}
+
+	// Fetch all games for all series in a single batch query to avoid N+1 problem
+	// that causes OOMKill (1000 separate queries → 1 batch query)
+	gamesMap := make(map[int64][]SeriesGameData)
+	if len(seriesIDs) > 0 {
+		placeholders := make([]string, len(seriesIDs))
+		args := make([]interface{}, len(seriesIDs))
+		for i, id := range seriesIDs {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+			args[i] = id
 		}
-		series[i].Games = games
+		query := fmt.Sprintf(`
+			SELECT sg.series_id, sg.match_id, sg.game_num, sg.winner_id,
+			       COALESCE(m.turn_count, 0), m.completed_at,
+			       CASE WHEN sg.winner_id IS NOT NULL THEN
+			           (SELECT mp.player_slot FROM match_participants mp
+			            WHERE mp.match_id = sg.match_id AND mp.bot_id = sg.winner_id)
+			       END
+			FROM series_games sg
+			LEFT JOIN matches m ON sg.match_id = m.match_id
+			WHERE sg.series_id IN (%s)
+			ORDER BY sg.series_id, sg.game_num
+			LIMIT 10000
+		`, strings.Join(placeholders, ", "))
+
+		gamesRows, err := db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, fmt.Errorf("query series games: %w", err)
+		}
+		defer gamesRows.Close()
+
+		for gamesRows.Next() {
+			var g SeriesGameData
+			var seriesID int64
+			var winnerID sql.NullString
+			var winnerSlot sql.NullInt64
+			var turns sql.NullInt64
+			var completedAt sql.NullTime
+
+			err := gamesRows.Scan(&seriesID, &g.MatchID, &g.GameNum, &winnerID, &turns, &completedAt, &winnerSlot)
+			if err != nil {
+				return nil, fmt.Errorf("scan series game: %w", err)
+			}
+
+			if winnerID.Valid {
+				g.WinnerID = winnerID.String
+			}
+			if winnerSlot.Valid {
+				slot := int(winnerSlot.Int64)
+				g.WinnerSlot = &slot
+			}
+			if turns.Valid && turns.Int64 > 0 {
+				g.Turns = int(turns.Int64)
+			}
+			if completedAt.Valid {
+				g.CompletedAt = &completedAt.Time
+			}
+			gamesMap[seriesID] = append(gamesMap[seriesID], g)
+		}
+	}
+
+	// Assign games to each series
+	for i := range series {
+		series[i].Games = gamesMap[series[i].ID]
 	}
 
 	return series, nil
@@ -675,7 +739,7 @@ func fetchSeasonSnapshots(ctx context.Context, db *sql.DB, seasonID int64) ([]Se
 		JOIN bots b ON ss.bot_id = b.bot_id
 		WHERE ss.season_id = $1
 		ORDER BY ss.rank
-		LIMIT 10000
+		LIMIT 500
 	`, seasonID)
 	if err != nil {
 		return nil, err
@@ -710,7 +774,7 @@ func fetchChampionshipBracket(ctx context.Context, db *sql.DB, seasonID int64) (
 		        WHEN 'final' THEN 2
 		    END,
 		    s.bracket_position
-		LIMIT 500
+		LIMIT 64
 	`, seasonID)
 	if err != nil {
 		return nil, err
@@ -718,6 +782,7 @@ func fetchChampionshipBracket(ctx context.Context, db *sql.DB, seasonID int64) (
 	defer rows.Close()
 
 	var result []ChampionshipSeries
+	var seriesIDs []int64
 	for rows.Next() {
 		var cs ChampionshipSeries
 		var winnerID sql.NullString
@@ -730,14 +795,79 @@ func fetchChampionshipBracket(ctx context.Context, db *sql.DB, seasonID int64) (
 			cs.WinnerID = winnerID.String
 		}
 		result = append(result, cs)
+		seriesIDs = append(seriesIDs, cs.ID)
 	}
 
-	// Fetch games for each series
-	for i := range result {
-		games, err := fetchSeriesGames(ctx, db, result[i].ID)
-		if err == nil {
-			result[i].Games = games
+	if len(result) == 0 {
+		return result, nil
+	}
+
+	// Fetch all games for all series in a single query to avoid N+1 query problem
+	// that causes OOMKill (500 separate queries → 1 batch query)
+	gamesMap := make(map[int64][]SeriesGameData)
+	if len(seriesIDs) > 0 {
+		// Build WHERE IN clause with up to 64 series IDs
+		placeholders := make([]string, len(seriesIDs))
+		args := make([]interface{}, len(seriesIDs))
+		for i, id := range seriesIDs {
+			placeholders[i] = fmt.Sprintf("$%d", i+2)
+			args[i] = id
 		}
+		query := fmt.Sprintf(`
+			SELECT sg.series_id, sg.match_id, sg.game_num, sg.winner_id,
+			       COALESCE(m.turn_count, 0), m.completed_at,
+			       CASE WHEN sg.winner_id IS NOT NULL THEN
+			           (SELECT mp.player_slot FROM match_participants mp
+			            WHERE mp.match_id = sg.match_id AND mp.bot_id = sg.winner_id)
+			       END
+			FROM series_games sg
+			LEFT JOIN matches m ON sg.match_id = m.match_id
+			WHERE sg.series_id = $1
+			   OR sg.series_id IN (%s)
+			ORDER BY sg.series_id, sg.game_num
+			LIMIT 500
+		`, strings.Join(placeholders, ", "))
+
+		fullArgs := append([]interface{}{seasonID}, args...)
+		gamesRows, err := db.QueryContext(ctx, query, fullArgs...)
+		if err != nil {
+			return nil, fmt.Errorf("query championship games: %w", err)
+		}
+		defer gamesRows.Close()
+
+		for gamesRows.Next() {
+			var g SeriesGameData
+			var seriesID int64
+			var winnerID sql.NullString
+			var winnerSlot sql.NullInt64
+			var turns sql.NullInt64
+			var completedAt sql.NullTime
+
+			err := gamesRows.Scan(&seriesID, &g.MatchID, &g.GameNum, &winnerID, &turns, &completedAt, &winnerSlot)
+			if err != nil {
+				return nil, fmt.Errorf("scan championship game: %w", err)
+			}
+
+			if winnerID.Valid {
+				g.WinnerID = winnerID.String
+			}
+			if winnerSlot.Valid {
+				slot := int(winnerSlot.Int64)
+				g.WinnerSlot = &slot
+			}
+			if turns.Valid && turns.Int64 > 0 {
+				g.Turns = int(turns.Int64)
+			}
+			if completedAt.Valid {
+				g.CompletedAt = &completedAt.Time
+			}
+			gamesMap[seriesID] = append(gamesMap[seriesID], g)
+		}
+	}
+
+	// Assign games to each series
+	for i := range result {
+		result[i].Games = gamesMap[result[i].ID]
 	}
 
 	return result, nil
@@ -1076,8 +1206,8 @@ type EvolutionMeta struct {
 	TotalPromoted     int                `json:"total_promoted"`     // all-time promoted count
 	PromotionRate     float64            `json:"promotion_rate"`     // promoted/total
 	UpdatedAt         string             `json:"updated_at"`
-	MatchesToday      int                `json:"matches_today"`      // plan §16.18: matches completed today
-	ActiveBots        int                `json:"active_bots"`        // plan §16.18: active bot count
+	MatchesToday      int                `json:"matches_today"` // plan §16.18: matches completed today
+	ActiveBots        int                `json:"active_bots"`   // plan §16.18: active bot count
 }
 
 // EvolvedBotRating represents an evolved bot's rating info
@@ -1218,7 +1348,7 @@ func fetchLineage(ctx context.Context, db *sql.DB) ([]LineageNode, error) {
 		SELECT id, parent_ids, generation, island, fitness, promoted, language, created_at
 		FROM programs
 		ORDER BY generation ASC, id ASC
-		LIMIT 10000
+		LIMIT 1000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
