@@ -1111,7 +1111,7 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 	// Fetch island populations
 	meta.IslandPopulations = make(map[string]int)
 	islandRows, err := db.QueryContext(ctx, `
-		SELECT island, COUNT(*) FROM programs GROUP BY island
+		SELECT island, COUNT(*) FROM programs GROUP BY island LIMIT 100
 	`)
 	if err == nil {
 		for islandRows.Next() {
@@ -1182,6 +1182,7 @@ func fetchLineage(ctx context.Context, db *sql.DB) ([]LineageNode, error) {
 		SELECT id, parent_ids, generation, island, fitness, promoted, language, created_at
 		FROM programs
 		ORDER BY generation ASC, id ASC
+		LIMIT 10000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
