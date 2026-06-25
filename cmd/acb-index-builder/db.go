@@ -346,6 +346,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		JOIN matches m ON mp.match_id = m.match_id
 		WHERE m.status = 'completed'
 		GROUP BY mp.bot_id
+		LIMIT 20000
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("query bot match stats: %w", err)
