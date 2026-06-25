@@ -568,6 +568,7 @@ func fetchSeasons(ctx context.Context, db *sql.DB) ([]SeasonData, error) {
 		FROM seasons s
 		LEFT JOIN bots b ON s.champion_id = b.bot_id
 		ORDER BY s.starts_at DESC
+		LIMIT 100
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -644,6 +645,7 @@ func fetchSeasonSnapshots(ctx context.Context, db *sql.DB, seasonID int64) ([]Se
 		JOIN bots b ON ss.bot_id = b.bot_id
 		WHERE ss.season_id = $1
 		ORDER BY ss.rank
+		LIMIT 1000
 	`, seasonID)
 	if err != nil {
 		return nil, err
@@ -755,6 +757,7 @@ func fetchPredictorStats(ctx context.Context, db *sql.DB) ([]PredictorStats, err
 		SELECT predictor_id, correct, incorrect, streak, best_streak
 		FROM predictor_stats
 		ORDER BY (correct::float / NULLIF(correct + incorrect, 0)) DESC NULLS LAST
+		LIMIT 100
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -788,6 +791,7 @@ func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 		) v ON m.map_id = v.map_id
 		WHERE m.status IN ('active', 'probation', 'classic')
 		ORDER BY m.engagement DESC
+		LIMIT 500
 	`
 
 	rows, err := db.QueryContext(ctx, query)
