@@ -522,6 +522,7 @@ func fetchSeriesGames(ctx context.Context, db *sql.DB, seriesID int64) ([]Series
 		LEFT JOIN matches m ON sg.match_id = m.match_id
 		WHERE sg.series_id = $1
 		ORDER BY sg.game_num
+		LIMIT 100
 	`, seriesID)
 	if err != nil {
 		return nil, err
