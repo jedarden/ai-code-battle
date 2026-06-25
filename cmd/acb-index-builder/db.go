@@ -436,7 +436,7 @@ func fetchRatingHistory(ctx context.Context, db *sql.DB) ([]RatingHistoryEntry, 
 		SELECT bot_id, match_id, rating, recorded_at
 		FROM rating_history
 		ORDER BY recorded_at DESC
-		LIMIT 5000
+		LIMIT 10000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -645,7 +645,6 @@ func fetchSeasonSnapshots(ctx context.Context, db *sql.DB, seasonID int64) ([]Se
 		JOIN bots b ON ss.bot_id = b.bot_id
 		WHERE ss.season_id = $1
 		ORDER BY ss.rank
-		LIMIT 1000
 	`, seasonID)
 	if err != nil {
 		return nil, err
@@ -680,7 +679,6 @@ func fetchChampionshipBracket(ctx context.Context, db *sql.DB, seasonID int64) (
 		        WHEN 'final' THEN 2
 		    END,
 		    s.bracket_position
-		LIMIT 1000
 	`, seasonID)
 	if err != nil {
 		return nil, err
@@ -755,11 +753,11 @@ func fetchPredictions(ctx context.Context, db *sql.DB) ([]PredictionData, error)
 
 func fetchPredictorStats(ctx context.Context, db *sql.DB) ([]PredictorStats, error) {
 	query := `
-		SELECT predictor_id, correct, incorrect, streak, best_streak
-		FROM predictor_stats
-		ORDER BY (correct::float / NULLIF(correct + incorrect, 0)) DESC NULLS LAST
-		LIMIT 100
-	`
+			SELECT predictor_id, correct, incorrect, streak, best_streak
+			FROM predictor_stats
+			ORDER BY (correct::float / NULLIF(correct + incorrect, 0)) DESC NULLS LAST
+			LIMIT 1000
+		`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -781,19 +779,19 @@ func fetchPredictorStats(ctx context.Context, db *sql.DB) ([]PredictorStats, err
 
 func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 	query := `
-		SELECT m.map_id, m.player_count, m.status, m.engagement, m.wall_density,
-		       m.energy_count, m.grid_width, m.grid_height, m.created_at, m.map_json,
-		       COALESCE(v.vote_sum, 0) as net_votes
-		FROM maps m
-		LEFT JOIN (
-			SELECT map_id, SUM(vote)::int as vote_sum
-			FROM map_votes
-			GROUP BY map_id
-		) v ON m.map_id = v.map_id
-		WHERE m.status IN ('active', 'probation', 'classic')
-		ORDER BY m.engagement DESC
-		LIMIT 500
-	`
+			SELECT m.map_id, m.player_count, m.status, m.engagement, m.wall_density,
+			       m.energy_count, m.grid_width, m.grid_height, m.created_at, m.map_json,
+			       COALESCE(v.vote_sum, 0) as net_votes
+			FROM maps m
+			LEFT JOIN (
+				SELECT map_id, SUM(vote)::int as vote_sum
+				FROM map_votes
+				GROUP BY map_id
+			) v ON m.map_id = v.map_id
+			WHERE m.status IN ('active', 'probation', 'classic')
+			ORDER BY m.engagement DESC
+			LIMIT 1000
+		`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -922,7 +920,6 @@ func fetchOpenPredictions(ctx context.Context, db *sql.DB) ([]OpenPredictionMatc
 		JOIN match_participants mp2 ON m.match_id = mp2.match_id AND mp2.player_slot = 1
 		WHERE m.status = 'completed'
 		GROUP BY mp1.bot_id, mp2.bot_id
-		LIMIT 10000
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("query pair frequency: %w", err)
@@ -1004,7 +1001,7 @@ func fetchFeedback(ctx context.Context, db *sql.DB) ([]FeedbackEntry, error) {
 		SELECT feedback_id, match_id, turn, type, body, author, upvotes, created_at
 		FROM replay_feedback
 		ORDER BY upvotes DESC, created_at DESC
-		LIMIT 1000
+		LIMIT 5000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -1114,7 +1111,7 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 	// Fetch island populations
 	meta.IslandPopulations = make(map[string]int)
 	islandRows, err := db.QueryContext(ctx, `
-		SELECT island, COUNT(*) FROM programs GROUP BY island LIMIT 100
+		SELECT island, COUNT(*) FROM programs GROUP BY island
 	`)
 	if err == nil {
 		for islandRows.Next() {
@@ -1179,13 +1176,12 @@ func fetchEvolutionMeta(ctx context.Context, db *sql.DB) (*EvolutionMeta, error)
 }
 
 // fetchLineage queries the evolver database for the full lineage tree.
-// Returns up to 10000 most recent programs with their parent relationships.
+// Returns all programs with their parent relationships.
 func fetchLineage(ctx context.Context, db *sql.DB) ([]LineageNode, error) {
 	query := `
 		SELECT id, parent_ids, generation, island, fitness, promoted, language, created_at
 		FROM programs
 		ORDER BY generation ASC, id ASC
-		LIMIT 10000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
