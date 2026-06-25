@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -160,7 +161,16 @@ func uploadMetaJSONToR2(ctx context.Context, cfg *Config, outputDir string, data
 }
 
 // runBuildCycle executes one full index build cycle
-func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) error {
+func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) (resultErr error) {
+	// Recover from panics and log via slog before re-panicking
+	// This prevents silent crashes where panic output (stderr) is lost
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Build cycle panicked", "panic", fmt.Sprintf("%v", r), "stack", string(debug.Stack()))
+			resultErr = fmt.Errorf("panic: %v", r)
+		}
+	}()
+
 	// Create data directories
 	dirs := []string{
 		cfg.OutputDir + "/data",

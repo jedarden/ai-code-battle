@@ -279,6 +279,12 @@ func generateBotProfiles(data *IndexData, outputDir string, cfg *Config) error {
 		historyMap[h.BotID] = append(historyMap[h.BotID], h)
 	}
 
+	// botID -> bot name for O(1) lookup (eliminates O(n²) participant name lookup)
+	botNameMap := make(map[string]string, len(data.Bots))
+	for _, bot := range data.Bots {
+		botNameMap[bot.ID] = bot.Name
+	}
+
 	// botID -> []MatchSummary for recent matches (O(n) build + O(1) lookup)
 	// We store up to 20 matches per bot, pre-computed to avoid per-bot match iteration
 	matchMap := make(map[string][]MatchSummary, len(data.Bots))
@@ -289,7 +295,7 @@ func generateBotProfiles(data *IndexData, outputDir string, cfg *Config) error {
 			if len(matchMap[p.BotID]) >= 20 {
 				continue
 			}
-			summary := matchToSummary(m, data, cfg)
+			summary := matchToSummary(m, data, cfg, botNameMap)
 			matchMap[p.BotID] = append(matchMap[p.BotID], summary)
 		}
 	}
@@ -344,7 +350,7 @@ func generateBotProfiles(data *IndexData, outputDir string, cfg *Config) error {
 func generateMatchIndex(data *IndexData, outputDir string, botNameMap map[string]string, cfg *Config) error {
 	summaries := make([]MatchSummary, 0, len(data.Matches))
 	for _, m := range data.Matches {
-		summaries = append(summaries, matchToSummary(m, data, cfg))
+		summaries = append(summaries, matchToSummary(m, data, cfg, botNameMap))
 	}
 
 	// Sort matches by combat_turns descending so the most combat-heavy
@@ -361,14 +367,19 @@ func generateMatchIndex(data *IndexData, outputDir string, botNameMap map[string
 	return writeJSON(filepath.Join(outputDir, "data", "matches", "index.json"), index)
 }
 
-func matchToSummary(m MatchData, data *IndexData, cfg *Config) MatchSummary {
+func matchToSummary(m MatchData, data *IndexData, cfg *Config, botNameMap ...map[string]string) MatchSummary {
 	participants := make([]MatchParticipantSummary, 0, len(m.Participants))
 	for _, p := range m.Participants {
 		name := "Unknown"
-		for _, bot := range data.Bots {
-			if bot.ID == p.BotID {
-				name = bot.Name
-				break
+		// Use botNameMap if provided for O(1) lookup, otherwise fall back to O(n) scan
+		if len(botNameMap) > 0 {
+			name = botNameMap[0][p.BotID]
+		} else {
+			for _, bot := range data.Bots {
+				if bot.ID == p.BotID {
+					name = bot.Name
+					break
+				}
 			}
 		}
 		participants = append(participants, MatchParticipantSummary{
@@ -987,16 +998,14 @@ func formatMatchTitle(m MatchData, data *IndexData) string {
 	return fmt.Sprintf("%s (%d players)", m.ID[:min(8, len(m.ID))], len(names))
 }
 
-func buildPlaylistMatch(m MatchData, order int, data *IndexData, curationTag string) PlaylistMatch {
+func buildPlaylistMatch(m MatchData, order int, data *IndexData, curationTag string, botNameMap map[string]string) PlaylistMatch {
 	participants := make([]MatchParticipantSummary, 0, len(m.Participants))
 	scoreParts := make([]string, 0, len(m.Participants))
 	for _, p := range m.Participants {
 		name := "Unknown"
-		for _, bot := range data.Bots {
-			if bot.ID == p.BotID {
-				name = bot.Name
-				break
-			}
+		// Use botNameMap for O(1) lookup
+		if n, ok := botNameMap[p.BotID]; ok {
+			name = n
 		}
 		participants = append(participants, MatchParticipantSummary{
 			BotID: p.BotID,

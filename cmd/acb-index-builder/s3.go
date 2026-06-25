@@ -185,3 +185,19 @@ func getS3ContentType(filename string) string {
 		return "application/octet-stream"
 	}
 }
+
+// getR2Client creates an R2 client from config
+func getR2Client(cfg *Config) (*S3Client, error) {
+	if cfg.R2Endpoint == "" || cfg.R2AccessKey == "" || cfg.R2SecretKey == "" || cfg.R2BucketName == "" {
+		return nil, fmt.Errorf("R2 config incomplete")
+	}
+	return NewS3Client(cfg.R2Endpoint, cfg.R2AccessKey, cfg.R2SecretKey, cfg.R2BucketName)
+}
+
+// getB2Client creates a B2 client from config
+func getB2Client(cfg *Config) (*S3Client, error) {
+	if cfg.B2Endpoint == "" || cfg.B2AccessKey == "" || cfg.B2SecretKey == "" || cfg.B2BucketName == "" {
+		return nil, fmt.Errorf("B2 config incomplete")
+	}
+	return NewS3Client(cfg.B2Endpoint, cfg.B2AccessKey, cfg.B2SecretKey, cfg.B2BucketName)
+}

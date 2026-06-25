@@ -289,7 +289,7 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		FROM bots
 		WHERE status != 'retired'
 		ORDER BY rating_mu DESC
-		LIMIT 10000
+		LIMIT 2000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -465,7 +465,7 @@ func fetchRatingHistory(ctx context.Context, db *sql.DB) ([]RatingHistoryEntry, 
 		SELECT bot_id, match_id, rating, recorded_at
 		FROM rating_history
 		ORDER BY recorded_at DESC
-		LIMIT 10000
+		LIMIT 5000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -1037,7 +1037,7 @@ func fetchFeedback(ctx context.Context, db *sql.DB) ([]FeedbackEntry, error) {
 		SELECT feedback_id, match_id, turn, type, body, author, upvotes, created_at
 		FROM replay_feedback
 		ORDER BY upvotes DESC, created_at DESC
-		LIMIT 5000
+		LIMIT 1000
 	`
 
 	rows, err := db.QueryContext(ctx, query)
