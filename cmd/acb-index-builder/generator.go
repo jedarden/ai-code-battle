@@ -272,37 +272,44 @@ func generateBotDirectory(data *IndexData, outputDir string) error {
 func generateBotProfiles(data *IndexData, outputDir string, cfg *Config) error {
 	botsDir := filepath.Join(outputDir, "data", "bots")
 
+	// Pre-build lookup maps to avoid O(n²) iteration
+	// botID -> []RatingHistoryEntry (O(n) build + O(1) lookup vs O(n²) linear scan)
+	historyMap := make(map[string][]RatingHistoryEntry, len(data.Bots))
+	for _, h := range data.RatingHistory {
+		historyMap[h.BotID] = append(historyMap[h.BotID], h)
+	}
+
+	// botID -> []MatchSummary for recent matches (O(n) build + O(1) lookup)
+	// We store up to 20 matches per bot, pre-computed to avoid per-bot match iteration
+	matchMap := make(map[string][]MatchSummary, len(data.Bots))
+	for _, m := range data.Matches {
+		// Track which bots participated in this match
+		for _, p := range m.Participants {
+			// Skip if this bot already has 20 recent matches
+			if len(matchMap[p.BotID]) >= 20 {
+				continue
+			}
+			summary := matchToSummary(m, data, cfg)
+			matchMap[p.BotID] = append(matchMap[p.BotID], summary)
+		}
+	}
+
 	for _, bot := range data.Bots {
 		winRate := 0.0
 		if bot.MatchesPlayed > 0 {
 			winRate = float64(bot.MatchesWon) / float64(bot.MatchesPlayed) * 100
 		}
 
-		// Get rating history for this bot
-		history := make([]RatingHistoryEntry, 0)
-		for _, h := range data.RatingHistory {
-			if h.BotID == bot.ID {
-				history = append(history, h)
-			}
+		// O(1) map lookup instead of O(n) linear scan
+		history := historyMap[bot.ID]
+		if len(history) == 0 {
+			history = []RatingHistoryEntry{} // Ensure non-nil slice for JSON
 		}
 
-		// Get recent matches for this bot (last 20)
-		recentMatches := make([]MatchSummary, 0)
-		for _, m := range data.Matches {
-			participated := false
-			for _, p := range m.Participants {
-				if p.BotID == bot.ID {
-					participated = true
-					break
-				}
-			}
-			if participated {
-				summary := matchToSummary(m, data, cfg)
-				recentMatches = append(recentMatches, summary)
-				if len(recentMatches) >= 20 {
-					break
-				}
-			}
+		// O(1) map lookup instead of O(n) linear scan through all matches
+		recentMatches := matchMap[bot.ID]
+		if len(recentMatches) == 0 {
+			recentMatches = []MatchSummary{} // Ensure non-nil slice for JSON
 		}
 
 		profile := BotProfile{
