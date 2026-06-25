@@ -356,6 +356,7 @@ func fetchRecentMatchIDs(ctx context.Context, db *sql.DB, since time.Duration) (
 		WHERE status = 'completed'
 		  AND completed_at > NOW() - $1::interval
 		ORDER BY completed_at DESC
+		LIMIT 5000
 	`
 
 	intervalStr := fmt.Sprintf("%.0f seconds", since.Seconds())
