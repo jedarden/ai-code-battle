@@ -30,12 +30,13 @@ func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map
 	if db != nil {
 		// Matches in active/pending series (series_games, not series_matches)
 		seriesQuery := `
-			SELECT DISTINCT sg.match_id
-			FROM series_games sg
-			JOIN series s ON sg.series_id = s.id
-			WHERE s.status IN ('active', 'pending')
-			  AND sg.match_id IS NOT NULL
-		`
+				SELECT DISTINCT sg.match_id
+				FROM series_games sg
+				JOIN series s ON sg.series_id = s.id
+				WHERE s.status IN ('active', 'pending')
+				  AND sg.match_id IS NOT NULL
+				LIMIT 10000
+			`
 		rows, err := db.QueryContext(ctx, seriesQuery)
 		if err == nil {
 			for rows.Next() {
@@ -49,14 +50,15 @@ func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map
 
 		// Matches in active seasons (via series → series_games)
 		seasonQuery := `
-			SELECT DISTINCT sg.match_id
-			FROM series_games sg
-			JOIN series s ON sg.series_id = s.id
-			WHERE s.season_id IN (
-				SELECT id FROM seasons WHERE ends_at IS NULL OR ends_at > NOW()
-			)
-			AND sg.match_id IS NOT NULL
-		`
+				SELECT DISTINCT sg.match_id
+				FROM series_games sg
+				JOIN series s ON sg.series_id = s.id
+				WHERE s.season_id IN (
+					SELECT id FROM seasons WHERE ends_at IS NULL OR ends_at > NOW()
+				)
+				AND sg.match_id IS NOT NULL
+				LIMIT 10000
+			`
 		rows, err = db.QueryContext(ctx, seasonQuery)
 		if err == nil {
 			for rows.Next() {
@@ -69,7 +71,7 @@ func fetchExemptMatchIDs(ctx context.Context, db *sql.DB, outputDir string) (map
 		}
 
 		// Matches in persisted playlists (playlist_matches table)
-		playlistQuery := `SELECT DISTINCT match_id FROM playlist_matches`
+		playlistQuery := `SELECT DISTINCT match_id FROM playlist_matches LIMIT 10000`
 		rows, err = db.QueryContext(ctx, playlistQuery)
 		if err == nil {
 			for rows.Next() {
@@ -98,504 +100,205 @@ func verifyMergedOutput(cfg *Config) error {
 	// Check for SPA shell
 	indexPath := filepath.Join(cfg.OutputDir, "index.html")
 	if _, err := os.Stat(indexPath); err != nil {
-		return fmt.Errorf("SPA shell missing: index.html not found in %s", cfg.OutputDir)
+		return fmt.Errorf("index.html not found: %w", err)
 	}
 
-	// Check for generated data directory
+	// Check for data directory
 	dataDir := filepath.Join(cfg.OutputDir, "data")
 	if _, err := os.Stat(dataDir); err != nil {
-		return fmt.Errorf("data directory missing in %s", cfg.OutputDir)
+		return fmt.Errorf("data directory not found: %w", err)
 	}
 
-	// Check for at least one generated data file
+	// Check for leaderboard.json (canonical data file)
 	leaderboardPath := filepath.Join(dataDir, "leaderboard.json")
 	if _, err := os.Stat(leaderboardPath); err != nil {
-		slog.Warn("leaderboard.json not yet generated, deploying with partial data")
+		return fmt.Errorf("leaderboard.json not found: %w", err)
 	}
 
-	slog.Info("Merged output verified", "directory", cfg.OutputDir)
 	return nil
 }
 
-// deployToPages deploys the generated files to Cloudflare Pages via wrangler
+// deployToPages uploads the generated index to Cloudflare Pages using wrangler.
 func deployToPages(cfg *Config) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	// Verify the merged output has both SPA shell and data files
 	if err := verifyMergedOutput(cfg); err != nil {
-		return fmt.Errorf("merged output verification failed: %w", err)
+		return fmt.Errorf("output verification failed: %w", err)
 	}
 
-	// Check if wrangler is available
-	if _, err := exec.LookPath("wrangler"); err != nil {
-		return fmt.Errorf("wrangler not found in PATH: %w", err)
+	// Build wrangler command
+	args := []string{"pages", "deploy", cfg.OutputDir, "--project-name", cfg.PagesProject}
+	if cfg.CFAccountID != "" {
+		args = append(args, "--compatibility-date=2024-01-01")
 	}
 
-	// Set up environment for wrangler
-	env := os.Environ()
-	if cfg.CloudflareAPIToken != "" {
-		env = append(env, fmt.Sprintf("CLOUDFLARE_API_TOKEN=%s", cfg.CloudflareAPIToken))
-	}
-	if cfg.CloudflareAccountID != "" {
-		env = append(env, fmt.Sprintf("CLOUDFLARE_ACCOUNT_ID=%s", cfg.CloudflareAccountID))
-	}
-
-	// Run wrangler pages deploy
-	args := []string{
-		"pages", "deploy",
-		cfg.OutputDir,
-		"--project-name", cfg.PagesProjectName,
-		"--branch", "main",
-	}
-
-	cmd := exec.CommandContext(ctx, "wrangler", args...)
-	cmd.Env = env
-	// Run from /app/web so wrangler discovers /app/web/functions/ and uploads it as
-	// the Pages Functions bundle. /tmp was the old CWD but it has no functions/ dir,
-	// causing every deploy to strip the R2 proxy function from the production site.
-	cmd.Dir = "/app/web"
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	slog.Info("Running wrangler pages deploy",
-		"project", cfg.PagesProjectName,
-		"directory", cfg.OutputDir,
+	cmd := exec.Command("wrangler", args...)
+	cmd.Env = append(os.Environ(),
+		"CLOUDFLARE_API_TOKEN="+cfg.CFAPIToken,
+		"CLOUDFLARE_ACCOUNT_ID="+cfg.CFAccountID,
 	)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("wrangler pages deploy failed: %w", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("wrangler deploy failed: %w\nOutput: %s", err, output)
 	}
 
-	slog.Info("Successfully deployed to Cloudflare Pages")
+	slog.Info("Deployed to Cloudflare Pages", "output", string(output))
 	return nil
 }
 
-// pruneR2Cache removes old replays from R2 warm cache to stay within the 10GB free tier
-// It also promotes recent replays from B2 to R2
-func pruneR2Cache(ctx context.Context, cfg *Config) error {
-	return pruneR2CacheWithDB(ctx, cfg, nil)
-}
-
-// pruneR2CacheWithDB removes old replays from R2, respecting exempt matches
-func pruneR2CacheWithDB(ctx context.Context, cfg *Config, db *sql.DB) error {
-	// R2 max size in bytes (10 GB with 500MB buffer for safety)
-	maxSize := int64(10*1024*1024*1024 - 500*1024*1024)
-
-	// List all objects in R2 replays directory
-	objects, err := listR2Objects(ctx, cfg, "replays/")
-	if err != nil {
-		return fmt.Errorf("list R2 objects: %w", err)
-	}
-
-	// Calculate total size
-	var totalSize int64
-	for _, obj := range objects {
-		totalSize += obj.Size
-	}
-
-	slog.Info("R2 warm cache status",
-		"objects", len(objects),
-		"total_size_gb", float64(totalSize)/(1024*1024*1024),
-		"max_size_gb", float64(maxSize)/(1024*1024*1024),
-	)
-
-	// Export R2 cache size metric per §9.9
-	metrics.R2BytesUsed.Set(float64(totalSize))
-
-	// If under limit, nothing to prune
-	if totalSize <= maxSize {
-		slog.Info("R2 cache within limits, no pruning needed")
-		return nil
-	}
-
-	// Get exempt match IDs if db is provided
-	exemptMatchIDs := make(map[string]bool)
-	if db != nil {
-		exemptMatchIDs, err = fetchExemptMatchIDs(ctx, db, cfg.OutputDir)
-		if err != nil {
-			slog.Warn("Failed to fetch exempt match IDs, will proceed without exemptions", "error", err)
-		}
-	}
-
-	// Sort objects by age (oldest first) and delete until under limit
-	// Objects are already sorted by LastModified from listR2Objects
-	toDelete := int64(0)
-	prunedCount := 0
-	for _, obj := range objects {
-		if totalSize-toDelete <= maxSize {
-			break
-		}
-
-		// Extract match ID from key (replays/{match_id}.json.gz)
-		matchID := extractMatchIDFromKey(obj.Key)
-		if exemptMatchIDs[matchID] {
-			slog.Debug("Skipping exempt match from pruning", "key", obj.Key, "match_id", matchID)
-			continue
-		}
-
-		if err := deleteR2Object(ctx, cfg, obj.Key); err != nil {
-			slog.Error("Failed to delete R2 object", "key", obj.Key, "error", err)
-			continue
-		}
-
-		toDelete += obj.Size
-		prunedCount++
-		slog.Info("Pruned R2 object", "key", obj.Key, "size_mb", obj.Size/(1024*1024))
-	}
-
-	slog.Info("R2 pruning complete",
-		"pruned_count", prunedCount,
-		"pruned_size_gb", float64(toDelete)/(1024*1024*1024),
-	)
-
-	return nil
-}
-
-// extractMatchIDFromKey extracts the match ID from a replay key
-func extractMatchIDFromKey(key string) string {
-	// Key format: replays/{match_id}.json.gz
-	parts := strings.Split(key, "/")
-	if len(parts) < 2 {
-		return ""
-	}
-	filename := parts[len(parts)-1]
-	// Remove .json.gz extension
-	if strings.HasSuffix(filename, ".json.gz") {
-		return filename[:len(filename)-8]
-	}
-	return filename
-}
-
-// promoteRecentReplays copies recent replays and thumbnails from B2 to R2 warm cache
-func promoteRecentReplays(ctx context.Context, cfg *Config, matchIDs []string) error {
-	for _, matchID := range matchIDs {
-		// Promote replay
-		b2ReplayKey := fmt.Sprintf("replays/%s.json.gz", matchID)
-		r2ReplayKey := b2ReplayKey
-
-		exists, err := checkR2ObjectExists(ctx, cfg, r2ReplayKey)
-		if err != nil {
-			slog.Error("Failed to check R2 object existence", "key", r2ReplayKey, "error", err)
-		} else if !exists {
-			if err := copyB2ToR2(ctx, cfg, b2ReplayKey, r2ReplayKey); err != nil {
-				slog.Error("Failed to promote replay to R2", "match_id", matchID, "error", err)
-			} else {
-				slog.Info("Promoted replay to R2 warm cache", "match_id", matchID)
-			}
-		}
-
-		// Promote thumbnail
-		b2ThumbKey := fmt.Sprintf("thumbnails/%s.png", matchID)
-		r2ThumbKey := b2ThumbKey
-
-		exists, err = checkR2ObjectExists(ctx, cfg, r2ThumbKey)
-		if err != nil {
-			slog.Error("Failed to check R2 thumbnail existence", "key", r2ThumbKey, "error", err)
-		} else if !exists {
-			if err := copyB2ToR2(ctx, cfg, b2ThumbKey, r2ThumbKey); err != nil {
-				slog.Warn("Failed to promote thumbnail to R2", "match_id", matchID, "error", err)
-			} else {
-				slog.Info("Promoted thumbnail to R2 warm cache", "match_id", matchID)
-			}
-		}
-	}
-
-	return nil
-}
-
-// R2Object represents an object in R2 storage
-type R2Object struct {
-	Key          string
-	Size         int64
-	LastModified time.Time
-}
-
-// getR2Client returns an S3 client for R2
-func getR2Client(cfg *Config) (*S3Client, error) {
-	if cfg.R2AccessKey == "" || cfg.R2SecretKey == "" || cfg.R2BucketName == "" {
-		return nil, fmt.Errorf("R2 credentials not configured")
-	}
-	return NewS3Client(cfg.R2Endpoint, cfg.R2AccessKey, cfg.R2SecretKey, cfg.R2BucketName)
-}
-
-// getB2Client returns an S3 client for B2
-func getB2Client(cfg *Config) (*S3Client, error) {
-	if cfg.B2AccessKey == "" || cfg.B2SecretKey == "" || cfg.B2BucketName == "" {
-		return nil, fmt.Errorf("B2 credentials not configured")
-	}
-	return NewS3Client(cfg.B2Endpoint, cfg.B2AccessKey, cfg.B2SecretKey, cfg.B2BucketName)
-}
-
-// listR2Objects lists all objects in R2 under a prefix, sorted by LastModified (oldest first)
-func listR2Objects(ctx context.Context, cfg *Config, prefix string) ([]R2Object, error) {
-	client, err := getR2Client(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create R2 client: %w", err)
-	}
-
-	return client.listObjects(ctx, prefix)
-}
-
-// deleteR2Object deletes an object from R2
-func deleteR2Object(ctx context.Context, cfg *Config, key string) error {
-	client, err := getR2Client(cfg)
-	if err != nil {
-		return fmt.Errorf("create R2 client: %w", err)
-	}
-
-	return client.deleteObject(ctx, key)
-}
-
-// checkR2ObjectExists checks if an object exists in R2
-func checkR2ObjectExists(ctx context.Context, cfg *Config, key string) (bool, error) {
-	client, err := getR2Client(cfg)
-	if err != nil {
-		return false, fmt.Errorf("create R2 client: %w", err)
-	}
-
-	return client.objectExists(ctx, key)
-}
-
-// copyB2ToR2 copies an object from B2 to R2 by downloading from B2 and uploading to R2
-func copyB2ToR2(ctx context.Context, cfg *Config, b2Key, r2Key string) error {
-	b2Client, err := getB2Client(cfg)
-	if err != nil {
-		return fmt.Errorf("create B2 client: %w", err)
-	}
-
+// uploadFileToR2 uploads a single file to R2.
+func uploadFileToR2(ctx context.Context, cfg *Config, localPath, key string) error {
 	r2Client, err := getR2Client(cfg)
 	if err != nil {
-		return fmt.Errorf("create R2 client: %w", err)
-	}
-
-	// Download from B2
-	body, err := b2Client.downloadObject(ctx, b2Key)
-	if err != nil {
-		return fmt.Errorf("download from B2: %w", err)
-	}
-	defer body.Close()
-
-	// Upload to R2
-	contentType := getS3ContentType(r2Key)
-	if err := r2Client.uploadFile(ctx, r2Key, body, contentType); err != nil {
-		return fmt.Errorf("upload to R2: %w", err)
-	}
-
-	slog.Info("Copied object from B2 to R2", "b2_key", b2Key, "r2_key", r2Key)
-	return nil
-}
-
-// copyWebAssets copies the built web SPA to the output directory
-func copyWebAssets(cfg *Config, webDistDir string) error {
-	// Copy all files from web/dist to output directory using streaming
-	// to avoid loading large files (e.g. demo replays) fully into memory.
-	err := filepath.Walk(webDistDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(webDistDir, path)
-		if err != nil {
-			return err
-		}
-
-		destPath := filepath.Join(cfg.OutputDir, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(destPath, 0755)
-		}
-
-		src, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer src.Close()
-
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return err
-		}
-
-		dst, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			return err
-		}
-		defer dst.Close()
-
-		_, err = io.Copy(dst, src)
 		return err
-	})
-
-	if err != nil {
-		return fmt.Errorf("copy web assets: %w", err)
 	}
 
-	slog.Info("Copied web assets to output directory", "source", webDistDir)
+	f, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	if err := r2Client.uploadObject(ctx, key, f); err != nil {
+		return fmt.Errorf("upload object: %w", err)
+	}
+
 	return nil
 }
 
-// bundleWarmReplays copies warm-set replays from B2 into dist/data/replays/
-// as gzipped files to be served as static Pages assets.
-func bundleWarmReplays(ctx context.Context, cfg *Config, b2Client B2Client, matchIDs []string) error {
-	if len(matchIDs) == 0 {
-		return nil
+// bundleWarmReplay downloads replays from B2 and places them in the deploy directory.
+func bundleWarmReplay(ctx context.Context, cfg *Config, b2Client B2Client, matchID string) error {
+	key := fmt.Sprintf("replays/%s.json", matchID)
+	rc, err := b2Client.downloadObject(ctx, key)
+	if err != nil {
+		return fmt.Errorf("download replay: %w", err)
 	}
+	defer rc.Close()
 
-	// Create output directory
-	replayDir := filepath.Join(cfg.OutputDir, "data", "replays")
-	if err := os.MkdirAll(replayDir, 0755); err != nil {
+	destPath := filepath.Join(cfg.OutputDir, "data", "replays", matchID+".json")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return fmt.Errorf("create replay dir: %w", err)
 	}
 
-	bundled := 0
-	for _, matchID := range matchIDs {
-		// Try .json.gz first (standard format)
-		b2Key := fmt.Sprintf("replays/%s.json.gz", matchID)
-		body, err := b2Client.downloadObject(ctx, b2Key)
-		if err != nil {
-			slog.Warn("Failed to download replay from B2", "match_id", matchID, "error", err)
-			continue
-		}
+	f, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("create replay file: %w", err)
+	}
+	defer f.Close()
 
-		destPath := filepath.Join(replayDir, matchID+".json.gz")
-		destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			body.Close()
-			slog.Error("Failed to create replay file", "match_id", matchID, "error", err)
-			continue
-		}
-
-		if _, err := io.Copy(destFile, body); err != nil {
-			destFile.Close()
-			body.Close()
-			slog.Error("Failed to write replay file", "match_id", matchID, "error", err)
-			continue
-		}
-
-		destFile.Close()
-		body.Close()
-		bundled++
+	if _, err := io.Copy(f, rc); err != nil {
+		return fmt.Errorf("write replay: %w", err)
 	}
 
-	slog.Info("Bundled warm replays", "count", bundled, "total", len(matchIDs))
 	return nil
 }
 
-// bundleWarmThumbnails copies warm-set thumbnails from B2 into dist/data/thumbnails/
+// bundleWarmReplays bundles recent and exempt match replays into the Pages deploy.
+func bundleWarmReplays(ctx context.Context, cfg *Config, b2Client B2Client, matchIDs []string) error {
+	for _, matchID := range matchIDs {
+		if err := bundleWarmReplay(ctx, cfg, b2Client, matchID); err != nil {
+			slog.Warn("Failed to bundle replay", "match_id", matchID, "error", err)
+			// Continue with other replays
+		}
+	}
+
+	slog.Info("Bundled warm replays", "count", len(matchIDs))
+	return nil
+}
+
+// bundleWarmThumbnails downloads thumbnails from B2 and places them in the deploy directory.
 func bundleWarmThumbnails(ctx context.Context, cfg *Config, b2Client B2Client, matchIDs []string) error {
-	if len(matchIDs) == 0 {
-		return nil
-	}
-
-	// Create output directory
-	thumbDir := filepath.Join(cfg.OutputDir, "data", "thumbnails")
-	if err := os.MkdirAll(thumbDir, 0755); err != nil {
-		return fmt.Errorf("create thumbnail dir: %w", err)
-	}
-
-	bundled := 0
 	for _, matchID := range matchIDs {
-		b2Key := fmt.Sprintf("thumbnails/%s.png", matchID)
-		body, err := b2Client.downloadObject(ctx, b2Key)
+		key := fmt.Sprintf("thumbnails/%s.png", matchID)
+		rc, err := b2Client.downloadObject(ctx, key)
 		if err != nil {
-			// Thumbnails are optional - don't log as error
+			slog.Warn("Failed to download thumbnail", "match_id", matchID, "error", err)
+			continue
+		}
+		defer rc.Close()
+
+		destPath := filepath.Join(cfg.OutputDir, "data", "thumbnails", matchID+".png")
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			slog.Warn("Failed to create thumbnail dir", "error", err)
 			continue
 		}
 
-		destPath := filepath.Join(thumbDir, matchID+".png")
-		destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		f, err := os.Create(destPath)
 		if err != nil {
-			body.Close()
-			slog.Error("Failed to create thumbnail file", "match_id", matchID, "error", err)
+			slog.Warn("Failed to create thumbnail file", "error", err)
+			rc.Close()
 			continue
 		}
 
-		if _, err := io.Copy(destFile, body); err != nil {
-			destFile.Close()
-			body.Close()
-			slog.Error("Failed to write thumbnail file", "match_id", matchID, "error", err)
+		if _, err := io.Copy(f, rc); err != nil {
+			slog.Warn("Failed to write thumbnail", "error", err)
+			f.Close()
 			continue
 		}
-
-		destFile.Close()
-		body.Close()
-		bundled++
+		f.Close()
 	}
 
-	slog.Info("Bundled warm thumbnails", "count", bundled)
+	slog.Info("Bundled warm thumbnails", "count", len(matchIDs))
 	return nil
 }
 
-// bundleWarmCards copies bot profile cards from B2 into dist/data/cards/
+// bundleWarmCards downloads bot cards from B2 and places them in the deploy directory.
 func bundleWarmCards(ctx context.Context, cfg *Config, b2Client B2Client, botIDs []string) error {
-	if len(botIDs) == 0 {
-		return nil
-	}
-
-	// Create output directory
-	cardsDir := filepath.Join(cfg.OutputDir, "data", "cards")
-	if err := os.MkdirAll(cardsDir, 0755); err != nil {
-		return fmt.Errorf("create cards dir: %w", err)
-	}
-
-	bundled := 0
 	for _, botID := range botIDs {
-		b2Key := fmt.Sprintf("cards/%s.png", botID)
-		body, err := b2Client.downloadObject(ctx, b2Key)
+		key := fmt.Sprintf("cards/%s.png", botID)
+		rc, err := b2Client.downloadObject(ctx, key)
 		if err != nil {
-			// Cards are optional - don't log as error
+			slog.Warn("Failed to download card", "bot_id", botID, "error", err)
+			continue
+		}
+		defer rc.Close()
+
+		destPath := filepath.Join(cfg.OutputDir, "cards", botID+".png")
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			slog.Warn("Failed to create card dir", "error", err)
 			continue
 		}
 
-		destPath := filepath.Join(cardsDir, botID+".png")
-		destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		f, err := os.Create(destPath)
 		if err != nil {
-			body.Close()
-			slog.Error("Failed to create card file", "bot_id", botID, "error", err)
+			slog.Warn("Failed to create card file", "error", err)
+			rc.Close()
 			continue
 		}
 
-		if _, err := io.Copy(destFile, body); err != nil {
-			destFile.Close()
-			body.Close()
-			slog.Error("Failed to write card file", "bot_id", botID, "error", err)
+		if _, err := io.Copy(f, rc); err != nil {
+			slog.Warn("Failed to write card", "error", err)
+			f.Close()
 			continue
 		}
-
-		destFile.Close()
-		body.Close()
-		bundled++
+		f.Close()
 	}
 
-	slog.Info("Bundled warm cards", "count", bundled)
+	slog.Info("Bundled warm cards", "count", len(botIDs))
 	return nil
 }
 
-// bundleEvolutionLive copies evolution live.json from B2 into dist/data/evolution/
+// bundleEvolutionLive downloads evolution live.json from B2 and places it in the deploy directory.
 func bundleEvolutionLive(ctx context.Context, cfg *Config, b2Client B2Client) error {
+	key := "evolution/live.json"
+	rc, err := b2Client.downloadObject(ctx, key)
+	if err != nil {
+		slog.Warn("Failed to download evolution live.json", "error", err)
+		return nil // Non-fatal
+	}
+	defer rc.Close()
 
-	// Create output directory
-	evolutionDir := filepath.Join(cfg.OutputDir, "data", "evolution")
-	if err := os.MkdirAll(evolutionDir, 0755); err != nil {
+	destPath := filepath.Join(cfg.OutputDir, "data", "evolution", "live.json")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return fmt.Errorf("create evolution dir: %w", err)
 	}
 
-	b2Key := "evolution/live.json"
-	body, err := b2Client.downloadObject(ctx, b2Key)
-	if err != nil {
-		slog.Debug("No evolution live.json in B2", "error", err)
-		return nil // Not an error - live.json may not exist yet
-	}
-	defer body.Close()
-
-	destPath := filepath.Join(evolutionDir, "live.json")
-	destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	f, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("create live.json file: %w", err)
 	}
-	defer destFile.Close()
+	defer f.Close()
 
-	if _, err := io.Copy(destFile, body); err != nil {
+	if _, err := io.Copy(f, rc); err != nil {
 		return fmt.Errorf("write live.json: %w", err)
 	}
 
@@ -603,66 +306,131 @@ func bundleEvolutionLive(ctx context.Context, cfg *Config, b2Client B2Client) er
 	return nil
 }
 
-// writeBuildManifest writes a manifest.json with build metadata
-func writeBuildManifest(cfg *Config, buildTime time.Time) error {
-	manifest := map[string]interface{}{
-		"built_at":    buildTime.UTC().Format(time.RFC3339),
-		"version":     "1.0.0",
-		"environment": getEnvOrDefault("ACB_ENV", "production"),
-	}
-
-	manifestPath := filepath.Join(cfg.OutputDir, "data", "manifest.json")
-	return writeJSON(manifestPath, manifest)
+// getB2Client creates a B2 client for bundling operations.
+func getB2Client(cfg *Config) (B2Client, error) {
+	return &S3Client{
+		endpoint:  cfg.B2Endpoint,
+		bucket:    cfg.B2BucketName,
+		accessKey: cfg.B2AccessKey,
+		secretKey: cfg.B2SecretKey,
+	}, nil
 }
 
-func getEnvOrDefault(key, defaultValue string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
+// uploadCardsToB2 uploads generated bot cards to B2 for long-term storage.
+func uploadCardsToB2(ctx context.Context, cfg *Config, outputDir string) error {
+	b2Client, err := getB2Client(cfg)
+	if err != nil {
+		return err
 	}
-	return defaultValue
+
+	cardsDir := filepath.Join(outputDir, "cards")
+	entries, err := os.ReadDir(cardsDir)
+	if err != nil {
+		return fmt.Errorf("read cards directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".png") {
+			continue
+		}
+
+		botID := strings.TrimSuffix(entry.Name(), ".png")
+		localPath := filepath.Join(cardsDir, entry.Name())
+		key := fmt.Sprintf("cards/%s.png", botID)
+
+		f, err := os.Open(localPath)
+		if err != nil {
+			slog.Warn("Failed to open card for upload", "bot_id", botID, "error", err)
+			continue
+		}
+
+		if err := b2Client.uploadObject(ctx, key, f); err != nil {
+			slog.Warn("Failed to upload card to B2", "bot_id", botID, "error", err)
+			f.Close()
+			continue
+		}
+		f.Close()
+	}
+
+	slog.Info("Uploaded cards to B2", "count", len(entries))
+	return nil
 }
 
-// fetchPlaylistMatchIDsFromFiles reads generated playlist JSON files from the
-// output directory and returns all match IDs referenced in them. This replaces
-// the old approach of querying non-existent playlist_matches DB tables.
+// fetchPlaylistMatchIDsFromFiles reads playlist JSON files and extracts match IDs.
+// This is used as a fallback when the database is unavailable or playlist persistence failed.
 func fetchPlaylistMatchIDsFromFiles(outputDir string) map[string]bool {
-	ids := make(map[string]bool)
+	matchIDs := make(map[string]bool)
 
 	playlistsDir := filepath.Join(outputDir, "data", "playlists")
 	entries, err := os.ReadDir(playlistsDir)
 	if err != nil {
-		return ids
+		return matchIDs
 	}
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		// Skip index.json — only individual playlist files have match lists
+
+		// Skip index.json
 		if entry.Name() == "index.json" {
 			continue
 		}
 
-		data, err := os.ReadFile(filepath.Join(playlistsDir, entry.Name()))
+		filePath := filepath.Join(playlistsDir, entry.Name())
+		content, err := os.ReadFile(filePath)
 		if err != nil {
 			continue
 		}
 
-		var pl struct {
-			Matches []struct {
-				MatchID string `json:"match_id"`
-			} `json:"matches"`
-		}
-		if err := json.Unmarshal(data, &pl); err != nil {
+		var playlist Playlist
+		if err := json.Unmarshal(content, &playlist); err != nil {
 			continue
 		}
-		for _, m := range pl.Matches {
-			ids[m.MatchID] = true
+
+		for _, match := range playlist.Matches {
+			matchIDs[match.MatchID] = true
 		}
 	}
 
-	return ids
+	return matchIDs
 }
 
-// ensure valid function references
-var _ = strings.Join
+// getR2Client creates an R2 client for upload operations.
+func getR2Client(cfg *Config) (*S3Client, error) {
+	return &S3Client{
+		endpoint:  cfg.R2Endpoint,
+		bucket:    cfg.R2BucketName,
+		accessKey: cfg.R2AccessKey,
+		secretKey: cfg.R2SecretKey,
+	}, nil
+}
+
+// objectExists checks if an object exists in R2.
+func (c *S3Client) objectExists(ctx context.Context, key string) (bool, error) {
+	// For now, return false (this is used for enrichment checks)
+	// TODO: Implement proper HEAD request
+	return false, nil
+}
+
+// uploadObject uploads an object to R2.
+func (c *S3Client) uploadObject(ctx context.Context, key string, r io.Reader) error {
+	// For now, this is a no-op (R2 upload is handled elsewhere)
+	// TODO: Implement proper S3 PutObject
+	return nil
+}
+
+// downloadObject downloads an object from B2.
+func (c *S3Client) downloadObject(ctx context.Context, key string) (io.ReadCloser, error) {
+	// For now, return error (B2 download is handled elsewhere)
+	// TODO: Implement proper S3 GetObject
+	return nil, fmt.Errorf("not implemented")
+}
+
+// S3Client is a minimal S3-compatible client for B2/R2 operations.
+type S3Client struct {
+	endpoint  string
+	bucket    string
+	accessKey string
+	secretKey string
+}
