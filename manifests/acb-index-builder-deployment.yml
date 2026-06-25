@@ -39,7 +39,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: index-builder
-          image: ronaldraygun/acb-index-builder@sha256:a19c311f0166f2cb969d389a56dc7c9ed4a5c6913c6b4c9a817fb18de078c469
+          image: ronaldraygun/acb-index-builder@sha256:88db4dd226a548c8f6cb501e7b4e2c72d46fe032c2248b286f93585fb91818ee
           imagePullPolicy: Always
           env:
             - name: ACB_POSTGRES_HOST
