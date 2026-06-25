@@ -912,6 +912,8 @@ func fetchOpenPredictions(ctx context.Context, db *sql.DB) ([]OpenPredictionMatc
 	}
 
 	// Build pair frequency map for rivalry detection (count completed h2h matches)
+	// LIMIT to most common pairings to prevent OOMKill - we only need enough
+	// to detect rivalries (typically < 100 pairs have >= 3 matches)
 	pairFrequency := make(map[string]int)
 	freqRows, err := db.QueryContext(ctx, `
 		SELECT mp1.bot_id, mp2.bot_id, COUNT(*)
@@ -920,6 +922,8 @@ func fetchOpenPredictions(ctx context.Context, db *sql.DB) ([]OpenPredictionMatc
 		JOIN match_participants mp2 ON m.match_id = mp2.match_id AND mp2.player_slot = 1
 		WHERE m.status = 'completed'
 		GROUP BY mp1.bot_id, mp2.bot_id
+		ORDER BY COUNT(*) DESC
+		LIMIT 1000
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("query pair frequency: %w", err)
