@@ -334,13 +334,41 @@ func fetchBots(ctx context.Context, db *sql.DB) ([]BotData, error) {
 		bots = append(bots, b)
 	}
 
-	for i := range bots {
-		mp, mw, err := getBotMatchStats(ctx, db, bots[i].ID)
-		if err != nil {
-			return nil, err
+	// Fetch match stats for all bots in a single query to avoid O(n) query loop
+	// that would cause 10,000+ separate database calls (N+1 query problem)
+	// This fixes the CrashLoopBackOff issue caused by OOMKill during fetchBots
+	botMatchStats := make(map[string][2]int) // bot_id -> [matches_played, matches_won]
+	statsRows, err := db.QueryContext(ctx, `
+		SELECT mp.bot_id,
+		       COUNT(*) as matches_played,
+		       COUNT(*) FILTER (WHERE mp.player_slot = m.winner) as matches_won
+		FROM match_participants mp
+		JOIN matches m ON mp.match_id = m.match_id
+		WHERE m.status = 'completed'
+		GROUP BY mp.bot_id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query bot match stats: %w", err)
+	}
+	defer statsRows.Close()
+
+	for statsRows.Next() {
+		var botID string
+		var played, won int
+		if err := statsRows.Scan(&botID, &played, &won); err != nil {
+			return nil, fmt.Errorf("scan bot match stats: %w", err)
 		}
-		bots[i].MatchesPlayed = mp
-		bots[i].MatchesWon = mw
+		botMatchStats[botID] = [2]int{played, won}
+	}
+
+	// Apply the stats to each bot
+	for i := range bots {
+		stats, ok := botMatchStats[bots[i].ID]
+		if ok {
+			bots[i].MatchesPlayed = stats[0]
+			bots[i].MatchesWon = stats[1]
+		}
+		// If bot has no completed matches, stats remain at 0 (already initialized)
 	}
 
 	return bots, nil
