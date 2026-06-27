@@ -1,0 +1,4429 @@
+{
+  "format_version": "1.0",
+  "match_id": "m_gwf9bd5s",
+  "config": {
+    "rows": 77,
+    "cols": 77,
+    "max_turns": 616,
+    "vision_radius2": 49,
+    "attack_radius2": 12,
+    "spawn_cost": 3,
+    "energy_interval": 10,
+    "cores_per_player": 1,
+    "zone_enabled": true,
+    "zone_start_turn": 10,
+    "zone_shrink_interval": 1,
+    "zone_shrink_step": 1,
+    "zone_min_radius": 1,
+    "kill_score": 1
+  },
+  "start_time": "2026-06-27T16:47:06.232315644Z",
+  "end_time": "2026-06-27T16:47:06.9635575Z",
+  "result": {
+    "winner": 0,
+    "reason": "elimination",
+    "turns": 12,
+    "scores": [
+      12,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "energy": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "bots_alive": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "crashed": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "combat_deaths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "players": [
+    {
+      "id": 0,
+      "name": "gatherer"
+    },
+    {
+      "id": 1,
+      "name": "rusher"
+    },
+    {
+      "id": 2,
+      "name": "swarm"
+    },
+    {
+      "id": 3,
+      "name": "hunter"
+    },
+    {
+      "id": 4,
+      "name": "guardian"
+    },
+    {
+      "id": 5,
+      "name": "siege"
+    }
+  ],
+  "map": {
+    "rows": 77,
+    "cols": 77,
+    "walls": [
+      {
+        "row": 39,
+        "col": 54
+      },
+      {
+        "row": 39,
+        "col": 62
+      },
+      {
+        "row": 40,
+        "col": 56
+      },
+      {
+        "row": 42,
+        "col": 45
+      },
+      {
+        "row": 46,
+        "col": 38
+      },
+      {
+        "row": 28,
+        "col": 65
+      },
+      {
+        "row": 22,
+        "col": 23
+      },
+      {
+        "row": 61,
+        "col": 62
+      },
+      {
+        "row": 58,
+        "col": 23
+      },
+      {
+        "row": 30,
+        "col": 38
+      },
+      {
+        "row": 40,
+        "col": 24
+      },
+      {
+        "row": 66,
+        "col": 34
+      },
+      {
+        "row": 47,
+        "col": 38
+      },
+      {
+        "row": 29,
+        "col": 38
+      },
+      {
+        "row": 53,
+        "col": 45
+      },
+      {
+        "row": 51,
+        "col": 29
+      },
+      {
+        "row": 35,
+        "col": 39
+      },
+      {
+        "row": 38,
+        "col": 47
+      },
+      {
+        "row": 14,
+        "col": 56
+      },
+      {
+        "row": 37,
+        "col": 44
+      },
+      {
+        "row": 31,
+        "col": 56
+      },
+      {
+        "row": 56,
+        "col": 60
+      },
+      {
+        "row": 71,
+        "col": 35
+      },
+      {
+        "row": 29,
+        "col": 32
+      },
+      {
+        "row": 20,
+        "col": 39
+      },
+      {
+        "row": 60,
+        "col": 63
+      },
+      {
+        "row": 28,
+        "col": 29
+      },
+      {
+        "row": 9,
+        "col": 40
+      },
+      {
+        "row": 20,
+        "col": 20
+      },
+      {
+        "row": 47,
+        "col": 19
+      },
+      {
+        "row": 30,
+        "col": 54
+      },
+      {
+        "row": 28,
+        "col": 23
+      },
+      {
+        "row": 49,
+        "col": 36
+      },
+      {
+        "row": 37,
+        "col": 14
+      },
+      {
+        "row": 67,
+        "col": 33
+      },
+      {
+        "row": 68,
+        "col": 31
+      },
+      {
+        "row": 28,
+        "col": 56
+      },
+      {
+        "row": 46,
+        "col": 20
+      },
+      {
+        "row": 26,
+        "col": 20
+      },
+      {
+        "row": 56,
+        "col": 37
+      },
+      {
+        "row": 56,
+        "col": 57
+      },
+      {
+        "row": 41,
+        "col": 25
+      },
+      {
+        "row": 28,
+        "col": 21
+      },
+      {
+        "row": 32,
+        "col": 59
+      },
+      {
+        "row": 38,
+        "col": 29
+      },
+      {
+        "row": 13,
+        "col": 44
+      },
+      {
+        "row": 19,
+        "col": 62
+      },
+      {
+        "row": 29,
+        "col": 57
+      },
+      {
+        "row": 57,
+        "col": 36
+      },
+      {
+        "row": 17,
+        "col": 45
+      },
+      {
+        "row": 57,
+        "col": 14
+      },
+      {
+        "row": 48,
+        "col": 35
+      },
+      {
+        "row": 16,
+        "col": 13
+      },
+      {
+        "row": 30,
+        "col": 14
+      },
+      {
+        "row": 50,
+        "col": 53
+      },
+      {
+        "row": 48,
+        "col": 12
+      },
+      {
+        "row": 59,
+        "col": 21
+      },
+      {
+        "row": 27,
+        "col": 10
+      },
+      {
+        "row": 35,
+        "col": 36
+      },
+      {
+        "row": 18,
+        "col": 39
+      },
+      {
+        "row": 71,
+        "col": 32
+      },
+      {
+        "row": 60,
+        "col": 33
+      },
+      {
+        "row": 50,
+        "col": 11
+      },
+      {
+        "row": 41,
+        "col": 40
+      },
+      {
+        "row": 42,
+        "col": 39
+      },
+      {
+        "row": 61,
+        "col": 48
+      },
+      {
+        "row": 29,
+        "col": 66
+      },
+      {
+        "row": 68,
+        "col": 42
+      },
+      {
+        "row": 57,
+        "col": 13
+      },
+      {
+        "row": 60,
+        "col": 26
+      },
+      {
+        "row": 45,
+        "col": 54
+      },
+      {
+        "row": 39,
+        "col": 27
+      },
+      {
+        "row": 18,
+        "col": 51
+      },
+      {
+        "row": 38,
+        "col": 34
+      },
+      {
+        "row": 58,
+        "col": 37
+      },
+      {
+        "row": 50,
+        "col": 35
+      },
+      {
+        "row": 20,
+        "col": 16
+      },
+      {
+        "row": 15,
+        "col": 28
+      },
+      {
+        "row": 56,
+        "col": 56
+      },
+      {
+        "row": 59,
+        "col": 51
+      },
+      {
+        "row": 69,
+        "col": 41
+      },
+      {
+        "row": 62,
+        "col": 47
+      },
+      {
+        "row": 11,
+        "col": 45
+      },
+      {
+        "row": 45,
+        "col": 44
+      },
+      {
+        "row": 41,
+        "col": 68
+      },
+      {
+        "row": 35,
+        "col": 8
+      },
+      {
+        "row": 42,
+        "col": 36
+      },
+      {
+        "row": 51,
+        "col": 20
+      },
+      {
+        "row": 47,
+        "col": 36
+      },
+      {
+        "row": 17,
+        "col": 27
+      },
+      {
+        "row": 37,
+        "col": 22
+      },
+      {
+        "row": 37,
+        "col": 49
+      },
+      {
+        "row": 46,
+        "col": 13
+      },
+      {
+        "row": 67,
+        "col": 36
+      },
+      {
+        "row": 47,
+        "col": 10
+      },
+      {
+        "row": 17,
+        "col": 55
+      },
+      {
+        "row": 17,
+        "col": 25
+      },
+      {
+        "row": 48,
+        "col": 24
+      },
+      {
+        "row": 48,
+        "col": 47
+      },
+      {
+        "row": 57,
+        "col": 65
+      },
+      {
+        "row": 55,
+        "col": 45
+      },
+      {
+        "row": 34,
+        "col": 45
+      },
+      {
+        "row": 29,
+        "col": 40
+      },
+      {
+        "row": 43,
+        "col": 43
+      },
+      {
+        "row": 45,
+        "col": 20
+      },
+      {
+        "row": 58,
+        "col": 22
+      },
+      {
+        "row": 26,
+        "col": 23
+      },
+      {
+        "row": 42,
+        "col": 27
+      },
+      {
+        "row": 51,
+        "col": 34
+      },
+      {
+        "row": 57,
+        "col": 60
+      },
+      {
+        "row": 63,
+        "col": 48
+      },
+      {
+        "row": 49,
+        "col": 55
+      },
+      {
+        "row": 36,
+        "col": 47
+      },
+      {
+        "row": 9,
+        "col": 43
+      },
+      {
+        "row": 18,
+        "col": 54
+      },
+      {
+        "row": 16,
+        "col": 43
+      },
+      {
+        "row": 30,
+        "col": 34
+      },
+      {
+        "row": 41,
+        "col": 64
+      },
+      {
+        "row": 25,
+        "col": 56
+      },
+      {
+        "row": 18,
+        "col": 38
+      },
+      {
+        "row": 48,
+        "col": 11
+      },
+      {
+        "row": 58,
+        "col": 25
+      },
+      {
+        "row": 25,
+        "col": 47
+      },
+      {
+        "row": 6,
+        "col": 45
+      },
+      {
+        "row": 47,
+        "col": 44
+      },
+      {
+        "row": 48,
+        "col": 34
+      },
+      {
+        "row": 26,
+        "col": 41
+      },
+      {
+        "row": 34,
+        "col": 49
+      },
+      {
+        "row": 70,
+        "col": 31
+      },
+      {
+        "row": 25,
+        "col": 68
+      },
+      {
+        "row": 51,
+        "col": 8
+      },
+      {
+        "row": 65,
+        "col": 31
+      },
+      {
+        "row": 29,
+        "col": 18
+      },
+      {
+        "row": 46,
+        "col": 62
+      },
+      {
+        "row": 32,
+        "col": 39
+      },
+      {
+        "row": 28,
+        "col": 64
+      },
+      {
+        "row": 31,
+        "col": 63
+      },
+      {
+        "row": 41,
+        "col": 36
+      },
+      {
+        "row": 17,
+        "col": 39
+      },
+      {
+        "row": 29,
+        "col": 29
+      },
+      {
+        "row": 45,
+        "col": 47
+      },
+      {
+        "row": 34,
+        "col": 30
+      },
+      {
+        "row": 19,
+        "col": 11
+      },
+      {
+        "row": 27,
+        "col": 40
+      },
+      {
+        "row": 31,
+        "col": 29
+      },
+      {
+        "row": 35,
+        "col": 40
+      },
+      {
+        "row": 34,
+        "col": 11
+      },
+      {
+        "row": 21,
+        "col": 37
+      },
+      {
+        "row": 18,
+        "col": 18
+      },
+      {
+        "row": 5,
+        "col": 44
+      },
+      {
+        "row": 55,
+        "col": 62
+      },
+      {
+        "row": 48,
+        "col": 55
+      },
+      {
+        "row": 62,
+        "col": 20
+      },
+      {
+        "row": 42,
+        "col": 46
+      },
+      {
+        "row": 29,
+        "col": 70
+      },
+      {
+        "row": 38,
+        "col": 33
+      },
+      {
+        "row": 22,
+        "col": 57
+      },
+      {
+        "row": 13,
+        "col": 34
+      },
+      {
+        "row": 33,
+        "col": 46
+      },
+      {
+        "row": 42,
+        "col": 16
+      },
+      {
+        "row": 19,
+        "col": 63
+      },
+      {
+        "row": 36,
+        "col": 48
+      },
+      {
+        "row": 17,
+        "col": 16
+      },
+      {
+        "row": 33,
+        "col": 33
+      },
+      {
+        "row": 50,
+        "col": 67
+      },
+      {
+        "row": 34,
+        "col": 40
+      },
+      {
+        "row": 38,
+        "col": 41
+      },
+      {
+        "row": 52,
+        "col": 27
+      },
+      {
+        "row": 58,
+        "col": 38
+      },
+      {
+        "row": 48,
+        "col": 6
+      },
+      {
+        "row": 46,
+        "col": 42
+      },
+      {
+        "row": 42,
+        "col": 35
+      },
+      {
+        "row": 54,
+        "col": 53
+      },
+      {
+        "row": 19,
+        "col": 16
+      },
+      {
+        "row": 24,
+        "col": 49
+      },
+      {
+        "row": 46,
+        "col": 22
+      },
+      {
+        "row": 50,
+        "col": 56
+      },
+      {
+        "row": 25,
+        "col": 42
+      },
+      {
+        "row": 63,
+        "col": 32
+      },
+      {
+        "row": 34,
+        "col": 39
+      },
+      {
+        "row": 23,
+        "col": 31
+      },
+      {
+        "row": 45,
+        "col": 45
+      },
+      {
+        "row": 28,
+        "col": 70
+      },
+      {
+        "row": 53,
+        "col": 54
+      },
+      {
+        "row": 39,
+        "col": 32
+      },
+      {
+        "row": 10,
+        "col": 42
+      },
+      {
+        "row": 27,
+        "col": 21
+      },
+      {
+        "row": 28,
+        "col": 41
+      },
+      {
+        "row": 21,
+        "col": 31
+      },
+      {
+        "row": 23,
+        "col": 22
+      },
+      {
+        "row": 19,
+        "col": 40
+      },
+      {
+        "row": 16,
+        "col": 50
+      },
+      {
+        "row": 55,
+        "col": 39
+      },
+      {
+        "row": 34,
+        "col": 36
+      },
+      {
+        "row": 33,
+        "col": 37
+      },
+      {
+        "row": 42,
+        "col": 68
+      },
+      {
+        "row": 60,
+        "col": 40
+      },
+      {
+        "row": 47,
+        "col": 47
+      },
+      {
+        "row": 34,
+        "col": 37
+      },
+      {
+        "row": 43,
+        "col": 30
+      },
+      {
+        "row": 8,
+        "col": 45
+      },
+      {
+        "row": 42,
+        "col": 37
+      },
+      {
+        "row": 31,
+        "col": 22
+      },
+      {
+        "row": 31,
+        "col": 31
+      },
+      {
+        "row": 38,
+        "col": 35
+      },
+      {
+        "row": 36,
+        "col": 20
+      },
+      {
+        "row": 64,
+        "col": 33
+      },
+      {
+        "row": 36,
+        "col": 52
+      },
+      {
+        "row": 34,
+        "col": 60
+      },
+      {
+        "row": 59,
+        "col": 31
+      },
+      {
+        "row": 13,
+        "col": 28
+      },
+      {
+        "row": 48,
+        "col": 53
+      },
+      {
+        "row": 40,
+        "col": 29
+      },
+      {
+        "row": 44,
+        "col": 37
+      },
+      {
+        "row": 35,
+        "col": 12
+      },
+      {
+        "row": 8,
+        "col": 34
+      },
+      {
+        "row": 40,
+        "col": 63
+      },
+      {
+        "row": 59,
+        "col": 60
+      },
+      {
+        "row": 58,
+        "col": 58
+      },
+      {
+        "row": 26,
+        "col": 65
+      },
+      {
+        "row": 38,
+        "col": 63
+      },
+      {
+        "row": 44,
+        "col": 17
+      },
+      {
+        "row": 21,
+        "col": 14
+      },
+      {
+        "row": 49,
+        "col": 66
+      },
+      {
+        "row": 36,
+        "col": 13
+      },
+      {
+        "row": 14,
+        "col": 29
+      },
+      {
+        "row": 29,
+        "col": 68
+      },
+      {
+        "row": 54,
+        "col": 19
+      },
+      {
+        "row": 5,
+        "col": 41
+      },
+      {
+        "row": 7,
+        "col": 35
+      },
+      {
+        "row": 63,
+        "col": 42
+      },
+      {
+        "row": 38,
+        "col": 13
+      },
+      {
+        "row": 30,
+        "col": 56
+      },
+      {
+        "row": 28,
+        "col": 42
+      },
+      {
+        "row": 59,
+        "col": 37
+      },
+      {
+        "row": 38,
+        "col": 43
+      },
+      {
+        "row": 47,
+        "col": 6
+      },
+      {
+        "row": 42,
+        "col": 65
+      },
+      {
+        "row": 40,
+        "col": 28
+      },
+      {
+        "row": 30,
+        "col": 63
+      },
+      {
+        "row": 12,
+        "col": 43
+      },
+      {
+        "row": 35,
+        "col": 51
+      },
+      {
+        "row": 34,
+        "col": 41
+      },
+      {
+        "row": 31,
+        "col": 65
+      },
+      {
+        "row": 45,
+        "col": 11
+      },
+      {
+        "row": 31,
+        "col": 32
+      },
+      {
+        "row": 18,
+        "col": 53
+      },
+      {
+        "row": 47,
+        "col": 8
+      },
+      {
+        "row": 41,
+        "col": 37
+      },
+      {
+        "row": 45,
+        "col": 13
+      },
+      {
+        "row": 15,
+        "col": 14
+      },
+      {
+        "row": 28,
+        "col": 52
+      },
+      {
+        "row": 42,
+        "col": 40
+      },
+      {
+        "row": 66,
+        "col": 49
+      },
+      {
+        "row": 47,
+        "col": 58
+      },
+      {
+        "row": 16,
+        "col": 36
+      },
+      {
+        "row": 20,
+        "col": 19
+      },
+      {
+        "row": 48,
+        "col": 20
+      },
+      {
+        "row": 34,
+        "col": 8
+      },
+      {
+        "row": 10,
+        "col": 27
+      },
+      {
+        "row": 26,
+        "col": 9
+      },
+      {
+        "row": 34,
+        "col": 31
+      },
+      {
+        "row": 42,
+        "col": 31
+      },
+      {
+        "row": 43,
+        "col": 39
+      },
+      {
+        "row": 38,
+        "col": 42
+      },
+      {
+        "row": 59,
+        "col": 49
+      }
+    ],
+    "cores": [
+      {
+        "position": {
+          "row": 43,
+          "col": 38
+        },
+        "owner": 0
+      },
+      {
+        "position": {
+          "row": 40,
+          "col": 42
+        },
+        "owner": 1
+      },
+      {
+        "position": {
+          "row": 36,
+          "col": 42
+        },
+        "owner": 2
+      },
+      {
+        "position": {
+          "row": 33,
+          "col": 38
+        },
+        "owner": 3
+      },
+      {
+        "position": {
+          "row": 36,
+          "col": 34
+        },
+        "owner": 4
+      },
+      {
+        "position": {
+          "row": 40,
+          "col": 34
+        },
+        "owner": 5
+      }
+    ],
+    "energy_nodes": [
+      {
+        "row": 39,
+        "col": 39
+      },
+      {
+        "row": 38,
+        "col": 40
+      },
+      {
+        "row": 36,
+        "col": 38
+      },
+      {
+        "row": 37,
+        "col": 37
+      },
+      {
+        "row": 38,
+        "col": 36
+      },
+      {
+        "row": 40,
+        "col": 38
+      },
+      {
+        "row": 47,
+        "col": 42
+      },
+      {
+        "row": 38,
+        "col": 48
+      },
+      {
+        "row": 30,
+        "col": 43
+      },
+      {
+        "row": 29,
+        "col": 34
+      },
+      {
+        "row": 38,
+        "col": 28
+      },
+      {
+        "row": 46,
+        "col": 33
+      },
+      {
+        "row": 51,
+        "col": 41
+      },
+      {
+        "row": 41,
+        "col": 51
+      },
+      {
+        "row": 29,
+        "col": 47
+      },
+      {
+        "row": 25,
+        "col": 35
+      },
+      {
+        "row": 35,
+        "col": 25
+      },
+      {
+        "row": 47,
+        "col": 29
+      },
+      {
+        "row": 46,
+        "col": 43
+      },
+      {
+        "row": 38,
+        "col": 48
+      },
+      {
+        "row": 29,
+        "col": 42
+      },
+      {
+        "row": 30,
+        "col": 33
+      },
+      {
+        "row": 38,
+        "col": 28
+      },
+      {
+        "row": 47,
+        "col": 34
+      },
+      {
+        "row": 51,
+        "col": 46
+      },
+      {
+        "row": 38,
+        "col": 53
+      },
+      {
+        "row": 24,
+        "col": 45
+      },
+      {
+        "row": 25,
+        "col": 30
+      },
+      {
+        "row": 38,
+        "col": 23
+      },
+      {
+        "row": 52,
+        "col": 31
+      },
+      {
+        "row": 52,
+        "col": 47
+      },
+      {
+        "row": 37,
+        "col": 55
+      },
+      {
+        "row": 23,
+        "col": 45
+      },
+      {
+        "row": 24,
+        "col": 29
+      },
+      {
+        "row": 39,
+        "col": 21
+      },
+      {
+        "row": 53,
+        "col": 31
+      }
+    ]
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "alive": true
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "alive": true
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "alive": true
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 38,
+          "col": 40
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 46,
+          "col": 33
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 0,
+            "owner": 0,
+            "pos": {
+              "row": 43,
+              "col": 38
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 1,
+            "owner": 1,
+            "pos": {
+              "row": 40,
+              "col": 42
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 2,
+            "owner": 2,
+            "pos": {
+              "row": 36,
+              "col": 42
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 3,
+            "owner": 3,
+            "pos": {
+              "row": 33,
+              "col": 38
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 4,
+            "owner": 4,
+            "pos": {
+              "row": 36,
+              "col": 34
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 0,
+          "details": {
+            "bot_id": 5,
+            "owner": 5,
+            "pos": {
+              "row": 40,
+              "col": 34
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 1,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 42,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 33,
+            "col": 39
+          },
+          "alive": true
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 37,
+            "col": 34
+          },
+          "alive": true
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 41,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 38,
+          "col": 40
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 46,
+          "col": 33
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        1,
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [
+        {
+          "type": "combat_death",
+          "turn": 1,
+          "details": {
+            "bot_id": 1,
+            "killers": [
+              {
+                "bot_id": 2,
+                "owner": 2,
+                "position": {
+                  "row": 37,
+                  "col": 42
+                }
+              }
+            ],
+            "owner": 1,
+            "position": {
+              "row": 39,
+              "col": 42
+            }
+          }
+        },
+        {
+          "type": "combat_death",
+          "turn": 1,
+          "details": {
+            "bot_id": 2,
+            "killers": [
+              {
+                "bot_id": 1,
+                "owner": 1,
+                "position": {
+                  "row": 39,
+                  "col": 42
+                }
+              }
+            ],
+            "owner": 2,
+            "position": {
+              "row": 37,
+              "col": 42
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 2,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 41,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 37,
+            "col": 35
+          },
+          "alive": true
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 42,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 38,
+          "col": 40
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 46,
+          "col": 33
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        1,
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 3,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 40,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 34,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 37,
+            "col": 36
+          },
+          "alive": true
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 43,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 38,
+          "col": 40
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 46,
+          "col": 33
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        1,
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 4,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 40,
+            "col": 39
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 35,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 36
+          },
+          "alive": true
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 44,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 38,
+          "col": 40
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 46,
+          "col": 33
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        1,
+        1,
+        1
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 5,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 40,
+            "col": 40
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 45,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 38,
+          "col": 40
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [
+        {
+          "type": "combat_death",
+          "turn": 5,
+          "details": {
+            "bot_id": 3,
+            "killers": [
+              {
+                "bot_id": 4,
+                "owner": 4,
+                "position": {
+                  "row": 38,
+                  "col": 37
+                }
+              }
+            ],
+            "owner": 3,
+            "position": {
+              "row": 36,
+              "col": 38
+            }
+          }
+        },
+        {
+          "type": "combat_death",
+          "turn": 5,
+          "details": {
+            "bot_id": 4,
+            "killers": [
+              {
+                "bot_id": 3,
+                "owner": 3,
+                "position": {
+                  "row": 36,
+                  "col": 38
+                }
+              }
+            ],
+            "owner": 4,
+            "position": {
+              "row": 38,
+              "col": 37
+            }
+          }
+        },
+        {
+          "type": "energy_collected",
+          "turn": 5,
+          "details": {
+            "player": 5,
+            "pos": {
+              "row": 46,
+              "col": 33
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 6,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 39,
+            "col": 40
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 44,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "energy_held": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [
+        {
+          "type": "energy_collected",
+          "turn": 6,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 38,
+              "col": 40
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 7,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 39,
+            "col": 39
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 43,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "energy_held": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 8,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 39,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 42,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "energy_held": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 9,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 38,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 41,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "energy_held": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 38,
+        "active": false
+      }
+    },
+    {
+      "turn": 10,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 39,
+            "col": 38
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 42,
+            "col": 34
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 39,
+          "col": 39
+        },
+        {
+          "row": 36,
+          "col": 38
+        },
+        {
+          "row": 37,
+          "col": 37
+        },
+        {
+          "row": 38,
+          "col": 36
+        },
+        {
+          "row": 40,
+          "col": 38
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 38,
+          "col": 48
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 29,
+          "col": 34
+        },
+        {
+          "row": 38,
+          "col": 28
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 25,
+          "col": 35
+        },
+        {
+          "row": 35,
+          "col": 25
+        },
+        {
+          "row": 47,
+          "col": 29
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 38,
+          "col": 48
+        },
+        {
+          "row": 29,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 38,
+          "col": 28
+        },
+        {
+          "row": 47,
+          "col": 34
+        },
+        {
+          "row": 51,
+          "col": 46
+        },
+        {
+          "row": 38,
+          "col": 53
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 25,
+          "col": 30
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 52,
+          "col": 31
+        },
+        {
+          "row": 52,
+          "col": 47
+        },
+        {
+          "row": 37,
+          "col": 55
+        },
+        {
+          "row": 23,
+          "col": 45
+        },
+        {
+          "row": 24,
+          "col": 29
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "energy_held": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 34,
+        "active": true
+      }
+    },
+    {
+      "turn": 11,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 39,
+            "col": 39
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 43,
+            "col": 34
+          },
+          "alive": true
+        },
+        {
+          "id": 6,
+          "owner": 0,
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "alive": true
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 36,
+          "col": 38
+        },
+        {
+          "row": 37,
+          "col": 37
+        },
+        {
+          "row": 38,
+          "col": 36
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 38,
+          "col": 48
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 29,
+          "col": 34
+        },
+        {
+          "row": 38,
+          "col": 28
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 25,
+          "col": 35
+        },
+        {
+          "row": 35,
+          "col": 25
+        },
+        {
+          "row": 47,
+          "col": 29
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 38,
+          "col": 48
+        },
+        {
+          "row": 29,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 38,
+          "col": 28
+        },
+        {
+          "row": 47,
+          "col": 34
+        },
+        {
+          "row": 51,
+          "col": 46
+        },
+        {
+          "row": 38,
+          "col": 53
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 25,
+          "col": 30
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 52,
+          "col": 31
+        },
+        {
+          "row": 52,
+          "col": 47
+        },
+        {
+          "row": 37,
+          "col": 55
+        },
+        {
+          "row": 23,
+          "col": 45
+        },
+        {
+          "row": 24,
+          "col": 29
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [
+        {
+          "type": "energy_collected",
+          "turn": 11,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 39,
+              "col": 39
+            }
+          }
+        },
+        {
+          "type": "energy_collected",
+          "turn": 11,
+          "details": {
+            "player": 0,
+            "pos": {
+              "row": 40,
+              "col": 38
+            }
+          }
+        },
+        {
+          "type": "bot_spawned",
+          "turn": 11,
+          "details": {
+            "bot_id": 6,
+            "owner": 0,
+            "pos": {
+              "row": 43,
+              "col": 38
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 33,
+        "active": true
+      }
+    },
+    {
+      "turn": 12,
+      "bots": [
+        {
+          "id": 0,
+          "owner": 0,
+          "position": {
+            "row": 38,
+            "col": 39
+          },
+          "alive": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "position": {
+            "row": 39,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "position": {
+            "row": 37,
+            "col": 42
+          },
+          "alive": false
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "position": {
+            "row": 36,
+            "col": 38
+          },
+          "alive": false
+        },
+        {
+          "id": 4,
+          "owner": 4,
+          "position": {
+            "row": 38,
+            "col": 37
+          },
+          "alive": false
+        },
+        {
+          "id": 5,
+          "owner": 5,
+          "position": {
+            "row": 43,
+            "col": 35
+          },
+          "alive": false
+        },
+        {
+          "id": 6,
+          "owner": 0,
+          "position": {
+            "row": 42,
+            "col": 38
+          },
+          "alive": false
+        }
+      ],
+      "cores": [
+        {
+          "position": {
+            "row": 43,
+            "col": 38
+          },
+          "owner": 0,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 42
+          },
+          "owner": 1,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 42
+          },
+          "owner": 2,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 33,
+            "col": 38
+          },
+          "owner": 3,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 36,
+            "col": 34
+          },
+          "owner": 4,
+          "active": true
+        },
+        {
+          "position": {
+            "row": 40,
+            "col": 34
+          },
+          "owner": 5,
+          "active": true
+        }
+      ],
+      "energy": [
+        {
+          "row": 36,
+          "col": 38
+        },
+        {
+          "row": 37,
+          "col": 37
+        },
+        {
+          "row": 38,
+          "col": 36
+        },
+        {
+          "row": 47,
+          "col": 42
+        },
+        {
+          "row": 38,
+          "col": 48
+        },
+        {
+          "row": 30,
+          "col": 43
+        },
+        {
+          "row": 29,
+          "col": 34
+        },
+        {
+          "row": 38,
+          "col": 28
+        },
+        {
+          "row": 51,
+          "col": 41
+        },
+        {
+          "row": 41,
+          "col": 51
+        },
+        {
+          "row": 29,
+          "col": 47
+        },
+        {
+          "row": 25,
+          "col": 35
+        },
+        {
+          "row": 35,
+          "col": 25
+        },
+        {
+          "row": 47,
+          "col": 29
+        },
+        {
+          "row": 46,
+          "col": 43
+        },
+        {
+          "row": 38,
+          "col": 48
+        },
+        {
+          "row": 29,
+          "col": 42
+        },
+        {
+          "row": 30,
+          "col": 33
+        },
+        {
+          "row": 38,
+          "col": 28
+        },
+        {
+          "row": 47,
+          "col": 34
+        },
+        {
+          "row": 51,
+          "col": 46
+        },
+        {
+          "row": 38,
+          "col": 53
+        },
+        {
+          "row": 24,
+          "col": 45
+        },
+        {
+          "row": 25,
+          "col": 30
+        },
+        {
+          "row": 38,
+          "col": 23
+        },
+        {
+          "row": 52,
+          "col": 31
+        },
+        {
+          "row": 52,
+          "col": 47
+        },
+        {
+          "row": 37,
+          "col": 55
+        },
+        {
+          "row": 23,
+          "col": 45
+        },
+        {
+          "row": 24,
+          "col": 29
+        },
+        {
+          "row": 39,
+          "col": 21
+        },
+        {
+          "row": 53,
+          "col": 31
+        }
+      ],
+      "scores": [
+        12,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "energy_held": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "events": [
+        {
+          "type": "combat_death",
+          "turn": 12,
+          "details": {
+            "bot_id": 5,
+            "killers": [
+              {
+                "bot_id": 6,
+                "owner": 0,
+                "position": {
+                  "row": 42,
+                  "col": 38
+                }
+              }
+            ],
+            "owner": 5,
+            "position": {
+              "row": 43,
+              "col": 35
+            }
+          }
+        },
+        {
+          "type": "combat_death",
+          "turn": 12,
+          "details": {
+            "bot_id": 6,
+            "killers": [
+              {
+                "bot_id": 5,
+                "owner": 5,
+                "position": {
+                  "row": 43,
+                  "col": 35
+                }
+              }
+            ],
+            "owner": 0,
+            "position": {
+              "row": 42,
+              "col": 38
+            }
+          }
+        }
+      ],
+      "zone_bounds": {
+        "center": {
+          "row": 38,
+          "col": 38
+        },
+        "radius": 32,
+        "active": true
+      }
+    }
+  ],
+  "win_prob": [
+    [
+      0.22,
+      0.14,
+      0.08,
+      0.23,
+      0.06,
+      0.04
+    ],
+    [
+      0.29,
+      0.04,
+      0,
+      0.31,
+      0.14,
+      0.04
+    ],
+    [
+      0.28,
+      0,
+      0,
+      0.25,
+      0.17,
+      0.12
+    ],
+    [
+      0.32,
+      0.01,
+      0,
+      0.2,
+      0,
+      0.33
+    ],
+    [
+      0.34,
+      0,
+      0,
+      0.22,
+      0,
+      0.35
+    ],
+    [
+      0.59,
+      0,
+      0,
+      0,
+      0,
+      0.33
+    ],
+    [
+      0.74,
+      0,
+      0,
+      0,
+      0,
+      0.2
+    ],
+    [
+      0.79,
+      0,
+      0,
+      0,
+      0,
+      0.14
+    ],
+    [
+      0.8,
+      0,
+      0,
+      0,
+      0,
+      0.04
+    ],
+    [
+      0.79,
+      0,
+      0,
+      0,
+      0,
+      0.05
+    ],
+    [
+      0.92,
+      0,
+      0,
+      0,
+      0,
+      0.06
+    ],
+    [
+      0.95,
+      0,
+      0,
+      0,
+      0,
+      0.01
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "critical_moments": [
+    {
+      "turn": 3,
+      "delta": -0.17,
+      "player": 4,
+      "description": "Player 4 win probability drops to 17%"
+    },
+    {
+      "turn": 3,
+      "delta": 0.21,
+      "player": 5,
+      "description": "Player 5 win probability rises to 21%"
+    },
+    {
+      "turn": 5,
+      "delta": 0.25,
+      "player": 0,
+      "description": "Player 0 win probability rises to 25%"
+    },
+    {
+      "turn": 5,
+      "delta": -0.22,
+      "player": 3,
+      "description": "Player 3 win probability drops to 22%"
+    },
+    {
+      "turn": 6,
+      "delta": 0.15,
+      "player": 0,
+      "description": "Player 0 win probability rises to 15%"
+    }
+  ],
+  "combat_deaths": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ]
+}
