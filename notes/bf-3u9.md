@@ -1,43 +1,94 @@
-# Matchmaker Job Creation Verification (bf-3u9)
+# Matchmaker Job Creation Verification - bf-3u9
 
-## Task
-Verify matchmaker job creation by checking acb-matchmaker logs for successful job creation.
+**Date:** 2026-06-27
+**Cluster:** apexalgo-iad
+**Namespace:** ai-code-battle
 
-## Findings
+## Critical Finding: Cluster Capacity Blocks Job Creation
 
-### Cluster Status
-The matchmaker deployment exists but is **not running** due to cluster capacity issues:
+The acb-matchmaker logs **cannot be checked** because the matchmaker pod has never been able to start. All pods in the ai-code-battle namespace are stuck in Pending state due to insufficient cluster CPU capacity.
 
-- **Matchmaker Pod**: `acb-matchmaker-64f6dc5985-9vh67` in namespace `ai-code-battle`
-- **Status**: `Pending` (not running)
-- **Age**: 35 minutes
+## Current Cluster Status
 
-### Root Cause
-The matchmaker pod cannot be scheduled due to:
+### Nodes (3 total)
+- **prod-instance-17781842321795040**: Ready, 32% CPU (1152m/3500m used), 15% memory
+- **prod-instance-17825487911280674**: Ready, 47% CPU (1667m/3500m used), 65% memory  
+- **prod-instance-17825591427380770**: **NotReady**, 2% CPU (83m), 12% memory
 
-1. **Node Health Issues**:
-   - `prod-instance-17825591427380770`: `NotReady` (6h40m)
-   - Two nodes with `untolerated taint` (node.kubernetes.io/not-ready, node.kubernetes.io/unreachable)
+### Pod Status
+- **Running**: Only `acb-schema-init-5b698c549d-wzhnc` (1/1)
+- **Pending**: All other pods including:
+  - `acb-matchmaker-64f6dc5985-9vh67` (pending for 63+ minutes)
+  - `acb-api-5646489f75-fs7wx` 
+  - `acb-worker-bf5bfdb98-68k4r`
+  - 8 bot strategy pods (random, rusher, gatherer, guardian, hunter, swarm, farmer)
+  - `acb-evolver`, `acb-enrichment`, `acb-index-builder`
 
-2. **Resource Constraints**:
-   - `FailedScheduling` events show: `0/3 nodes are available: 1 Insufficient cpu, 1 node(s) had untolerated taint...`
-   - Multiple scheduling warnings over 35 minutes indicating ongoing capacity issues
+### Job Creation Status
+**No jobs exist** in the ai-code-battle namespace. Job creation cannot occur because:
+1. The matchmaker pod cannot schedule due to insufficient CPU
+2. Even if scheduled, the matchmaker requires PostgreSQL connection (from pending pods)
+3. Workers are also pending, so no jobs could execute even if created
 
-### Expected Job Creation Log Format
-When the matchmaker is running and creates jobs, it logs:
+## Scheduling Failure Details
+
+All pending pods show this pattern:
 ```
-matchmaker: created %d-player match %s (seed=%s vs %v), job %s, map=%s
+0/3 nodes are available: 1 node(s) had untolerated taint {node.kubernetes.io/not-ready: }, 2 Insufficient cpu
 ```
 
-This log format is found in `cmd/acb-matchmaker/tickers.go:483`
+The `NotReady` node (`prod-instance-17825591427380770`) appears to be a newly added node (7h8m old) that may still be initializing or has issues.
 
-## Conclusion
-**Cannot verify job creation logs because the matchmaker is not running.** The pod is stuck in `Pending` state due to cluster capacity constraints and node health issues.
+## Resource Analysis
 
-## Recommendations
-1. Fix the NotReady node (`prod-instance-17825591427380770`)
-2. Scale down non-critical workloads or add cluster capacity
-3. Once matchmaker is running, verify job creation with:
-   ```bash
-   kubectl --server=http://traefik-apexalgo-iad:8001 logs -n ai-code-battle deployment/acb-matchmaker | grep 'created.*player match'
-   ```
+### Available CPU (Ready nodes only)
+- Node 1: ~2348m available (3500m - 1152m used)
+- Node 2: ~1833m available (3500m - 1667m used)
+- **Total available: ~4181m CPU**
+
+### Pending pod CPU requests (estimated)
+- acb-matchmaker: 50m
+- acb-api (2 pods): 200m
+- acb-enrichment (2 pods): 400m  
+- acb-evolver (2 pods): 1000m
+- acb-worker (2 pods): ~200m
+- 8 bot strategy pods: ~400m
+- acb-index-builder: 50m
+- **Total requests: ~2250m**
+
+Theoretically there should be enough CPU (~4181m available vs ~2250m needed), but scheduler reports insufficient CPU. This suggests:
+1. Other workloads on the cluster consuming CPU not shown in `kubectl top nodes`
+2. Resource fragmentation preventing scheduling of larger pods
+3. The NotReady node blocking some scheduling attempts
+
+## Verification Conclusion
+
+**Status: ❌ VERIFICATION FAILED - Infrastructure Issue**
+
+The matchmaker job creation cannot be verified because:
+1. **Cluster capacity insufficient** - Matchmaker pod cannot schedule
+2. **No jobs in queue** - Query returns 0 jobs (expected since matchmaker never ran)
+3. **No logs available** - Pod never started, so no logs to check
+
+## Next Steps Required
+
+1. **Fix cluster capacity** - Either:
+   - Add more nodes to the cluster
+   - Scale down resource requests for ACB pods
+   - Move other workloads off apexalgo-iad to free capacity
+
+2. **Fix NotReady node** - Investigate why `prod-instance-17825591427380770` is NotReady
+
+3. **Re-deploy ACB stack** - Once capacity is available, delete and recreate pods
+
+4. **Re-run verification** - Check matchmaker logs after pods are running
+
+## Acceptance Criteria Status
+
+- ❌ acb-matchmaker logs show successful job creation - **CANNOT VERIFY** (pod never started)
+- ❌ Jobs appear in the queue with valid bot pairs - **NO JOBS** (matchmaker never ran)
+- ❌ No errors in matchmaker scheduling logic - **CANNOT VERIFY** (no logs)
+
+## Recommendation
+
+This verification should be **re-attempted** after cluster capacity is restored. The current apexalgo-iad cluster appears under-provisioned for the ACB workload.
