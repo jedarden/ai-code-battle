@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://aicodebattle.com/sitemap.xml
+Sitemap: https://ai-code-battle.pages.dev/sitemap.xml

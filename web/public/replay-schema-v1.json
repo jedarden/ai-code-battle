@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aicodebattle.com/replay-schema-v1.json",
+  "$id": "https://ai-code-battle.pages.dev/replay-schema-v1.json",
   "title": "AI Code Battle Replay Format",
   "description": "Complete replay format for AI Code Battle matches. Documents the full game state for each turn, enabling third-party tooling and replay viewers.",
   "type": "object",
