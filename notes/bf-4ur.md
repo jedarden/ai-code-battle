@@ -135,6 +135,46 @@ kubeseal --controller-name=sealed-secrets-apexalgo-iad \
 | acb-armor-credentials | OpenBao (rs-manager cluster) | Already stored in OpenBao at path `rs-manager/iad-acb/armor` (ESO adds `secret/` prefix per ClusterSecretStore config) |
 | acb-cloudflare-api-token | Cloudflare Dashboard | Create at https://dash.cloudflare.com/profile/api-tokens with Pages+R2 Edit permissions |
 
+## Full ARMOR OpenBao Secret Structure
+
+The OpenBao secret at `secret/rs-manager/iad-acb/armor` contains values for ARMOR's backend configuration that are NOT exposed to applications:
+
+| OpenBao Property | Description | Exposed to Apps? |
+|------------------|-------------|------------------|
+| `b2-region` | Backblaze B2 region (e.g., `us-west-002`) | No - ARMOR internal |
+| `b2-access-key-id` | Backblaze B2 Application Key ID | No - ARMOR internal |
+| `b2-secret-access-key` | Backblaze B2 Application Key (secret) | No - ARMOR internal |
+| `bucket` | Bucket name | Yes - as `bucket` key |
+| `cf-domain` | Cloudflare domain for zero-egress downloads | No - ARMOR internal |
+| `master-encryption-key` | ARMOR MEK (32-byte hex) - CRITICAL | No - ARMOR internal (cannot be recovered if lost) |
+| `auth-access-key` | Client S3 access key | Yes - as `auth-access-key` |
+| `auth-secret-key` | Client S3 secret key | Yes - as `auth-secret-key` |
+
+Applications only see the three keys mapped via ExternalSecret: `bucket`, `auth-access-key`, `auth-secret-key`. The B2 credentials, Cloudflare domain, and master encryption key are used only by ARMOR internally.
+
+## ARMOR Architecture
+
+ARMOR is an S3-compatible proxy that:
+1. **Encrypts data** before upload to Backblaze B2 (zero-knowledge encryption)
+2. **Routes downloads** through Cloudflare for zero-egress (Bandwidth Alliance)
+3. **Provides S3 API** to applications at `http://armor:9000`
+
+**Upload Path:**
+```
+Application → ARMOR (encrypt) → B2 Storage
+```
+
+**Download Path:**
+```
+Application → ARMOR (decrypt) → Cloudflare CDN → B2 Storage
+```
+
+## Additional Related Documentation
+
+- `/home/coding/ARMOR/README.md` - Full ARMOR architecture and configuration
+- `/home/coding/scratch/armor-apexalgo-iad-setup.md` - ARMOR setup instructions for apexalgo-iad
+- `/home/coding/ai-code-battle/notes/b2-cdn-setup.md` - B2 CDN configuration for b2.aicodebattle.com
+
 ## Notes
 
 1. **acb-r2-credentials** documented in R2_ACCESS_KEY_SOURCE.md is for iad-acb cluster, NOT apexalgo-iad
@@ -142,3 +182,5 @@ kubeseal --controller-name=sealed-secrets-apexalgo-iad \
 3. The acb-cloudflare-api-token needs to be created and sealed before use - template exists but no sealed secret yet
 4. The acb-armor-credentials ExternalSecret references OpenBao path `rs-manager/iad-acb/armor` - ESO's ClusterSecretStore has `path: secret` so the full path becomes `secret/rs-manager/iad-acb/armor`
 5. The ExternalSecret for acb-armor-credentials exists but the corresponding OpenBao secret must exist at the correct path for ESO to sync it
+6. ARMOR's Master Encryption Key (MEK) is the most critical secret - if lost, all encrypted data is unrecoverable (no recovery possible)
+7. The ARMOR deployment on apexalgo-iad requires the OpenBao secret to be populated before pods can start
