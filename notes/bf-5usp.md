@@ -1,38 +1,31 @@
-# Forgejo Webhook Registration for ai-code-battle - COMPLETED
+# bf-5usp: Forgejo Webhook Registration for ai-code-battle
 
-## Task Status: ✅ COMPLETE
+## Status: Already Configured
 
-The Forgejo webhook for ai-code-battle is **already registered and active**.
+The Forgejo webhook for ai-code-battle is **already registered** and active.
 
-## Webhook Details (Verified 2026-07-02T15:32:09Z)
+## Webhook Details
 
 - **URL**: `https://webhooks-ci.ardenone.com/ai-code-battle`
 - **Events**: `push`
 - **Active**: `true`
-- **Created**: 2026-07-02T14:28:39Z
-- **Updated**: 2026-07-02T15:01:40Z
-- **Webhook ID**: 5
+- **Created**: `2026-07-02T14:28:39Z`
+- **Updated**: `2026-07-02T15:52:22Z`
 
-## Infrastructure Resources
+## Backend Configuration
 
-- **EventSource**: `forgejo-webhooks` in argo-events namespace (iad-ci)
-  - Endpoint: `/ai-code-battle` on port 12000
-- **Sensor**: `ai-code-battle-github-ci-sensor` in argo-events namespace (iad-ci)
-  - Triggers: `acb-build` WorkflowTemplate on push to master branch
-- **IngressRoute**: `github-webhook-ingressroute`
-  - Routes: `webhooks-ci.ardenone.com/ai-code-battle` → `forgejo-webhooks-eventsource-svc:12000`
+The webhook is handled by:
+- **EventSource**: `forgejo-webhooks` (`k8s/iad-ci/argo-events/forgejo-eventsource.yml`)
+- **Sensor**: `ai-code-battle-ci-sensor` (`k8s/iad-ci/argo-events/ai-code-battle-sensor.yml`)
+- **IngressRoute**: `github-webhook-ingressroute` (`k8s/iad-ci/argo-events/webhook-ingressroute.yml`)
 
-## Verification Method
+The sensor triggers multiple workflow templates on push to master:
+1. `acb-images-build` - Builds all Docker images
+2. `acb-site-pages-build` - Builds and deploys to Cloudflare Pages
+3. `acb-bots-build` - Builds strategy bot images
+4. `acb-enrichment-build` - Builds enrichment service
+5. `acb-build` - Builds core service images
 
-Verified via Forgejo API:
-```bash
-FORGEJO_TOKEN="$(git credential fill <<< 'protocol=https
-host=git.ardenone.com
-' | grep password | cut -d= -f2)"
-curl -s -H "Authorization: token $FORGEJO_TOKEN" \
-  "https://git.ardenone.com/api/v1/repos/jedarden/ai-code-battle/hooks"
-```
+## Conclusion
 
-## Acceptance Criteria: ✅ MET
-
-The ai-code-battle repo on git.ardenone.com has an active webhook for push events pointing to the Argo Events sensor endpoint at webhooks-ci.ardenone.com/ai-code-battle.
+No action was required — the webhook was already properly configured.
