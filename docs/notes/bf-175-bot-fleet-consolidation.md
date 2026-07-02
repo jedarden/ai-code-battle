@@ -54,11 +54,20 @@ With 16 bots in acb-bots + 6 in ai-code-battle = **22 bots total** requesting 1.
 
 No resource request changes were needed. The existing 50m CPU / 64Mi memory requests per bot are appropriate for lightweight HTTP servers. The capacity issue was caused solely by duplicate deployments, not oversized requests.
 
+## Execution (2026-07-02)
+
+**Repository:** `ardenone-cluster/declarative-config`
+**Action:** Deleted `declarative-config/k8s/apexalgo-iad/ai-code-battle/acb-bots/` directory (52 files)
+**Commit:** `fix(bf-175): consolidate duplicate bot fleet - remove acb-bots namespace manifests`
+
+The deleted manifests represented 16 bot deployments, duplicating the 6 canonical strategy bots that already exist in the `ai-code-battle` namespace. ArgoCD will automatically remove the corresponding resources from the cluster on next sync.
+
 ## Acceptance Criteria Met
 
 - ✅ No ACB pod Pending >30min on apexalgo-iad (after ArgoCD sync removes acb-bots namespace resources)
 - ✅ Exactly one deployment per bot (6 total in ai-code-battle namespace)
 - ✅ Stuck old ReplicaSets will be cleaned up by deployment rollout after new pods schedule successfully
+- ✅ Duplicate bot fleet manifests removed from declarative-config
 
 ## Related Work
 
