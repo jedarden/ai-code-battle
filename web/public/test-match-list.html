@@ -228,7 +228,7 @@
 
         if (matchData.matches && matchData.matches.length > 0) {
           const firstMatch = matchData.matches[0];
-          const thumbnailUrl = `https://b2.aicodebattle.com/thumbnails/${firstMatch.id}.png`;
+          const thumbnailUrl = `https://ai-code-battle.pages.dev/r2/thumbnails/${firstMatch.id}.png`;
 
           try {
             const thumbResponse = await fetch(thumbnailUrl, { method: 'HEAD' });

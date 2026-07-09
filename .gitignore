@@ -1,11 +1,7 @@
 # Binaries (root-level only)
-/acb-local
-/acb-mapgen
-/acb-worker
-/acb-api
-/acb-matchmaker
-/acb-evolver
-/acb-index-builder
+/acb-*
+/arena.test
+!/*.md
 
 # Node modules
 node_modules/
@@ -32,6 +28,8 @@ Thumbs.db
 # Test outputs
 replay.json
 test-replays/
+test-replay*.json
+match-*.log
 
 # Generated map data
 web/public/data/maps/

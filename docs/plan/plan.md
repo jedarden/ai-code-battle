@@ -23,7 +23,7 @@ All compute runs in the **apexalgo-iad** Kubernetes cluster (Rackspace Spot),
 which acts as a **match factory**: it runs battles, generates replays, and
 periodically publishes the updated site to Pages.
 
-Replay files are stored in and served directly from **Backblaze B2** (via Cloudflare CDN / Bandwidth Alliance). B2 is the single storage layer — all replays, thumbnails, bot cards, match metadata, and evolution status files live in B2. Free egress via Cloudflare Bandwidth Alliance (zero egress fees).
+Replay files are stored in **Cloudflare R2** (S3-compatible object storage) and served through **Cloudflare Pages Functions**. Match workers upload via ARMOR credentials (B2-compatible API), and the web app fetches replays through a Pages Function (`web/functions/r2/[[path]].ts`) that proxies to an R2 bucket binding.
 
 ### Cloudflare (Static Tier)
 
@@ -33,16 +33,16 @@ Replay files are stored in and served directly from **Backblaze B2** (via Cloudf
   minutes by the K8s index builder via `wrangler pages deploy`. Global CDN,
   zero-config TLS, instant cache invalidation on deploy.
 
-### Backblaze B2 (Storage)
+### Cloudflare R2 (Storage)
 
-- **B2 bucket**: Permanent storage for **all** replay files, match metadata,
+- **R2 bucket**: Permanent storage for **all** replay files, match metadata,
   thumbnails, bot cards, and evolution status files. Match workers upload
-  directly to B2 after each match. Served to browsers via Cloudflare CDN
-  (Bandwidth Alliance = zero egress fees). S3-compatible API.
+  via ARMOR credentials (B2-compatible API) after each match. Served to browsers
+  through Cloudflare Pages Functions (zero egress fees). S3-compatible API.
 
 ### apexalgo-iad (Compute Tier)
 
-All backend compute runs in the `ai-code-battle` namespace:
+All backend compute runs in two namespaces: `ai-code-battle` (core infrastructure) and `acb-bots` (strategy bot deployments):
 
 - **Matchmaker Deployment**: Internal scheduler. Queries active bots from
   PostgreSQL, computes pairings, enqueues job IDs into Valkey. Also handles
@@ -53,7 +53,7 @@ All backend compute runs in the `ai-code-battle` namespace:
 - **Match Worker Deployment**: Dequeues jobs from Valkey (BRPOP), runs
   matches, uploads replay JSON to B2 (cold archive), writes results to
   PostgreSQL.
-- **Strategy Bot Deployments** (x6): Built-in bots as HTTP servers on
+- **Strategy Bot Deployments** (x21): Built-in bots as HTTP servers on
   cluster-internal Services.
 - **Evolved Bot Deployments** (0-50): LLM-generated bots, same pattern.
 - **Evolver Deployment**: LLM evolution pipeline. Reads match data from
@@ -66,7 +66,7 @@ All backend compute runs in the `ai-code-battle` namespace:
 
 ### Go API (deferred)
 
-A public Go API at `api.aicodebattle.com` is planned for social features
+A public Go API at `api.ai-code-battle.pages.dev` is planned for social features
 (predictions, commenting, voting) and third-party bot registration. This is
 **not required for the core match loop** — the v1 system is fully static.
 The API will be added when interactive features are needed.
@@ -116,9 +116,9 @@ Pages project (ai-code-battle.pages.dev):
     └── {map_id}.json
 ```
 
-**Backblaze B2** (storage — all replay data, served via Cloudflare CDN):
+**Cloudflare R2** (storage — all replay data, served via Cloudflare Pages Functions):
 ```
-B2 bucket:
+R2 bucket:
 ├── replays/
 │   └── {match_id}.json.gz             (ALL replay files, forever)
 ├── matches/
@@ -136,18 +136,17 @@ B2 bucket:
 ```js
 // SPA shell + index data from Cloudflare Pages (same origin)
 const PAGES = ''  // relative — same origin as the SPA
-const B2 = 'https://b2.aicodebattle.com'     // B2 via Cloudflare CDN
 
 // Leaderboard, bot profiles, match indexes — all from Pages (same origin):
 const lb = await fetch(`${PAGES}/data/leaderboard.json`).then(r => r.json())
 
-// Replay viewer — fetches directly from B2:
+// Replay viewer — fetches via Pages Function (R2 binding):
 async function fetchReplay(matchId) {
-  return fetch(`${B2}/replays/${matchId}.json.gz`)
+  return fetch(`${PAGES}/r2/replays/${matchId}.json.gz`)
 }
 
-// Match metadata — fetches directly from B2:
-const meta = await fetch(`${B2}/matches/${matchId}.json`).then(r => r.json())
+// Match metadata — fetches via Pages Function (R2 binding):
+const meta = await fetch(`${PAGES}/r2/matches/${matchId}.json`).then(r => r.json())
 ```
 
 **Cache behavior:**
@@ -155,31 +154,30 @@ const meta = await fetch(`${B2}/matches/${matchId}.json`).then(r => r.json())
 - **Pages assets**: Cloudflare Pages handles caching automatically. Deploys
   via `wrangler pages deploy` invalidate the cache globally. Index data is
   at most ~90 minutes stale (the index builder's cycle time).
-- **B2 objects**: Served via Cloudflare CDN with appropriate `Cache-Control` headers:
+- **R2 objects**: Served through Cloudflare Pages Functions with appropriate `Cache-Control` headers:
   - `replays/*.json.gz`: `immutable, max-age=31536000` (content-addressed)
   - `matches/*.json`: `immutable, max-age=31536000` (content-addressed)
   - `thumbnails/`, `cards/`: `max-age=86400` (regenerated rarely)
   - `evolution/live.json`: `max-age=10` (updated each evolver cycle)
-  B2 egress through Cloudflare Bandwidth Alliance = zero egress fees. Cloudflare CDN
-  caches B2 responses so frequently accessed replays perform well globally.
+  R2 has zero egress fees when served through Cloudflare Pages/Functions.
 
 **Data flow:**
 
 1. Match worker completes a match → uploads `replays/{match_id}.json.gz`
-   and `matches/{match_id}.json` to **B2**
+   and `matches/{match_id}.json` to **R2**
 2. Worker writes match result to **PostgreSQL** (scores, ratings, metadata)
 3. Index builder (every ~15 min) reads new results from PostgreSQL, rebuilds
    all JSON index files, deploys to **Pages** via `wrangler pages deploy`
 4. Browser loads SPA + indexes from Pages, fetches replays and match data
-   directly from **B2** (via Cloudflare CDN)
+   from **R2** via Pages Functions (`/r2/*`)
 
 **Storage budget:**
 
-- **B2**: First 10 GB free, $0.006/GB/month after. At 60 matches/hour,
-  ~2.2 GB/month for replays. Year one: ~26 GB ≈ $0.10/month.
-  Free egress via Cloudflare Bandwidth Alliance.
+- **R2**: First 10 GB free, $0.015/GB/month after. At 60 matches/hour,
+  ~2.2 GB/month for replays. Year one: ~26 GB ≈ $0.30/month.
+  Zero egress fees when served through Cloudflare Pages/Functions.
 - **Pages**: 20K file limit per deployment. Only SPA + JSON indexes — well
-  within limits (replays and match data are on B2, not Pages).
+  within limits (replays and match data are on R2, not Pages).
 
 ```
 ┌────────── Cloudflare ──────────────────────────────────┐
@@ -222,7 +220,7 @@ const meta = await fetch(`${B2}/matches/${matchId}.json`).then(r => r.json())
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  Match Workers (Deployment, 1-10 pods)                  │  │
-│  │  BRPOP from Valkey, run matches, upload replays to B2,  │  │
+│  │  BRPOP from Valkey, run matches, upload replays to R2,  │  │
 │  │  write results to PostgreSQL                            │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                   │          │
@@ -260,11 +258,11 @@ const meta = await fetch(`${B2}/matches/${matchId}.json`).then(r => r.json())
 | Component | Where | Role |
 |-----------|-------|------|
 | **Cloudflare Pages** | Cloudflare | Static site: SPA (HTML/JS/CSS) and pre-computed JSON index files. Updated every ~90 min by the index builder via `wrangler pages deploy`. Global CDN with automatic cache invalidation. |
-| **Backblaze B2** | Backblaze | Storage: ALL replays, match metadata, thumbnails, bot cards, and evolution status. Workers upload directly after each match. Served via Cloudflare CDN (Bandwidth Alliance = zero egress fees). |
+| **Cloudflare R2** | Cloudflare | Storage: ALL replays, match metadata, thumbnails, bot cards, and evolution status. Workers upload via ARMOR credentials (B2-compatible API). Served through Cloudflare Pages Functions (zero egress fees). |
 | **Matchmaker** | Deployment (ai-code-battle ns) | Internal scheduler: computes pairings, enqueues jobs to Valkey, health checks bots, reaps stale jobs. No external exposure. |
 | **PostgreSQL** | CNPG cluster (cnpg ns, `cnpg-apexalgo`) | Relational database — bot registry, match queue, ratings, results, series, seasons. Source of truth for structured data. |
 | **Valkey** | Cluster service | Job queue (`acb:jobs:pending`), ephemeral caching. |
-| **Match Workers** | Deployment (ai-code-battle ns) | Stateless match execution — BRPOP from Valkey, run simulation, upload replay to B2, write result to PostgreSQL. |
+| **Match Workers** | Deployment (ai-code-battle ns) | Stateless match execution — BRPOP from Valkey, run simulation, upload replay to R2 (via ARMOR), write result to PostgreSQL. |
 | **Bot Containers** | Deployments + Services (ai-code-battle ns) | Strategy bots (x6) + evolved bots (0-50) — HTTP servers called by workers during matches via cluster-internal Service DNS. |
 | **Evolver** | Deployment (ai-code-battle ns) | Evolution pipeline — reads lineage/meta from PostgreSQL, generates candidates, writes evolution data to PostgreSQL. |
 | **Index Builder** | Deployment (ai-code-battle ns) | Sleep-loop (15 min cycle). Reads PostgreSQL, generates JSON indexes, deploys to Pages. Self-restarts every 4h. |
@@ -719,237 +717,130 @@ intentional crashing as a loss-avoidance strategy.
 
 ## 5. Strategy Bots
 
-Six built-in strategy bots serve as reference implementations and permanent
-ladder opponents. Each is implemented in a **different programming language**
-to demonstrate that the HTTP protocol is truly language-agnostic and to
-provide starter code for participants across the most popular ecosystems.
+Twenty-one built-in strategy bots serve as reference implementations and permanent
+ladder opponents. These demonstrate a wide range of strategies across multiple
+programming languages, showing that the HTTP protocol is language-agnostic and
+providing diverse opponents for competition.
 
 Each bot is deployed as its own container running a lightweight HTTP server.
 
-| Bot | Language | Complexity | Expected Rank |
-|-----|----------|------------|---------------|
-| RandomBot | Python | Trivial | 6th (floor) |
-| GathererBot | Go | Low | 4th–5th |
-| RusherBot | Rust | Low | 4th–5th |
-| GuardianBot | PHP | Medium | 3rd–4th |
-| SwarmBot | TypeScript | Medium | 1st–2nd |
-| HunterBot | Java | High | 1st–2nd |
+| Bot | Language | Strategy | Expected Rank |
+|-----|----------|----------|---------------|
+| RandomBot | Python | Random valid moves — baseline reference | 21st (floor) |
+| GathererBot | Go | Energy collection priority, avoids combat | 15th–18th |
+| RusherBot | Rust | Rushes enemy cores aggressively | 14th–17th |
+| GuardianBot | PHP | Defends cores, cautious expansion | 13th–16th |
+| SwarmBot | TypeScript | Formation cohesion, advances as a group | 5th–8th |
+| HunterBot | Java | Targets isolated enemy units | 4th–7th |
+| AssassinBot | Rust | Prioritizes high-value targets | 8th–11th |
+| CoordinatorBot | TypeScript | Coordinates unit actions across the field | 3rd–6th |
+| DefenderBot | C# | Pure defensive posture | 12th–15th |
+| EconomistBot | Python | Maximizes energy efficiency | 10th–13th |
+| FarmerBot | Go | Long-term energy farming strategy | 11th–14th |
+| KamikazeBot | JavaScript | Sacrificial rush tactics | 16th–19th |
+| LeaderTargeterBot | Java | Focuses fire on the strongest opponent | 6th–9th |
+| NomadBot | Python | Mobile, avoids prolonged engagements | 9th–12th |
+| OpportunistBot | Go | Exploits momentary advantages | 7th–10th |
+| PacifistBot | JavaScript | Avoids combat entirely | 19th–21st |
+| PhalanxBot | Rust | Tight defensive formation | 5th–8th |
+| RaiderBot | Java | Hit-and-run energy denial | 8th–11th |
+| ScoutBot | Python | Prioritizes map exploration | 13th–16th |
+| SiegeBot | Go | Methodical core destruction | 4th–7th |
+| ZoneDriverBot | Rust | Exploits the shrinking zone mechanic | 2nd–5th |
 
-### 5.1 RandomBot — Python
+### 5.1 Bot Implementations
 
-**Language rationale:** Python is the most accessible language for newcomers.
-The random bot doubles as the simplest possible starter template — a
-participant can fork it and have a working bot in minutes.
+**Language distribution:** Strategy bots demonstrate true language-agnostic HTTP protocol design across 8 programming languages:
 
-**Strategy:** Makes uniformly random valid moves each turn.
+- **Go (4 bots):** farmer, gatherer, opportunist, siege
+- **Rust (4 bots):** assassin, phalanx, rusher, zone-driver
+- **Python (4 bots):** economist, nomad, random, scout
+- **Java (3 bots):** hunter, leader-targeter, raider
+- **TypeScript (2 bots):** coordinator, swarm
+- **JavaScript (2 bots):** kamikaze, pacifist
+- **PHP (1 bot):** guardian
+- **C# (1 bot):** defender
 
-**Behavior:**
-- For each owned bot, pick a random direction (N/E/S/W) or hold (20% chance)
-- No pathfinding, no memory, no awareness of enemies
-- Serves as the absolute baseline — any reasonable bot should beat this
+This distribution shows that the HTTP protocol works across all major language families while maintaining diversity in implementation approaches.
 
-**Value:** Ensures new participants have an easy opponent to test against.
-Rating floor anchor.
+**Implementation patterns:**
+- All bots implement the same HTTP contract: `POST /turn` (game state → moves) and `GET /health` (liveness)
+- HMAC verification using language-standard crypto libraries
+- Game state parsing and move generation logic varies by language idioms
+- Each bot maintains its own strategy-specific state across turns
 
-**Implementation:** Flask or bare `http.server`. ~50 lines of strategy code.
-HMAC verification via `hmac` stdlib module.
+### 5.2 Reference Bot Descriptions
 
-### 5.2 GathererBot — Go
+#### RandomBot (Python)
+The simplest possible bot — makes uniformly random valid moves. Serves as the
+baseline reference; any competent bot should beat it. Implemented in Flask for
+accessibility.
 
-**Language rationale:** Go is the same language as the game engine and
-platform services, making this the canonical "how to build a bot" reference.
-Demonstrates idiomatic Go HTTP server patterns.
+#### Core Strategy Bots (Go)
+These demonstrate fundamental strategic concepts:
 
-**Strategy:** Maximize energy collection, avoid combat entirely.
+- **GathererBot**: BFS to nearest energy, avoids combat entirely. Tests whether
+  passive resource collection can outpace aggression.
+- **RusherBot**: BFS to enemy core, ignores energy except incidentally. Punishes
+  bots that neglect defense.
+- **GuardianBot**: Maintains defensive perimeter around cores, cautious expansion.
+  Tests turtling viability.
+- **SwarmBot**: Maintains formation cohesion (≤3 tiles between units), advances
+  as a group. Exploits focus-fire combat mechanics.
+- **HunterBot**: Targets isolated enemy units (≥4 tiles from nearest friendly),
+  sends pairs for 2v1 kills. Sophisticated target selection.
 
-**Behavior:**
-- BFS from each owned bot to the nearest visible energy
-- Assign each bot to the closest uncontested energy (greedy matching)
-- If an enemy bot is within vision, move away from it
-- Never voluntarily enters attack range of an enemy
-- Spawns bots as fast as energy allows
+#### Advanced Strategy Bots (Go)
+These demonstrate more sophisticated tactics:
 
-**Value:** Tests whether aggressive bots can actually close games or whether
-passive resource hoarding is dominant (it shouldn't be).
+- **AssassinBot**: Prioritizes high-value targets (weakened bots, core defenders)
+- **CoordinatorBot**: Coordinates unit actions across the entire field
+- **DefenderBot**: Pure defensive posture with fallback modes
+- **EconomistBot**: Maximizes energy efficiency, spawns conservatively
+- **FarmerBot**: Long-term energy farming with map control
+- **KamikazeBot**: Sacrificial rush tactics, trades efficiently
+- **LeaderTargeterBot**: Focuses fire on the highest-rated opponent
+- **NomadBot**: Mobile skirmishing, avoids prolonged engagements
+- **OpportunistBot**: Exploits momentary advantages and mistakes
+- **PacifistBot**: Avoids combat entirely, tests pure economic victory potential
+- **PhalanxBot**: Tight defensive formation with zone control
+- **RaiderBot**: Hit-and-run energy denial tactics
+- **ScoutBot**: Prioritizes map exploration and vision control
+- **SiegeBot**: Methodical core destruction with formation attacks
+- **ZoneDriverBot**: Exploits the shrinking zone mechanic aggressively
 
-**Implementation:** `net/http` stdlib server. Shared `game/` package with
-grid utilities, BFS, and distance calculations that participants can reuse.
+### 5.3 Value as Reference Implementations
 
-### 5.3 RusherBot — Rust
+These bots serve multiple purposes:
 
-**Language rationale:** Rust participants get maximum compute within the
-3-second timeout. This bot demonstrates that Rust's performance advantage
-matters less than strategy — a dumb fast bot still loses to a smart slow one.
+1. **Opponents for testing**: New bot developers have a range of strategies to
+   test against before competitive deployment.
+2. **Code examples**: Each bot demonstrates a complete, working HTTP bot
+   implementation with HMAC authentication.
+3. **Strategy benchmarks**: The rating distribution shows which strategic
+   approaches are effective in the current meta.
+4. **Meta diversity**: Different playstyles ensure no single strategy dominates
+   the ladder.
 
-**Strategy:** Identify and rush the nearest enemy core as fast as possible.
+### 5.4 Container Templates
 
-**Behavior:**
-- BFS from each owned bot toward the nearest known enemy core
-- If no enemy core is known, spread out to explore (random walk with
-  bias toward unexplored territory)
-- Ignores energy except incidentally (walks over it)
-- Ignores enemy bots unless they block the path
-- Spawns bots immediately and sends all toward the target
-
-**Value:** Punishes bots that neglect defense. Tests whether the combat
-system allows pure aggression to dominate (it shouldn't — rusher bots will
-walk into defensive formations and die).
-
-**Implementation:** `axum` or `actix-web`. Serde for JSON. HMAC via `hmac`
-and `sha2` crates. Demonstrates Rust's zero-copy deserialization.
-
-### 5.4 GuardianBot — PHP
-
-**Language rationale:** PHP is often overlooked in competitive programming
-but is widely known and trivially deployable. This demonstrates that even
-PHP — without async, without frameworks — can compete on equal footing
-when the interface is HTTP. Lowers the barrier for the large PHP developer
-community.
-
-**Strategy:** Defend own core, gather nearby energy, cautious expansion.
-
-**Behavior:**
-- Maintain a perimeter of bots within 5 tiles of each owned core
-- Assign excess bots (beyond perimeter needs) to gather energy within
-  10 tiles of a core
-- If enemy bots are spotted approaching, consolidate defenders between
-  the enemy and the core
-- Only sends scouts (lone bots) to explore beyond the safe zone
-- Very conservative spawning — maintains energy reserve of 6
-
-**Value:** Tests whether turtling is viable. Should beat rushers but lose to
-gatherers/swarms in the long game (inferior economy due to limited territory).
-
-**Implementation:** PHP built-in server (`php -S`) with a single router
-script. `hash_hmac()` for HMAC. JSON via `json_decode`/`json_encode`.
-BFS implemented with `SplQueue`.
-
-### 5.5 SwarmBot — TypeScript
-
-**Language rationale:** TypeScript (Node.js) is the most popular language
-for web developers entering the platform. This bot demonstrates maintaining
-complex state across turns — the swarm's formation tracking, rally points,
-and center-of-mass calculation benefit from TypeScript's type system.
-
-**Strategy:** Keep units in tight formations, advance as a group toward enemies.
-
-**Behavior:**
-- All bots maintain cohesion — no bot moves if it would be >3 tiles from the
-  nearest friendly bot
-- The swarm moves as a unit toward the nearest enemy presence
-- BFS-based center-of-mass steering: average position of all owned bots
-  is the swarm center; steer toward enemy center of mass
-- Energy collection is incidental (pass over it during advance)
-- New spawns rally to the swarm before advancing
-
-**Value:** Exploits the focus combat system — a tight group defeats scattered
-enemies. But slow expansion means inferior economy. Should dominate combat
-but can be outscored by gatherers on large maps.
-
-**Implementation:** Express.js or Fastify. State persisted in-process across
-turns (the HTTP server stays alive between requests). HMAC via Node.js
-`crypto` module. Typed interfaces for game state and moves.
-
-### 5.6 HunterBot — Java
-
-**Language rationale:** Java is dominant in competitive programming (Battlecode
-is Java-only). This is the most sophisticated strategy bot, demonstrating
-that Java's verbosity is offset by mature data structures (`PriorityQueue`,
-`HashMap`) and predictable GC behavior within the timeout window.
-
-**Strategy:** Target isolated enemy bots for efficient kills.
-
-**Behavior:**
-- Identify enemy bots that are ≥4 tiles from their nearest friendly bot
-  (isolated targets)
-- Send pairs of bots to intercept isolated enemies (2v1 wins cleanly)
-- If no isolated targets, default to gatherer behavior
-- Maintain a map of known enemy positions across turns, predict movement
-  based on last-seen direction and speed
-- Avoid engaging formations of 3+ enemy bots
-- Opportunistic energy collection when not actively hunting
-
-**Value:** Sophisticated target selection and prediction. Represents an
-intermediate-to-advanced-skill bot. Should beat random/gatherer/rusher but
-struggle against swarm formations.
-
-**Implementation:** Javalin or `com.sun.net.httpserver`. `javax.crypto.Mac`
-for HMAC. Maintains a `HashMap<Position, EnemyTracker>` across turns for
-movement prediction. Hungarian algorithm for optimal bot-to-target assignment.
-
-### 5.7 Container Templates
-
-Each language has its own container structure. All share the same contract:
+Each bot uses a language-appropriate container structure. All share the same contract:
 listen on port 8080, serve `POST /turn` and `GET /health`.
 
-**Go (GathererBot):**
+**Language-specific structures:**
+
 ```
-strategy-gatherer/
+bots/{bot-name}/
 ├── Dockerfile
-├── main.go                  # HTTP server, HMAC verification
-├── strategy.go              # Gatherer-specific logic
-├── game/
-│   ├── state.go             # Game state types
-│   ├── grid.go              # Grid utilities (BFS, distance, wrapping)
-│   └── moves.go             # Move response types
-└── go.mod
+├── main.{go,py,rs,ts,php,java,js,cs}  # HTTP server, HMAC verification
+├── strategy.{go,py,rs,ts,php,java,js,cs}  # Bot-specific strategy logic (if separated)
+├── game/                               # Game state types and grid utilities (varies by language)
+└── {go.mod,Cargo.toml,package.json,requirements.txt,pom.xml,bundler.csproj}  # Language-specific deps
 ```
 
-**Python (RandomBot):**
-```
-strategy-random/
-├── Dockerfile
-├── main.py                  # HTTP server, HMAC verification, strategy
-├── game.py                  # Game state types and grid utilities
-└── requirements.txt         # (minimal — stdlib only for random bot)
-```
+All bots follow the same structure pattern regardless of language: HTTP server entrypoint, strategy logic, game state utilities, and language-appropriate dependency management.
 
-**Rust (RusherBot):**
-```
-strategy-rusher/
-├── Dockerfile
-├── Cargo.toml
-└── src/
-    ├── main.rs              # HTTP server, HMAC verification
-    ├── strategy.rs          # Rusher-specific logic
-    └── game.rs              # Game state types, grid utilities
-```
-
-**PHP (GuardianBot):**
-```
-strategy-guardian/
-├── Dockerfile
-├── index.php                # Router + HMAC verification
-├── strategy.php             # Guardian-specific logic
-├── game.php                 # Game state types, BFS, grid utilities
-└── composer.json             # (optional — no external deps needed)
-```
-
-**TypeScript (SwarmBot):**
-```
-strategy-swarm/
-├── Dockerfile
-├── package.json
-├── tsconfig.json
-└── src/
-    ├── index.ts             # HTTP server, HMAC verification
-    ├── strategy.ts          # Swarm-specific logic
-    └── game.ts              # Game state types, grid utilities
-```
-
-**Java (HunterBot):**
-```
-strategy-hunter/
-├── Dockerfile
-├── pom.xml
-└── src/main/java/com/acb/hunter/
-    ├── App.java             # HTTP server, HMAC verification
-    ├── Strategy.java        # Hunter-specific logic
-    ├── GameState.java       # Game state deserialization
-    └── Grid.java            # Grid utilities, BFS, distance
-```
-
-**Shared contract (all languages):**
+**Shared contract (all bots):**
 - Listen on port 8080
 - `POST /turn` — receives game state, runs strategy, returns moves
 - `GET /health` — returns 200 (used for registration health check)
@@ -959,17 +850,19 @@ strategy-hunter/
 
 **Container specs:**
 
-| Bot | Build Image | Runtime Image | Memory Limit | CPU Limit |
-|-----|-------------|---------------|-------------|-----------|
-| RandomBot | `python:3.13-slim` | `python:3.13-slim` | 64MB | 0.1 cores |
-| GathererBot | `golang:1.24-alpine` | `alpine:3.21` | 128MB | 0.25 cores |
-| RusherBot | `rust:1.85-alpine` | `alpine:3.21` | 128MB | 0.25 cores |
-| GuardianBot | `php:8.4-cli-alpine` | `php:8.4-cli-alpine` | 128MB | 0.25 cores |
-| SwarmBot | `node:22-alpine` | `node:22-alpine` | 128MB | 0.25 cores |
-| HunterBot | `eclipse-temurin:21-alpine` | `eclipse-temurin:21-jre-alpine` | 256MB | 0.5 cores |
+| Language | Base Image | Memory Limit | CPU Limit |
+|----------|------------|-------------|-----------|
+| Python (4 bots) | `python:3.13-slim` | 64MB | 0.1 cores |
+| Go (4 bots) | `golang:1.24-alpine` → `alpine:3.21` | 128MB | 0.25 cores |
+| Rust (4 bots) | `rust:1.83-alpine` → `alpine:3.21` | 128MB | 0.25 cores |
+| Java (3 bots) | `eclipse-temurin:21-jre-alpine` | 192MB | 0.3 cores |
+| TypeScript (2 bots) | `node:22-alpine` → `alpine:3.21` | 128MB | 0.25 cores |
+| JavaScript (2 bots) | `node:22-alpine` → `alpine:3.21` | 96MB | 0.2 cores |
+| PHP (1 bot) | `php:8.4-cli-alpine` | 96MB | 0.2 cores |
+| C# (1 bot) | `mcr.microsoft.com/dotnet/aspnet:9.0-alpine` | 128MB | 0.25 cores |
 
-Java gets a higher resource allocation due to JVM overhead. All others are
-intentionally constrained — strategy bots should be lightweight.
+All bots are intentionally lightweight — strategy bots should focus on
+algorithmic efficiency, not resource consumption.
 
 ### 5.8 Starter Kit & SDK Libraries
 
@@ -1135,11 +1028,12 @@ encoding — only recording events that changed from the previous turn.
 ### 7.2 Storage
 
 All replay files, match metadata, thumbnails, bot cards, and evolution status
-files are stored in **Backblaze B2** and served via Cloudflare CDN (Bandwidth
-Alliance). Pre-computed JSON index files are deployed to **Cloudflare Pages**
-by the index builder. No PersistentVolumes are used for web-facing data.
+files are stored in **Cloudflare R2** and served through **Cloudflare Pages Functions**
+(`web/functions/r2/[[path]].ts`) with an R2 bucket binding. Pre-computed JSON index
+files are deployed to **Cloudflare Pages** by the index builder. No PersistentVolumes
+are used for web-facing data.
 
-**B2 data layout** (all data — served via Cloudflare CDN):
+**R2 data layout** (all data — served via Pages Functions):
 ```
 replays/{match_id}.json.gz           # ALL replay files
 matches/{match_id}.json              # ALL per-match metadata
@@ -1167,24 +1061,31 @@ maps/{map_id}.json                   # map definitions
 
 **How data flows:**
 1. Match worker completes a match → uploads `replays/{match_id}.json.gz`
-   and `matches/{match_id}.json` to **B2** (via S3-compatible API)
+   and `matches/{match_id}.json` to **R2** (via ARMOR credentials using B2-compatible API)
 2. Worker writes match result to **PostgreSQL** (scores, ratings, metadata)
 3. Index builder (every ~15 min) reads new results from PostgreSQL, rebuilds
    all JSON index files, deploys to **Pages** via `wrangler pages deploy`
 4. Browser loads SPA + indexes from Pages, fetches replays and match data
-   directly from **B2** (via Cloudflare CDN)
+   from **R2** via Pages Functions (`/r2/*`)
+
+**Serving architecture:**
+- Replays and match data are stored in Cloudflare R2 (S3-compatible object storage)
+- The web app fetches data through a Cloudflare Pages Function at `/r2/*` that
+  proxies to an R2 bucket binding
+- This provides zero-egress serving within Cloudflare's network (no egress fees for R2)
+- The Pages Function handles gzip decompression for `.gz` objects before serving
 
 **Retention:**
-- **B2**: All replays retained permanently. No pruning. The canonical
+- **R2**: All replays retained permanently. No pruning. The canonical
   store.
 - **PostgreSQL**: Match metadata retained indefinitely (rows are small).
 - Index files are append-with-rotation: `index.json` holds the last 1000;
   older pages at `index-{page}.json`.
 
 **Storage costs:**
-- **B2**: First 10 GB free, $0.006/GB/month after. At 60 matches/hour,
-  ~2.2 GB/month for replays. Year one: ~26 GB ≈ $0.10/month. Free
-  egress via Cloudflare Bandwidth Alliance.
+- **R2**: First 10 GB free, $0.015/GB/month after. At 60 matches/hour,
+  ~2.2 GB/month for replays. Year one: ~26 GB ≈ $0.30/month.
+  No egress fees when served through Cloudflare Pages.
 - **Pages**: No per-file storage costs. 20K file limit per deployment — only
   SPA + JSON indexes, well within limits.
 
@@ -1194,14 +1095,14 @@ The replay viewer is a client-side TypeScript application rendered on
 HTML5 Canvas.
 
 **Rendering pipeline:**
-1. Fetch `replay.json.gz` from B2 (via Cloudflare CDN); browser handles
-   gzip decompression via `Accept-Encoding`
+1. Fetch `replay.json.gz` from R2 via Pages Function (`/r2/replays/{match_id}.json.gz`);
+   the Function decompresses .gz objects before serving
 2. Parse and index: build per-turn game state by replaying events from turn 0
 3. Render the current turn to canvas
 4. User controls advance/rewind the turn index
 
 No API invocations — the viewer is a static page (served from Pages) loading
-a replay file from B2 (via Cloudflare CDN).
+a replay file from R2 (via Pages Functions).
 
 **Visual design:**
 
@@ -1229,7 +1130,7 @@ a replay file from B2 (via Cloudflare CDN).
 | Score overlay | Per-player score, energy, bot count — updates each turn |
 | Minimap | Small overview of full grid in corner (for large maps) |
 
-**Shareable URLs:** `https://aicodebattle.com/replay/{match_id}` — the
+**Shareable URLs:** `https://ai-code-battle.pages.dev/#/watch/replay/{match_id}` — the
 replay viewer is the landing page for any match. No login required to watch.
 
 ---
@@ -1272,10 +1173,10 @@ No build-time data fetching -- all data loaded at runtime.
 ```js
 // SPA shell + index data from Pages (same origin)
 const leaderboard = await fetch('/data/leaderboard.json').then(r => r.json())
-// Replays from B2 (cross-origin, CORS enabled on B2 bucket)
-const replay = await fetch(`https://b2.aicodebattle.com/replays/${matchId}.json.gz`)
-// Dynamic operations from K8s API
-const result = await fetch('https://api.aicodebattle.com/api/register', { method: 'POST', body: ... })
+// Replays from R2 via Pages Functions (same origin)
+const replay = await fetch(`/r2/replays/${matchId}.json.gz`)
+// Dynamic operations from K8s API (deferred)
+const result = await fetch('https://api.ai-code-battle.pages.dev/api/register', { method: 'POST', body: ... })
 ```
 
 Index JSON files are rebuilt and deployed to Pages every ~15 minutes by
@@ -1288,7 +1189,7 @@ B2 in real time by match workers and available immediately.
 
 A single Go HTTP service (`acb-api`) handles all server-side logic. It runs
 as a Deployment in the `ai-code-battle` namespace with a ClusterIP Service.
-Traefik routes `api.aicodebattle.com` to it via an IngressRoute (TLS via
+Traefik routes `api.ai-code-battle.pages.dev` to it via an IngressRoute (TLS via
 cert-manager). The API serves only dynamic endpoints -- no static files.
 It connects to CNPG PostgreSQL for persistent state and Valkey for the job
 queue.
@@ -1662,8 +1563,12 @@ Key principles:
 
 ### 9.2 Kubernetes Namespace Layout
 
-All ai-code-battle resources live in the `ai-code-battle` namespace.
-Cross-namespace dependencies:
+All ai-code-battle resources live in the `ai-code-battle` namespace on the
+`apexalgo-iad` cluster. Strategy bot deployments (21 bots) run within this
+namespace alongside core infrastructure (matchmaker, workers, evolver, index
+builder).
+
+**Cross-namespace dependencies:**
 
 - `cnpg` namespace: CNPG PostgreSQL cluster (`cnpg-apexalgo`) — the Go API
   and index builder connect via `cnpg-apexalgo-rw.cnpg.svc.cluster.local`
@@ -1674,18 +1579,22 @@ Cross-namespace dependencies:
 - `argocd` namespace: ArgoCD — an Application resource points to the
   manifests directory in the git repo
 
+**Historical note:** A dedicated cluster attempt (`iad-acb`) exists as a stale
+tree in `declarative-config/k8s/iad-acb/ai-code-battle/` from an earlier
+planned deployment. Active resources are consolidated on `apexalgo-iad`.
+
 **Cloudflare infrastructure requirements:**
 
 - **Cloudflare Pages project**: `ai-code-battle` (`ai-code-battle.pages.dev`)
   — hosts the static SPA and data indexes. Deployed by the index builder
   via `wrangler pages deploy`.
-- **DNS** (when custom domain is desired): `aicodebattle.com` CNAME to Pages.
+- **DNS** (when custom domain is desired): `ai-code-battle.com` CNAME to Pages.
 
-**Backblaze B2 infrastructure requirements:**
+**Cloudflare R2 infrastructure requirements:**
 
-- **B2 bucket**: Cold archive for ALL replays and match data, permanently.
-  Match workers upload directly via S3-compatible API. Free egress via
-  Cloudflare Bandwidth Alliance.
+- **R2 bucket**: Storage for ALL replays and match data, permanently.
+  Match workers upload via ARMOR credentials (B2-compatible API).
+  Served to browsers through Cloudflare Pages Functions (zero egress fees).
 
 **K8s manifests directory structure** (flat — per cluster CLAUDE.md norms):
 
@@ -1721,8 +1630,8 @@ Secrets already provisioned in the namespace: `acb-app-credentials-acb-app`
 
 ### 9.3 Container Images
 
-All container images are built by Argo Workflows and pushed to the Forgejo
-container registry (`forgejo.ardenone.com/ai-code-battle/<image>`).
+Live deployments pull container images from Docker Hub (`ronaldraygun/acb-*`).
+Images are built locally or via CI and pushed to Docker Hub for deployment.
 
 | Image | Base | Purpose | K8s Resource |
 |-------|------|---------|--------------|
@@ -1801,7 +1710,7 @@ Match workers coordinate via **Valkey** (job queue) and **PostgreSQL**
   (static SPA + data indexes)
 - B2 public URL (via Cloudflare CDN) → Backblaze B2 (replay/match data storage)
 - No K8s services are exposed externally in v1. The Go API IngressRoute
-  at `api.aicodebattle.com` is planned for when social features are added.
+  at `api.ai-code-battle.pages.dev` is planned for when social features are added.
 - TLS: Pages handles TLS automatically. B2 via Cloudflare CDN gets TLS
   from the CDN layer.
 
@@ -2560,7 +2469,7 @@ ai-code-battle/
 
 ### 11.2 Deployable Artifacts
 
-**Container images (Forgejo registry: `forgejo.ardenone.com/ai-code-battle/`):**
+**Container images (Docker Hub: `ronaldraygun/acb-*`):**
 
 | Image | Source | Base | Purpose | K8s Resource |
 |-------|--------|------|---------|--------------|
@@ -2628,12 +2537,12 @@ Source (git push to main)
     │    │    ├── go test ./cmd/...             (API/worker/evolver tests)
     │    │    ├── npm test (web)                (SPA tests)
     │    │    ├── Kaniko image builds           (all container images)
-    │    │    └── Push to Forgejo registry
+    │    │    └── Push to Docker Hub (ronaldraygun/acb-*)
     │    │
     │    └──► Argo Workflow: build-site
     │         ├── npm ci && npm run build       (Vite build)
-    │         ├── WASM builds                   (engine + 6 bots)
-    │         └── Push site build artifact to Forgejo registry
+    │         ├── WASM builds                   (engine + bots)
+    │         └── Push site build artifact to Docker Hub
     │
     ├──► ArgoCD (watches declarative-config repo)
     │    └── Syncs K8s manifests -> ai-code-battle namespace
@@ -3155,7 +3064,7 @@ major social media platforms. This is the viral growth engine.
 8. Download button appears, plus "Share" buttons:
    - **Twitter/X**: opens compose with the clip attached + auto-generated
      text ("SwarmBot pulls off a comeback against HunterBot! 🎮
-     aicodebattle.com/replay/{id}")
+     ai-code-battle.pages.dev/#/watch/replay/{id}")
    - **Reddit**: copies a markdown link with embedded video
    - **Discord**: downloads the file (under Discord's 25MB upload limit)
    - **Copy link**: shareable URL to the replay at the specific turn range
@@ -3164,7 +3073,7 @@ major social media platforms. This is the viral growth engine.
 - Player names + colors in a header bar
 - Score overlay (bottom-left)
 - Win probability mini-graph (bottom strip, if enabled)
-- "aicodebattle.com" watermark (small, bottom-right)
+- "ai-code-battle.pages.dev" watermark (small, bottom-right)
 
 **GIF optimization:** GIFs are limited to 256 colors and can be large.
 The clip maker uses:
@@ -3465,8 +3374,8 @@ A lightweight, standalone replay player that works in an iframe anywhere.
 
 **URL format:**
 ```
-https://aicodebattle.com/embed/{match_id}
-https://aicodebattle.com/embed/{match_id}?start=87&speed=4&mode=territory
+https://ai-code-battle.pages.dev/embed/{match_id}
+https://ai-code-battle.pages.dev/embed/{match_id}?start=87&speed=4&mode=territory
 ```
 
 **Query parameters:**
@@ -3495,7 +3404,7 @@ no side panel, no fog-of-war toggle. Just the match playing.
 └──────────────────────────────┘
 ```
 
-"Watch full" links to the main replay page on aicodebattle.com.
+"Watch full" links to the main replay page on ai-code-battle.pages.dev.
 
 **Implementation:**
 
@@ -3507,7 +3416,7 @@ no side panel, no fog-of-war toggle. Just the match playing.
   ```html
   <meta property="og:title" content="SwarmBot vs HunterBot — AI Code Battle" />
   <meta property="og:description" content="SwarmBot wins 3-1 in 342 turns" />
-  <meta property="og:image" content="https://aicodebattle.com/thumbnails/m_7f3a9b2c.png" />
+  <meta property="og:image" content="https://ai-code-battle.pages.dev/data/thumbnails/m_7f3a9b2c.png" />
   ```
 - Thumbnail: auto-generated PNG of the final turn state, created by the
   index builder Deployment or pre-rendered by the match worker
@@ -3546,7 +3455,7 @@ site's landing page.
       "players": ["SwarmBot", "HunterBot"],
       "scores": [3, 2],
       "date": "2026-03-23T14:30:00Z",
-      "thumbnail_url": "https://aicodebattle.com/thumbnails/m_7f3a9b2c.png",
+      "thumbnail_url": "https://ai-code-battle.pages.dev/data/thumbnails/m_7f3a9b2c.png",
       "enriched": true
     }
   ]
@@ -4104,7 +4013,7 @@ demand, or pre-rendered by the index builder Deployment for top-50 bots).
 │   ⚔️ 847 kills  💎 2.1k energy  │
 │   🏰 23 captures  📈 +320 Elo   │
 │                                 │
-│   aicodebattle.com              │
+│   ai-code-battle.pages.dev      │
 └─────────────────────────────────┘
 ```
 
@@ -4137,7 +4046,7 @@ Template-generated from ~20 signature patterns.
 **Sharing:**
 
 - "Share Card" button on the bot profile page generates a PNG download
-- Direct URL: `https://aicodebattle.com/card/{bot_id}.png`
+- Direct URL: `https://ai-code-battle.pages.dev/data/cards/{bot_id}.png`
   - Served as a static PNG from Nginx PV (pre-rendered for top-50 bots)
   - Or rendered on-demand by the Go API endpoint that reads the bot profile
     from PostgreSQL, draws to Canvas (using Go image libraries or a
@@ -4145,7 +4054,7 @@ Template-generated from ~20 signature patterns.
 - Open Graph tags on the URL so pasting it into Twitter/Discord/Slack
   shows the card as a rich preview:
   ```html
-  <meta property="og:image" content="https://aicodebattle.com/card/b_4e8c1d2f.png" />
+  <meta property="og:image" content="https://ai-code-battle.pages.dev/data/cards/b_4e8c1d2f.png" />
   <meta property="og:title" content="SwarmBot — #3 Rated — AI Code Battle" />
   ```
 - The card image includes the platform URL as a watermark, driving traffic
@@ -4228,9 +4137,9 @@ rate limiting needed.
 **Documented data paths:**
 
 ```
-PAGES = https://aicodebattle.com        (Cloudflare Pages)
-B2    = https://b2.aicodebattle.com     (Backblaze B2 via Cloudflare CDN)
-API   = https://api.aicodebattle.com    (K8s Go API, dynamic only)
+PAGES = https://ai-code-battle.pages.dev  (Cloudflare Pages)
+R2    = {PAGES}/r2                        (R2 via Pages Functions)
+API   = https://api.ai-code-battle.pages.dev    (K8s Go API, deferred)
 
 --- Index files on Pages (deployed every ~90 min by index builder) ---
 
@@ -4443,7 +4352,7 @@ evolution cycle:
 
 ```
 Upload to B2: evolution/live.json
-Served as:    https://b2.aicodebattle.com/evolution/live.json
+Served as:    https://ai-code-battle.pages.dev/r2/evolution/live.json
 ```
 
 Updated at every state transition: generation start, validation

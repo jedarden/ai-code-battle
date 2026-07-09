@@ -42,4 +42,4 @@ jobs:
           projectName: ai-code-battle
           directory: web/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          wranglerVersion: '3'
+          wranglerVersion: '4.81.0'
