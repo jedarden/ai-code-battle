@@ -40,3 +40,9 @@ web/public/data/maps/
 # Development tools
 .beads/
 .needle.yaml
+
+# Rust build artifacts
+target/
+
+# Python bytecode cache
+__pycache__/
