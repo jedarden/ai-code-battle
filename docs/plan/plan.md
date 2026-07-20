@@ -5347,3 +5347,114 @@ each season.
 
 Updated every 30 seconds from `evolution/live.json`. Shows the platform
 is alive.
+
+---
+
+## ADR-001: 2026-07-20 — Live-tail R2 feed for match results and leaderboard freshness
+
+### Context
+
+This audit reviewed the deployed artifact (`ai-code-battle.pages.dev`) rather
+than just the plan. Two things are true simultaneously today:
+
+1. The homepage already ships a "live match counter"
+   (`web/src/pages/home.ts`, `home-live-stats`) that polls
+   `evolution/live.json` every 30 seconds and reads `matches_today` /
+   `active_bots` — a feed the **evolver** (`cmd/acb-evolver`) writes to R2
+   after every evolution cycle (`cmd/acb-evolver/internal/live/r2.go`,
+   `UploadLiveJSON`). This gives the homepage a "the platform is alive"
+   pulse with sub-minute latency.
+2. Everything a visitor actually clicks into from that homepage —
+   `data/leaderboard.json`, `data/matches/index.json`,
+   `data/bots/{bot_id}.json` — is written by a completely different
+   pipeline: the **index builder** (`cmd/acb-index-builder`), which reads
+   PostgreSQL every ~15 minutes but only pushes a `wrangler pages deploy`
+   every ~90 minutes (§2, §8.1). So the number a visitor sees pulse on the
+   homepage ("1,847 matches today") can be up to 90 minutes newer than the
+   leaderboard and match list one click away — the freshest and stalest
+   parts of the same page sit right next to each other.
+
+This gap is currently worse than the plan assumes: `cmd/acb-index-builder`
+does not compile as of this audit (`go build ./cmd/acb-index-builder/...`
+fails — `deploy.go`, `s3.go`, and `cards.go` each independently declare
+`S3Client`, `getR2Client`, `getB2Client`, `uploadFileToR2`, and
+`uploadCardsToB2`; see repo-relative `cmd/acb-index-builder/deploy.go`
+lines 400/410/424/431 vs `cmd/acb-index-builder/s3.go` lines 18/107/161/190
+vs `cmd/acb-index-builder/cards.go` lines 221/436). Filed as bf-work
+(see beads below) — noted here because it means the *only* path the
+current architecture has for updating public match data is currently
+broken, while the "everything feels alive" homepage counter is not
+affected because it is written by a separate binary (`acb-evolver`) on a
+separate, working, faster path. The public leaderboard.json/matches
+index.json already observed live on `ai-code-battle.pages.dev` carries a
+`2024-01-18` timestamp and synthetic bot IDs (`b_457b876ca1c4` etc.) —
+consistent with a one-time seed that has never been refreshed by a
+working builder run.
+
+### Decision
+
+Extend the `evolution/live.json` pattern — a small, fast, R2-hosted JSON
+file, written directly by backend compute immediately after an event, with
+a short `Cache-Control` TTL, served through the existing Pages Function
+R2 proxy — to match results and leaderboard deltas:
+
+- The **match worker** (`cmd/acb-worker`), which already uploads
+  `replays/{match_id}.json.gz` and `matches/{match_id}.json` to R2/B2
+  immediately after each match (§7.2), additionally appends a small
+  entry to `matches/live-tail.json` (last ~50 completed matches: id,
+  players, winner, scores, completed_at) and updates
+  `leaderboard/live-delta.json` (per-bot rating deltas since the last
+  full index build). Both served with `Cache-Control: max-age=10`,
+  matching `evolution/live.json`'s existing convention.
+- The SPA's home, leaderboard, and matches pages fetch the batch-built
+  `data/leaderboard.json` / `data/matches/index.json` as today (the
+  authoritative, paginated source), then merge in `live-tail.json` /
+  `live-delta.json` on top — same reconciliation pattern the client
+  already needs for `evolution/live.json` vs `data/evolution/*.json`.
+  On the next full index build, the live-tail entries are absorbed into
+  the canonical index and the tail file is trimmed.
+- This does **not** replace the batch index builder — the 90-minute
+  cadence stays the system of record for pagination, search, and
+  historical indexes. It only closes the gap for "what just happened,"
+  which is the part visitors actually watch the homepage counter for.
+
+### Alternatives Considered
+
+- **Increase Pages deploy frequency** (e.g., every 5 minutes instead of
+  90). Rejected: Cloudflare Pages deploys are full-project redeploys: with
+  a 20K-file limit already budgeted mostly to JSON indexes (§2), frequent
+  redeploys multiply build/deploy overhead for no benefit to the 99% of
+  data that doesn't change turn-to-turn, and Pages deploy history/cache
+  invalidation isn't designed for minute-level cadences.
+- **WebSocket/SSE live-update service.** Rejected: requires a new
+  stateful, always-on ingress-exposed service in `apexalgo-iad`,
+  contradicts the static-first architecture's explicit goal (§2) of
+  keeping the public surface a CDN-served static site with zero
+  origin compute in the request path, and duplicates infrastructure the
+  platform doesn't otherwise need (auth, connection scaling, reconnect
+  logic) for a feed that updates on the order of minutes, not seconds.
+- **Do nothing (accept staleness).** Rejected: the homepage already
+  promises liveness via the `evolution/live.json` counter — leaving the
+  leaderboard/matches lagging up to 90 minutes behind that promise reads
+  as broken rather than intentional once a visitor clicks through, which
+  actively undercuts the platform's core "watch bots battle" value
+  proposition.
+
+### Consequences
+
+- Positive: closes the credibility gap between "1,847 matches today"
+  pulsing on the homepage and a leaderboard that hasn't moved in an hour;
+  reuses an already-proven pattern (`evolution/live.json`) rather than
+  introducing new infrastructure; match worker already has R2 write
+  credentials (ARMOR) so no new secrets are needed.
+- Negative: two more R2 objects to write per match (small JSON, negligible
+  cost against the existing ~2.2 GB/month replay budget from §2); the SPA
+  gains a small reconciliation step (dedupe match IDs already present in
+  the full index; overlay rating deltas) — bounded, isolated new code (a
+  merge function on already-fetched JSON), not a new subsystem. If the
+  match worker's R2 write fails, the live-tail can drift stale until the
+  next successful write — acceptable because it degrades to today's
+  behavior (batch-only freshness), not to an error state.
+- Prerequisite: `cmd/acb-index-builder`'s compile break must be fixed
+  first (or independently) — the live-tail is a freshness layer on top of
+  a working batch pipeline, not a replacement for one.
