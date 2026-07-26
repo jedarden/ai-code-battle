@@ -1,5 +1,14 @@
 # Phase 6: Deployment & Production - Completion Checklist
 
+> ⚠️ **Superseded (2026-07-26).** This checklist predates two changes and is retained for history:
+> 1. The compute tier it describes (apexalgo-iad K8s) was **decommissioned 2026-07-21**
+>    (`declarative-config` commit `0163324e`). See `notes/bf-1yj.md` to revive.
+> 2. The storage/serving model moved off the Backblaze B2 CDN (Bandwidth-Alliance CNAME
+>    `b2.aicodebattle.com`) to **R2 served via Cloudflare Pages Functions at `/r2/*`**, and the
+>    canonical public domain is `https://ai-code-battle.pages.dev` (the `aicodebattle.com` zone was
+>    never registered). The B2/CDN/DNS steps below are therefore obsolete; see
+>    `docs/notes/canonical-public-domain.md` for the current URL patterns.
+
 ## Status: Code Complete, Infrastructure Setup Pending Cloudflare Access
 
 This document outlines the remaining steps to complete Phase 6. All code is written and tested. The remaining tasks require Cloudflare account access to create resources.
@@ -80,57 +89,36 @@ All scripts in `scripts/` directory are ready:
    wrangler pages deploy web/dist --project-name=aicodebattle
    ```
 
-3. Add custom domain:
-   - Go to: Workers & Pages > aicodebattle > Settings > Custom domains
-   - Add domain: `aicodebattle.com`
+3. (Optional, future) Add custom domain — none is configured; the apex domain is not registered:
+   - Go to: Workers & Pages > ai-code-battle > Settings > Custom domains
+   - Add your registered domain
    - DNS CNAME will be auto-configured
 
-### ⏳ Backblaze B2 Custom Domain
+### ⏳ Storage Serving (R2 via Pages Function) — supersedes the B2 CDN
 
-B2 credentials are already provisioned (SealedSecret in cluster). The remaining step is to
-expose the bucket under a `b2.aicodebattle.com` subdomain so the SPA can fetch replays
-via Cloudflare's Bandwidth Alliance (zero egress fees).
+The SPA no longer fetches replays from a CDN subdomain. Replay/match/thumbnail/card data is
+served through the R2 bucket (`acb-data`) via the Cloudflare Pages Function at `/r2/*`
+(`web/functions/r2/[[path]].ts`), reachable at `https://ai-code-battle.pages.dev/r2/*`. No
+separate custom domain or Bandwidth-Alliance CNAME is used.
 
-**Manual steps:**
-1. In Backblaze console, enable public access on the `acb-data` bucket.
-2. Note the native B2 endpoint: `{bucket}.s3.{region}.backblazeb2.com`
-3. Add a Cloudflare DNS CNAME (see DNS section below) — Cloudflare proxies the request,
-   activating the Bandwidth Alliance and serving files via CDN.
-
-No script required — no Cloudflare account credentials needed for this step (DNS-only change).
+Historical note (obsolete): an earlier plan exposed the bucket under a `b2.aicodebattle.com`
+subdomain via Cloudflare's Bandwidth Alliance (zero egress). That subdomain was never created
+(the apex domain is not registered) and the architecture moved to the Pages Function proxy.
 
 ### ⏳ DNS Configuration
 
-**Automated via script:**
-```bash
-export CLOUDFLARE_API_TOKEN=your_token
-export TRAEFIK_IP=$(kubectl --server=http://kubectl-apexalgo-iad:8001 get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-./scripts/configure-dns.sh
-```
+**No DNS records are required** for the current deployment. The canonical domain
+`https://ai-code-battle.pages.dev` is managed by Cloudflare Pages, and storage is served via the
+`/r2/*` Pages Function on that same host — there is no separate R2/B2 subdomain. The `aicodebattle.com`
+zone was never registered, so no records were ever created.
 
-**Or manual steps:**
-1. Main domain (Pages):
-   - Type: CNAME
-   - Name: `@` (or `aicodebattle.com`)
-   - Target: `aicodebattle.pages.dev`
-   - Proxy: On (orange cloud)
-
-2. B2 subdomain (Bandwidth Alliance):
-   - Type: CNAME
-   - Name: `b2`
-   - Target: `acb-data.s3.<region>.backblazeb2.com`  ← replace `<region>` with actual B2 region
-   - Proxy: On (orange cloud) — required to activate Cloudflare Bandwidth Alliance (zero egress)
-
-3. API subdomain (deferred — not needed for v1 static-first launch):
-   - Type: A
-   - Name: `api`
-   - Target: `<Traefik LoadBalancer IP>`
-   - Proxy: On (orange cloud)
-
-**Get Traefik IP:**
-```bash
-kubectl --server=http://kubectl-apexalgo-iad:8001 get svc -n traefik
-```
+> **If `aicodebattle.com` is registered later** (future consideration only), these are the records you
+> would add in Cloudflare DNS:
+> 1. Main domain (Pages): CNAME `@` → `ai-code-battle.pages.dev` (proxied, auto-configured when
+>    adding the domain as a Pages custom domain).
+> 2. No B2/R2 subdomain is required — storage is fronted by the `/r2/*` Pages Function.
+> 3. API subdomain: only if the Go API is re-exposed publicly (it was decommissioned with the
+>    apexalgo-iad cluster on 2026-07-21; see `notes/bf-1yj.md`). Not needed for v1.
 
 ---
 
@@ -144,14 +132,14 @@ After completing the setup, run the verification script:
 
 Or manually check:
 ```bash
-# SPA should be accessible
-curl -I https://aicodebattle.com
+# SPA should be accessible (canonical domain)
+curl -I https://ai-code-battle.pages.dev
 
-# B2 CDN should be accessible (a known replay file)
-curl -I https://b2.aicodebattle.com/replays/latest.json.gz
+# Replays served via the /r2/* Pages Function (a known replay file)
+curl -I https://ai-code-battle.pages.dev/r2/replays/latest.json.gz
 
-# API health (deferred — not required for v1)
-# curl https://api.aicodebattle.com/health
+# API health — N/A for v1. The Go API lived on the now-decommissioned apexalgo-iad cluster
+# (2026-07-21); the api.* subdomain was never registered. See notes/bf-1yj.md to revive.
 ```
 
 ---
@@ -160,12 +148,11 @@ curl -I https://b2.aicodebattle.com/replays/latest.json.gz
 
 | Service | URL |
 |---------|-----|
-| SPA (Pages) | `https://aicodebattle.com` |
-| SPA (Pages default) | `https://aicodebattle.pages.dev` |
-| Replays (B2 via CDN) | `https://b2.aicodebattle.com/replays/{match_id}.json.gz` |
-| Match metadata (B2 via CDN) | `https://b2.aicodebattle.com/matches/{match_id}.json` |
-| Evolution feed (B2 via CDN) | `https://b2.aicodebattle.com/evolution/live.json` |
-| API (K8s, deferred) | `https://api.aicodebattle.com/health` |
+| SPA (Pages, canonical) | `https://ai-code-battle.pages.dev` |
+| Replays (R2 via Pages Function) | `https://ai-code-battle.pages.dev/r2/replays/{match_id}.json.gz` |
+| Match metadata (R2 via Pages Function) | `https://ai-code-battle.pages.dev/r2/matches/{match_id}.json` |
+| Evolution feed (R2 via Pages Function) | `https://ai-code-battle.pages.dev/r2/evolution/live.json` |
+| API (K8s) | decommissioned 2026-07-21 — see `notes/bf-1yj.md` to revive |
 
 ---
 
@@ -178,13 +165,13 @@ curl -I https://b2.aicodebattle.com/replays/latest.json.gz
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │  ┌──────────────────────┐    ┌────────────────────────────────────┐  │
-│  │  Cloudflare Pages    │    │  Backblaze B2 (via Cloudflare CDN) │  │
-│  │  aicodebattle.com    │    │  b2.aicodebattle.com               │  │
+│  │  Cloudflare Pages    │    │  Cloudflare R2 (via /r2/* Function) │  │
+│  │  *.pages.dev         │    │  /r2/* (bucket: acb-data)           │  │
 │  │                      │    │                                    │  │
 │  │  SPA shell (HTML/    │    │  replays/*.json.gz                 │  │
 │  │  JS/CSS)             │    │  matches/*.json                    │  │
 │  │  data/*.json         │    │  evolution/live.json               │  │
-│  │                      │    │  (Bandwidth Alliance = free egress) │  │
+│  │                      │    │  (R2 = zero egress)                │  │
 │  └──────────────────────┘    └────────────────────────────────────┘  │
 │           ▲                               ▲                          │
 └───────────┼───────────────────────────────┼──────────────────────────┘
@@ -258,7 +245,7 @@ Once Cloudflare resources are created:
 3. **Verify data flow:**
    - Index builder should start deploying JSON indexes to Pages
    - Match workers should upload replay files to B2
-   - Replays should be accessible at `b2.aicodebattle.com` via Cloudflare CDN
+   - Replays should be accessible at `https://ai-code-battle.pages.dev/r2/*` via the Pages Function
 
 4. **Monitor:**
    - Check ArgoCD for sync status
@@ -276,8 +263,10 @@ Phase 6 is complete when:
 - [x] CI/CD pipeline working
 - [x] Monitoring and alerting configured
 - [ ] Cloudflare Pages project created and deployed
-- [ ] B2 bucket public access enabled and `b2.aicodebattle.com` CNAME added (Bandwidth Alliance)
-- [ ] DNS configured (aicodebattle.com, b2.aicodebattle.com)
-- [ ] Platform publicly accessible
+- [ ] R2 bucket (`acb-data`) bound to the Pages project and served via `/r2/*` Function
+- [ ] No DNS configuration required (canonical domain `ai-code-battle.pages.dev` is Pages-managed)
+- [ ] Platform publicly accessible at `https://ai-code-battle.pages.dev`
 
-The Pages and DNS items require Cloudflare account access. The B2 item requires Backblaze console access. The `api.aicodebattle.com` DNS entry is deferred — the Go API is not required for v1.
+The Pages item requires Cloudflare account access. No custom DNS or B2 CDN setup is needed. The Go
+API (formerly on the apexalgo-iad cluster) was decommissioned 2026-07-21 and is not required for v1 —
+see `notes/bf-1yj.md` to revive.

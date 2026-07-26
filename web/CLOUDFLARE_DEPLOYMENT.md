@@ -66,21 +66,24 @@ For the GitHub Actions workflow to work, you need to set these secrets in your G
    - Click **New repository secret**
    - Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
 
-## Custom Domain
+## Custom Domain (future consideration)
 
-To use a custom domain (e.g., `aicodebattle.com`):
+The site is live at the Cloudflare-provided domain `https://ai-code-battle.pages.dev` — no custom
+domain is required, and `aicodebattle.com` is not currently registered. If a custom domain is
+registered later, attach it in Cloudflare Pages:
 
 1. Go to your Pages project in the Cloudflare Dashboard
 2. Navigate to **Custom domains**
 3. Add your domain
 4. Cloudflare will automatically configure the DNS
 
+The pages.dev URLs will continue to work as the origin.
+
 ## Verification
 
 After deployment, verify the site is accessible:
 
-- **Pages URL**: `https://ai-code-battle.pages.dev`
-- **Custom domain**: `https://aicodebattle.com` (if configured)
+- **Pages URL**: `https://ai-code-battle.pages.dev` (canonical — no custom domain registered)
 
 ## Troubleshooting
 
@@ -96,5 +99,6 @@ After deployment, verify the site is accessible:
 
 ### Custom domain not working
 
-- Check DNS propagation: `dig aicodebattle.com`
-- Verify the custom domain status in the Cloudflare Dashboard
+No custom domain is configured — the site is served at the canonical
+`https://ai-code-battle.pages.dev`. If a custom domain is added later, check DNS propagation and
+verify its status in the Cloudflare Dashboard.

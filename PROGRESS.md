@@ -84,7 +84,7 @@ Removed superseded code that no longer matches the architecture:
 - [x] Live evolution observatory (evolver writes live.json to R2)
   - R2 client module (`cmd/acb-evolver/internal/live/r2.go`) for S3-compatible uploads
   - `live-export -r2` and `live-export -r2-only` flags for R2 upload
-  - Frontend fetches from R2 (`https://r2.aicodebattle.com/evolution/live.json`)
+  - Frontend fetches from R2 (`https://ai-code-battle.pages.dev/r2/evolution/live.json`)
   - Cache-Control: max-age=10 for near-real-time updates
   - Tests for R2 config validation and credential handling
 - [x] Narrative engine (weekly story arc detection + LLM chronicles)

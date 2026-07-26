@@ -1,6 +1,6 @@
 # acb-starter-csharp
 
-C# (.NET) starter kit for [AI Code Battle](https://aicodebattle.com) — a competitive bot programming platform.
+C# (.NET) starter kit for [AI Code Battle](https://ai-code-battle.pages.dev) — a competitive bot programming platform.
 
 Uses ASP.NET Core minimal API with zero external dependencies beyond the framework.
 
@@ -23,7 +23,7 @@ Your bot listens on port 8080 and responds to `POST /turn` with move commands.
 Once your bot is deployed and accessible via HTTPS:
 
 ```bash
-curl -X POST https://api.aicodebattle.com/api/register \
+curl -X POST https://ai-code-battle.pages.dev/api/register \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-csharp-bot",

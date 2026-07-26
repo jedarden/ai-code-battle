@@ -1,6 +1,6 @@
 # acb-starter-java
 
-Java starter kit for [AI Code Battle](https://aicodebattle.com) — a competitive bot programming platform.
+Java starter kit for [AI Code Battle](https://ai-code-battle.pages.dev) — a competitive bot programming platform.
 
 Uses Javalin for the HTTP server, Jackson for JSON, and `javax.crypto` for HMAC authentication.
 
@@ -25,7 +25,7 @@ Your bot listens on port 8080 and responds to `POST /turn` with move commands.
 Once your bot is deployed and accessible via HTTPS:
 
 ```bash
-curl -X POST https://api.aicodebattle.com/api/register \
+curl -X POST https://ai-code-battle.pages.dev/api/register \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-java-bot",

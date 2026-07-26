@@ -20,7 +20,7 @@ The platform is split across two tiers:
 
 1. **Cloudflare (free tier)** - Web-facing infrastructure
    - Pages: SPA shell + pre-computed JSON index files
-   - R2: Replays, match metadata, maps, thumbnails (custom domain: r2.aicodebattle.com)
+   - R2: Replays, match metadata, maps, thumbnails (served via Pages Functions at /r2/*)
 
 2. **Kubernetes (apexalgo-iad)** - Compute tier
    - Matchmaker: Pairs bots, creates jobs in PostgreSQL
@@ -28,13 +28,13 @@ The platform is split across two tiers:
    - Bot containers: Run strategy bot HTTP servers
    - Index builder: Generates JSON indexes, uploads to B2/Pages
    - PostgreSQL: Bots, matches, ratings, job queue
-   - Traefik: Ingress for api.aicodebattle.com
+   - Traefik: Ingress for the Go API server (internal; the api subdomain was never publicly registered)
 
 ## Prerequisites
 
 - Cloudflare account with:
   - Pages project created (aicodebattle)
-  - R2 bucket with custom domain configured (r2.aicodebattle.com)
+  - R2 bucket bound to the Pages project (served via /r2/* Functions — no custom domain)
 - Kubernetes cluster with:
   - PostgreSQL database
   - Traefik ingress
@@ -118,35 +118,44 @@ npm run build
 wrangler pages deploy dist --project-name=aicodebattle
 ```
 
-### Custom Domain for Pages
+### Custom Domain for Pages (future consideration)
 
-Configure custom domain in Cloudflare dashboard:
+The site is served at the canonical `https://ai-code-battle.pages.dev` — no custom domain is
+required, and `aicodebattle.com` is not currently registered. If the domain is registered later,
+configure it in the Cloudflare dashboard:
 1. Go to your Pages project > Custom domains
-2. Add domain: `aicodebattle.com`
+2. Add your domain
 3. DNS will be automatically configured
 
-### R2 Bucket
+The pages.dev origin will continue to work.
 
-Create the bucket and configure custom domain:
+### Storage Bucket (R2 / B2)
+
+Replays, match metadata, maps, thumbnails, and bot cards are written by the match workers to an
+S3-compatible bucket (`acb-data`) and read by the web tier through a Cloudflare R2 binding, served
+to the browser via the Pages Function at `/r2/*` (`web/functions/r2/[[path]].ts`). No R2 custom
+domain is used — the canonical public path is `https://ai-code-battle.pages.dev/r2/*`.
+
 ```bash
-# Automated setup (bucket + custom domain via API)
-./scripts/setup-r2.sh
+# Informational: prints the bucket endpoint, the (optional) B2 CDN CNAME target, verifies B2
+# credentials, and lists the expected public URLs. Requires no Cloudflare credentials.
+./scripts/setup-b2.sh
+```
 
-# Or manual setup:
-# 1. Create bucket
+Create the bucket manually if it does not yet exist:
+```bash
 wrangler r2 bucket create acb-data
-
-# 2. Configure custom domain in Cloudflare dashboard:
-#    - Go to R2 > acb-data > Settings > Custom Domains
-#    - Add domain: r2.aicodebattle.com
 ```
 
 ### DNS Configuration
 
-In Cloudflare DNS settings:
-- `aicodebattle.com` → CNAME to Pages (auto-configured when adding custom domain)
-- `api.aicodebattle.com` → A record pointing to Traefik LoadBalancer IP (proxied)
-- `r2.aicodebattle.com` → CNAME to R2 (auto-configured when adding custom domain)
+No custom DNS records are required: the canonical domain `https://ai-code-battle.pages.dev` is
+managed by Cloudflare Pages, and R2 is served via the `/r2/*` Pages Function on that same host.
+The `aicodebattle.com` zone is not registered, so none of the records below were ever created —
+they are listed only for reference if the domain is registered later:
+- `aicodebattle.com` → CNAME to Pages (auto-configured when adding a custom domain)
+- `api` subdomain → A record pointing to the Traefik LoadBalancer IP (proxied), for the Go API
+- No separate R2/B2 DNS record — storage is fronted by the `/r2/*` Pages Function
 
 ## Monitoring
 
@@ -176,7 +185,8 @@ The API server provides health endpoints for Kubernetes probes:
 
 ### Worker can't connect to API
 
-Check that the API service is running and accessible via Traefik ingress at `api.aicodebattle.com`.
+Check that the API service is running and reachable through the Traefik ingress (the public api
+subdomain was never registered; the Go API is reached via internal cluster networking).
 
 ### Bot authentication failures
 

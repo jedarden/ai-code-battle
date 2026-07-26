@@ -40,7 +40,7 @@ bash scripts/upload-test-replays.sh
 After uploading, verify the replays are accessible:
 
 ```bash
-curl -I https://r2.aicodebattle.com/replays/m_test_upset_v1.json.gz
+curl -I https://ai-code-battle.pages.dev/r2/replays/m_test_upset_v1.json.gz
 ```
 
 Or test directly in the viewer:
@@ -50,8 +50,8 @@ https://ai-code-battle.pages.dev/#/watch/replay?url=/r2/replays/m_test_upset_v1.
 
 - **Bucket Name**: `acb-data`
 - **Binding**: `ACB_BUCKET` (configured in `web/wrangler.toml`)
-- **Custom Domain**: `r2.aicodebattle.com`
-- **Public URL**: `https://r2.aicodebattle.com/`
+- **Served via**: Pages Function at `/r2/*` (`web/functions/r2/[[path]].ts`) — no separate custom domain
+- **Public URL**: `https://ai-code-battle.pages.dev/r2/`
 
 ### Expected R2 Layout
 
