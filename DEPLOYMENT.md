@@ -1,5 +1,17 @@
 # AI Code Battle - Deployment Guide
 
+> ⚠️ **Status (2026-07-26): DECOMMISSIONED.** The compute tier described here
+> ran on the `apexalgo-iad` Kubernetes cluster and was taken down on 2026-07-21
+> (`declarative-config` commit `0163324e`, "take down ai-code-battle"). Both
+> manifest trees (`k8s/apexalgo-iad/ai-code-battle/` and the retired
+> `k8s/iad-acb/ai-code-battle/`) have been removed from `declarative-config`;
+> the live `ai-code-battle` namespace on apexalgo-iad holds only orphaned pods
+> the unhealthy ArgoCD sync did not prune. This guide documents the original
+> deployment design. `apexalgo-iad` was the authoritative cluster; `iad-acb`
+> was a separate, earlier dedicated-cluster attempt that was itself retired and
+> deleted (`declarative-config` commit `53fc54a1`). To revive, see
+> `notes/bf-1yj.md`.
+
 This document describes how to deploy AI Code Battle to production.
 
 ## Architecture Overview

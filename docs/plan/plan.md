@@ -16,6 +16,12 @@ implementations for the HTTP protocol.
 
 ## 2. System Architecture
 
+> ⚠️ **Status (2026-07-26): DECOMMISSIONED.** The `ai-code-battle` compute tier
+> on `apexalgo-iad` was taken down on 2026-07-21 (`declarative-config` commit
+> `0163324e`). The description below documents the *intended/designed*
+> architecture, not the current live state. The Cloudflare static site, R2
+> replays, CNPG postgres, and OpenBao MEK were preserved. See `notes/bf-1yj.md`.
+
 The platform uses a **static-first** architecture. The public-facing product
 is a **Cloudflare Pages** static site — all data visitors see (leaderboards,
 match history, bot profiles, replays) is pre-computed JSON served from the CDN.
@@ -1530,6 +1536,14 @@ time range, human-only vs all). Auto-refresh every 60 seconds. Public
 
 ## 9. Deployment & Infrastructure
 
+> ⚠️ **Status (2026-07-26): DECOMMISSIONED.** The `ai-code-battle` compute tier
+> on `apexalgo-iad` was taken down on 2026-07-21 (`declarative-config` commit
+> `0163324e`, "take down ai-code-battle"); both manifest trees
+> (`k8s/apexalgo-iad/ai-code-battle/` and the retired `k8s/iad-acb/ai-code-battle/`)
+> have been removed from `declarative-config`. The text below is the original
+> design spec. See `notes/bf-58z.md` for the authoritative-cluster resolution
+> and `notes/bf-1yj.md` for the decommission.
+
 ### 9.1 Design Principles
 
 Compute runs in the **apexalgo-iad** Kubernetes cluster (Rackspace Spot) in
@@ -1579,9 +1593,23 @@ builder).
 - `argocd` namespace: ArgoCD — an Application resource points to the
   manifests directory in the git repo
 
-**Historical note:** A dedicated cluster attempt (`iad-acb`) exists as a stale
-tree in `declarative-config/k8s/iad-acb/ai-code-battle/` from an earlier
-planned deployment. Active resources are consolidated on `apexalgo-iad`.
+**Cluster history (resolved bf-58z, 2026-07-26):** The authoritative cluster
+for `ai-code-battle` was **`apexalgo-iad`** — it was the only cluster ever to
+run live `ai-code-battle` pods, and `declarative-config/k8s/apexalgo-iad/ai-code-battle/`
+was the tree ArgoCD managed. `iad-acb` was a separate, earlier dedicated-cluster
+attempt that was **retired and deleted** — its manifests, ArgoCD wiring, and
+docs were removed in `declarative-config` commit `53fc54a1` ("remove deleted
+cluster"), and its endpoint `traefik-iad-acb:8001` is now unreachable. It was
+never a live duplicate of the apexalgo-iad deployment; the two were never in
+split-brain (the apparent duplication was an abandoned earlier cluster, not a
+second live copy). Subsequently, the **entire `ai-code-battle` compute tier on
+`apexalgo-iad` was decommissioned on 2026-07-21** (`declarative-config` commit
+`0163324e`, "take down ai-code-battle"), which deleted the
+`k8s/apexalgo-iad/ai-code-battle/` tree as well. As of that date **neither
+manifest tree exists in `declarative-config`**; the live namespace on
+apexalgo-iad holds only orphaned pods the unhealthy ArgoCD sync failed to prune.
+The Cloudflare static site, R2 replays, CNPG postgres, and OpenBao MEK were
+intentionally preserved. See `notes/bf-58z.md` and `notes/bf-1yj.md`.
 
 **Cloudflare infrastructure requirements:**
 
