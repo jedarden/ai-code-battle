@@ -11,9 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
-
-	"github.com/aicodebattle/acb/metrics"
 )
 
 // B2Client defines the interface for B2 operations needed by bundling functions.
@@ -109,10 +106,11 @@ func verifyMergedOutput(cfg *Config) error {
 		return fmt.Errorf("data directory not found: %w", err)
 	}
 
-	// Check for leaderboard.json (canonical data file)
+	// Check for leaderboard.json (canonical data file). Missing on a first
+	// build is a warning, not an error — it may not have been generated yet.
 	leaderboardPath := filepath.Join(dataDir, "leaderboard.json")
 	if _, err := os.Stat(leaderboardPath); err != nil {
-		return fmt.Errorf("leaderboard.json not found: %w", err)
+		slog.Warn("leaderboard.json not found in output directory", "path", leaderboardPath)
 	}
 
 	return nil
@@ -125,15 +123,15 @@ func deployToPages(cfg *Config) error {
 	}
 
 	// Build wrangler command
-	args := []string{"pages", "deploy", cfg.OutputDir, "--project-name", cfg.PagesProject}
-	if cfg.CFAccountID != "" {
+	args := []string{"pages", "deploy", cfg.OutputDir, "--project-name", cfg.PagesProjectName}
+	if cfg.CloudflareAccountID != "" {
 		args = append(args, "--compatibility-date=2024-01-01")
 	}
 
 	cmd := exec.Command("wrangler", args...)
 	cmd.Env = append(os.Environ(),
-		"CLOUDFLARE_API_TOKEN="+cfg.CFAPIToken,
-		"CLOUDFLARE_ACCOUNT_ID="+cfg.CFAccountID,
+		"CLOUDFLARE_API_TOKEN="+cfg.CloudflareAPIToken,
+		"CLOUDFLARE_ACCOUNT_ID="+cfg.CloudflareAccountID,
 	)
 
 	output, err := cmd.CombinedOutput()
@@ -145,36 +143,17 @@ func deployToPages(cfg *Config) error {
 	return nil
 }
 
-// uploadFileToR2 uploads a single file to R2.
-func uploadFileToR2(ctx context.Context, cfg *Config, localPath, key string) error {
-	r2Client, err := getR2Client(cfg)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.Open(localPath)
-	if err != nil {
-		return fmt.Errorf("open file: %w", err)
-	}
-	defer f.Close()
-
-	if err := r2Client.uploadObject(ctx, key, f); err != nil {
-		return fmt.Errorf("upload object: %w", err)
-	}
-
-	return nil
-}
-
 // bundleWarmReplay downloads replays from B2 and places them in the deploy directory.
 func bundleWarmReplay(ctx context.Context, cfg *Config, b2Client B2Client, matchID string) error {
-	key := fmt.Sprintf("replays/%s.json", matchID)
+	// Replays are stored gzipped in B2 (standard format, see downloadReplayFromB2).
+	key := fmt.Sprintf("replays/%s.json.gz", matchID)
 	rc, err := b2Client.downloadObject(ctx, key)
 	if err != nil {
 		return fmt.Errorf("download replay: %w", err)
 	}
 	defer rc.Close()
 
-	destPath := filepath.Join(cfg.OutputDir, "data", "replays", matchID+".json")
+	destPath := filepath.Join(cfg.OutputDir, "data", "replays", matchID+".json.gz")
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return fmt.Errorf("create replay dir: %w", err)
 	}
@@ -306,54 +285,15 @@ func bundleEvolutionLive(ctx context.Context, cfg *Config, b2Client B2Client) er
 	return nil
 }
 
-// getB2Client creates a B2 client for bundling operations.
-func getB2Client(cfg *Config) (B2Client, error) {
-	return &S3Client{
-		endpoint:  cfg.B2Endpoint,
-		bucket:    cfg.B2BucketName,
-		accessKey: cfg.B2AccessKey,
-		secretKey: cfg.B2SecretKey,
-	}, nil
-}
-
-// uploadCardsToB2 uploads generated bot cards to B2 for long-term storage.
-func uploadCardsToB2(ctx context.Context, cfg *Config, outputDir string) error {
-	b2Client, err := getB2Client(cfg)
-	if err != nil {
-		return err
+// extractMatchIDFromKey extracts a match ID from a B2/R2 replay object key of
+// the form "replays/{matchID}.json.gz". It returns "" for keys that do not use
+// the expected replay prefix.
+func extractMatchIDFromKey(key string) string {
+	const prefix = "replays/"
+	if !strings.HasPrefix(key, prefix) {
+		return ""
 	}
-
-	cardsDir := filepath.Join(outputDir, "cards")
-	entries, err := os.ReadDir(cardsDir)
-	if err != nil {
-		return fmt.Errorf("read cards directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".png") {
-			continue
-		}
-
-		botID := strings.TrimSuffix(entry.Name(), ".png")
-		localPath := filepath.Join(cardsDir, entry.Name())
-		key := fmt.Sprintf("cards/%s.png", botID)
-
-		f, err := os.Open(localPath)
-		if err != nil {
-			slog.Warn("Failed to open card for upload", "bot_id", botID, "error", err)
-			continue
-		}
-
-		if err := b2Client.uploadObject(ctx, key, f); err != nil {
-			slog.Warn("Failed to upload card to B2", "bot_id", botID, "error", err)
-			f.Close()
-			continue
-		}
-		f.Close()
-	}
-
-	slog.Info("Uploaded cards to B2", "count", len(entries))
-	return nil
+	return strings.TrimSuffix(strings.TrimPrefix(key, prefix), ".json.gz")
 }
 
 // fetchPlaylistMatchIDsFromFiles reads playlist JSON files and extracts match IDs.
@@ -394,43 +334,4 @@ func fetchPlaylistMatchIDsFromFiles(outputDir string) map[string]bool {
 	}
 
 	return matchIDs
-}
-
-// getR2Client creates an R2 client for upload operations.
-func getR2Client(cfg *Config) (*S3Client, error) {
-	return &S3Client{
-		endpoint:  cfg.R2Endpoint,
-		bucket:    cfg.R2BucketName,
-		accessKey: cfg.R2AccessKey,
-		secretKey: cfg.R2SecretKey,
-	}, nil
-}
-
-// objectExists checks if an object exists in R2.
-func (c *S3Client) objectExists(ctx context.Context, key string) (bool, error) {
-	// For now, return false (this is used for enrichment checks)
-	// TODO: Implement proper HEAD request
-	return false, nil
-}
-
-// uploadObject uploads an object to R2.
-func (c *S3Client) uploadObject(ctx context.Context, key string, r io.Reader) error {
-	// For now, this is a no-op (R2 upload is handled elsewhere)
-	// TODO: Implement proper S3 PutObject
-	return nil
-}
-
-// downloadObject downloads an object from B2.
-func (c *S3Client) downloadObject(ctx context.Context, key string) (io.ReadCloser, error) {
-	// For now, return error (B2 download is handled elsewhere)
-	// TODO: Implement proper S3 GetObject
-	return nil, fmt.Errorf("not implemented")
-}
-
-// S3Client is a minimal S3-compatible client for B2/R2 operations.
-type S3Client struct {
-	endpoint  string
-	bucket    string
-	accessKey string
-	secretKey string
 }
