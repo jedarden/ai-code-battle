@@ -48,11 +48,11 @@ untouched:
 
 ## Infrastructure notes (forgejo outage + reconciliation)
 
-- **`git pull origin` failed: forgejo (`git.ardenone.com`) returned HTTP 502** on both the
-  web root and the `git-upload-pack` endpoint, across multiple retries (hard-down, not
-  transient). This server is the configured `origin`.
-- The **`github` remote was reachable** and held the same `master` ref as the cached
-  `origin/master` (`22cf14a`), so it was used as the push target. See push note below.
+- **`git pull origin` initially failed: forgejo (`git.ardenone.com`) returned HTTP 502** on
+  both the web root and the `git-upload-pack` endpoint, across multiple retries during the
+  audit phase. forgejo later recovered (see Push).
+- The **`github` remote was reachable** throughout and held the same `master` ref as the
+  cached `origin/master` (`22cf14a`).
 - Local HEAD had diverged from `origin/master`: `e7b5a6f` (local) and `22cf14a` (origin) are
   the same `docs(bf-2vf)` change with an **identical tree** (`f584db9`), differing only in
   committer metadata (an amend/rewrite). Local also carried a concurrent agent's `1a051d0`
@@ -62,9 +62,9 @@ untouched:
 
 ## Push
 
-- `git push origin` → failed (forgejo 502, hard-down).
-- `git push github` → used as fallback (reachable, same ref). Commit landed on the GitHub
-  mirror since the primary forgejo origin was unavailable.
+- `git push origin` → **succeeded** (`22cf14a..911cb6b`); forgejo had recovered by push time.
+- `git push github` → **succeeded** (`22cf14a..911cb6b`); GitHub mirror in sync.
+- Both remotes now carry the notes commit.
 
 ## Final checker summary
 
