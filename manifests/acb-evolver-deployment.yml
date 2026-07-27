@@ -50,7 +50,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: acb-app-credentials-acb-app
-                  key: uri
+                  key: jdbc-uri
             - name: ACB_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:

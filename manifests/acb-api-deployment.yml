@@ -47,7 +47,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: acb-app-credentials-acb-app
-                  key: uri
+                  key: jdbc-uri
             - name: ACB_VALKEY_ADDR
               value: "valkey-master.valkey.svc.cluster.local:6379"
             - name: ACB_VALKEY_PASSWORD
