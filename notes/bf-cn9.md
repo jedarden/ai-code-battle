@@ -131,3 +131,13 @@ headless single-ExternalSecret restore.
   `origin/main` `7657621b`.
 - Preserved data: CNPG manifest `k8s/apexalgo-iad/cnpg/database-ai-code-battle.yml`,
   B2 bucket `armor-apexalgo`, OpenBao `rs-manager/iad-acb/armor` (MEK).
+
+## Update from Jul 27 2026
+
+A **local-only commit `7669b02d`** was created on July 27 titled "fix(bf-cn9): add acb-armor-credentials ExternalSecret for ai-code-battle" which re-added the `acb-armor-credentials-externalsecret.yml` file to `declarative-config/k8s/apexalgo-iad/ai-code-battle/`. However:
+- This commit was **NEVER pushed** to `origin/main` (branch shows "ahead of origin/main by 1 commit")
+- The ArgoCD application `ai-code-battle-ns-apexalgo-iad` has `deletionTimestamp: "2026-07-21T21:46:46Z"` and is in **Degraded/Failed** state
+- Even if pushed, ArgoCD would not sync it because the app is being deleted
+- The live apexalgo-iad cluster shows the namespace still exists with orphaned pods, but ArgoCD is not actively managing it
+
+This attempted "fix" was made without understanding that the decommission on July 21 was intentional. The commit represents a misunderstanding of the current state — the workload was deliberately retired, not accidentally broken.
