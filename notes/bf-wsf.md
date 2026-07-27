@@ -1,5 +1,9 @@
 # Bead bf-wsf — acb-api CreateContainerConfigError: Secret `acb-app-credentials-acb-app` missing `uri` key
 
+## Verification (2026-07-27): BEAD IS OBSOLETE — situation unchanged from original analysis
+
+Re-verified the decommission status and confirmed the bead's premise conflicts with deliberate operator intent. No changes made; situation identical to original analysis below.
+
 ## Outcome: NOT COMPLETED — bead premise is stale; contradicts a deliberate decommission. Bead left OPEN for a human decision.
 
 The bead asks to fix acb-api's `CreateContainerConfigError` by providing the missing `uri`
