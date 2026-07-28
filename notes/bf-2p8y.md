@@ -88,14 +88,14 @@ All web code already uses this domain correctly:
 - Share URLs use `ai-code-battle.pages.dev`
 - Replay viewer uses `ai-code-battle.pages.dev`
 
-## Fresh Verification (2026-07-28)
+## Fresh Verification (2026-07-28 19:40 UTC)
 
 Re-verified domain status:
-- `curl -sI https://aicodebattle.com` → Could not resolve host (still NXDOMAIN)
-- `host aicodebattle.com` → Host not found: 3(NXDOMAIN)
-- wrangler requires `CLOUDFLARE_API_TOKEN` for non-interactive automation (token not available)
+- `host aicodebattle.com` → Host not found: 3(NXDOMAIN) ✅ Confirmed
+- `curl -sI https://aicodebattle.com` → Could not resolve host ✅ Confirmed
+- `curl -sI https://ai-code-battle.pages.dev` → HTTP 200 ✅ Working correctly
 
-The blockage remains unchanged from original investigation.
+The blockage remains unchanged from original investigation. The domain aicodebattle.com is not registered and does not exist in DNS, while the canonical domain ai-code-battle.pages.dev is serving the application correctly.
 
 ---
 
@@ -108,6 +108,25 @@ This bead should be **left open but marked as blocked** with a note that:
 3. If/when the project decides to register the custom domain, this bead can be revisited
 
 The bead should **NOT be closed** because the acceptance criteria cannot be met in the current state.
+
+---
+
+## Current Session (2026-07-28 19:40 UTC)
+
+Re-verified all acceptance criteria and domain status. Findings confirm the original investigation:
+
+1. **Domain Registration**: Still NOT registered - confirmed via host command returning NXDOMAIN
+2. **HTTPS Resolution**: Cannot resolve - curl to aicodebattle.com fails
+3. **Working Domain**: ai-code-battle.pages.dev continues serving correctly (HTTP 200)
+4. **Project Decision**: No change - bf-5kk decision to use pages.dev domain remains active
+
+### Conclusion
+This bead **cannot be completed** because:
+- Core prerequisite (domain registration) is not met
+- Active project decision (bf-5kk) explicitly chooses NOT to register aicodebattle.com
+- All acceptance criteria fail (domain doesn't exist, can't resolve, can't serve)
+
+The bead should remain open as blocked, not closed.
 
 ---
 
