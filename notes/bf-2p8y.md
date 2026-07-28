@@ -88,6 +88,15 @@ All web code already uses this domain correctly:
 - Share URLs use `ai-code-battle.pages.dev`
 - Replay viewer uses `ai-code-battle.pages.dev`
 
+## Fresh Verification (2026-07-28)
+
+Re-verified domain status:
+- `curl -sI https://aicodebattle.com` → Could not resolve host (still NXDOMAIN)
+- `host aicodebattle.com` → Host not found: 3(NXDOMAIN)
+- wrangler requires `CLOUDFLARE_API_TOKEN` for non-interactive automation (token not available)
+
+The blockage remains unchanged from original investigation.
+
 ---
 
 ## Recommended Path Forward
