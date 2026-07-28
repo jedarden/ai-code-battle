@@ -88,14 +88,31 @@ All web code already uses this domain correctly:
 - Share URLs use `ai-code-battle.pages.dev`
 - Replay viewer uses `ai-code-battle.pages.dev`
 
-## Fresh Verification (2026-07-28 19:40 UTC)
+## Fresh Verification (2026-07-28 19:48 UTC)
 
 Re-verified domain status:
 - `host aicodebattle.com` → Host not found: 3(NXDOMAIN) ✅ Confirmed
-- `curl -sI https://aicodebattle.com` → Could not resolve host ✅ Confirmed
+- `curl -sI https://aicodebattle.com` → Could not resolve host (no output) ✅ Confirmed
 - `curl -sI https://ai-code-battle.pages.dev` → HTTP 200 ✅ Working correctly
 
 The blockage remains unchanged from original investigation. The domain aicodebattle.com is not registered and does not exist in DNS, while the canonical domain ai-code-battle.pages.dev is serving the application correctly.
+
+### Technical Verification Results
+```bash
+# DNS check - returns NXDOMAIN (domain not registered)
+host aicodebattle.com
+# Output: Host aicodebattle.com not found: 3(NXDOMAIN)
+
+# HTTPS check - cannot resolve domain
+curl -sI https://aicodebattle.com
+# Output: (no output - connection fails)
+
+# Canonical domain - working correctly
+curl -sI https://ai-code-battle.pages.dev
+# Output: HTTP/2 200
+#         content-type: text/html; charset=utf-8
+#         cache-control: public, max-age=0, must-revalidate
+```
 
 ---
 
