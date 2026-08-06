@@ -357,8 +357,9 @@ func TestBundleWarmCards(t *testing.T) {
 		t.Fatalf("bundleWarmCards failed: %v", err)
 	}
 
-	// Verify file was created
-	expectedPath := filepath.Join(tmpDir, "data", "cards", "bot1.png")
+	// Verify file was created (cards are served from the top-level cards/ dir,
+	// matching generateAllBotCards; the warm bundle writes there too)
+	expectedPath := filepath.Join(tmpDir, "cards", "bot1.png")
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Errorf("expected card file not created: %s", expectedPath)
 	}

@@ -16,6 +16,12 @@ implementations for the HTTP protocol.
 
 ## 2. System Architecture
 
+> ⚠️ **Status (2026-07-26): DECOMMISSIONED.** The `ai-code-battle` compute tier
+> on `apexalgo-iad` was taken down on 2026-07-21 (`declarative-config` commit
+> `0163324e`). The description below documents the *intended/designed*
+> architecture, not the current live state. The Cloudflare static site, R2
+> replays, CNPG postgres, and OpenBao MEK were preserved. See `notes/bf-1yj.md`.
+
 The platform uses a **static-first** architecture. The public-facing product
 is a **Cloudflare Pages** static site — all data visitors see (leaderboards,
 match history, bot profiles, replays) is pre-computed JSON served from the CDN.
@@ -64,12 +70,21 @@ All backend compute runs in two namespaces: `ai-code-battle` (core infrastructur
   generates all JSON index files, deploys them to Cloudflare Pages via
   `wrangler pages deploy`. Self-restarts every 4h.
 
-### Go API (deferred)
+### Go API Service (`acb-api`)
 
-A public Go API at `api.ai-code-battle.pages.dev` is planned for social features
-(predictions, commenting, voting) and third-party bot registration. This is
-**not required for the core match loop** — the v1 system is fully static.
-The API will be added when interactive features are needed.
+A public Go HTTP service (`acb-api`, deployed as a Deployment in the
+`ai-code-battle` namespace) fronts all dynamic, interactive endpoints at
+`api.ai-code-battle.pages.dev`. It is the write path for bot registration,
+key rotation, status checks, predictions, community feedback/voting, map
+voting, and replay-enrichment requests, and it ingests match results from
+workers. The static read path (leaderboards, profiles, replays, indexes)
+stays on Cloudflare Pages — `acb-api` serves only dynamic endpoints and no
+static files. It connects to CNPG PostgreSQL for persistent state and Valkey
+for the job queue. It is **built and deployed** today (see `cmd/acb-api/`);
+earlier drafts of this document labelled it "(deferred)", which is no longer
+accurate. Scheduling (matchmaking, health checks, season/series management)
+runs in the separate `acb-matchmaker` Deployment (§8.2.1), not inside
+`acb-api` — `acb-api` is request-driven and enqueues no jobs of its own.
 
 ### Data Architecture
 
@@ -266,7 +281,7 @@ const meta = await fetch(`${PAGES}/r2/matches/${matchId}.json`).then(r => r.json
 | **Bot Containers** | Deployments + Services (ai-code-battle ns) | Strategy bots (x6) + evolved bots (0-50) — HTTP servers called by workers during matches via cluster-internal Service DNS. |
 | **Evolver** | Deployment (ai-code-battle ns) | Evolution pipeline — reads lineage/meta from PostgreSQL, generates candidates, writes evolution data to PostgreSQL. |
 | **Index Builder** | Deployment (ai-code-battle ns) | Sleep-loop (15 min cycle). Reads PostgreSQL, generates JSON indexes, deploys to Pages. Self-restarts every 4h. |
-| **Go API** | Deferred | Social features (predictions, comments, voting) and third-party bot registration. Not required for v1. |
+| **Go API (`acb-api`)** | Deployment (ai-code-battle ns) | HTTP-facing dynamic endpoints: bot registration, key rotation, status, predictions, feedback/voting, map voting, enrichment requests, and match-result ingestion from workers. The static read path stays on Pages. |
 | **ArgoCD** | Cluster (argocd ns) | GitOps: syncs all K8s manifests from git. All deployments are declarative. |
 | **Argo Workflows** | Cluster (argo ns) | CI pipelines: builds container images, pushes to Forgejo registry, builds static site. |
 
@@ -1175,7 +1190,7 @@ No build-time data fetching -- all data loaded at runtime.
 const leaderboard = await fetch('/data/leaderboard.json').then(r => r.json())
 // Replays from R2 via Pages Functions (same origin)
 const replay = await fetch(`/r2/replays/${matchId}.json.gz`)
-// Dynamic operations from K8s API (deferred)
+// Dynamic operations via the Go API (acb-api Deployment)
 const result = await fetch('https://api.ai-code-battle.pages.dev/api/register', { method: 'POST', body: ... })
 ```
 
@@ -1185,48 +1200,96 @@ stay well within Cloudflare's deploy limits). Visitors see index data that
 is at most ~90 minutes old. Replays and per-match metadata are uploaded to
 B2 in real time by match workers and available immediately.
 
-### 8.2 Go API Service
+### 8.2 Go API Service (`acb-api`)
 
-A single Go HTTP service (`acb-api`) handles all server-side logic. It runs
-as a Deployment in the `ai-code-battle` namespace with a ClusterIP Service.
-Traefik routes `api.ai-code-battle.pages.dev` to it via an IngressRoute (TLS via
-cert-manager). The API serves only dynamic endpoints -- no static files.
-It connects to CNPG PostgreSQL for persistent state and Valkey for the job
-queue.
+The Go HTTP service (`acb-api`) is the **request-driven, HTTP-facing** tier.
+It runs as a Deployment in the `ai-code-battle` namespace with a ClusterIP
+Service. Traefik routes `api.ai-code-battle.pages.dev` to it via an
+IngressRoute (TLS via cert-manager). The API serves only dynamic endpoints —
+no static files — and connects to CNPG PostgreSQL for persistent state and
+Valkey for ephemeral cache. It runs **no background tickers** and enqueues no
+jobs of its own; all scheduling lives in the separate `acb-matchmaker`
+Deployment (§8.2.1). Spam filtering (`spamfilter.go`) and alerting
+(`alerts.go`) run inline on the relevant endpoints.
 
-**API endpoints (HTTP routes):**
+**API endpoints (HTTP routes, from `cmd/acb-api/server.go`):**
 
 ```
-POST /api/register         → register a new bot
-POST /api/rotate-key       → rotate a bot's shared secret
-GET  /api/status/{bot_id}  → check bot health status
-POST /api/jobs/{id}/result  → worker submits match result metadata (authenticated)
+# Health / readiness
+GET  /health, /ready
+
+# Bot registration & management
+POST   /api/register            → register a new bot
+PATCH  /api/bot/{id}            → update bot metadata
+POST   /api/rotate-key          → rotate a bot's shared secret
+
+# Reads (bots, status, replays)
+GET  /api/bots                  → list bots
+GET  /api/bot/{id}              → bot profile
+GET  /api/status/{id}           → bot health status
+GET  /api/replay/{id}           → fetch replay metadata
+
+# Match-worker job coordination
+GET  /api/job                   → worker claims a pending job
+POST /api/job/{id}              → worker submits match result (authenticated)
+
+# Interactive / social
+POST /api/predict               → submit a prediction
+GET  /api/predictions/open      → open predictions for a match
+GET  /api/predictions/history   → resolved prediction history
+POST /api/feedback              → create community feedback
+GET  /api/feedback/{id}         → fetch feedback
+POST /api/feedback/{id}         → upvote feedback
+POST /api/vote/map              → cast a map vote (§14.6)
+GET  /api/vote/map/{id}         → map vote tally
+POST /api/request-enrichment    → request AI commentary for a match (§13.3)
 ```
 
-**Internal scheduling (goroutine tickers, not external crons):**
+Index building runs as a separate Deployment (§8.4) that reads directly from
+PostgreSQL and deploys generated JSON indexes to Cloudflare Pages.
 
-| Ticker | Interval | What It Does |
-|--------|----------|--------------|
-| Matchmaker | Every 1 min | Queries active bots from PostgreSQL, computes pairings, enqueues jobs in Valkey |
-| Health checker | Every 15 min | Pings each active bot's `/health` endpoint via cluster-internal Service DNS, updates status in PostgreSQL |
-| Stale job reaper | Every 5 min | Marks jobs running >15 min as abandoned, re-enqueues in Valkey |
+**Match-worker coordination:**
 
-Index building runs as a separate Deployment (see below) that reads directly
-from PostgreSQL and deploys generated JSON indexes to Cloudflare Pages.
-
-**Match worker coordination:**
-
-Match workers dequeue jobs from Valkey (BRPOP on a job queue list). The Go
-API enqueues job IDs; workers fetch full job config from PostgreSQL. Workers
-submit results back via `POST /api/jobs/{id}/result`. All communication is
+Match workers dequeue jobs from Valkey (BRPOP on `acb:jobs:pending`). The
+**matchmaker** (`acb-matchmaker`, §8.2.1) creates the match rows in
+PostgreSQL and enqueues the job IDs into Valkey — not `acb-api`. Workers
+fetch full job config from PostgreSQL, run the match, and submit results back
+to `acb-api` via `POST /api/job/{id}`. All of this communication is
 cluster-internal (no external API calls needed).
 
 **Authentication:**
 
-The `/api/jobs/{id}/result` endpoint is called by match workers within the
+The `/api/job/{id}` result endpoint is called by match workers within the
 cluster. Workers authenticate with a shared API key stored in a SealedSecret
 and mounted as an environment variable. External-facing endpoints
-(`/api/register`, `/api/rotate-key`, `/api/status`) are public.
+(`/api/register`, `/api/rotate-key`, `/api/status`, predictions, feedback,
+map voting) are public, with HMAC shared-secret auth where a bot identity is
+required and rate limiting / spam filtering on user-submitted input.
+
+#### 8.2.1 Matchmaker Service (`acb-matchmaker`)
+
+Scheduling is a **separate binary and Deployment** — `acb-matchmaker`
+(`cmd/acb-matchmaker/`) — not a goroutine inside `acb-api`. It is an internal
+service with no external HTTP exposure; it connects only to PostgreSQL and
+Valkey. It runs seven background tickers (goroutine tickers, not external
+crons) driven by the `StartTickers` scheduler in `cmd/acb-matchmaker/tickers.go`.
+Default intervals are shown below; each is configurable via its `ACB_*`
+environment variable (see `LoadConfig` in `cmd/acb-matchmaker/main.go`).
+
+| Ticker | Default interval | What it does |
+|--------|------------------|--------------|
+| Matchmaker | 60 s (`ACB_MATCHMAKER_INTERVAL`) | §6.1 pairing: seed = bot with oldest last-match; pick the least-played feasible player count; select opponents by Pareto skill-proximity + oldest last-pairing + fewest 24h games; pick the least-recently-used active map; create the match row in PostgreSQL and enqueue the job in Valkey |
+| Health checker | 900 s / 15 min (`ACB_HEALTHCHECK_INTERVAL`) | Pings each active bot's `/health` endpoint via cluster-internal Service DNS; updates status in PostgreSQL and emits `bots_active`/`bots_failing` metrics |
+| Stale job reaper | 300 s / 5 min (`ACB_REAPER_INTERVAL`) | Re-enqueues jobs that have been running too long (marks them abandoned and re-queues in Valkey) |
+| Series scheduler | 120 s / 2 min (`ACB_SERIES_SCHED_INTERVAL`) | Schedules remaining games for active series in round-robin order and feeds them into the job queue; marks a series complete when a bot reaches the winning threshold (§14.7) |
+| Season reset | 300 s / 5 min (`ACB_SEASON_RESET_INTERVAL`) | When a season ends: snapshot ELO ratings into `season_snapshots`, apply rating decay, close the old season, and open a new one (§14.9) |
+| Featured series | 3600 s / 1 hr (`ACB_FEATURED_SCHED_INTERVAL`) | In the Friday-20:00-UTC window, creates best-of-5 weekly featured series between top-20-by-rating rivalry pairs (§14.7); checked hourly |
+| Fairness audit | 3600 s / 1 hr (`ACB_FAIRNESS_AUDIT_INTERVAL`) | Full map lifecycle audit: update `map_fairness` from completed matches, probation positionally-unfair maps, force-retire maps with >20 net negative votes, monthly prune the bottom 10% by engagement, promote the top-5 sustained maps to `classic` (§14.6) |
+
+> This corrects earlier drafts of this document, which described matchmaking
+> as three internal goroutine tickers (matchmaker / health / reaper) running
+> *inside* `acb-api`. In the implementation those are separate processes:
+> `acb-api` is HTTP-only, and `acb-matchmaker` owns all seven tickers above.
 
 ### 8.3 PostgreSQL (CNPG)
 
@@ -1530,6 +1593,14 @@ time range, human-only vs all). Auto-refresh every 60 seconds. Public
 
 ## 9. Deployment & Infrastructure
 
+> ⚠️ **Status (2026-07-26): DECOMMISSIONED.** The `ai-code-battle` compute tier
+> on `apexalgo-iad` was taken down on 2026-07-21 (`declarative-config` commit
+> `0163324e`, "take down ai-code-battle"); both manifest trees
+> (`k8s/apexalgo-iad/ai-code-battle/` and the retired `k8s/iad-acb/ai-code-battle/`)
+> have been removed from `declarative-config`. The text below is the original
+> design spec. See `notes/bf-58z.md` for the authoritative-cluster resolution
+> and `notes/bf-1yj.md` for the decommission.
+
 ### 9.1 Design Principles
 
 Compute runs in the **apexalgo-iad** Kubernetes cluster (Rackspace Spot) in
@@ -1558,8 +1629,12 @@ Key principles:
 - **Shared infrastructure** — PostgreSQL, Valkey, Traefik, and cert-manager
   are cluster-level services. The ai-code-battle namespace consumes them
   but does not manage them.
-- **No public API initially** — the Go API for social features and third-
-  party registration is deferred. The v1 system is fully static.
+- **Static reads, dynamic writes** — the static read path (leaderboards,
+  profiles, replays, indexes) is fully served from Cloudflare Pages. Dynamic
+  and interactive operations (bot registration, predictions, feedback/voting,
+  map voting, enrichment requests) go through the `acb-api` Go HTTP service.
+  The API is built and deployed (see `cmd/acb-api/`); the core match loop
+  (matchmaker → worker) does not depend on it.
 
 ### 9.2 Kubernetes Namespace Layout
 
@@ -1579,9 +1654,23 @@ builder).
 - `argocd` namespace: ArgoCD — an Application resource points to the
   manifests directory in the git repo
 
-**Historical note:** A dedicated cluster attempt (`iad-acb`) exists as a stale
-tree in `declarative-config/k8s/iad-acb/ai-code-battle/` from an earlier
-planned deployment. Active resources are consolidated on `apexalgo-iad`.
+**Cluster history (resolved bf-58z, 2026-07-26):** The authoritative cluster
+for `ai-code-battle` was **`apexalgo-iad`** — it was the only cluster ever to
+run live `ai-code-battle` pods, and `declarative-config/k8s/apexalgo-iad/ai-code-battle/`
+was the tree ArgoCD managed. `iad-acb` was a separate, earlier dedicated-cluster
+attempt that was **retired and deleted** — its manifests, ArgoCD wiring, and
+docs were removed in `declarative-config` commit `53fc54a1` ("remove deleted
+cluster"), and its endpoint `traefik-iad-acb:8001` is now unreachable. It was
+never a live duplicate of the apexalgo-iad deployment; the two were never in
+split-brain (the apparent duplication was an abandoned earlier cluster, not a
+second live copy). Subsequently, the **entire `ai-code-battle` compute tier on
+`apexalgo-iad` was decommissioned on 2026-07-21** (`declarative-config` commit
+`0163324e`, "take down ai-code-battle"), which deleted the
+`k8s/apexalgo-iad/ai-code-battle/` tree as well. As of that date **neither
+manifest tree exists in `declarative-config`**; the live namespace on
+apexalgo-iad holds only orphaned pods the unhealthy ArgoCD sync failed to prune.
+The Cloudflare static site, R2 replays, CNPG postgres, and OpenBao MEK were
+intentionally preserved. See `notes/bf-58z.md` and `notes/bf-1yj.md`.
 
 **Cloudflare infrastructure requirements:**
 
@@ -1635,9 +1724,12 @@ Images are built locally or via CI and pushed to Docker Hub for deployment.
 
 | Image | Base | Purpose | K8s Resource |
 |-------|------|---------|--------------|
-| `acb-matchmaker` | Go binary on Alpine | Matchmaking, health checks, stale job reaping | Deployment (1 replica) |
+| `acb-api` | Go binary on Alpine | HTTP-facing API only — registration, key rotation, status, job-result ingestion, predictions, feedback/voting, map voting, enrichment requests (§8.2). No tickers. | Deployment (1 replica) |
+| `acb-matchmaker` | Go binary on Alpine | Internal scheduler — seven goroutine tickers: matchmaking, health checks, stale-job reaping, series scheduling, season reset, featured series, map-fairness audit (§8.2.1) | Deployment (1 replica) |
 | `acb-worker` | Go binary on Alpine | Match execution, B2 upload | Deployment (2-10 replicas) |
-| `acb-evolver` | Go binary on Alpine | Evolution pipeline | Deployment (1 replica) |
+| `acb-evolver` | Go binary on Alpine | LLM bot evolution pipeline (init-schema, seed, validate, evaluate, promote) | Deployment (1 replica) |
+| `acb-map-evolver` | Go binary on Alpine | Map breeding/mutation pipeline — selects high-engagement parents, breeds via crossover, mutates, validates connectivity, smoke-tests with bots (§14.6) | Deployment (1 replica, continuous cycle) |
+| `acb-enrichment` | Go binary on Alpine | AI replay commentary — polls for matches without commentary, downloads replays from R2, generates turn-by-turn highlights via LLM, stores results to R2 (§13.3) | Deployment (1 replica, polling cycle) |
 | `acb-index-builder` | Go binary on Alpine (includes `wrangler` CLI) | Reads PostgreSQL, generates JSON indexes, deploys to Pages | Deployment (sleep-loop, 15 min cycle, Pages deploy every ~90 min, self-restarts every 4h) |
 | `acb-strategy-random` | Python 3.13 slim | RandomBot | Deployment (1 replica) |
 | `acb-strategy-gatherer` | Go on Alpine | GathererBot | Deployment (1 replica) |
@@ -1646,6 +1738,14 @@ Images are built locally or via CI and pushed to Docker Hub for deployment.
 | `acb-strategy-swarm` | Node 22 Alpine | SwarmBot (TypeScript) | Deployment (1 replica) |
 | `acb-strategy-hunter` | Temurin 21 JRE Alpine | HunterBot (Java) | Deployment (1 replica) |
 | `acb-evolved-*` | Varies by language | LLM-generated bots | Deployments (0-50) |
+
+The table above covers only the **containerized** `cmd/` packages (those with a
+Dockerfile and a K8s Deployment). Four more `cmd/` packages are real, tested
+Go programs but are **not deployed as containers** — they are CLI / build tools
+without Dockerfiles: `acb-local` (local match runner), `acb-mapgen` (map
+generator), `acb-maps-loader` (one-shot map-library loader into PostgreSQL),
+and `acb-wasm` (the in-browser WASM build target, §13.1). See §11.1/§11.2 for
+the full monorepo inventory.
 
 ### 9.4 Match Job Coordination
 
@@ -2318,34 +2418,41 @@ ai-code-battle/
 │   ├── winprob.go               # Monte Carlo win probability rollout
 │   └── engine_test.go           # Property-based + unit tests
 │
-├── cmd/
+├── cmd/                         # Eleven Go entry points (see §11.2 for deploy mapping)
+│   │
+│   │   # --- Deployed containers (each has a Dockerfile + K8s Deployment) ---
+│   ├── acb-api/                 # HTTP-facing API only — no background tickers
+│   │   ├── server.go            #   route registration (register, rotate-key,
+│   │   │                        #   status, job, predict, feedback, map vote,
+│   │   │                        #   request-enrichment) — see §8.2
+│   │   ├── db.go                #   PostgreSQL + Valkey connection/queries
+│   │   ├── crypto.go            #   HMAC-SHA256 signing/verification
+│   │   ├── spamfilter.go        #   inline spam filtering on user input
+│   │   ├── alerts.go            #   inline alerting on relevant endpoints
+│   │   └── Dockerfile
+│   ├── acb-matchmaker/          # Internal scheduler — owns ALL tickers (§8.2.1)
+│   │   ├── tickers.go           #   StartTickers: matchmaker/health/reaper/
+│   │   │                        #   series/season/featured/fairness
+│   │   ├── series_season.go     #   series + season lifecycle
+│   │   ├── map_fairness.go      #   positional-fairness + vote lifecycle (§14.6)
+│   │   └── Dockerfile
+│   ├── acb-worker/              # Match execution, B2 upload, Glicko-2 update
+│   ├── acb-evolver/             # LLM bot evolution pipeline (init/seed/validate/
+│   │                            #   evaluate/promote) — internal/ + run.go
+│   ├── acb-map-evolver/         # Map breeding/mutation pipeline — its OWN
+│   │                            #   Deployment, not acb-evolver (§14.6)
+│   ├── acb-enrichment/          # AI replay commentary — its OWN Deployment (§13.3)
+│   ├── acb-index-builder/       # PostgreSQL -> JSON -> Cloudflare Pages
+│   │                            #   (also prunes replays on a weekly cycle)
+│   │
+│   │   # --- CLI / build tools (no Dockerfile, not deployed as containers) ---
 │   ├── acb-local/               # CLI: run a match locally (stdin/stdout bots)
 │   ├── acb-mapgen/              # CLI: generate symmetric maps
-│   ├── acb-worker/              # Container: match execution worker
-│   ├── acb-evolver/             # Container: LLM evolution pipeline
-│   ├── acb-index-builder/       # Container: PostgreSQL -> JSON -> Pages
-│   # replay pruning is handled by acb-index-builder (weekly cycle)
-│
-├── cmd/acb-api/                 # Go API service (replaces Cloudflare Worker)
-│   ├── main.go                  # HTTP server + ticker scheduler
-│   ├── routes/
-│   │   ├── register.go          # POST /api/register, /api/rotate-key
-│   │   ├── jobs.go              # POST /api/jobs/{id}/result
-│   │   ├── predict.go           # POST /api/predict
-│   │   ├── feedback.go          # POST /api/feedback
-│   │   └── status.go            # GET /api/status/{bot_id}
-│   ├── tickers/
-│   │   ├── matchmaker.go        # Every 1 min: create match jobs, enqueue in Valkey
-│   │   ├── health.go            # Every 15 min: ping bot endpoints
-│   │   └── reaper.go            # Every 5 min: reclaim stale jobs
-│   ├── lib/
-│   │   ├── hmac.go              # HMAC-SHA256 signing/verification
-│   │   ├── glicko2.go           # Glicko-2 rating computation
-│   │   └── schema.go            # Request/response JSON schema validators
-│   ├── db/
-│   │   ├── postgres.go          # PostgreSQL connection + queries
-│   │   └── valkey.go            # Valkey (Redis) connection + queue ops
-│   └── Dockerfile
+│   ├── acb-maps-loader/         # CLI: bulk-load map JSON into PostgreSQL (one-shot)
+│   └── acb-wasm/                # Build target: compiles engine.wasm + six bot
+│                                #   .wasm modules (botmain/{gatherer,guardian,
+│                                #   hunter,random,rusher,swarm}) via build.sh →
+│                                #   web/public/wasm/ (§13.1)
 │
 ├── migrations/                  # PostgreSQL schema migrations
 │   └── 0001_initial.sql
@@ -2473,10 +2580,13 @@ ai-code-battle/
 
 | Image | Source | Base | Purpose | K8s Resource |
 |-------|--------|------|---------|--------------|
-| `acb-api` | `cmd/acb-api/` | Go on Alpine | API + scheduling | Deployment (1 replica) |
-| `acb-worker` | `cmd/acb-worker/` | Go on Alpine | Match execution | Deployment (2-10 replicas) |
-| `acb-evolver` | `cmd/acb-evolver/` | Go on Alpine | LLM evolution pipeline | Deployment (1 replica, self-restarts every 4h) |
-| `acb-index-builder` | `cmd/acb-index-builder/` | Go on Alpine (includes wrangler) | PostgreSQL -> JSON -> Cloudflare Pages | Deployment (sleep-loop) |
+| `acb-api` | `cmd/acb-api/` | Go on Alpine | HTTP-facing API only — registration, key rotation, status, job-result ingestion, predictions, feedback/voting, map voting, enrichment requests (§8.2). No tickers. | Deployment (1 replica) |
+| `acb-matchmaker` | `cmd/acb-matchmaker/` | Go on Alpine | Internal scheduler — seven goroutine tickers: matchmaking, health checks, stale-job reaping, series scheduling, season reset, featured series, map-fairness audit (§8.2.1) | Deployment (1 replica) |
+| `acb-worker` | `cmd/acb-worker/` | Go on Alpine | Match execution, B2 upload, Glicko-2 update | Deployment (2-10 replicas) |
+| `acb-evolver` | `cmd/acb-evolver/` | Go on Alpine | LLM bot evolution pipeline (init-schema, seed, validate, evaluate, promote) | Deployment (1 replica) |
+| `acb-map-evolver` | `cmd/acb-map-evolver/` | Go on Alpine | Map breeding/mutation pipeline — selects high-engagement parents, breeds via crossover, mutates, validates connectivity, smoke-tests with bots (§14.6) | Deployment (1 replica, continuous/weekly cycle) |
+| `acb-enrichment` | `cmd/acb-enrichment/` | Go on Alpine | AI replay commentary — polls for matches without commentary, downloads replays from R2, generates turn-by-turn highlights via LLM, stores results to R2 (§13.3) | Deployment (1 replica, polling cycle) |
+| `acb-index-builder` | `cmd/acb-index-builder/` | Go on Alpine (includes wrangler) | PostgreSQL -> JSON -> Cloudflare Pages | Deployment (sleep-loop, 15 min cycle, self-restarts every 4h) |
 | `acb-strategy-random` | `bots/random/` | Python 3.13 slim | RandomBot | Deployment (1 replica) |
 | `acb-strategy-gatherer` | `bots/gatherer/` | Go on Alpine | GathererBot | Deployment (1 replica) |
 | `acb-strategy-rusher` | `bots/rusher/` | Rust on Alpine | RusherBot | Deployment (1 replica) |
@@ -2493,17 +2603,26 @@ ai-code-battle/
 | ArgoCD Application | `declarative-config/k8s/apexalgo-iad/ai-code-battle/argocd-application.yaml` | `argocd` |
 | PostgreSQL database `acb` | Created in existing CNPG cluster `cnpg-apexalgo` | `cnpg` |
 
-**WASM artifacts (built at compile time, deployed to Cloudflare Pages):**
+**WASM artifacts (built at compile time, served from `web/public/wasm/`):**
 
-| Artifact | Source | Target | Size |
-|----------|--------|--------|------|
-| `engine.wasm` | `wasm/engine/` | `GOOS=js GOARCH=wasm` | ~15 MB |
-| `gatherer.wasm` | `wasm/bots/gatherer/` | Go → WASM | ~12 MB |
-| `rusher.wasm` | `wasm/bots/rusher/` | Rust → `wasm32-unknown-unknown` | ~3 MB |
-| `swarm.wasm` | `wasm/bots/swarm/` | AssemblyScript → WASM | ~5 MB |
-| `random.wasm` | `wasm/bots/random/` | Go → WASM | ~10 MB |
-| `guardian.wasm` | `wasm/bots/guardian/` | Go → WASM (reimpl) | ~12 MB |
-| `hunter.wasm` | `wasm/bots/hunter/` | Go → WASM (reimpl) | ~12 MB |
+Built by `cmd/acb-wasm/build.sh` (entry point `cmd/acb-wasm/`). All modules
+are compiled with `GOOS=js GOARCH=wasm`; outputs deploy to Pages as static
+assets under `/wasm/`.
+
+| Artifact | Source | Target |
+|----------|--------|--------|
+| `engine.wasm` | `cmd/acb-wasm/` | Go → WASM (loadState/step/runMatch API, §13.1) |
+| `wasm_exec.js` | Go runtime (`$GOROOT/lib/wasm/`) | Go WASM shim, copied verbatim |
+| `bots/random.wasm` | `cmd/acb-wasm/botmain/random/` | Go → WASM |
+| `bots/gatherer.wasm` | `cmd/acb-wasm/botmain/gatherer/` | Go → WASM |
+| `bots/rusher.wasm` | `cmd/acb-wasm/botmain/rusher/` | Go → WASM |
+| `bots/guardian.wasm` | `cmd/acb-wasm/botmain/guardian/` | Go → WASM |
+| `bots/swarm.wasm` | `cmd/acb-wasm/botmain/swarm/` | Go → WASM |
+| `bots/hunter.wasm` | `cmd/acb-wasm/botmain/hunter/` | Go → WASM |
+
+> The top-level `wasm/` directory is the older prototype layout (`wasm/engine/`,
+> `wasm/bots/{rusher,swarm,…}` with mixed Rust/AssemblyScript sources) and is
+> superseded by `cmd/acb-wasm/`; `cmd/acb-wasm/build.sh` is the canonical build.
 
 **Published template repos (one per language):**
 
@@ -2524,6 +2643,11 @@ ai-code-battle/
 |------|--------|---------|
 | `acb-local` | `cmd/acb-local/` | Run a match between two local bots (stdin/stdout), output replay JSON |
 | `acb-mapgen` | `cmd/acb-mapgen/` | Generate symmetric maps with configurable parameters |
+| `acb-maps-loader` | `cmd/acb-maps-loader/` | Bulk-load map JSON from `maps/` into the PostgreSQL `map_json` table (one-shot seeding/refresh) |
+
+The remaining `cmd/` package, `cmd/acb-wasm/`, is not a runnable tool or
+container — it is the **WASM build target** compiled by
+`cmd/acb-wasm/build.sh` (see the WASM artifacts table above).
 
 ### 11.3 Build & Deploy Pipeline
 
@@ -2990,11 +3114,13 @@ per hour.
 
 **Commentary generation:**
 
-Enrichment is performed by a **coding agent in the cluster** that takes the
-replay JSON + match metadata as input and generates a Markdown-formatted
-play-by-play output. The agent uses an LLM to analyze the replay data and
-produce structured commentary. This runs as a post-processing step on a
-dedicated container (not on the match worker itself).
+Enrichment runs as its own Deployment — **`acb-enrichment`**
+(`cmd/acb-enrichment/`, §9.3) — not on the match worker. The service polls
+PostgreSQL for matches that meet the selection criteria above but have no
+commentary yet, downloads each replay from R2, feeds the replay JSON + match
+metadata to an LLM, and writes the generated Markdown narrative back to R2.
+`POST /api/request-enrichment` (§8.2) lets a participant request enrichment
+for their own match, which flags the match for the poller to pick up.
 
 **Agent input:**
 - Full replay JSON (turn-by-turn game state)
@@ -3003,7 +3129,7 @@ dedicated container (not on the match worker itself).
 - Critical moments array
 
 **Agent output:** a Markdown file (`{match_id}-commentary.md`) stored
-alongside the replay on the PV:
+alongside the replay on R2 (`commentary/{match_id}-commentary.md`):
 
 ```markdown
 # SwarmBot vs GathererBot — 60x60 Grid
@@ -3027,7 +3153,8 @@ know exists.
 enriched matches/hour: ~$2-6/day, ~$60-180/month. Reasonable.
 
 **Replay viewer integration:**
-- The replay viewer fetches the companion `.md` file from Nginx and renders
+- The replay viewer fetches the companion `.md` file from R2 (via the same
+  Pages/Functions origin as the replay) and renders
   the Markdown as commentary subtitles below the canvas, synchronized to
   turn playback
 - Commentary sections are keyed to turn numbers; the viewer displays the
@@ -3629,8 +3756,9 @@ alongside map metadata (name, dimensions, wall density, energy count).
 
 **Breeding algorithm:**
 
-Runs weekly on the evolver Deployment. Produces ~5 new maps per
-player-count tier.
+Runs weekly on its own Deployment — **`acb-map-evolver`**
+(`cmd/acb-map-evolver/`, §9.3) — not on the `acb-evolver` (LLM-bot) pipeline.
+Produces ~5 new maps per player-count tier.
 
 ```
 1. Select parents:
@@ -3665,8 +3793,9 @@ player-count tier.
    - If failed: discard and retry (max 3 attempts per candidate)
 
 7. Add to pool:
-   - Store map JSON on the Nginx PV (`maps/{map_id}.json`)
-   - Insert into PostgreSQL maps table with `status: 'active'`
+   - Insert the new map into PostgreSQL (`map_json` + maps table) with
+     `status: 'active'` (the matchmaker and index builder read maps from
+     PostgreSQL, not a PV)
    - Available for matchmaking in the next scheduler cycle
 ```
 
@@ -4139,7 +4268,7 @@ rate limiting needed.
 ```
 PAGES = https://ai-code-battle.pages.dev  (Cloudflare Pages)
 R2    = {PAGES}/r2                        (R2 via Pages Functions)
-API   = https://api.ai-code-battle.pages.dev    (K8s Go API, deferred)
+API   = https://api.ai-code-battle.pages.dev    (K8s Go API — acb-api Deployment)
 
 --- Index files on Pages (deployed every ~90 min by index builder) ---
 

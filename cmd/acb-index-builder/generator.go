@@ -938,9 +938,13 @@ func curateWeeklyHighlights(matches []MatchData, cutoff time.Time) []curatedWeek
 
 func writePlaylist(dir, filename, title, description, category string, matches []MatchData, data *IndexData) error {
 	slug := filename[:len(filename)-5]
+	botNameMap := make(map[string]string, len(data.Bots))
+	for _, bot := range data.Bots {
+		botNameMap[bot.ID] = bot.Name
+	}
 	pm := make([]PlaylistMatch, 0, len(matches))
 	for i, m := range matches {
-		pm = append(pm, buildPlaylistMatch(m, i, data, ""))
+		pm = append(pm, buildPlaylistMatch(m, i, data, "", botNameMap))
 	}
 
 	playlist := Playlist{
@@ -959,9 +963,13 @@ func writePlaylist(dir, filename, title, description, category string, matches [
 
 func writePlaylistWithTags(dir, filename, title, description, category string, matches []MatchData, tags map[string]string, data *IndexData) error {
 	slug := filename[:len(filename)-5]
+	botNameMap := make(map[string]string, len(data.Bots))
+	for _, bot := range data.Bots {
+		botNameMap[bot.ID] = bot.Name
+	}
 	pm := make([]PlaylistMatch, 0, len(matches))
 	for i, m := range matches {
-		pm = append(pm, buildPlaylistMatch(m, i, data, tags[m.ID]))
+		pm = append(pm, buildPlaylistMatch(m, i, data, tags[m.ID], botNameMap))
 	}
 
 	playlist := Playlist{

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -13,6 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+// R2Object represents an object listed from an S3-compatible bucket (R2/B2).
+type R2Object struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+}
 
 // S3Client wraps S3 API operations for R2 and B2
 type S3Client struct {

@@ -44,3 +44,12 @@ web/public/data/maps/
 .beads/*
 !.beads/issues.jsonl
 .needle.yaml
+
+# Rust build artifacts
+target/
+
+# Python bytecode cache
+__pycache__/
+
+# wasm bot build outputs
+wasm/bots/*/build/

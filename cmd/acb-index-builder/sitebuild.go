@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -205,6 +207,63 @@ func cleanStaleWebAssets(cfg *Config) error {
 	}
 
 	slog.Info("Cleaned stale web assets from output directory")
+	return nil
+}
+
+// copyWebAssets copies the SPA shell and static assets from srcDir (a site
+// build dist directory) into the output directory, preserving the relative
+// directory structure. Existing files are overwritten. Used to merge the web
+// front-end into the generated index output before deploy.
+func copyWebAssets(cfg *Config, srcDir string) error {
+	info, err := os.Stat(srcDir)
+	if err != nil {
+		return fmt.Errorf("stat web source dir: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("web source is not a directory: %s", srcDir)
+	}
+
+	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return fmt.Errorf("resolve relative path: %w", err)
+		}
+		dstPath := filepath.Join(cfg.OutputDir, rel)
+
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return fmt.Errorf("create destination dir: %w", err)
+		}
+		if err := copyFile(path, dstPath); err != nil {
+			return fmt.Errorf("copy %s: %w", rel, err)
+		}
+		return nil
+	})
+}
+
+// copyFile copies a single file's contents from src to dst, truncating dst.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("create destination: %w", err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return fmt.Errorf("copy contents: %w", err)
+	}
 	return nil
 }
 

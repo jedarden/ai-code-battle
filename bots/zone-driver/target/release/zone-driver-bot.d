@@ -1,1 +1,0 @@
-/home/coding/ai-code-battle/bots/zone-driver/target/release/zone-driver-bot: /home/coding/ai-code-battle/bots/zone-driver/src/game.rs /home/coding/ai-code-battle/bots/zone-driver/src/main.rs /home/coding/ai-code-battle/bots/zone-driver/src/strategy.rs
