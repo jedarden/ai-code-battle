@@ -43,7 +43,9 @@ web/public/data/maps/
 # parent directory is excluded.
 .beads/*
 !.beads/issues.jsonl
-.needle.yaml
+# .needle.yaml carries the per-workspace bead backend binding, which NEEDLE
+# requires to be committed so every host resolves the same store.
+#.needle.yaml
 
 # Rust build artifacts
 target/
