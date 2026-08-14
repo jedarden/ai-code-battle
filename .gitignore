@@ -53,3 +53,8 @@ __pycache__/
 
 # wasm bot build outputs
 wasm/bots/*/build/
+
+# bead-rs store: the durable artefact is the checkpoint plus config.json.
+!.beads/checkpoint/
+!.beads/checkpoint/**
+!.beads/config.json
