@@ -101,6 +101,19 @@ func (c *B2Client) Upload(ctx context.Context, key string, data []byte, contentT
 	return err
 }
 
+// UploadLive uploads data to R2 with short cache control for live feeds.
+// Use this for frequently-updated files like live-tail.json and live-delta.json.
+func (c *B2Client) UploadLive(ctx context.Context, key string, data []byte) error {
+	_, err := c.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:       aws.String(c.bucket),
+		Key:          aws.String(key),
+		Body:         bytes.NewReader(data),
+		ContentType:  aws.String("application/json"),
+		CacheControl: aws.String("public, max-age=10"),
+	})
+	return err
+}
+
 // Download downloads data from B2.
 func (c *B2Client) Download(ctx context.Context, key string) ([]byte, error) {
 	resp, err := c.client.GetObject(ctx, &s3.GetObjectInput{

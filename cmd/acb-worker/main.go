@@ -289,6 +289,16 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 		return fmt.Errorf("failed to submit result for job %s: %w", job.ID, err)
 	}
 
+	// Update live-tail.json and live-delta.json in R2 for near-real-time freshness
+	if w.r2 != nil {
+		if tailErr := w.updateLiveTail(ctx, claimData, result); tailErr != nil {
+			w.logger.Printf("Warning: failed to update live-tail.json: %v", tailErr)
+		}
+		if deltaErr := w.updateLiveDelta(ctx, claimData, ratingUpdates); deltaErr != nil {
+			w.logger.Printf("Warning: failed to update live-delta.json: %v", deltaErr)
+		}
+	}
+
 	w.logger.Printf("Completed job %s, winner: %s", job.ID, result.WinnerID)
 	return nil
 }
@@ -684,5 +694,139 @@ func recalcRatings(ctx context.Context, db *DBClient, logger *log.Logger, verbos
 
 	logger.Printf("  Updated ratings for %d bots", len(currentRatings))
 	logger.Println("Rating recalculation complete")
+	return nil
+}
+
+// LiveTailEntry represents a single match in the live-tail feed.
+type LiveTailEntry struct {
+	MatchID     string            `json:"match_id"`
+	Players     []string          `json:"players"`
+	Winner      string            `json:"winner"`
+	Scores      map[string]int    `json:"scores"`
+	CompletedAt string            `json:"completed_at"`
+	Turns       int               `json:"turns"`
+	EndReason   string            `json:"end_reason"`
+}
+
+// LiveTailFeed represents the live-tail.json structure.
+type LiveTailFeed struct {
+	Matches []LiveTailEntry `json:"matches"`
+	Updated string           `json:"updated"`
+}
+
+// updateLiveTail updates matches/live-tail.json in R2 with the latest completed match.
+// Maintains a rolling list of the last 50 completed matches.
+func (w *Worker) updateLiveTail(ctx context.Context, claimData *JobClaimData, result *MatchResult) error {
+	// Download existing live-tail.json
+	var feed LiveTailFeed
+	existingData, err := w.r2.Download(ctx, "matches/live-tail.json")
+	if err == nil && len(existingData) > 0 {
+		if err := json.Unmarshal(existingData, &feed); err != nil {
+			w.logger.Printf("Warning: failed to parse existing live-tail.json, starting fresh: %v", err)
+			feed = LiveTailFeed{Matches: []LiveTailEntry{}}
+		}
+	} else {
+		// File doesn't exist yet, start fresh
+		feed = LiveTailFeed{Matches: []LiveTailEntry{}}
+	}
+
+	// Build player list and scores from claimData
+	players := make([]string, len(claimData.Participants))
+	scores := make(map[string]int)
+	for i, p := range claimData.Participants {
+		players[i] = p.BotID
+		scores[p.BotID] = result.Scores[p.BotID]
+	}
+
+	// Create new entry
+	entry := LiveTailEntry{
+		MatchID:     claimData.Match.ID,
+		Players:     players,
+		Winner:      result.WinnerID,
+		Scores:      scores,
+		CompletedAt: time.Now().UTC().Format(time.RFC3339),
+		Turns:       result.Turns,
+		EndReason:   result.EndReason,
+	}
+
+	// Append new match and trim to last 50
+	feed.Matches = append([]LiveTailEntry{entry}, feed.Matches...)
+	if len(feed.Matches) > 50 {
+		feed.Matches = feed.Matches[:50]
+	}
+	feed.Updated = time.Now().UTC().Format(time.RFC3339)
+
+	// Serialize and upload
+	data, err := json.MarshalIndent(feed, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal live-tail feed: %w", err)
+	}
+
+	if err := w.r2.UploadLive(ctx, "matches/live-tail.json", data); err != nil {
+		return fmt.Errorf("failed to upload live-tail.json: %w", err)
+	}
+
+	w.logger.Printf("Updated live-tail.json with match %s (%d matches in tail)", claimData.Match.ID, len(feed.Matches))
+	return nil
+}
+
+// LiveDeltaEntry represents rating deltas for a single bot.
+type LiveDeltaEntry struct {
+	BotID           string  `json:"bot_id"`
+	RatingMuDelta   float64 `json:"rating_mu_delta"`
+	MatchesPlayedDelta int  `json:"matches_played_delta"`
+}
+
+// LiveDeltaFeed represents the live-delta.json structure.
+type LiveDeltaFeed struct {
+	Deltas  map[string]LiveDeltaEntry `json:"deltas"`
+	Updated string                     `json:"updated"`
+}
+
+// updateLiveDelta updates leaderboard/live-delta.json in R2 with rating changes from the latest match.
+// Accumulates deltas since the last full index build.
+func (w *Worker) updateLiveDelta(ctx context.Context, claimData *JobClaimData, ratingUpdates []RatingUpdate) error {
+	// Download existing live-delta.json
+	var feed LiveDeltaFeed
+	existingData, err := w.r2.Download(ctx, "leaderboard/live-delta.json")
+	if err == nil && len(existingData) > 0 {
+		if err := json.Unmarshal(existingData, &feed); err != nil {
+			w.logger.Printf("Warning: failed to parse existing live-delta.json, starting fresh: %v", err)
+			feed = LiveDeltaFeed{Deltas: make(map[string]LiveDeltaEntry)}
+		}
+	} else {
+		// File doesn't exist yet, start fresh
+		feed = LiveDeltaFeed{Deltas: make(map[string]LiveDeltaEntry)}
+	}
+
+	// Update deltas for each participant
+	for _, update := range ratingUpdates {
+		existing, exists := feed.Deltas[update.BotID]
+		if !exists {
+			existing = LiveDeltaEntry{
+				BotID: update.BotID,
+			}
+		}
+
+		// Accumulate rating delta (new mu - old mu)
+		ratingDelta := update.DisplayRating - (update.RatingMuBefore - 2*update.RatingPhiBefore)
+		existing.RatingMuDelta += ratingDelta
+		existing.MatchesPlayedDelta += 1
+
+		feed.Deltas[update.BotID] = existing
+	}
+	feed.Updated = time.Now().UTC().Format(time.RFC3339)
+
+	// Serialize and upload
+	data, err := json.MarshalIndent(feed, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal live-delta feed: %w", err)
+	}
+
+	if err := w.r2.UploadLive(ctx, "leaderboard/live-delta.json", data); err != nil {
+		return fmt.Errorf("failed to upload live-delta.json: %w", err)
+	}
+
+	w.logger.Printf("Updated live-delta.json with %d bot deltas", len(ratingUpdates))
 	return nil
 }
