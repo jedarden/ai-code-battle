@@ -240,6 +240,9 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
               <dt>Reason</dt>
               <dd id="info-reason">-</dd>
             </dl>
+            <div id="try-sandbox-section" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--bg-tertiary)">
+              <button id="try-sandbox-btn" class="btn primary" style="width:100%">Try this matchup in Sandbox</button>
+            </div>
           </div>
 
           <div class="panel" id="map-vote-panel" style="display:none">
@@ -551,6 +554,8 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const infoWinner = document.getElementById('info-winner') as HTMLElement;
   const infoTurns = document.getElementById('info-turns') as HTMLElement;
   const infoReason = document.getElementById('info-reason') as HTMLElement;
+  const trySandboxSection = document.getElementById('try-sandbox-section') as HTMLElement;
+  const trySandboxBtn = document.getElementById('try-sandbox-btn') as HTMLButtonElement;
   const winProbSection = document.getElementById('win-prob-section') as HTMLDivElement;
   const winProbContainer = document.getElementById('win-prob-container') as HTMLDivElement;
   const winProbLegend = document.getElementById('win-prob-legend') as HTMLDivElement;
@@ -803,6 +808,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     initDebugPanel(replay);
     initAnnotations(replay);
     initMapVote(replay);
+    initTrySandbox(replay);
     updateTranscript();
 
     // §16.13: Register active replay for PIP support
@@ -937,6 +943,72 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       mapVoteDown.disabled = true;
       mapVoteStatus.textContent = 'You downvoted this map';
     }
+  }
+
+  // ── Try in Sandbox deep-link (bead aicodeba-cac76887) ─────────────────────────────
+
+  function initTrySandbox(replay: Replay): void {
+    if (!trySandboxBtn || !trySandboxSection) return;
+
+    // Show the button section
+    trySandboxSection.style.display = '';
+
+    // Generate sandbox URL parameters
+    const params = new URLSearchParams();
+
+    // Map grid size to closest sandbox option
+    const gridSize = replay.map.rows; // assuming square map
+    if (gridSize <= 20) {
+      params.append('gridSize', '20');
+    } else if (gridSize <= 30) {
+      params.append('gridSize', '30');
+    } else {
+      params.append('gridSize', '40');
+    }
+
+    // Add max turns if the match was short
+    if (replay.result.turns <= 100) {
+      params.append('maxTurns', '100');
+    } else if (replay.result.turns <= 200) {
+      params.append('maxTurns', '200');
+    } else if (replay.result.turns <= 300) {
+      params.append('maxTurns', '300');
+    } else {
+      params.append('maxTurns', '500');
+    }
+
+    // Map opponent: select a losing player or fallback to gatherer
+    const opponentMapping: Record<string, string> = {
+      'Gatherer': 'gatherer',
+      'Rusher': 'rusher',
+      'Swarm': 'swarm',
+      'Guardian': 'guardian',
+      'Hunter': 'hunter',
+    };
+
+    let selectedOpponent = 'gatherer'; // default
+    if (replay.result.winner >= 0 && replay.players.length > 1) {
+      // Try to find a losing opponent that matches our bot types
+      for (let i = 0; i < replay.players.length; i++) {
+        if (i !== replay.result.winner) {
+          const playerName = replay.players[i].name;
+          if (opponentMapping[playerName]) {
+            selectedOpponent = opponentMapping[playerName];
+            break;
+          }
+        }
+      }
+    }
+
+    params.append('opponent1', selectedOpponent);
+
+    // Build URL
+    const sandboxUrl = `#/compete/sandbox?${params.toString()}`;
+
+    // Wire up button click
+    trySandboxBtn.onclick = () => {
+      window.location.hash = sandboxUrl;
+    };
   }
 
   function initDebugPanel(replay: Replay): void {

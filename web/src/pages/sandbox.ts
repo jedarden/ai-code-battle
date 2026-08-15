@@ -149,7 +149,7 @@ async function loadGoEngine(): Promise<GoEngine | null> {
   return goEngineLoadPromise;
 }
 
-export function renderSandboxPage(_params: Record<string, string>): void {
+export function renderSandboxPage(params: Record<string, string>): void {
   const app = document.getElementById('app');
   if (!app) return;
 
@@ -159,7 +159,7 @@ export function renderSandboxPage(_params: Record<string, string>): void {
   }
 
   app.innerHTML = buildHTML();
-  requestAnimationFrame(() => initSandbox());
+  requestAnimationFrame(() => initSandbox(params));
 }
 
 function buildMobileHTML(): string {
@@ -360,7 +360,7 @@ function buildOpponentRow(index: number, defaultStrategy: string): string {
 
 // ─── Init ──────────────────────────────────────────────────────────────────
 
-function initSandbox(): void {
+function initSandbox(params: Record<string, string> = {}): void {
   let monacoEditor: any = null;
   let currentCode = STARTER_CODE;
   let wasmStrategy: BotStrategy | null = null;
@@ -374,6 +374,39 @@ function initSandbox(): void {
 
   // Start with one opponent (gatherer)
   opponentsList.innerHTML = buildOpponentRow(0, 'gatherer');
+
+  // Apply query parameters if present
+  if (params.gridSize) {
+    const gridSizeSelect = document.getElementById('grid-size-select') as HTMLSelectElement;
+    const size = params.gridSize;
+    if (['20', '30', '40'].includes(size)) {
+      gridSizeSelect.value = size;
+    }
+  }
+
+  if (params.maxTurns) {
+    const maxTurnsSelect = document.getElementById('max-turns-select') as HTMLSelectElement;
+    const turns = params.maxTurns;
+    if (['100', '200', '300', '500'].includes(turns)) {
+      maxTurnsSelect.value = turns;
+    }
+  }
+
+  if (params.seed) {
+    const seedInput = document.getElementById('seed-input') as HTMLInputElement;
+    seedInput.value = params.seed;
+  }
+
+  // Handle opponent pre-selection from replay
+  if (params.opponent1) {
+    const opponentSelects = opponentsList.querySelectorAll<HTMLSelectElement>('.opponent-select');
+    if (opponentSelects.length > 0) {
+      const validOpponents = ['random', 'gatherer', 'rusher', 'guardian', 'swarm', 'hunter'];
+      if (validOpponents.includes(params.opponent1)) {
+        opponentSelects[0].value = params.opponent1;
+      }
+    }
+  }
 
   // Start loading Go WASM engine in background
   loadGoEngine().then(engine => {
