@@ -97,6 +97,13 @@ function buildHTML(): string {
             </div>
           </div>
 
+          <div class="clip-panel" id="clip-critical-panel" style="display:none">
+            <div class="panel-header"><span>Critical Moments</span></div>
+            <div id="clip-critical-list" class="critical-list">
+              <div class="critical-empty">No critical moments detected</div>
+            </div>
+          </div>
+
           <div class="clip-panel" id="clip-export-panel" style="display:none">
             <div class="panel-header"><span>Export</span></div>
             <div class="export-buttons">
@@ -155,6 +162,7 @@ function initClipMaker(): void {
   const loadStatus = document.getElementById('clip-load-status')!;
   const settingsPanel = document.getElementById('clip-settings-panel')!;
   const rangePanel = document.getElementById('clip-range-panel')!;
+  const criticalPanel = document.getElementById('clip-critical-panel')!;
   const exportPanel = document.getElementById('clip-export-panel')!;
   const previewPanel = document.getElementById('clip-preview-panel')!;
 
@@ -169,6 +177,7 @@ function initClipMaker(): void {
   const previewInfo = document.getElementById('clip-preview-info')!;
   const frameLabel  = document.getElementById('clip-frame-label')!;
   const previewFrame = document.getElementById('clip-preview-frame')!;
+  const criticalList = document.getElementById('clip-critical-list')!;
 
   function updateDimsLabel(): void {
     const p = SOCIAL_PRESETS[Number(presetSelect.value)];
@@ -205,6 +214,9 @@ function initClipMaker(): void {
 
     loadStatus.textContent = `Loaded: ${data.match_id} (${total + 1} turns)`;
     loadStatus.className = 'clip-status ok';
+
+    // Populate critical moments
+    populateCriticalMoments(data);
 
     rebuildPreview();
   }
@@ -272,6 +284,57 @@ function initClipMaker(): void {
     tv.setTurn(turn);
     drawCompositeFrame(previewCanvas, tempCanvas, preset, dims, turn);
     frameLabel.textContent = `Turn ${turn}`;
+  }
+
+  function populateCriticalMoments(data: Replay): void {
+    const moments = data.critical_moments;
+    if (!moments || moments.length === 0) {
+      criticalPanel.style.display = 'none';
+      return;
+    }
+
+    criticalPanel.style.display = '';
+    criticalList.innerHTML = '';
+
+    // Sort by turn number
+    const sortedMoments = [...moments].sort((a, b) => a.turn - b.turn);
+
+    // Create a button for each critical moment
+    sortedMoments.forEach((moment) => {
+      const item = document.createElement('div');
+      item.className = 'critical-item';
+
+      const button = document.createElement('button');
+      button.className = 'btn critical-btn';
+      button.innerHTML = `
+        <span class="critical-turn">Turn ${moment.turn}</span>
+        <span class="critical-desc">${moment.description}</span>
+      `;
+
+      button.addEventListener('click', () => {
+        // Auto-set turn range around this moment (±15 turns)
+        const totalTurns = data.turns.length - 1;
+        const rangeTurns = 15;
+        const startTurn = Math.max(0, moment.turn - rangeTurns);
+        const endTurn = Math.min(totalTurns, moment.turn + rangeTurns);
+
+        // Update sliders
+        startSlider.value = String(startTurn);
+        startVal.textContent = String(startTurn);
+        endSlider.value = String(endTurn);
+        endVal.textContent = String(endTurn);
+
+        // Update preview to show the moment
+        updatePreviewTurn(moment.turn);
+
+        // Highlight the selected button
+        document.querySelectorAll('.critical-btn').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+      });
+
+      item.appendChild(button);
+      criticalList.appendChild(item);
+    });
   }
 
   // ── File load ──────────────────────────────────────────────────────────────
@@ -908,6 +971,14 @@ const CLIP_STYLES = `
 .range-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 8px 12px; align-items: center; font-size: 0.875rem; color: var(--text-muted); }
 .range-row { display: flex; gap: 8px; align-items: center; }
 .range-slider { flex: 1; }
+.critical-list { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.critical-item { display: flex; }
+.critical-btn { flex: 1; background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); padding: 8px 10px; border-radius: 6px; text-align: left; font-size: 0.8rem; transition: all 0.15s; display: flex; flex-direction: column; gap: 4px; }
+.critical-btn:hover { background: var(--bg-tertiary); border-color: var(--accent); }
+.critical-btn.active { background: rgba(59,130,246,0.15); border-color: var(--accent); }
+.critical-turn { font-weight: 600; color: var(--accent); font-size: 0.75rem; }
+.critical-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.3; }
+.critical-empty { color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 8px; }
 .export-buttons { display: flex; gap: 10px; margin-bottom: 12px; }
 .export-buttons .btn { flex: 1; }
 .clip-progress.hidden { display: none; }
