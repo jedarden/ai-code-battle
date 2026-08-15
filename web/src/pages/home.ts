@@ -7,7 +7,7 @@ import {
   fetchPlaylistIndex,
   fetchEvolutionMeta,
   fetchSeasonIndex,
-  fetchMatchIndex,
+  fetchMatchIndexWithTail,
   fetchEnrichedIndex,
   fetchRivalries,
   type Season,
@@ -154,7 +154,7 @@ export async function renderHomePage(): Promise<void> {
       active_season: null,
       seasons: [],
     })),
-    fetchMatchIndex().catch(() => ({
+    fetchMatchIndexWithTail().catch(() => ({
       updated_at: '',
       matches: [],
       pagination: { page: 1, per_page: 50, total: 0 },

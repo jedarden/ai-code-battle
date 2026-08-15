@@ -2,7 +2,7 @@
 // Uses virtual scrolling for 1000+ entries, expandable rows for secondary detail,
 // and IntersectionObserver for below-the-fold content.
 
-import { fetchLeaderboard, type LeaderboardEntry } from '../api-types';
+import { fetchLeaderboardWithDeltas, type LeaderboardEntry } from '../api-types';
 import { VirtualList } from '../lib/virtual-list';
 import { initLazySections, lazySection } from '../lib/lazy-section';
 
@@ -23,7 +23,7 @@ export async function renderLeaderboardPage(): Promise<void> {
   if (!content) return;
 
   try {
-    const data = await fetchLeaderboard();
+    const data = await fetchLeaderboardWithDeltas();
     renderLeaderboard(content, data.entries, data.updated_at);
   } catch (error) {
     content.innerHTML = `

@@ -634,3 +634,121 @@ export async function fetchMapsIndex(): Promise<MapsIndex> {
   if (!response.ok) throw new Error(`Failed to fetch maps index: ${response.status}`);
   return response.json();
 }
+
+// ─── ADR-001: Live-tail feed for match results and leaderboard freshness ─────────
+
+// Live-tail match types (written by match worker to R2, consumed by SPA)
+export interface LiveTailMatch {
+  id: string;
+  completed_at: string;
+  participants: MatchSummaryParticipant[];
+  winner_id: string | null;
+  map_id?: string;
+  turns: number | null;
+  end_reason: string | null;
+  enriched?: boolean;
+}
+
+export interface LiveTailFile {
+  updated_at: string;
+  matches: LiveTailMatch[]; // last ~50 completed matches
+}
+
+// Leaderboard delta types (rating changes since last full build)
+export interface LeaderboardDeltaEntry {
+  rating_delta: number;
+  new_rating: number;
+  new_rating_deviation?: number;
+  new_matches_played?: number;
+  new_matches_won?: number;
+  new_win_rate?: number;
+}
+
+export interface LeaderboardDeltaFile {
+  updated_at: string;
+  deltas: Record<string, LeaderboardDeltaEntry>; // bot_id -> delta
+}
+
+// Fetch live-tail matches from R2 (bypass SWR - always fresh)
+const R2_LIVE_BASE = '/r2';
+
+export async function fetchLiveTailMatches(): Promise<LiveTailFile> {
+  // Live-tail updates every ~10s — bypass SWR, always fetch fresh
+  const response = await fetch(`${R2_LIVE_BASE}/matches/live-tail.json`);
+  if (!response.ok) {
+    // Return empty tail if not available (fallback to batch-only)
+    return { updated_at: '', matches: [] };
+  }
+  return response.json();
+}
+
+// Fetch leaderboard deltas from R2 (bypass SWR - always fresh)
+export async function fetchLeaderboardDeltas(): Promise<LeaderboardDeltaFile> {
+  // Deltas update every ~10s — bypass SWR, always fetch fresh
+  const response = await fetch(`${R2_LIVE_BASE}/leaderboard/live-delta.json`);
+  if (!response.ok) {
+    // Return empty deltas if not available (fallback to batch-only)
+    return { updated_at: '', deltas: {} };
+  }
+  return response.json();
+}
+
+// Merge live-tail matches into batch match index (ADR-001 reconciliation)
+export async function fetchMatchIndexWithTail(): Promise<MatchIndex> {
+  const [batchIndex, liveTail] = await Promise.all([
+    fetchMatchIndex(), // /data/matches/index.json
+    fetchLiveTailMatches(), // /r2/matches/live-tail.json
+  ]);
+
+  // Dedupe: only prepend live-tail matches not already in batch index
+  const existingIds = new Set(batchIndex.matches.map((m) => m.id));
+  const newMatches = liveTail.matches.filter((m) => !existingIds.has(m.id));
+
+  // Prepend new matches (most recent first)
+  return {
+    updated_at: liveTail.updated_at || batchIndex.updated_at,
+    matches: [...newMatches, ...batchIndex.matches],
+  };
+}
+
+// Apply leaderboard deltas to batch leaderboard (ADR-001 reconciliation)
+export async function fetchLeaderboardWithDeltas(): Promise<LeaderboardIndex> {
+  const [batchIndex, deltaFile] = await Promise.all([
+    fetchLeaderboard(), // /data/leaderboard.json
+    fetchLeaderboardDeltas(), // /r2/leaderboard/live-delta.json
+  ]);
+
+  // No deltas to apply - return batch as-is
+  if (Object.keys(deltaFile.deltas).length === 0) {
+    return batchIndex;
+  }
+
+  // Apply deltas to matching entries
+  const entries = batchIndex.entries.map((entry) => {
+    const delta = deltaFile.deltas[entry.bot_id];
+    if (!delta) return entry;
+
+    // Skip delta if it's stale (completed_at predates batch updated_at)
+    // This prevents reapplying deltas already absorbed by the full build
+    const batchUpdatedAt = new Date(batchIndex.updated_at).getTime();
+    const deltaUpdatedAt = new Date(deltaFile.updated_at).getTime();
+    if (deltaUpdatedAt < batchUpdatedAt) {
+      return entry;
+    }
+
+    // Apply delta fields
+    return {
+      ...entry,
+      rating: delta.new_rating,
+      rating_deviation: delta.new_rating_deviation ?? entry.rating_deviation,
+      matches_played: delta.new_matches_played ?? entry.matches_played,
+      matches_won: delta.new_matches_won ?? entry.matches_won,
+      win_rate: delta.new_win_rate ?? entry.win_rate,
+    };
+  });
+
+  return {
+    updated_at: deltaFile.updated_at || batchIndex.updated_at,
+    entries,
+  };
+}

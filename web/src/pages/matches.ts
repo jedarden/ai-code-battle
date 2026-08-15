@@ -2,7 +2,7 @@
 // §16.15: expandable match cards, lazy-rendered below-the-fold content,
 // keyboard-accessible "Show more" affordances.
 
-import { fetchMatchIndex, fetchPlaylistIndex, type MatchSummary, type PlaylistIndex } from '../api-types';
+import { fetchMatchIndexWithTail, fetchPlaylistIndex, type MatchSummary, type PlaylistIndex } from '../api-types';
 
 export async function renderMatchesPage(): Promise<void> {
   const app = document.getElementById('app');
@@ -120,7 +120,7 @@ export async function renderMatchesPage(): Promise<void> {
 
   // Load playlists in parallel with matches
   const [matchResult, playlistResult] = await Promise.allSettled([
-    fetchMatchIndex(),
+    fetchMatchIndexWithTail(),
     fetchPlaylistIndex(),
   ]);
 
