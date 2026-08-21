@@ -44,13 +44,11 @@ WORKDIR /app
 # Install language runtimes for bot validation:
 # - go (included in base image)
 # - python3, nodejs (typescript), rust (rustup), java, php
-# - nsjail for sandbox isolation during validation
 # - ca-certificates for HTTPS (LLM calls, K8s API)
 #
-# Note: nsjail is in the community repository, ensure it's enabled
-RUN grep -q '^https.*\/community$' /etc/apk/repositories || \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v$(. /etc/os-release && echo $VERSION_ID | cut -d. -f1,2)/community" >> /etc/apk/repositories && \
-    apk --no-cache add \
+# nsjail is not packaged by Alpine. The validator detects its absence and
+# uses its plain-process sandbox fallback instead.
+RUN apk --no-cache add \
     ca-certificates \
     tzdata \
     python3 \
@@ -58,7 +56,6 @@ RUN grep -q '^https.*\/community$' /etc/apk/repositories || \
     nodejs \
     npm \
     openjdk-17-jdk \
-    nsjail \
     curl \
     bash
 
