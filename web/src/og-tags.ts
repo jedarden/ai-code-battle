@@ -11,8 +11,8 @@ export interface OGTags {
 const defaultTags: OGTags = {
 	title: 'AI Code Battle',
 	description: 'Competitive bot programming platform - write HTTP servers that control units on a grid world',
-	url: 'https://aicodebattle.com/',
-	image: 'https://aicodebattle.com/img/og-default.png',
+	url: 'https://ai-code-battle.pages.dev/',
+	image: 'https://ai-code-battle.pages.dev/img/og-default.png',
 	type: 'website',
 };
 
@@ -73,7 +73,7 @@ export function getBotProfileOGTags(bot: {
 	return {
 		title: `${bot.name} - Bot Profile`,
 		description: `Rating: ${Math.round(bot.rating)} | ${bot.matches_played} matches | ${bot.win_rate.toFixed(1)}% win rate${bot.evolved ? ' | Evolved bot' : ''}`,
-		url: `https://aicodebattle.com/#/bot/${bot.id}`,
+		url: `https://ai-code-battle.pages.dev/#/bot/${bot.id}`,
 		image: cardUrl,
 		type: 'profile',
 	};
@@ -94,7 +94,7 @@ export function getReplayOGTags(match: {
 	return {
 		title: `Match: ${match.participants.map(p => p.name).join(' vs ')}`,
 		description: `Winner: ${winnerName} | ${match.turns} turns | ${match.participants.map(p => `${p.name}: ${p.score}`).join(', ')}`,
-		url: `https://aicodebattle.com/#/watch/replay/${match.id}`,
+		url: `https://ai-code-battle.pages.dev/#/watch/replay/${match.id}`,
 		image: thumbnailUrl,
 		type: 'video.other',
 	};
@@ -112,7 +112,7 @@ export function getPlaylistOGTags(playlist: {
 	return {
 		title: `${playlist.title} - Playlist`,
 		description: `${playlist.description || 'Curated match collection'} | ${playlist.matchCount} matches`,
-		url: `https://aicodebattle.com/#/watch/replays`,
+		url: `https://ai-code-battle.pages.dev/#/watch/replays`,
 		type: 'website',
 	};
 }

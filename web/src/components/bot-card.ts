@@ -261,7 +261,7 @@ function drawFooter(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = COLORS.textMuted;
   ctx.font = '12px -apple-system, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('aicodebattle.com', CARD_WIDTH / 2, footerY);
+  ctx.fillText('ai-code-battle.pages.dev', CARD_WIDTH / 2, footerY);
 
   // Decorative line
   ctx.strokeStyle = COLORS.border;

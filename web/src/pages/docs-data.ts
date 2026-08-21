@@ -15,8 +15,8 @@ export function renderDocsDataPage(): void {
           <p>All platform data is available as static JSON files served from Cloudflare Pages (indexes) and Cloudflare R2 (replays, metadata). No authentication, no API keys, no rate limiting.</p>
           <p><strong>Base URLs:</strong></p>
           <pre><code>const PAGES = ''                    // Same origin (Cloudflare Pages)
-const B2    = 'https://b2.aicodebattle.com'     // Warm replay cache
-const B2    = 'https://b2.aicodebattle.com'     // Warm replay cache</code></pre>
+const B2    = 'https://ai-code-battle.pages.dev'     // Warm replay cache
+const B2    = 'https://ai-code-battle.pages.dev'     // Warm replay cache</code></pre>
         </section>
 
         <section>
@@ -26,7 +26,7 @@ const B2    = 'https://b2.aicodebattle.com'     // Warm replay cache</code></pre
           <h3>Leaderboard</h3>
           <pre><code>GET /data/leaderboard.json</code></pre>
           <p>Current rankings with ratings, win rates, and match counts.</p>
-          <pre><code>curl https://aicodebattle.com/data/leaderboard.json | jq</code></pre>
+          <pre><code>curl https://ai-code-battle.pages.dev/data/leaderboard.json | jq</code></pre>
 
           <h3>Bot Profiles</h3>
           <pre><code>GET /data/bots/index.json              # Bot directory
@@ -84,10 +84,10 @@ GET /maps/{map_id}.json               # Individual map definition</code></pre>
           <pre><code>GET /replays/{match_id}.json.gz</code></pre>
           <p>Gzipped replay JSON. Browser handles decompression automatically.</p>
           <pre><code># Fetch from B2 (warm cache)
-curl https://b2.aicodebattle.com/replays/m_7f3a9b2c.json.gz
+curl https://ai-code-battle.pages.dev/replays/m_7f3a9b2c.json.gz
 
 # Fallback to R2 (cold archive)
-curl https://b2.aicodebattle.com/replays/m_7f3a9b2c.json.gz</code></pre>
+curl https://ai-code-battle.pages.dev/replays/m_7f3a9b2c.json.gz</code></pre>
 
           <h3>Match Metadata</h3>
           <pre><code>GET /matches/{match_id}.json</code></pre>
@@ -127,31 +127,31 @@ const leaderboard = await fetch('/data/leaderboard.json').then(r => r.json())
 
 // Replay from B2 warm cache, with R2 fallback
 async function fetchReplay(matchId) {
-  const b2 = await fetch(\`https://b2.aicodebattle.com/replays/\${matchId}.json.gz\`)
+  const b2 = await fetch(\`https://ai-code-battle.pages.dev/replays/\${matchId}.json.gz\`)
   if (b2.ok) return b2
-  return fetch(\`https://b2.aicodebattle.com/replays/\${matchId}.json.gz\`)
+  return fetch(\`https://ai-code-battle.pages.dev/replays/\${matchId}.json.gz\`)
 }</code></pre>
         </section>
 
         <section>
           <h2>Example: Fetch Leaderboard</h2>
-          <pre><code>curl https://aicodebattle.com/data/leaderboard.json | jq '.entries[:5]'</code></pre>
+          <pre><code>curl https://ai-code-battle.pages.dev/data/leaderboard.json | jq '.entries[:5]'</code></pre>
           <p>Returns top 5 bots with ratings and stats.</p>
         </section>
 
         <section>
           <h2>Example: Fetch Bot Profile</h2>
-          <pre><code>curl https://aicodebattle.com/data/bots/b_swarmbot.json | jq '{name, rating, matches}'</code></pre>
+          <pre><code>curl https://ai-code-battle.pages.dev/data/bots/b_swarmbot.json | jq '{name, rating, matches}'</code></pre>
         </section>
 
         <section>
           <h2>Example: Fetch Match Index</h2>
-          <pre><code>curl https://aicodebattle.com/data/matches/index.json | jq '.matches[:3] | .[] | {match_id, players}'</code></pre>
+          <pre><code>curl https://ai-code-battle.pages.dev/data/matches/index.json | jq '.matches[:3] | .[] | {match_id, players}'</code></pre>
         </section>
 
         <section>
           <h2>Example: Fetch Playlist</h2>
-          <pre><code>curl https://aicodebattle.com/data/playlists/closest-finishes.json | jq '.matches[] | .match_id'</code></pre>
+          <pre><code>curl https://ai-code-battle.pages.dev/data/playlists/closest-finishes.json | jq '.matches[] | .match_id'</code></pre>
         </section>
 
         <section>

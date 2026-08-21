@@ -20,10 +20,10 @@ export function renderDocsReplayFormatPage(): void {
           <h2>Fetching Replays</h2>
           <p>Replays are served from Backblaze B2 (warm cache) with R2 (cold archive) fallback:</p>
           <pre><code># Try warm cache first
-curl https://b2.aicodebattle.com/replays/\${match_id}.json.gz
+curl https://ai-code-battle.pages.dev/replays/\${match_id}.json.gz
 
 # Fallback to cold archive
-curl https://b2.aicodebattle.com/replays/\${match_id}.json.gz</code></pre>
+curl https://ai-code-battle.pages.dev/replays/\${match_id}.json.gz</code></pre>
           <p>Replays are gzip-compressed. The browser handles decompression automatically when you fetch with <code>Accept-Encoding: gzip</code>.</p>
         </section>
 

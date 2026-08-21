@@ -172,7 +172,7 @@ function buildMobileHTML(): string {
         <p>The Bot Sandbox requires a desktop browser for the code editor and replay viewer.</p>
         <p style="margin-top:16px;color:var(--text-muted);font-size:0.875rem;">
           Scan this page's QR code on your phone to open it on your desktop, or visit
-          <strong>aicodebattle.com/#/compete/sandbox</strong> on a computer.
+          <strong>ai-code-battle.pages.dev/#/compete/sandbox</strong> on a computer.
         </p>
         <div style="margin-top:24px;">
           <a href="#/compete" class="btn primary">Back to Compete</a>

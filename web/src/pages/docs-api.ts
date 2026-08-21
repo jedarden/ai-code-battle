@@ -17,7 +17,7 @@ interface Section {
 }
 
 const PAGES_BASE = 'https://ai-code-battle.pages.dev';
-const B2_BASE = 'https://b2.aicodebattle.com';
+const B2_BASE = PAGES_BASE;
 
 const sections: Section[] = [
   {
@@ -333,7 +333,7 @@ const sections: Section[] = [
 // Replay JSON Schema section
 const replaySchema = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aicodebattle.com/schemas/replay.json",
+  "$id": "https://ai-code-battle.pages.dev/schemas/replay.json",
   "title": "Match Replay",
   "description": "Complete replay of an AI Code Battle match",
   "type": "object",
@@ -547,7 +547,7 @@ export function renderDocsApiPage(): void {
         <h2>Recommended Fetching Pattern</h2>
         <p>For replays and match metadata, fetch directly from B2:</p>
         <pre><code>async function fetchReplay(matchId: string): Promise<Replay> {
-  const b2Url = \`https://b2.aicodebattle.com/replays/\${matchId}.json.gz\`;
+  const b2Url = \`https://ai-code-battle.pages.dev/replays/\${matchId}.json.gz\`;
   const b2Resp = await fetch(b2Url);
   if (!b2Resp.ok) throw new Error(\`Replay not found: \${matchId}\`);
   return decompress(await b2Resp.arrayBuffer());

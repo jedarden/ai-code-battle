@@ -86,7 +86,7 @@ export function renderDocsPage(): void {
         <section>
           <h2>Register Your Bot</h2>
           <p>Once your bot is deployed and accessible via HTTPS, register it:</p>
-          <pre><code>curl -X POST https://api.aicodebattle.com/api/register \\
+          <pre><code>curl -X POST https://ai-code-battle.pages.dev/api/register \\
   -H "Content-Type: application/json" \\
   -d '{
     "name": "my-bot",

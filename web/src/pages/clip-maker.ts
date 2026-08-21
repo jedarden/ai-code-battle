@@ -513,7 +513,7 @@ function initClipMaker(): void {
   }
 
   function replayURL(matchId: string, startTurn: number, endTurn: number): string {
-    return `https://aicodebattle.com/replay/${matchId}#turns=${startTurn}-${endTurn}`;
+    return `https://ai-code-battle.pages.dev/replay/${matchId}#turns=${startTurn}-${endTurn}`;
   }
 
   function showSharePanel(r: Replay, startTurn: number, endTurn: number, blob: Blob): void {
