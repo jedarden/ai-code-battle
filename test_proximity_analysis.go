@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 
 	"github.com/aicodebattle/acb/engine"
 )
@@ -159,7 +162,7 @@ func main() {
 
 		// Check for zone shrink
 		if i > 0 {
-			prevZone := replay.Turns-1].ZoneBounds
+			prevZone := replay.Turns[i-1].ZoneBounds
 			currZone := turn.ZoneBounds
 			if prevZone != nil && currZone != nil {
 				if prevZone.Radius != currZone.Radius {

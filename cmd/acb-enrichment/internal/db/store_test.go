@@ -104,7 +104,7 @@ type mockDB struct {
 
 func (m *mockDB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	if m.queryFunc != nil {
-		mockRows, err := m.queryFunc(query, args...)
+		_, err := m.queryFunc(query, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -211,15 +211,15 @@ func TestCalculateCrossings(t *testing.T) {
 func TestMatchData(t *testing.T) {
 	// Test that Match type can hold null values properly
 	m := Match{
-		ID:          "test-match",
-		MapID:       "test-map",
-		Status:      "completed",
-		Winner:      sql.NullInt32{Int32: 0, Valid: true},
-		Condition:   sql.NullString{String: "elimination", Valid: true},
-		TurnCount:   sql.NullInt32{Int32: 150, Valid: true},
-		ScoresJSON:  sql.NullString{String: "[100,95]", Valid: true},
-		CreatedAt:   time.Now(),
-		CompletedAt: sql.NullTime{Time: time.Now(), Valid: true},
+		ID:             "test-match",
+		MapID:          "test-map",
+		Status:         "completed",
+		Winner:         sql.NullInt32{Int32: 0, Valid: true},
+		Condition:      sql.NullString{String: "elimination", Valid: true},
+		TurnCount:      sql.NullInt32{Int32: 150, Valid: true},
+		ScoresJSON:     sql.NullString{String: "[100,95]", Valid: true},
+		CreatedAt:      time.Now(),
+		CompletedAt:    sql.NullTime{Time: time.Now(), Valid: true},
 		CommentaryJSON: sql.NullString{Valid: false}, // Not yet enriched
 	}
 

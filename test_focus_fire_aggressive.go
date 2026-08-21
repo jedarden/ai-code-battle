@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -132,7 +134,7 @@ func main() {
 			}
 		}
 	}
-	fmt.Printf("\nTotal events: combat_death=%d, self_collision=%d, zone_death=%d\n", 
+	fmt.Printf("\nTotal events: combat_death=%d, self_collision=%d, zone_death=%d\n",
 		combatDeathCount, selfCollisionCount, zoneDeathCount)
 
 	// Save replay for inspection

@@ -3,12 +3,12 @@ package generator
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/aicodebattle/acb/cmd/acb-enrichment/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-enrichment/internal/llm"
-	"github.com/aicodebattle/acb/cmd/acb-enrichment/internal/storage"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -50,8 +50,8 @@ func TestNewGenerator_CustomConfig(t *testing.T) {
 func TestEnrichMatches_Success(t *testing.T) {
 	mockStorage := &mockStorageClient{
 		replayData: map[string]interface{}{
-			"turns":        []interface{}{},
-			"win_probs":    []float64{0.5, 0.6, 0.4},
+			"turns":     []interface{}{},
+			"win_probs": []float64{0.5, 0.6, 0.4},
 			"critical_moments": []interface{}{
 				map[string]interface{}{"turn": 50.0, "description": "Core capture", "delta": 0.3},
 			},
@@ -170,20 +170,21 @@ func TestEnrichMatches_Concurrency(t *testing.T) {
 	callCount := 0
 	maxConcurrent := 0
 	currentConcurrent := 0
-	concurrentMutex := make(chan struct{}, 1)
+	var concurrentMutex sync.Mutex
 
 	mockStorage := &mockStorageClient{
-		slowFetch: true,
 		fetchFunc: func(matchID string) {
-			concurrentMutex <- struct{}{}
+			concurrentMutex.Lock()
 			currentConcurrent++
 			if currentConcurrent > maxConcurrent {
 				maxConcurrent = currentConcurrent
 			}
 			callCount++
+			concurrentMutex.Unlock()
 			time.Sleep(50 * time.Millisecond)
+			concurrentMutex.Lock()
 			currentConcurrent--
-			<-concurrentMutex
+			concurrentMutex.Unlock()
 		},
 	}
 	mockLLM := &mockLLMClient{}
@@ -194,10 +195,10 @@ func TestEnrichMatches_Concurrency(t *testing.T) {
 	matches := make([]db.CandidateMatch, 5)
 	for i := range matches {
 		matches[i] = db.CandidateMatch{
-			MatchID: generateMatchID(i),
-			TurnCount: 150,
-			Winner:    0,
-			Condition: "elimination",
+			MatchID:     generateMatchID(i),
+			TurnCount:   150,
+			Winner:      0,
+			Condition:   "elimination",
 			FinalScores: []int{100, 95},
 			Players: []db.PlayerData{
 				{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500},
@@ -255,12 +256,12 @@ func TestEnrichOne_StorageFailure(t *testing.T) {
 	gen := NewGenerator(mockStorage, mockLLM, mockDB, Config{})
 
 	match := db.CandidateMatch{
-		MatchID: "match-1",
-		TurnCount: 150,
-		Winner:    0,
-		Condition: "elimination",
+		MatchID:     "match-1",
+		TurnCount:   150,
+		Winner:      0,
+		Condition:   "elimination",
 		FinalScores: []int{100, 95},
-		Players:   []db.PlayerData{{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500}},
+		Players:     []db.PlayerData{{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500}},
 	}
 
 	success, err := gen.enrichOne(context.Background(), match)
@@ -285,12 +286,12 @@ func TestEnrichOne_LLMFailure(t *testing.T) {
 	gen := NewGenerator(mockStorage, mockLLM, mockDB, Config{})
 
 	match := db.CandidateMatch{
-		MatchID: "match-1",
-		TurnCount: 150,
-		Winner:    0,
-		Condition: "elimination",
+		MatchID:     "match-1",
+		TurnCount:   150,
+		Winner:      0,
+		Condition:   "elimination",
 		FinalScores: []int{100, 95},
-		Players:   []db.PlayerData{{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500}},
+		Players:     []db.PlayerData{{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500}},
 	}
 
 	success, err := gen.enrichOne(context.Background(), match)
@@ -315,12 +316,12 @@ func TestEnrichOne_DatabaseFailure(t *testing.T) {
 	gen := NewGenerator(mockStorage, mockLLM, mockDB, Config{})
 
 	match := db.CandidateMatch{
-		MatchID: "match-1",
-		TurnCount: 150,
-		Winner:    0,
-		Condition: "elimination",
+		MatchID:     "match-1",
+		TurnCount:   150,
+		Winner:      0,
+		Condition:   "elimination",
 		FinalScores: []int{100, 95},
-		Players:   []db.PlayerData{{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500}},
+		Players:     []db.PlayerData{{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500}},
 	}
 
 	success, err := gen.enrichOne(context.Background(), match)
@@ -359,6 +360,10 @@ func (m *mockStorageClient) FetchReplay(ctx context.Context, matchID string) (ma
 	return m.replayData, nil
 }
 
+func (m *mockStorageClient) FetchMatchMetadata(context.Context, string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
 func (m *mockStorageClient) UploadCommentary(ctx context.Context, matchID string, commentary map[string]interface{}) error {
 	return nil
 }
@@ -372,6 +377,9 @@ func (m *mockLLMClient) GenerateCommentary(ctx context.Context, req llm.Generate
 	if m.failOn != nil && m.failOn[req.MatchID] {
 		return nil, errors.New("LLM error")
 	}
+	if m.commentary == nil {
+		return &llm.GenerateCommentaryResponse{}, nil
+	}
 	return m.commentary, nil
 }
 
@@ -384,6 +392,18 @@ func (m *mockDBStore) MarkEnriched(ctx context.Context, matchID string, commenta
 		return errors.New("database error")
 	}
 	return nil
+}
+
+func (m *mockDBStore) FindCandidates(context.Context, int, int, float64) ([]db.CandidateMatch, error) {
+	return nil, nil
+}
+
+func (m *mockDBStore) GetEnrichmentCount(context.Context, time.Time) (int, error) {
+	return 0, nil
+}
+
+func (m *mockDBStore) GetBotRatings(context.Context, []string) (map[string]db.BotInfo, error) {
+	return nil, nil
 }
 
 // Helper function

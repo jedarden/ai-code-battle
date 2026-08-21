@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -10,12 +9,12 @@ import (
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
-		name       string
-		baseURL    string
-		apiKey     string
-		model      string
-		wantURL    string
-		wantModel  string
+		name      string
+		baseURL   string
+		apiKey    string
+		model     string
+		wantURL   string
+		wantModel string
 	}{
 		{
 			name:      "full configuration",
@@ -143,7 +142,7 @@ func TestBuildPrompt_WinnerMark(t *testing.T) {
 
 	prompt := client.buildPrompt(req)
 
-	if !strings.Contains(prompt, "BetaBot (winner)") {
+	if !strings.Contains(prompt, "BetaBot (Rating: 1400) (winner)") {
 		t.Error("Winner not marked in prompt")
 	}
 	if strings.Contains(prompt, "AlphaBot (winner)") {
@@ -318,8 +317,6 @@ func TestGenerateCommentaryRequest_Defaults(t *testing.T) {
 		},
 		// MaxTokens and Temperature not set - should use defaults
 	}
-
-	client := NewClient("https://api.example.com/v1", "test-key", "gpt-4")
 
 	// Test that defaults are applied
 	if req.MaxTokens != 0 {

@@ -187,7 +187,10 @@ func buildGo(ctx context.Context, code, dir string) (string, []string, error) {
 		return "", nil, err
 	}
 	binPath := filepath.Join(dir, "bot")
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", binPath, ".")
+	// The generated workspace is intentionally outside the source repository.
+	// Disable VCS stamping so a parent checkout with restricted or incomplete
+	// Git metadata cannot make an otherwise valid bot fail validation.
+	cmd := exec.CommandContext(ctx, "go", "build", "-buildvcs=false", "-o", binPath, ".")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", nil, fmt.Errorf("go build: %s", truncate(string(out), 512))

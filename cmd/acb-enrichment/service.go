@@ -18,11 +18,19 @@ type EnrichmentService struct {
 	db        *sql.DB
 	cfg       Config
 	store     *dbstore.Store
-	selector  *selector.Selector
-	generator *generator.Generator
+	selector  matchSelector
+	generator matchGenerator
 	r2Client  *storage.Client
 	b2Client  *storage.Client
 	llmClient *llm.Client
+}
+
+type matchSelector interface {
+	Select(context.Context) (*selector.SelectionResult, error)
+}
+
+type matchGenerator interface {
+	EnrichMatches(context.Context, []dbstore.CandidateMatch) []generator.EnrichmentResult
 }
 
 // NewEnrichmentService creates a new enrichment service.

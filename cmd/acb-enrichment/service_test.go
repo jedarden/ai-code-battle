@@ -9,34 +9,32 @@ import (
 
 	dbstore "github.com/aicodebattle/acb/cmd/acb-enrichment/internal/db"
 	"github.com/aicodebattle/acb/cmd/acb-enrichment/internal/generator"
-	"github.com/aicodebattle/acb/cmd/acb-enrichment/internal/llm"
 	"github.com/aicodebattle/acb/cmd/acb-enrichment/internal/selector"
-	"github.com/aicodebattle/acb/cmd/acb-enrichment/internal/storage"
 )
 
 func TestNewEnrichmentService(t *testing.T) {
 	db, _ := sql.Open("postgres", "dummy")
 	cfg := Config{
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresUser:     "test",
-		PostgresPassword: "test",
-		PostgresDatabase: "test",
-		DatabaseName:     "test",
-		LLMBaseURL:       "https://api.test.com",
-		LLMAPIKey:        "test-key",
-		LLMModel:         "test-model",
-		R2AccessKeyID:    "r2-key",
-		R2SecretAccessKey: "r2-secret",
-		R2Endpoint:       "https://r2.test.com",
-		R2BucketName:     "test-bucket",
-		B2AccessKeyID:    "b2-key",
-		B2SecretAccessKey: "b2-secret",
-		B2Endpoint:       "https://b2.test.com",
-		B2BucketName:     "test-bucket",
-		MinTurnCount:      100,
-		MinWinProbCrossings: 3,
-		UpsetThreshold:   150.0,
+		PostgresHost:          "localhost",
+		PostgresPort:          5432,
+		PostgresUser:          "test",
+		PostgresPassword:      "test",
+		PostgresDatabase:      "test",
+		DatabaseName:          "test",
+		LLMBaseURL:            "https://api.test.com",
+		LLMAPIKey:             "test-key",
+		LLMModel:              "test-model",
+		R2AccessKeyID:         "r2-key",
+		R2SecretAccessKey:     "r2-secret",
+		R2Endpoint:            "https://r2.test.com",
+		R2BucketName:          "test-bucket",
+		B2AccessKeyID:         "b2-key",
+		B2SecretAccessKey:     "b2-secret",
+		B2Endpoint:            "https://b2.test.com",
+		B2BucketName:          "test-bucket",
+		MinTurnCount:          100,
+		MinWinProbCrossings:   3,
+		UpsetThreshold:        150.0,
 		MaxEnrichmentsPerHour: 20,
 		MaxConcurrentRequests: 3,
 	}
@@ -71,17 +69,17 @@ func TestNewEnrichmentService(t *testing.T) {
 
 func TestEnrichmentService_CheckStorage(t *testing.T) {
 	tests := []struct {
-		name          string
-		r2KeyID       string
-		r2Secret      string
-		r2Endpoint    string
-		r2Bucket      string
-		b2KeyID       string
-		b2Secret      string
-		b2Endpoint    string
-		b2Bucket      string
-		wantErr       bool
-		expectedUse   string
+		name        string
+		r2KeyID     string
+		r2Secret    string
+		r2Endpoint  string
+		r2Bucket    string
+		b2KeyID     string
+		b2Secret    string
+		b2Endpoint  string
+		b2Bucket    string
+		wantErr     bool
+		expectedUse string
 	}{
 		{
 			name:        "R2 configured",
@@ -102,7 +100,7 @@ func TestEnrichmentService_CheckStorage(t *testing.T) {
 			expectedUse: "B2",
 		},
 		{
-			name:   "no storage configured",
+			name:    "no storage configured",
 			wantErr: true,
 		},
 	}
@@ -133,10 +131,10 @@ func TestEnrichmentService_CheckStorage(t *testing.T) {
 
 func TestEnrichmentService_CheckLLM(t *testing.T) {
 	tests := []struct {
-		name         string
-		baseURL      string
-		apiKey       string
-		wantErr      bool
+		name    string
+		baseURL string
+		apiKey  string
+		wantErr bool
 	}{
 		{
 			name:    "API key configured",
@@ -180,9 +178,9 @@ func TestEnrichmentService_CheckLLM(t *testing.T) {
 
 func TestEnrichmentService_RunCycle(t *testing.T) {
 	tests := []struct {
-		name         string
-		selectorFunc func(context.Context) (*selector.SelectionResult, error)
-		genFunc      func(context.Context, []dbstore.CandidateMatch) []generator.EnrichmentResult
+		name          string
+		selectorFunc  func(context.Context) (*selector.SelectionResult, error)
+		genFunc       func(context.Context, []dbstore.CandidateMatch) []generator.EnrichmentResult
 		wantProcessed int
 		wantEnriched  int
 		wantSkipped   int

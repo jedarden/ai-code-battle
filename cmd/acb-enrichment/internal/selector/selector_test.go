@@ -205,8 +205,8 @@ func TestSelect_RateLimit(t *testing.T) {
 			maxPerHour:     20,
 			recentCount:    15,
 			candidateCount: 10,
-			wantSelected:   5,  // 20 - 15 = 5 remaining
-			wantSkipped:    5,  // 10 candidates - 5 selected = 5 skipped
+			wantSelected:   5, // 20 - 15 = 5 remaining
+			wantSkipped:    5, // 10 candidates - 5 selected = 5 skipped
 		},
 	}
 
@@ -315,8 +315,8 @@ func TestShuffle(t *testing.T) {
 
 type mockStore struct {
 	enrichmentCount int
-	candidates     []db.CandidateMatch
-	queryError     bool
+	candidates      []db.CandidateMatch
+	queryError      bool
 }
 
 func (m *mockStore) GetEnrichmentCount(ctx context.Context, since time.Time) (int, error) {
@@ -333,20 +333,28 @@ func (m *mockStore) FindCandidates(ctx context.Context, minTurns, minCrossings i
 	return m.candidates, nil
 }
 
+func (m *mockStore) MarkEnriched(context.Context, string, string) error {
+	return nil
+}
+
+func (m *mockStore) GetBotRatings(context.Context, []string) (map[string]db.BotInfo, error) {
+	return nil, nil
+}
+
 // Helper to create test candidates
 
 func makeCandidates(count int) []db.CandidateMatch {
 	candidates := make([]db.CandidateMatch, count)
 	for i := 0; i < count; i++ {
 		candidates[i] = db.CandidateMatch{
-			MatchID:     generateMatchID(i),
-			TurnCount:   150 + i*10,
-			Winner:      i % 2,
-			Condition:    "elimination",
-			FinalScores:  []int{100 + i, 95 - i},
+			MatchID:          generateMatchID(i),
+			TurnCount:        150 + i*10,
+			Winner:           i % 2,
+			Condition:        "elimination",
+			FinalScores:      []int{100 + i, 95 - i},
 			WinProbCrossings: 3,
-			IsUpset:      i%3 == 0,
-			IsCloseFinish: i%2 == 0,
+			IsUpset:          i%3 == 0,
+			IsCloseFinish:    i%2 == 0,
 			Players: []db.PlayerData{
 				{ID: 0, BotID: "bot-1", Name: "Bot1", Rating: 1500},
 				{ID: 1, BotID: "bot-2", Name: "Bot2", Rating: 1400},

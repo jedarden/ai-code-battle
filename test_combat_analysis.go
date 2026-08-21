@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -79,10 +81,10 @@ func (b *AggressiveBot) GetMoves(state *engine.VisibleState) ([]engine.Move, err
 func main() {
 	// Test different scenarios
 	scenarios := []struct {
-		name       string
-		bot1Type   string
-		bot2Type   string
-		config     engine.Config
+		name     string
+		bot1Type string
+		bot2Type string
+		config   engine.Config
 	}{
 		{
 			name:     "Stationary vs Stationary (2-player, zone on)",

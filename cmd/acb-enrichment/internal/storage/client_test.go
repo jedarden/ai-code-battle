@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"net/http"
 	"testing"
 	"time"
 )
