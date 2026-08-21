@@ -132,6 +132,7 @@ func (s *FarmerStrategy) computeBotMove(
 	rows, cols, attackR2 int,
 ) string {
 	pos := bot.Position
+	myID := state.You.ID
 
 	// Priority 1: FLEE if locally outnumbered (nearbyAllies < nearbyEnemies)
 	// Use attack radius + small buffer to define "local" area
