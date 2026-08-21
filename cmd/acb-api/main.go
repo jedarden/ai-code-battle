@@ -75,6 +75,15 @@ func main() {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer startupCancel()
+	if err := db.PingContext(startupCtx); err != nil {
+		log.Fatalf("database ping failed: %v", err)
+	}
+	if err := ensureSchema(startupCtx, db); err != nil {
+		log.Fatalf("database schema initialization failed: %v", err)
+	}
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.ValkeyAddr,
 		Password: cfg.ValkeyPassword,

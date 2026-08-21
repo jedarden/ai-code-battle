@@ -6,6 +6,69 @@ import (
 )
 
 const schemaSQL = `
+-- Fresh-database prerequisites. Later definitions and migrations are
+-- intentionally idempotent, but several Phase 9 tables reference these core
+-- tables and must not be the first statements executed on an empty database.
+CREATE TABLE IF NOT EXISTS bots (
+    bot_id        VARCHAR(16) PRIMARY KEY,
+    name          VARCHAR(32) UNIQUE NOT NULL,
+    owner         VARCHAR(128) NOT NULL,
+    endpoint_url  TEXT NOT NULL,
+    shared_secret TEXT NOT NULL,
+    status        VARCHAR(16) NOT NULL DEFAULT 'pending',
+    rating_mu     DOUBLE PRECISION NOT NULL DEFAULT 1500.0,
+    rating_phi    DOUBLE PRECISION NOT NULL DEFAULT 350.0,
+    rating_sigma  DOUBLE PRECISION NOT NULL DEFAULT 0.06,
+    evolved       BOOLEAN NOT NULL DEFAULT FALSE,
+    island        VARCHAR(16),
+    generation    INTEGER,
+    parent_ids    JSONB,
+    description   TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_active   TIMESTAMPTZ,
+    consec_fails  INTEGER NOT NULL DEFAULT 0,
+    archetype     VARCHAR(64),
+    crash_strikes INTEGER NOT NULL DEFAULT 0,
+    cooldown_until TIMESTAMPTZ,
+    debug_public  BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS matches (
+    match_id      VARCHAR(32) PRIMARY KEY,
+    map_id        VARCHAR(32) NOT NULL,
+    map_seed      BIGINT,
+    status        VARCHAR(16) NOT NULL DEFAULT 'pending',
+    winner        INTEGER,
+    condition     VARCHAR(32),
+    turn_count    INTEGER,
+    scores_json   JSONB,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at  TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS seasons (
+    id            BIGSERIAL PRIMARY KEY,
+    name          VARCHAR(64) NOT NULL,
+    theme         VARCHAR(128),
+    rules_version VARCHAR(32) NOT NULL DEFAULT '1.0',
+    status        VARCHAR(16) NOT NULL DEFAULT 'active',
+    champion_id   VARCHAR(16),
+    starts_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ends_at       TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS replay_feedback (
+    feedback_id VARCHAR(32) PRIMARY KEY,
+    match_id    VARCHAR(32) NOT NULL,
+    turn        INTEGER NOT NULL,
+    type        VARCHAR(16) NOT NULL CHECK (type IN ('insight', 'mistake', 'idea', 'highlight')),
+    body        TEXT NOT NULL,
+    author      VARCHAR(128) NOT NULL,
+    upvotes     INTEGER NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ---- Phase 9 tables ----
 
 CREATE TABLE IF NOT EXISTS predictions (
