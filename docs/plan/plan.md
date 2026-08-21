@@ -1677,7 +1677,9 @@ intentionally preserved. See `notes/bf-58z.md` and `notes/bf-1yj.md`.
 - **Cloudflare Pages project**: `ai-code-battle` (`ai-code-battle.pages.dev`)
   — hosts the static SPA and data indexes. Deployed by the index builder
   via `wrangler pages deploy`.
-- **DNS** (when custom domain is desired): `ai-code-battle.com` CNAME to Pages.
+- **DNS** (optional, for future custom domain): `ai-code-battle.com` CNAME to Pages.
+  Note: The canonical public domain is `ai-code-battle.pages.dev` (see docs/notes/canonical-public-domain.md).
+  A custom domain is not required for operation.
 
 **Cloudflare R2 infrastructure requirements:**
 
