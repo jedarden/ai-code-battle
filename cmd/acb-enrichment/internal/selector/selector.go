@@ -12,7 +12,7 @@ import (
 
 // Selector chooses which matches should be enriched.
 type Selector struct {
-	store          *db.Store
+	store          db.StoreInterface
 	minTurnCount   int
 	minCrossings   int
 	upsetThreshold float64
@@ -38,7 +38,7 @@ func DefaultConfig() Config {
 }
 
 // NewSelector creates a new match selector.
-func NewSelector(store *db.Store, cfg Config) *Selector {
+func NewSelector(store db.StoreInterface, cfg Config) *Selector {
 	if cfg.MinTurnCount == 0 {
 		cfg.MinTurnCount = DefaultConfig().MinTurnCount
 	}

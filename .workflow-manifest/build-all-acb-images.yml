@@ -1,0 +1,334 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: build-all-acb-images-
+  namespace: argo-workflows
+  labels:
+    app: acb-dockerhub-build
+spec:
+  entrypoint: build-all
+  serviceAccountName: argo-workflow
+  arguments:
+    parameters:
+      - name: git-repo
+        value: github.com/jedarden/ai-code-battle
+      - name: branch
+        value: master
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: docker-hub-registry
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+    - name: workspace
+      emptyDir: {}
+  templates:
+    - name: build-all
+      dag:
+        tasks:
+          - name: resolve-sha
+            template: resolve-sha
+          # Strategy bots (22 bots)
+          - name: build-assassin
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: assassin
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-coordinator
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: coordinator
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-defender
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: defender
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-economist
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: economist
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-farmer
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: farmer
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-gatherer
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: gatherer
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-guardian
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: guardian
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-hunter
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: hunter
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-kamikaze
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: kamikaze
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-leader-targeter
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: leader-targeter
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-nomad
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: nomad
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-opportunist
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: opportunist
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-pacifist
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: pacifist
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-phalanx
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: phalanx
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-raider
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: raider
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-random
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: random
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-rusher
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: rusher
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-scout
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: scout
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-siege
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: siege
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-swarm
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: swarm
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          - name: build-zone-driver
+            template: kaniko-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: bot
+                  value: zone-driver
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+          # Enrichment service
+          - name: build-enrichment
+            template: enrichment-build
+            dependencies: [resolve-sha]
+            arguments:
+              parameters:
+                - name: sha
+                  value: "{{tasks.resolve-sha.outputs.parameters.sha}}"
+
+    - name: resolve-sha
+      activeDeadlineSeconds: 120
+      script:
+        image: alpine/git
+        command: [sh, -c]
+        source: |
+          set -e
+          git clone --depth 1 --branch {{workflow.parameters.branch}} \
+            "https://x-access-token:${GIT_TOKEN}@{{workflow.parameters.git-repo}}.git" \
+            /workspace/repo
+          SHORT_SHA=$(git -C /workspace/repo rev-parse --short HEAD)
+          echo -n "$SHORT_SHA" > /workspace/sha
+          echo "Short SHA: $SHORT_SHA"
+        env:
+          - name: GIT_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-webhook-secret
+                key: token
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+      outputs:
+        parameters:
+          - name: sha
+            valueFrom:
+              path: /workspace/sha
+
+    - name: kaniko-build
+      inputs:
+        parameters:
+          - name: bot
+          - name: sha
+      activeDeadlineSeconds: 1800
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnError
+        backoff:
+          duration: 30s
+          factor: "2"
+      container:
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+          - --context=git://{{workflow.parameters.git-repo}}.git#refs/heads/{{workflow.parameters.branch}}
+          - --context-sub-path=bots/{{inputs.parameters.bot}}
+          - --dockerfile=Dockerfile
+          - --destination=ronaldraygun/acb-strategy-{{inputs.parameters.bot}}:{{inputs.parameters.sha}}
+          - --destination=ronaldraygun/acb-strategy-{{inputs.parameters.bot}}:latest
+          - --cache=true
+          - --cache-repo=ronaldraygun/cache
+        env:
+          - name: GIT_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-webhook-secret
+                key: token
+        volumeMounts:
+          - name: docker-config
+            mountPath: /kaniko/.docker
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    - name: enrichment-build
+      inputs:
+        parameters:
+          - name: sha
+      activeDeadlineSeconds: 1800
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnError
+        backoff:
+          duration: 30s
+          factor: "2"
+      container:
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+          - --context=git://{{workflow.parameters.git-repo}}.git#refs/heads/{{workflow.parameters.branch}}
+          - --context-sub-path=cmd/acb-enrichment
+          - --dockerfile=Dockerfile
+          - --destination=ronaldraygun/acb-enrichment:{{inputs.parameters.sha}}
+          - --destination=ronaldraygun/acb-enrichment:latest
+          - --cache=true
+          - --cache-repo=ronaldraygun/cache
+        env:
+          - name: GIT_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-webhook-secret
+                key: token
+        volumeMounts:
+          - name: docker-config
+            mountPath: /kaniko/.docker
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi

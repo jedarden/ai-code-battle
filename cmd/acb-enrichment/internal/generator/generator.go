@@ -15,9 +15,9 @@ import (
 
 // Generator creates AI commentary for match replays.
 type Generator struct {
-	storageClient *storage.Client
-	llmClient     *llm.Client
-	dbStore       *db.Store
+	storageClient storage.ClientInterface
+	llmClient     llm.ClientInterface
+	dbStore       db.StoreInterface
 	maxConcurrent int
 }
 
@@ -34,7 +34,7 @@ func DefaultConfig() Config {
 }
 
 // NewGenerator creates a new enrichment generator.
-func NewGenerator(sClient *storage.Client, llmClient *llm.Client, dbStore *db.Store, cfg Config) *Generator {
+func NewGenerator(sClient storage.ClientInterface, llmClient llm.ClientInterface, dbStore db.StoreInterface, cfg Config) *Generator {
 	if cfg.MaxConcurrent == 0 {
 		cfg.MaxConcurrent = DefaultConfig().MaxConcurrent
 	}

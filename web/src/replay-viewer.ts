@@ -525,6 +525,26 @@ export class ReplayViewer {
   }
 
   loadReplay(replay: Replay): void {
+    // Reconstruct delta-encoded data (v2.1+)
+    // This fills forward omitted scores/energy_held fields
+    if (replay.format_version === '2.1' || (replay.format_version && parseFloat(replay.format_version) >= 2.1)) {
+      // Delta-encode: fill-forward scores/energy_held from previous turns
+      let lastScores: number[] | null = null;
+      let lastEnergy: number[] | null = null;
+      const numPlayers = replay.players.length;
+
+      for (const turn of replay.turns) {
+        if (!turn.scores || turn.scores.length === 0) {
+          turn.scores = lastScores ? [...lastScores] : new Array(numPlayers).fill(0);
+        }
+        if (!turn.energy_held || turn.energy_held.length === 0) {
+          turn.energy_held = lastEnergy ? [...lastEnergy] : new Array(numPlayers).fill(0);
+        }
+        lastScores = [...turn.scores];
+        lastEnergy = [...turn.energy_held];
+      }
+    }
+
     this.replay = replay;
     this.currentTurn = 0;
     this.turnStartTime = performance.now();

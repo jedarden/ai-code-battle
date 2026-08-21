@@ -45,13 +45,16 @@ type ReplayCore struct {
 }
 
 // ReplayTurn represents the state at a single turn.
+// In format version 2.0+, scores and energy_held use delta encoding:
+// - If omitted, replay viewer uses the previous turn's values (fill-forward)
+// - Only present when values actually change
 type ReplayTurn struct {
 	Turn       int                `json:"turn"`
 	Bots       []ReplayBot        `json:"bots"`
 	Cores      []ReplayCoreState  `json:"cores"`
 	Energy     []Position         `json:"energy"`
-	Scores     []int              `json:"scores"`
-	EnergyHeld []int              `json:"energy_held"`
+	Scores     []int              `json:"scores,omitempty"`      // delta-encoded v2.0+
+	EnergyHeld []int              `json:"energy_held,omitempty"` // delta-encoded v2.0+
 	Events     []Event            `json:"events"`
 	Debug      map[int]*DebugInfo `json:"debug,omitempty"`       // optional bot debug telemetry
 	ZoneBounds *ZoneBounds        `json:"zone_bounds,omitempty"` // active zone bounds if enabled
@@ -81,16 +84,18 @@ type ZoneBounds struct {
 
 // ReplayWriter records a match as it progresses.
 type ReplayWriter struct {
-	replay    *Replay
-	turns     []ReplayTurn
-	startTime time.Time
+	replay       *Replay
+	turns        []ReplayTurn
+	startTime    time.Time
+	lastScores   []int  // previous turn's scores for delta encoding
+	lastEnergy   []int  // previous turn's energy_held for delta encoding
 }
 
 // NewReplayWriter creates a new replay writer.
 func NewReplayWriter(matchID string, config Config) *ReplayWriter {
 	return &ReplayWriter{
 		replay: &Replay{
-			FormatVersion: "1.0",
+			FormatVersion: "2.1",
 			MatchID:       matchID,
 			Config:        config,
 			StartTime:     time.Now().UTC(),
@@ -144,14 +149,44 @@ func (rw *ReplayWriter) RecordTurn(gs *GameState, debug map[int]*DebugInfo) {
 	copy(events, gs.Events)
 
 	turn := ReplayTurn{
-		Turn:       gs.Turn,
-		Bots:       make([]ReplayBot, 0),
-		Cores:      make([]ReplayCoreState, 0),
-		Energy:     make([]Position, 0),
-		Scores:     make([]int, len(gs.Players)),
-		EnergyHeld: make([]int, len(gs.Players)),
-		Events:     events,
-		Debug:      debug,
+		Turn:   gs.Turn,
+		Bots:   make([]ReplayBot, 0),
+		Cores:  make([]ReplayCoreState, 0),
+		Energy: make([]Position, 0),
+		Events: events,
+		Debug:  debug,
+	}
+
+	// Delta encoding for scores and energy_held: only write when values change
+	currentScores := make([]int, len(gs.Players))
+	currentEnergy := make([]int, len(gs.Players))
+	scoresChanged := false
+	energyChanged := false
+
+	for i, p := range gs.Players {
+		currentScores[i] = p.Score
+		currentEnergy[i] = p.Energy
+
+		// Check if values changed from previous turn
+		if rw.lastScores == nil || p.Score != rw.lastScores[i] {
+			scoresChanged = true
+		}
+		if rw.lastEnergy == nil || p.Energy != rw.lastEnergy[i] {
+			energyChanged = true
+		}
+	}
+
+	// Only include scores/energy arrays if values actually changed (delta encoding)
+	if scoresChanged {
+		turn.Scores = currentScores
+		rw.lastScores = make([]int, len(currentScores))
+		copy(rw.lastScores, currentScores)
+	}
+
+	if energyChanged {
+		turn.EnergyHeld = currentEnergy
+		rw.lastEnergy = make([]int, len(currentEnergy))
+		copy(rw.lastEnergy, currentEnergy)
 	}
 
 	// Record zone bounds if enabled
@@ -187,12 +222,6 @@ func (rw *ReplayWriter) RecordTurn(gs *GameState, debug map[int]*DebugInfo) {
 		if en.HasEnergy {
 			turn.Energy = append(turn.Energy, en.Position)
 		}
-	}
-
-	// Record scores and energy
-	for i, p := range gs.Players {
-		turn.Scores[i] = p.Score
-		turn.EnergyHeld[i] = p.Energy
 	}
 
 	rw.turns = append(rw.turns, turn)

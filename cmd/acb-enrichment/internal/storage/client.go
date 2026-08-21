@@ -22,6 +22,17 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// ClientInterface defines storage operations for enrichment.
+type ClientInterface interface {
+	FetchReplay(ctx context.Context, matchID string) (map[string]interface{}, error)
+	FetchMatchMetadata(ctx context.Context, matchID string) (map[string]interface{}, error)
+	UploadCommentary(ctx context.Context, matchID string, commentary map[string]interface{}) error
+	HasCredentials() bool
+}
+
+// Ensure Client implements ClientInterface
+var _ ClientInterface = (*Client)(nil)
+
 // NewClient creates a new S3-compatible storage client.
 func NewClient(accessKey, secretKey, endpoint, bucket string) *Client {
 	return &Client{

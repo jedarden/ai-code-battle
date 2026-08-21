@@ -26,6 +26,14 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// ClientInterface defines LLM operations for enrichment.
+type ClientInterface interface {
+	GenerateCommentary(ctx context.Context, req GenerateCommentaryRequest) (*GenerateCommentaryResponse, error)
+}
+
+// Ensure Client implements ClientInterface
+var _ ClientInterface = (*Client)(nil)
+
 // NewClient creates a new LLM client.
 func NewClient(baseURL, apiKey, model string) *Client {
 	if model == "" {

@@ -73,6 +73,17 @@ type PlayerData struct {
 	Rating int
 }
 
+// StoreInterface defines database operations for enrichment.
+type StoreInterface interface {
+	FindCandidates(ctx context.Context, minTurns, minCrossings int, upsetThreshold float64) ([]CandidateMatch, error)
+	MarkEnriched(ctx context.Context, matchID string, commentaryJSON string) error
+	GetEnrichmentCount(ctx context.Context, since time.Time) (int, error)
+	GetBotRatings(ctx context.Context, botIDs []string) (map[string]BotInfo, error)
+}
+
+// Ensure Store implements StoreInterface
+var _ StoreInterface = (*Store)(nil)
+
 // FindCandidates finds matches that qualify for enrichment.
 // Returns matches that:
 // - Are completed
