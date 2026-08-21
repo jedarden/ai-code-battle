@@ -372,10 +372,10 @@ func (mr *MatchRunner) generateMap(gs *GameState, numPlayers int) {
 
 	var primaryRadius, secondaryRadius float64
 	if numPlayers == 2 {
-		primaryRadius = 0.15 // ~3 tiles from center on 40x40 grid (~6 tiles apart)
-		// With attack radius of 5 tiles, bots starting 6 tiles apart are within attack range
+		primaryRadius = 0.125 // ~2.5 tiles from center on 40x40 grid (5 tiles apart, within attack radius)
+		// With attack radius of 5 tiles (distance² ≤ 25), bots starting 5 tiles apart are within attack range
 		// This achieves immediate combat potential and 65-80% combat density target
-		secondaryRadius = 0.08 // ~2 tiles closer to center for additional cores
+		secondaryRadius = 0.06 // ~1.2 tiles closer to center for additional cores
 	} else {
 		primaryRadius = 0.15 // ~4 tiles from center on 50x50 grid (~8 tiles apart)
 		secondaryRadius = 0.12

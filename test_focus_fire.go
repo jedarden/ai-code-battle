@@ -95,8 +95,8 @@ func main() {
 				details := event.Details.(map[string]interface{})
 				fmt.Printf("Turn %d: Bot %d (owner %d) killed at (%d,%d), killers: %v\n",
 					turn.Turn, details["bot_id"], details["owner"],
-					details["position"].(map[string]interface{})["row"],
-					details["position"].(map[string]interface{})["col"],
+					pos["row"],
+					pos["col"],
 					details["killers"])
 				count++
 				if count >= 5 {
