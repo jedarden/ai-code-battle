@@ -149,3 +149,39 @@ func TestSpawnRadiusForcesCombat(t *testing.T) {
 		})
 	}
 }
+
+// TestMatchReportsFocusFireKills guards the production replay contract: a
+// deterministic aggressive match must produce combat deaths in both the
+// aggregate result and the turn-by-turn event stream.
+func TestMatchReportsFocusFireKills(t *testing.T) {
+	rng := rand.New(rand.NewSource(1000))
+	runner := NewMatchRunner(ConfigForPlayers(2, 1), WithRNG(rng))
+	runner.AddBot(NewGathererBot(rng.Int63()), "gatherer")
+	runner.AddBot(NewRusherBot(rng.Int63()), "rusher")
+
+	result, replay, err := runner.Run()
+	if err != nil {
+		t.Fatalf("run match: %v", err)
+	}
+
+	resultKills := 0
+	for _, kills := range result.CombatDeaths {
+		resultKills += kills
+	}
+
+	replayDeaths := 0
+	for _, turn := range replay.Turns {
+		for _, event := range turn.Events {
+			if event.Type == EventCombatDeath {
+				replayDeaths++
+			}
+		}
+	}
+
+	if resultKills == 0 {
+		t.Fatal("match result reported zero focus-fire kills")
+	}
+	if replayDeaths == 0 {
+		t.Fatal("replay reported zero combat-death events")
+	}
+}
