@@ -1,5 +1,11 @@
 # Bead bf-1bh — Resolve and validate Cloudflare deploy credentials
 
+> **2026-08-22 — credential removed from this note.** An earlier revision of this file
+> embedded the live Cloudflare Pages API token in plaintext (commit 292b26d, 2026-07-27).
+> The value has been removed; retrieve it only by reference: OpenBao
+> `secret/rs-manager/iad-ci/cloudflare/pages` (property `CF_API`) → ExternalSecret
+> `cloudflare-pages-secret` in iad-ci. Secrets travel by reference, never by value.
+
 ## Outcome: COMPLETED — valid token located and validated
 
 A previous attempt (documented below in "Previous Analysis") concluded that no token was available. However, that analysis only checked apexalgo-iad cluster and local sources. **A valid token exists in iad-ci cluster** and is actively used by the Argo Workflows CI/CD pipeline.
@@ -37,7 +43,7 @@ A previous attempt (documented below in "Previous Analysis") concluded that no t
 To use this token in a local deployment shell:
 
 ```bash
-export CLOUDFLARE_API_TOKEN="cfut_REDACTED_ROTATED_2026-08-22"
+export CLOUDFLARE_API_TOKEN="$(bao kv get -field=CF_API secret/rs-manager/iad-ci/cloudflare/pages)"  # by reference only; never paste the value into this repo
 export CLOUDFLARE_ACCOUNT_ID="e26f015c7ba47a6ad6219385e77072b7"
 
 # Verify token is set
