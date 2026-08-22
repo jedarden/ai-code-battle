@@ -2,7 +2,7 @@
   "name": "ai-code-battle",
   "description": "AI Code Battle - Competitive bot programming platform",
   "domains": [
-    "aicodebattle.com"
+    "ai-code-battle.pages.dev"
   ],
   "build": {
     "command": "npm run build",
