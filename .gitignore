@@ -60,3 +60,6 @@ wasm/bots/*/build/
 !.beads/checkpoint/
 !.beads/checkpoint/**
 !.beads/config.json
+
+# Worker execution traces can contain raw tool output (credentials) — never commit (see 2026-07-25 GH_TOKEN leak, 2026-08-22 CF token leak)
+.beads/traces/
