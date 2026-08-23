@@ -1,9 +1,14 @@
 # Makefile for building all WASM artifacts per plan §11.2
-# Builds: engine.wasm, gatherer.wasm, rusher.wasm, swarm.wasm, random.wasm, guardian.wasm, hunter.wasm
+# Builds: engine.wasm plus the thirteen sandbox opponent bots (plan §13.1):
+#   original roster — gatherer, rusher, swarm, random, guardian, hunter
+#   extended roster — farmer, opportunist, siege, economist (Go ladder bots)
+#                     assassin, phalanx, zone-driver (Rust ladder bots)
 
-.PHONY: all clean engine gatherer rusher swarm random guardian hunter
+.PHONY: all clean engine gatherer rusher swarm random guardian hunter \
+        farmer opportunist siege economist assassin phalanx zone-driver
 
-all: engine gatherer rusher swarm random guardian hunter
+all: engine gatherer rusher swarm random guardian hunter \
+     farmer opportunist siege economist assassin phalanx zone-driver
 	@echo "All WASM artifacts built successfully"
 	@ls -lh dist/
 
@@ -43,6 +48,34 @@ guardian:
 hunter:
 	@echo "Building hunter.wasm..."
 	cd bots/hunter && ./build.sh
+
+farmer:
+	@echo "Building farmer.wasm..."
+	cd bots/farmer && ./build.sh
+
+opportunist:
+	@echo "Building opportunist.wasm..."
+	cd bots/opportunist && ./build.sh
+
+siege:
+	@echo "Building siege.wasm..."
+	cd bots/siege && ./build.sh
+
+economist:
+	@echo "Building economist.wasm..."
+	cd bots/economist && ./build.sh
+
+assassin:
+	@echo "Building assassin.wasm..."
+	cd bots/assassin && ./build.sh
+
+phalanx:
+	@echo "Building phalanx.wasm..."
+	cd bots/phalanx && ./build.sh
+
+zone-driver:
+	@echo "Building zone-driver.wasm..."
+	cd bots/zone-driver && ./build.sh
 
 clean:
 	@echo "Cleaning WASM build artifacts..."

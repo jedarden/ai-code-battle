@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the WASM engine and the six built-in bot WASM modules.
+# Build the WASM engine and the built-in bot WASM modules.
 #
 # Usage:
 #   ./cmd/acb-wasm/build.sh
@@ -13,6 +13,13 @@
 #   bots/guardian.wasm    – Guardian strategy
 #   bots/swarm.wasm       – Swarm strategy
 #   bots/hunter.wasm      – Hunter strategy
+#   bots/farmer.wasm      – Farmer strategy (extended roster)
+#   bots/opportunist.wasm – Opportunist strategy (extended roster)
+#   bots/siege.wasm       – Siege strategy (extended roster)
+#   bots/economist.wasm   – Economist strategy (extended roster)
+#   bots/assassin.wasm    – Assassin strategy (extended roster)
+#   bots/phalanx.wasm     – Phalanx strategy (extended roster)
+#   bots/zone-driver.wasm – ZoneDriver strategy (extended roster)
 #
 # The bot WASM files implement the ACB WASM bot interface:
 #   acbBot.init(configJSON)           – initialise for a new match
@@ -36,7 +43,8 @@ echo "Copying wasm_exec.js…"
 cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" "$OUT/"
 
 echo "Building bot WASM modules…"
-for bot in random gatherer rusher guardian swarm hunter; do
+for bot in random gatherer rusher guardian swarm hunter \
+           farmer opportunist siege economist assassin phalanx zone-driver; do
   echo "  → bots/${bot}.wasm"
   GOOS=js GOARCH=wasm go build \
     -o "$OUT/bots/${bot}.wasm" \

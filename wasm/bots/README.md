@@ -20,6 +20,8 @@ bot.free_result(ptr: number): void
 
 ## Directory Structure
 
+Original sandbox roster:
+
 ```
 wasm/bots/
 ├── gatherer/     # Go → WASM (energy-focused, avoids combat)
@@ -29,6 +31,24 @@ wasm/bots/
 ├── rusher/       # Rust → WASM (attacks enemy cores)
 └── swarm/        # TypeScript/AssemblyScript → WASM (tight formations)
 ```
+
+Extended roster (plan §13.1, ports of the ladder bots under `bots/`):
+
+```
+wasm/bots/
+├── farmer/       # Go → WASM (max energy income, avoids combat)
+├── opportunist/  # Go → WASM (contests energy nodes near enemies)
+├── siege/        # Go → WASM (surrounds and grinds enemy cores)
+├── economist/    # Go → WASM (spawn-heavy compounding; port of the Python ladder bot)
+├── assassin/     # Rust → WASM (all units rush the enemy core)
+├── phalanx/      # Rust → WASM (formation advance, mutual support)
+└── zone-driver/  # Rust → WASM (controls territory zones)
+```
+
+The shipped sandbox artifacts under `web/public/wasm/bots/` are built from
+the Go ports in `cmd/acb-wasm/` (see `cmd/acb-wasm/build.sh`), which cover
+the full thirteen-bot roster behind one loader; this directory keeps the
+per-language reference builds.
 
 ## Building
 
@@ -56,6 +76,13 @@ Output directory: `wasm/dist/`
 | hunter | Go → WASM | ~12 MB |
 | rusher | Rust → WASM | ~3 MB |
 | swarm | AssemblyScript → WASM | ~5 MB |
+| farmer | Go → WASM | ~12 MB |
+| opportunist | Go → WASM | ~12 MB |
+| siege | Go → WASM | ~12 MB |
+| economist | Go → WASM | ~12 MB |
+| assassin | Rust → WASM | ~100 KB |
+| phalanx | Rust → WASM | ~100 KB |
+| zone-driver | Rust → WASM | ~100 KB |
 
 ## Plan Reference
 

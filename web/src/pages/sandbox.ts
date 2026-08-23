@@ -344,6 +344,14 @@ const STRATEGY_OPTIONS = [
   { value: 'guardian', label: 'Guardian' },
   { value: 'swarm', label: 'Swarm' },
   { value: 'hunter', label: 'Hunter' },
+  // Extended roster (plan §13.1) — ports of the ladder bots under bots/
+  { value: 'farmer', label: 'Farmer' },
+  { value: 'opportunist', label: 'Opportunist' },
+  { value: 'siege', label: 'Siege' },
+  { value: 'economist', label: 'Economist' },
+  { value: 'assassin', label: 'Assassin' },
+  { value: 'phalanx', label: 'Phalanx' },
+  { value: 'zone-driver', label: 'Zone Driver' },
 ];
 
 function buildOpponentRow(index: number, defaultStrategy: string): string {
@@ -401,7 +409,7 @@ function initSandbox(params: Record<string, string> = {}): void {
   if (params.opponent1) {
     const opponentSelects = opponentsList.querySelectorAll<HTMLSelectElement>('.opponent-select');
     if (opponentSelects.length > 0) {
-      const validOpponents = ['random', 'gatherer', 'rusher', 'guardian', 'swarm', 'hunter'];
+      const validOpponents = STRATEGY_OPTIONS.map(s => s.value);
       if (validOpponents.includes(params.opponent1)) {
         opponentSelects[0].value = params.opponent1;
       }
