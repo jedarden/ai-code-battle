@@ -374,3 +374,9 @@ cd cmd/acb-indexer && npm test
 ## License
 
 MIT
+
+---
+
+Part of [jedarden.com](https://jedarden.com)
+
+*This GitHub repo is a read-only mirror of git.ardenone.com/jedarden/ai-code-battle — issues and PRs are welcome here either way.*
