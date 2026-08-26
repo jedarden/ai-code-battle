@@ -2028,7 +2028,7 @@ that evolve independently to maintain strategic diversity.
 - Each island holds up to **20 programs** ranked by fitness
 - Programs are clustered by **behavior signature** — a vector of outcomes
   across a fixed set of benchmark matches (e.g., win/loss/score against each
-  of the 6 built-in strategy bots)
+  of the 21 built-in strategy bots)
 - Sampling favors high-scoring clusters; within a cluster, favors shorter/simpler
   code (Occam pressure prevents bloat)
 
@@ -2451,7 +2451,7 @@ ai-code-battle/
 │   ├── acb-local/               # CLI: run a match locally (stdin/stdout bots)
 │   ├── acb-mapgen/              # CLI: generate symmetric maps
 │   ├── acb-maps-loader/         # CLI: bulk-load map JSON into PostgreSQL (one-shot)
-│   └── acb-wasm/                # Build target: compiles engine.wasm + six bot
+│   └── acb-wasm/                # Build target: compiles engine.wasm + selected bot
 │                                #   .wasm modules (botmain/{gatherer,guardian,
 │                                #   hunter,random,rusher,swarm}) via build.sh →
 │                                #   web/public/wasm/ (§13.1)
@@ -2729,9 +2729,9 @@ and produce a valid replay file.
 - HTTP bot interface in the engine (replaces stdin/stdout for production)
 - HMAC signing and verification library (Go, reusable by GathererBot)
 - GathererBot (Go) and RandomBot (Python) — validate the protocol works
-  across languages before building the remaining four
+  across languages before building the remaining nineteen
 - RusherBot (Rust), GuardianBot (PHP), SwarmBot (TypeScript), HunterBot (Java)
-- All 6 bots containerized with language-appropriate Dockerfiles
+- All 21 bots containerized with language-appropriate Dockerfiles
 - Starter kit template repos for each language (fork-ready)
 - Integration test: engine runs a full match between bots in different
   languages over HTTP
@@ -2819,7 +2819,7 @@ leaderboard updates every ~90 minutes.
 - Automated container build + deploy + register pipeline for promoted bots
 - Retirement policy: auto-retire low-rated evolved bots, enforce population cap
 - Evolution dashboard: lineage viewer, meta tracker, generation log
-- Seed the programs database with the 6 built-in strategy bots as initial
+- Seed the programs database with the 21 built-in strategy bots as initial
   population
 
 **Exit criteria:** evolution system runs autonomously — generates candidates,
@@ -2834,7 +2834,7 @@ within the first week of operation.
   `step()`, and `runMatch()` API for browser use
 - WASM bot interface spec: `init()`, `compute_moves()`, `free_result()`
   exports for bot-to-engine communication
-- Pre-compiled WASM builds of the 6 built-in strategy bots (Go/Rust/TS
+- Pre-compiled WASM builds of selected strategy bots (Go/Rust/TS
   natively; PHP/Java reimplemented in Go for WASM)
 - In-browser sandbox: Monaco editor (TS quick-start) + WASM upload mode +
   opponent selector + replay viewer integration
