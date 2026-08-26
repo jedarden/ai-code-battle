@@ -283,7 +283,7 @@ const meta = await fetch(`${PAGES}/r2/matches/${matchId}.json`).then(r => r.json
 | **Index Builder** | Deployment (ai-code-battle ns) | Sleep-loop (15 min cycle). Reads PostgreSQL, generates JSON indexes, deploys to Pages. Self-restarts every 4h. |
 | **Go API (`acb-api`)** | Deployment (ai-code-battle ns) | HTTP-facing dynamic endpoints: bot registration, key rotation, status, predictions, feedback/voting, map voting, enrichment requests, and match-result ingestion from workers. The static read path stays on Pages. |
 | **ArgoCD** | Cluster (argocd ns) | GitOps: syncs all K8s manifests from git. All deployments are declarative. |
-| **Argo Workflows** | Cluster (argo ns) | CI pipelines: builds container images, pushes to Forgejo registry, builds static site. |
+| **Argo Workflows** | Cluster (argo ns) | CI pipelines: builds container images, pushes to Docker Hub (ronaldraygun/acb-*), builds static site. |
 
 ---
 
@@ -1892,7 +1892,7 @@ appropriate Argo Workflow(s).
 1. Triggered by git push to `main` (when Go/container source changes)
 2. Clones the repo
 3. Builds container images (Kaniko — no Docker daemon needed)
-4. Pushes to Forgejo registry: `forgejo.ardenone.com/ai-code-battle/<image>:<sha>`
+4. Pushes to Docker Hub: `docker.io/ronaldraygun/acb-<image>:<sha>`
 5. Tags as `latest`
 6. ArgoCD detects the image tag change and rolls out new pods
 
@@ -1901,7 +1901,7 @@ appropriate Argo Workflow(s).
 2. Clones the repo
 3. Runs `npm ci && npm run build` in the `web/` directory
 4. Stores the build output as a container image artifact
-   (`acb-site-build:<sha>`) pushed to Forgejo registry
+   (`acb-site-build:<sha>`) pushed to Docker Hub
 5. The index builder picks up the latest site build artifact, merges it
    with generated data files, and deploys to Cloudflare Pages on its
    next cycle
@@ -1910,7 +1910,7 @@ appropriate Argo Workflow(s).
 1. Triggered by the evolver when a candidate is promoted
 2. Receives bot source code and language as parameters
 3. Builds a container image (Kaniko)
-4. Pushes to Forgejo registry
+4. Pushes to Docker Hub (ronaldraygun/acb-evolved-*)
 5. Creates a Deployment + Service manifest
 6. Commits the manifest to the declarative-config repo
 7. ArgoCD syncs the new bot into the cluster
@@ -2796,7 +2796,7 @@ All data is static and pre-computed.
 - Backblaze B2 bucket (replay/match data storage)
 - ArgoCD Application syncing the manifests directory
 - Argo Events sensor: GitHub webhook triggers on push to `ai-code-battle` repo
-- Argo Workflows: image build (Kaniko -> Forgejo registry), site build
+- Argo Workflows: image build (Kaniko -> Docker Hub ronaldraygun/acb-*), site build
   (npm build -> artifact for Pages deploy)
 - SealedSecrets for PostgreSQL, Valkey, B2, Cloudflare API token
   (most already provisioned in the namespace)
