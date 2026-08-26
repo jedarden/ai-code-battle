@@ -241,7 +241,7 @@ const meta = await fetch(`${PAGES}/r2/matches/${matchId}.json`).then(r => r.json
 │                                                   │          │
 │  ┌────────────────────────────────────────────────┼───────┐  │
 │  │  Bot Containers (Deployments)                  │       │  │
-│  │  Strategy (×6) + Evolved (0–50)                │       │  │
+│  │  Strategy (×21) + Evolved (0–50)               │       │  │
 │  └────────────────────────────────────────────────┼───────┘  │
 │                                                   │          │
 │  ┌────────────────────────────────────────────────┼───────┐  │
@@ -278,7 +278,7 @@ const meta = await fetch(`${PAGES}/r2/matches/${matchId}.json`).then(r => r.json
 | **PostgreSQL** | CNPG cluster (cnpg ns, `cnpg-apexalgo`) | Relational database — bot registry, match queue, ratings, results, series, seasons. Source of truth for structured data. |
 | **Valkey** | Cluster service | Job queue (`acb:jobs:pending`), ephemeral caching. |
 | **Match Workers** | Deployment (ai-code-battle ns) | Stateless match execution — BRPOP from Valkey, run simulation, upload replay to R2 (via ARMOR), write result to PostgreSQL. |
-| **Bot Containers** | Deployments + Services (ai-code-battle ns) | Strategy bots (x6) + evolved bots (0-50) — HTTP servers called by workers during matches via cluster-internal Service DNS. |
+| **Bot Containers** | Deployments + Services (ai-code-battle ns) | Strategy bots (x21) + evolved bots (0-50) — HTTP servers called by workers during matches via cluster-internal Service DNS. |
 | **Evolver** | Deployment (ai-code-battle ns) | Evolution pipeline — reads lineage/meta from PostgreSQL, generates candidates, writes evolution data to PostgreSQL. |
 | **Index Builder** | Deployment (ai-code-battle ns) | Sleep-loop (15 min cycle). Reads PostgreSQL, generates JSON indexes, deploys to Pages. Self-restarts every 4h. |
 | **Go API (`acb-api`)** | Deployment (ai-code-battle ns) | HTTP-facing dynamic endpoints: bot registration, key rotation, status, predictions, feedback/voting, map voting, enrichment requests, and match-result ingestion from workers. The static read path stays on Pages. |
@@ -2524,7 +2524,7 @@ ai-code-battle/
 │       ├── guardian/            # Go → WASM (reimpl from PHP)
 │       └── hunter/              # Go → WASM (reimpl from Java)
 │
-├── bots/                        # Production bot HTTP servers (6 languages)
+├── bots/                        # Production bot HTTP servers (8 languages)
 │   ├── random/                  # Python — Flask, ~50 lines strategy
 │   │   ├── Dockerfile
 │   │   ├── main.py
