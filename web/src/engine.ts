@@ -306,22 +306,58 @@ export function executeTurn(gs: GameState, allMoves: Map<number, Move[]>): Match
     b.position = dest;
   }
 
-  // Phase 2: Combat (bots within attack radius kill each other pairwise)
+  // Phase 2: Combat - focus-fire algorithm from Go engine
   const aliveBots = gs.bots.filter(b => b.alive);
-  const killed = new Set<number>();
-  for (let i = 0; i < aliveBots.length; i++) {
-    for (let j = i + 1; j < aliveBots.length; j++) {
-      const a = aliveBots[i], bBot = aliveBots[j];
-      if (a.owner === bBot.owner) continue;
-      if (dist2(a.position, bBot.position, gs.config) <= gs.config.attack_radius2) {
-        killed.add(a.id);
-        killed.add(bBot.id);
+
+  // For each bot, count enemies within attack radius
+  const enemyCounts = new Map<number, number>();     // bot ID -> enemy count
+  const botsInRadius = new Map<number, Bot[]>();     // bot ID -> enemies within radius
+
+  for (const b of aliveBots) {
+    const enemies: Bot[] = [];
+    for (const e of gs.bots) {
+      if (!e.alive || e.id === b.id || e.owner === b.owner) continue;
+      if (dist2(b.position, e.position, gs.config) <= gs.config.attack_radius2) {
+        enemies.push(e);
+      }
+    }
+    enemyCounts.set(b.id, enemies.length);
+    botsInRadius.set(b.id, enemies);
+  }
+
+  // Determine which bots die using focus-fire logic
+  // A bot dies if it has >= enemies than any enemy it can reach
+  const dead = new Set<number>();
+
+  for (const b of aliveBots) {
+    const myEnemyCount = enemyCounts.get(b.id) ?? 0;
+    if (myEnemyCount === 0) continue; // No enemies nearby, safe
+
+    // Check if any enemy has <= myEnemyCount enemies
+    const myEnemies = botsInRadius.get(b.id) ?? [];
+    for (const e of myEnemies) {
+      const theirEnemyCount = enemyCounts.get(e.id) ?? 0;
+      if (myEnemyCount >= theirEnemyCount) {
+        dead.add(b.id); // I die
+        break;
       }
     }
   }
-  for (const id of killed) {
-    const b = gs.bots.find(b => b.id === id);
-    if (b) killBot(gs, b, 'combat_death');
+
+  // Kill the dead bots and emit combat_death events
+  for (const botId of dead) {
+    const b = gs.bots.find(bot => bot.id === botId);
+    if (b && b.alive) {
+      // Build killers array (enemies within attack radius)
+      const killers = botsInRadius.get(b.id) ?? [];
+      // Award score for the kill to each killer
+      for (const killer of killers) {
+        if (killer.owner < gs.players.length) {
+          gs.players[killer.owner].score++;
+        }
+      }
+      killBot(gs, b, 'combat_death');
+    }
   }
 
   // Phase 3: Energy collection
