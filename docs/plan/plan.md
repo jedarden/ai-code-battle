@@ -1638,10 +1638,12 @@ Key principles:
 
 ### 9.2 Kubernetes Namespace Layout
 
-All ai-code-battle resources live in the `ai-code-battle` namespace on the
-`apexalgo-iad` cluster. Strategy bot deployments (21 bots) run within this
-namespace alongside core infrastructure (matchmaker, workers, evolver, index
-builder).
+Ai-code-battle resources are split across **two namespaces** on the
+`apexalgo-iad` cluster:
+- **`ai-code-battle` namespace**: Core infrastructure (matchmaker, workers, evolver, index builder, API)
+- **`acb-bots` namespace**: Strategy bot deployments (21 bots) and evolved bot deployments (0-50)
+
+This separation isolates bot deployments from infrastructure components while allowing both to share cluster-level services (PostgreSQL, Valkey, Traefik).
 
 **Cross-namespace dependencies:**
 
@@ -1654,7 +1656,7 @@ builder).
 - `argocd` namespace: ArgoCD — an Application resource points to the
   manifests directory in the git repo
 
-**Cluster history (resolved bf-58z, 2026-07-26):** The authoritative cluster
+**Cluster history and declarative-config state:** The authoritative cluster
 for `ai-code-battle` was **`apexalgo-iad`** — it was the only cluster ever to
 run live `ai-code-battle` pods, and `declarative-config/k8s/apexalgo-iad/ai-code-battle/`
 was the tree ArgoCD managed. `iad-acb` was a separate, earlier dedicated-cluster
@@ -1666,11 +1668,12 @@ split-brain (the apparent duplication was an abandoned earlier cluster, not a
 second live copy). Subsequently, the **entire `ai-code-battle` compute tier on
 `apexalgo-iad` was decommissioned on 2026-07-21** (`declarative-config` commit
 `0163324e`, "take down ai-code-battle"), which deleted the
-`k8s/apexalgo-iad/ai-code-battle/` tree as well. As of that date **neither
-manifest tree exists in `declarative-config`**; the live namespace on
-apexalgo-iad holds only orphaned pods the unhealthy ArgoCD sync failed to prune.
-The Cloudflare static site, R2 replays, CNPG postgres, and OpenBao MEK were
-intentionally preserved. See `notes/bf-58z.md` and `notes/bf-1yj.md`.
+`k8s/apexalgo-iad/ai-code-battle/` tree as well. The stale `k8s/iad-acb/` tree
+remains in declarative-config as orphaned manifest history. As of 2026-07-21,
+**neither manifest tree is active**; the live namespaces on apexalgo-iad hold
+only orphaned pods the unhealthy ArgoCD sync failed to prune. The Cloudflare
+static site, R2 replays, CNPG postgres, and OpenBao MEK were intentionally
+preserved. See `notes/bf-58z.md` and `notes/bf-1yj.md`.
 
 **Cloudflare infrastructure requirements:**
 
