@@ -235,15 +235,23 @@ func (gs *GameState) executeCombat() {
 			continue // No enemies nearby, safe
 		}
 
-		// Check if any enemy has <= myEnemyCount enemies
-		// Use the pre-computed enemy counts (not affected by simultaneous deaths)
+		// Focus-fire algorithm: enemies coordinate on the most vulnerable target
+		// "Most vulnerable" = has the MOST enemies nearby (highest enemy count)
+		// I die if I'm strictly more vulnerable than all my enemies
+		// In 1v1 ties (equal enemy counts), neither dies - no numerical advantage to exploit
+		mostVulnerable := true
 		for _, e := range botsInRadius[b.ID] {
 			theirEnemyCount := enemyCounts[e.ID]
-			if myEnemyCount >= theirEnemyCount {
-				// I die
-				dead[b.ID] = true
+			if theirEnemyCount >= myEnemyCount {
+				// This enemy is equally or more vulnerable than me
+				// Enemies won't focus-fire on me when there's an equally good target
+				mostVulnerable = false
 				break
 			}
+		}
+		if mostVulnerable {
+			// I'm strictly the most vulnerable, all enemies focus-fire on me
+			dead[b.ID] = true
 		}
 	}
 
