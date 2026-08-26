@@ -309,17 +309,16 @@ ai-code-battle/
 │   ├── acb-local/       # CLI match runner (local testing)
 │   ├── acb-mapgen/      # Map generator
 │   ├── acb-worker/      # Match execution worker
-│   └── acb-indexer/     # Index builder for static files
+│   ├── acb-api/         # Public Go HTTP service for dynamic endpoints
+│   ├── acb-matchmaker/  # Internal match scheduler
+│   ├── acb-indexer/     # Index builder for static files
+│   └── acb-evolver/     # LLM evolution pipeline
 ├── web/                 # Cloudflare Pages SPA
-│   └── src/
-│       ├── replay-viewer.ts  # Canvas replay renderer
-│       └── app.ts            # SPA entry point
-├── worker-api/          # Cloudflare Worker API
-│   └── src/
-│       ├── index.ts     # Router + cron dispatcher
-│       ├── jobs.ts      # Job coordination
-│       ├── bots.ts      # Bot management
-│       └── glicko2.ts   # Glicko-2 rating system
+│   ├── src/
+│   │   ├── replay-viewer.ts  # Canvas replay renderer
+│   │   └── app.ts            # SPA entry point
+│   └── functions/
+│       └── r2/               # R2 replay serving (Pages Functions)
 ├── bots/                # Strategy bot implementations (21 bots)
 ├── starters/            # Starter templates (8 languages)
 │   ├── python/
@@ -330,27 +329,28 @@ ai-code-battle/
 │   ├── java/
 │   ├── php/
 │   └── csharp/
-└── acb-evolver/         # Bot evolution engine
+└── wasm/                # WebAssembly bot interface
 ```
 
 ---
 
 ## Architecture
 
-The platform is split between Cloudflare's edge network and a cloud VM:
+The platform uses a **static-first** architecture. The public-facing product is a Cloudflare Pages static site — all data visitors see (leaderboards, match history, bot profiles, replays) is pre-computed JSON served from the CDN. All compute runs in a Kubernetes cluster (Rackspace Spot), which acts as a match factory: it runs battles, generates replays, and periodically publishes the updated site to Pages.
 
-- **Cloudflare Pages** — Static SPA (replay viewer, leaderboard, match history)
-- **Cloudflare Workers + D1 + R2** — Match coordination API, bot registry, rating updates, replay storage
-- **Cloud VM** — Match workers that pull jobs from the API, run bots as containers, and publish replays
+- **Cloudflare Pages** — Static SPA (replay viewer, leaderboard, match history) with all data pre-computed as JSON
+- **Cloudflare Pages Functions + R2** — Replay storage and serving through R2 bucket binding
+- **Kubernetes cluster** — Match workers, matchmaker, API service, bot containers, and index builder
 
 Match flow:
 
-1. Worker API schedules match jobs
-2. Match worker pulls a job and starts both bot containers
+1. Matchmaker queries active bots from PostgreSQL and enqueues match jobs to Valkey
+2. Match worker pulls a job from Valkey and starts both bot containers
 3. Engine runs the match turn-by-turn, calling each bot's `/turn` endpoint
-4. Replay JSON is uploaded to R2
-5. Worker API updates Glicko-2 ratings and triggers index rebuild
-6. Web frontend fetches the new replay and displays it
+4. Replay JSON is uploaded to R2 via ARMOR credentials (B2-compatible API)
+5. Worker writes results to PostgreSQL
+6. Index builder reads PostgreSQL, generates JSON indexes, and deploys to Cloudflare Pages
+7. Web frontend fetches the new replay through Pages Functions (R2 proxy)
 
 **Rating system**: Glicko-2 — accounts for rating reliability (RD) and rating volatility, converges faster than Elo, same algorithm used by chess.com.
 
@@ -362,11 +362,8 @@ Match flow:
 # Game engine unit tests
 go test ./engine/... -v
 
-# Worker API tests
-cd worker-api && npm test
-
-# Index builder tests
-cd cmd/acb-indexer && npm test
+# Web app tests
+cd web && npm test
 ```
 
 ---
