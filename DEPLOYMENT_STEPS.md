@@ -62,7 +62,7 @@ spec:
 EOF
 ```
 
-If a Cloudflare Pages Git integration is configured for the project, a push to `master` also
+If a Cloudflare Pages Git integration is configured for the project, a push to `main` also
 triggers a build directly from Cloudflare (independent of GitHub Actions).
 
 ### 4. Manual Deployment with Wrangler

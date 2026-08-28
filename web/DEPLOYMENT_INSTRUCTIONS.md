@@ -74,7 +74,7 @@
 ## Automated Deployment (Future)
 
 Once the GitHub Actions workflow is set up with secrets:
-- Any push to `master` that changes files in `web/` will trigger deployment
+- Any push to `main` that changes files in `web/` will trigger deployment
 - Manual trigger: `gh workflow run deploy-pages.yml`
 
 ## Verification

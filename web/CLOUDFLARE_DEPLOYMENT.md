@@ -11,12 +11,12 @@ This guide explains how to deploy the AI Code Battle SPA to Cloudflare Pages.
 3. Select the `ai-code-battle` repository
 4. Configure the build settings:
    - **Project name**: `ai-code-battle`
-   - **Production branch**: `master`
+   - **Production branch**: `main`
    - **Build command**: `cd web && npm run build`
    - **Build output directory**: `web/dist`
 5. Click **Save and Deploy**
 
-The site will now automatically deploy whenever you push to the `master` branch.
+The site will now automatically deploy whenever you push to the `main` branch.
 
 ### Option 2: Manual Deployment with Wrangler
 

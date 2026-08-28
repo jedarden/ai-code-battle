@@ -55,7 +55,7 @@ Removed superseded code that no longer matches the architecture:
 ### Marathon Verification (2026-03-29)
 - Project verified complete - no remaining work
 - Web build: passing
-- Git status: clean, up to date with origin/master
+- Git status: clean, up to date with origin/main
 - K8s manifests: in ardenone-cluster repo at `declarative-config/k8s/apexalgo-iad/ai-code-battle/`
 - cmd packages: 9 present (acb-api stub, acb-evolver, acb-index-builder, acb-local, acb-map-evolver, acb-mapgen, acb-matchmaker, acb-wasm, acb-worker)
 - All phases 1-10 complete - project finished
