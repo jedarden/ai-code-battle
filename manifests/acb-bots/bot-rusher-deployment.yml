@@ -36,7 +36,7 @@ spec:
         - name: docker-hub-registry
       containers:
         - name: bot
-          image: ronaldraygun/acb-bot-rusher:sha-placeholder
+          image: ronaldraygun/acb-bot-rusher@sha256:ddd1aa0a12f926ae530978b69b6e27d4806da10deb3e32e88567d759113b09d5
           imagePullPolicy: Always
           env:
             - name: BOT_PORT
