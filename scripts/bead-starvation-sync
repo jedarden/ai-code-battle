@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# bead-starvation-sync - Automated bead store checkpoint sync
+#
+# This script automatically detects and resolves bead starvation by syncing
+# the bead store from the git-tracked checkpoint when it's newer than the
+# database. It's designed to run as a cron job or systemd timer.
+#
+# Usage: bead-starvation-sync [options]
+#   --dry-run          Show what would be done without making changes
+#   --force            Sync even if timestamps don't indicate it's needed
+#   --escalate-to <email>  Escalate to email if starvation persists after sync
+#   --help             Show this help message
+#
+# Deploy as cron job (add to crontab -e):
+#   */5 * * * * /path/to/workspace/scripts/bead-starvation-sync
+#
+# Deploy as systemd timer (see bead-starvation-sync.service and timer below)
+
+set -euo pipefail
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BEAD_DB="${WORKSPACE_ROOT}/.beads/beads.db"
+CHECKPOINT_FILE="${WORKSPACE_ROOT}/.beads/checkpoint/forensic.jsonl"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+LOG_DIR="${WORKSPACE_ROOT}/.beads/diagnostics"
+LOG_FILE="${LOG_DIR}/sync-${TIMESTAMP}.log"
+ESCALATION_LOG="${LOG_DIR}/escalation.log"
+
+# Colors for terminal output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Parse arguments
+DRY_RUN=false
+FORCE_SYNC=false
+ESCALATE_TO=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --force)
+            FORCE_SYNC=true
+            shift
+            ;;
+        --escalate-to)
+            ESCALATE_TO="$2"
+            shift 2
+            ;;
+        --help|-h)
+            grep '^#' "$0" | tail -n +2 | sed 's/^# //; s/^#//'
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Ensure log directory exists
+mkdir -p "$LOG_DIR"
+
+log() {
+    local msg="[$(date -u +"%Y-%m-%d %H:%M:%S")] $1"
+    echo -e "${BLUE}${msg}${NC}" >&2
+    echo "$msg" >> "$LOG_FILE"
+}
+
+warn() {
+    local msg="[$(date -u +"%Y-%m-%d %H:%M:%S")] WARN: $1"
+    echo -e "${YELLOW}${msg}${NC}" >&2
+    echo "$msg" >> "$LOG_FILE"
+}
+
+error() {
+    local msg="[$(date -u +"%Y-%m-%d %H:%M:%S")] ERROR: $1"
+    echo -e "${RED}${msg}${NC}" >&2
+    echo "$msg" >> "$LOG_FILE"
+}
+
+success() {
+    local msg="[$(date -u +"%Y-%m-%d %H:%M:%S")] SUCCESS: $1"
+    echo -e "${GREEN}${msg}${NC}" >&2
+    echo "$msg" >> "$LOG_FILE"
+}
+
+# Step 1: Verify bead database exists
+log "Step 1: Verifying bead database..."
+if [[ ! -f "$BEAD_DB" ]]; then
+    error "Bead database not found at $BEAD_DB"
+    exit 1
+fi
+success "Bead database found"
+
+# Step 2: Verify checkpoint file exists
+log "Step 2: Verifying checkpoint file..."
+if [[ ! -f "$CHECKPOINT_FILE" ]]; then
+    error "Checkpoint file not found at $CHECKPOINT_FILE"
+    exit 1
+fi
+success "Checkpoint file found"
+
+# Step 3: Check bead CLI availability
+log "Step 3: Verifying bead CLI..."
+if ! command -v bead &> /dev/null; then
+    error "bead CLI not found in PATH"
+    exit 1
+fi
+success "bead CLI available"
+
+# Step 4: Compare timestamps
+log "Step 4: Comparing timestamps..."
+DB_TIMESTAMP=$(stat -c %Y "$BEAD_DB")
+CHECKPOINT_TIMESTAMP=$(stat -c %Y "$CHECKPOINT_FILE")
+TIMESTAMP_DIFF=$((CHECKPOINT_TIMESTAMP - DB_TIMESTAMP))
+
+if [[ $TIMESTAMP_DIFF -gt 0 ]]; then
+    warn "Checkpoint is newer than database by ${TIMESTAMP_DIFF} seconds"
+    NEEDS_SYNC=true
+elif [[ $TIMESTAMP_DIFF -lt 0 ]]; then
+    warn "Database is newer than checkpoint by $(( -TIMESTAMP_DIFF )) seconds"
+    warn "This may indicate a corruption or clock skew issue"
+    NEEDS_SYNC=true
+else
+    success "Timestamps are equal - database and checkpoint in sync"
+    NEEDS_SYNC=false
+fi
+
+if [[ "$FORCE_SYNC" == true ]]; then
+    warn "Force sync requested - will sync regardless of timestamps"
+    NEEDS_SYNC=true
+fi
+
+# Step 5: Check ready frontier BEFORE sync
+log "Step 5: Checking ready frontier before sync..."
+READY_COUNT_BEFORE=$(bead list --ready --json 2>&1 | grep -c '^{' || echo "0")
+log "Ready frontier size before sync: $READY_COUNT_BEFORE"
+
+# Step 6: Perform sync if needed
+if [[ "$NEEDS_SYNC" == true ]]; then
+    if [[ "$DRY_RUN" == true ]]; then
+        warn "DRY RUN: Would sync checkpoint to database"
+        warn "Command: bead sync import-only --input $CHECKPOINT_FILE --restore-into-empty --actor automated-sync"
+    else
+        log "Step 6: Syncing checkpoint to database..."
+
+        # Create a backup of the current database
+        BACKUP_DIR="${WORKSPACE_ROOT}/.beads/backups"
+        mkdir -p "$BACKUP_DIR"
+        BACKUP_FILE="${BACKUP_DIR}/beads.db.pre-sync-${TIMESTAMP}.db"
+
+        log "Creating backup: $BACKUP_FILE"
+        cp "$BEAD_DB" "$BACKUP_FILE" 2>/dev/null || {
+            error "Failed to create backup - aborting sync for safety"
+            exit 1
+        }
+        success "Backup created"
+
+        # Check if database is empty to determine sync mode
+        log "Determining sync mode..."
+        ISSUE_COUNT=$(bead list --status open --json 2>&1 | grep -c '^{' || echo "0")
+        TOTAL_ISSUES=$(bead list --json 2>&1 | grep -c '^{' || echo "0")
+
+        if [[ $TOTAL_ISSUES -eq 0 ]]; then
+            log "Database is empty - using restore mode"
+            SYNC_MODE="restore-into-empty"
+        else
+            log "Database has $TOTAL_ISSUES issues - using merge mode"
+            SYNC_MODE="merge"
+        fi
+
+        # Perform the sync
+        log "Running: bead sync import-only --$SYNC_MODE..."
+        if bead sync import-only --input "$CHECKPOINT_FILE" --"$SYNC_MODE" --actor automated-sync >> "$LOG_FILE" 2>&1; then
+            success "Sync completed successfully"
+        else
+            error "Sync failed - restoring from backup"
+            cp "$BACKUP_FILE" "$BEAD_DB"
+            error "Aborting due to sync failure"
+            exit 1
+        fi
+    fi
+else
+    log "Step 6: No sync needed - timestamps indicate database is current"
+fi
+
+# Step 7: Verify ready frontier AFTER sync
+if [[ "$DRY_RUN" == false ]]; then
+    log "Step 7: Verifying ready frontier after sync..."
+    READY_COUNT_AFTER=$(bead list --ready --json 2>&1 | grep -c '^{' || echo "0")
+    log "Ready frontier size after sync: $READY_COUNT_AFTER"
+
+    # Check if sync resolved starvation
+    if [[ $READY_COUNT_BEFORE -eq 0 && $READY_COUNT_AFTER -gt 0 ]]; then
+        success "Sync resolved starvation - ready frontier now has $READY_COUNT_AFTER beads"
+    elif [[ $READY_COUNT_BEFORE -eq 0 && $READY_COUNT_AFTER -eq 0 ]]; then
+        error "Starvation persists after sync - ready frontier still empty"
+        ESCALATE=true
+    elif [[ $READY_COUNT_BEFORE -gt 0 ]]; then
+        log "No starvation detected before sync - ready frontier had $READY_COUNT_BEFORE beads"
+    fi
+else
+    # In dry-run mode, we can't check after-sync state
+    warn "DRY RUN: Skipping post-sync verification"
+fi
+
+# Step 8: Check open beads count for context
+log "Step 8: Checking total open beads..."
+OPEN_BEADS_COUNT=$(bead list --status open --json 2>&1 | grep -c '^{' || echo "0")
+log "Total open beads: $OPEN_BEADS_COUNT"
+
+# Step 9: Escalation if starvation persists
+if [[ "${ESCALATE:-false}" == true && -n "$ESCALATE_TO" ]]; then
+    log "Step 9: Escalating to $ESCALATE_TO..."
+
+    ESCALATION_MSG="BEAD STARVATION ESCALATION
+
+Workspace: $WORKSPACE_ROOT
+Timestamp: $TIMESTAMP
+
+PROBLEM:
+Ready frontier is empty despite $OPEN_BEADS_COUNT open beads.
+Automated sync from checkpoint did not resolve the issue.
+
+ACTIONS TAKEN:
+- Compared timestamps (diff: ${TIMESTAMP_DIFF}s)
+- Synced checkpoint to database
+- Verified ready frontier before and after
+
+METRICS:
+- Ready before: $READY_COUNT_BEFORE
+- Ready after: $READY_COUNT_AFTER
+- Open beads: $OPEN_BEADS_COUNT
+
+RECOMMENDED ACTIONS:
+1. Run manual diagnostic: $SCRIPT_DIR/bead-starvation-diagnose
+2. Check database integrity: bead doctor
+3. Verify worker configuration
+4. Check for workspace policy issues
+
+Log file: $LOG_FILE"
+
+    echo "$ESCALATION_MSG" >> "$ESCALATION_LOG"
+
+    # Send email escalation if configured
+    if command -v mail &> /dev/null; then
+        echo "$ESCALATION_MSG" | mail -s "BEAD STARVATION ESCALATION: $WORKSPACE_ROOT" "$ESCALATE_TO" 2>/dev/null && {
+            success "Escalation email sent to $ESCALATE_TO"
+        } || {
+            warn "Failed to send escalation email"
+        }
+    else
+        warn "mail command not available - escalation logged only"
+    fi
+fi
+
+# Step 10: Summary
+log "Step 10: Summary..."
+log "=== Sync Summary ==="
+log "Workspace: $WORKSPACE_ROOT"
+log "Timestamp: $TIMESTAMP"
+log "DB timestamp: $DB_TIMESTAMP"
+log "Checkpoint timestamp: $CHECKPOINT_TIMESTAMP"
+log "Timestamp diff: ${TIMESTAMP_DIFF}s"
+log "Ready frontier before: $READY_COUNT_BEFORE"
+if [[ "$DRY_RUN" == false ]]; then
+    log "Ready frontier after: $READY_COUNT_AFTER"
+fi
+log "Open beads total: $OPEN_BEADS_COUNT"
+log "Sync performed: $([[ "$NEEDS_SYNC" == true ]] && echo "YES" || echo "NO")"
+if [[ "$DRY_RUN" == true ]]; then
+    log "Mode: DRY RUN (no changes made)"
+fi
+log "Log file: $LOG_FILE"
+log "=================="
+
+# Exit with appropriate code
+if [[ "$DRY_RUN" == true ]]; then
+    success "DRY RUN complete - no changes made"
+    exit 0
+elif [[ ${READY_COUNT_AFTER:-READY_COUNT_BEFORE} -eq 0 && $OPEN_BEADS_COUNT -gt 0 ]]; then
+    error "Starvation detected - ready frontier is empty"
+    exit 1  # Starvation detected
+else
+    success "No starvation detected - ready frontier has beads"
+    exit 0  # No starvation
+fi

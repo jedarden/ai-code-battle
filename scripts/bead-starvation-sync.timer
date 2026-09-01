@@ -1,0 +1,16 @@
+[Unit]
+Description=Bead Starvation Sync Timer
+Documentation=file:///home/coding/ai-code-battle/scripts/bead-starvation-sync
+Requires=bead-starvation-sync.service
+
+[Timer]
+# Run every 5 minutes
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=1s
+
+# Randomize start time slightly to avoid thundering herd
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

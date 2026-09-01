@@ -1,0 +1,34 @@
+[Unit]
+Description=Bead Starvation Sync Service
+Documentation=file:///home/coding/ai-code-battle/scripts/bead-starvation-sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=coding
+Group=coding
+WorkingDirectory=/home/coding/ai-code-battle
+ExecStart=/home/coding/ai-code-battle/scripts/bead-starvation-sync
+Nice=10
+IOSchedulingClass=idle
+IOSchedulingPriority=7
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/coding/ai-code-battle/.beads
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bead-starvation-sync
+
+# Failure handling
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
