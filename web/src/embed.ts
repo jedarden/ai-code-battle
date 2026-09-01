@@ -24,6 +24,8 @@ interface EmbedConfig {
   loop: boolean;
   viewMode: 'standard' | 'dots' | 'voronoi' | 'influence';
   demo: boolean;
+  start: number;
+  controls: boolean;
 }
 
 class EmbedViewer {
@@ -83,24 +85,61 @@ class EmbedViewer {
     const matchIdMatch = path.match(/\/embed\/([^/]+)/);
     const matchId = matchIdMatch ? matchIdMatch[1] : params.get('match_id') || '';
 
-    // Parse view mode - default to 'influence' (territory view) for homepage embeds
-    const viewModeParam = params.get('view');
-    const viewMode: 'standard' | 'dots' | 'voronoi' | 'influence' =
-      viewModeParam === 'standard' || viewModeParam === 'dots' || viewModeParam === 'voronoi' || viewModeParam === 'influence'
-        ? viewModeParam
-        : 'influence'; // Default to territory view for homepage
+    // Parse view mode - accept both 'mode' and 'view' for compatibility
+    // Map 'territory' to 'voronoi' (§14.3 naming)
+    const modeParam = params.get('mode') || params.get('view');
+    let viewMode: 'standard' | 'dots' | 'voronoi' | 'influence';
+    if (modeParam === 'territory') {
+      viewMode = 'voronoi';
+    } else if (modeParam === 'standard' || modeParam === 'dots' || modeParam === 'influence') {
+      viewMode = modeParam;
+    } else {
+      viewMode = 'influence'; // Default to territory view for homepage
+    }
+
+    // Parse speed as multiplier (1-16) per §14.3, or fall back to legacy ms-per-turn
+    const speedParam = params.get('speed');
+    let speed: number;
+    if (speedParam) {
+      const speedNum = parseInt(speedParam, 10);
+      if (speedNum >= 1 && speedNum <= 16) {
+        // Convert multiplier to ms per turn (base 100ms = 1x)
+        speed = Math.round(100 / speedNum);
+      } else {
+        // Legacy: interpret as ms per turn
+        speed = speedNum;
+      }
+    } else {
+      speed = 100; // Default 1x
+    }
+
+    // Parse start turn (default to 0)
+    const start = parseInt(params.get('start') || '0', 10);
+
+    // Parse controls visibility (default to true)
+    const controls = params.get('controls') !== 'false';
 
     return {
       matchId,
       autoPlay: params.get('autoplay') !== 'false',
-      speed: parseInt(params.get('speed') || '100', 10),
+      speed,
       loop: params.get('loop') === 'true',
       viewMode,
       demo: params.get('demo') === 'true',
+      start,
+      controls,
     };
   }
 
   private init(): void {
+    // Apply controls visibility setting (§14.3)
+    if (!this.config.controls) {
+      const controlsBar = document.querySelector('.controls-bar') as HTMLElement;
+      if (controlsBar) {
+        controlsBar.style.display = 'none';
+      }
+    }
+
     // Wire up event handlers
     this.playBtn.addEventListener('click', () => this.togglePlay());
     this.resetBtn.addEventListener('click', () => this.reset());
@@ -152,6 +191,11 @@ class EmbedViewer {
       });
 
       this.viewer.loadReplay(replay);
+
+      // Start at specified turn if configured (§14.3)
+      if (this.config.start > 0) {
+        this.viewer.setTurn(this.config.start);
+      }
 
       // Wire viewer callbacks
       this.viewer.onTurnChange = (turn) => this.onTurnChange(turn);
@@ -231,6 +275,12 @@ class EmbedViewer {
     const speed = parseInt(this.speedSelect.value, 10);
     this.viewer.setSpeed(speed);
     this.config.speed = speed;
+
+    // Update URL to reflect new speed
+    const url = new URL(window.location.href);
+    const multiplier = Math.round(100 / speed);
+    url.searchParams.set('speed', multiplier.toString());
+    window.history.replaceState({}, '', url.toString());
   }
 
   private seekTo(e: MouseEvent): void {
