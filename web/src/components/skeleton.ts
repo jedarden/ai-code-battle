@@ -66,21 +66,21 @@ function circle(size: string): string {
 
 export function skeletonLeaderboard(): string {
   const rows = Array.from({ length: 10 }, () => {
-    return `<div class="skeleton-row">
+    return `<div class="skeleton-row" style="display:grid;grid-template-columns:40px 180px 100px 60px 60px 80px;align-items:center;gap:8px;padding:8px 0;">
       ${bar('40px', '16px', 'border-radius:4px')}
-      ${circle('32px')}
-      ${bar('120px')}
-      ${bar('60px', '16px', 'margin-left:auto')}
-      ${bar('50px')}
-      ${bar('40px')}
+      ${bar('140px', '16px')}
+      ${bar('80px', '16px')}
+      ${bar('50px', '16px')}
+      ${bar('50px', '16px')}
+      ${bar('60px', '16px')}
     </div>`;
   }).join('');
   return `
     <div class="skeleton-page">
       <h1 class="page-title">Leaderboard</h1>
       ${bar('200px', '14px', 'margin-bottom:24px')}
-      <div class="skeleton-table-header">
-        ${bar('40px', '12px')} ${bar('60px', '12px')} ${bar('100px', '12px')} ${bar('60px', '12px', 'margin-left:auto')} ${bar('50px', '12px')} ${bar('40px', '12px')}
+      <div class="skeleton-table-header" style="display:grid;grid-template-columns:40px 180px 100px 60px 60px 80px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
+        ${bar('40px', '12px')} ${bar('60px', '12px')} ${bar('100px', '12px')} ${bar('60px', '12px')} ${bar('50px', '12px')} ${bar('60px', '12px')}
       </div>
       ${rows}
     </div>`;
