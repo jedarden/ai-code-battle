@@ -1270,6 +1270,21 @@ func (s *Server) handlePredict(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify match is flagged as predictable (§14.5)
+	var matchPredictable bool
+	err = s.db.QueryRowContext(ctx, `
+		SELECT predictable FROM matches WHERE match_id = $1
+	`, req.MatchID).Scan(&matchPredictable)
+	if err != nil {
+		log.Printf("database error checking predictable: %v", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if !matchPredictable {
+		writeError(w, http.StatusBadRequest, "match is not open for predictions")
+		return
+	}
+
 	// Verify bot is a participant in this match
 	var participantExists bool
 	err = s.db.QueryRowContext(ctx, `

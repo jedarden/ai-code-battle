@@ -983,7 +983,7 @@ func fetchMaps(ctx context.Context, db *sql.DB) ([]MapData, error) {
 // - It's a series match
 // - An evolved bot faces a top-10 human-written bot
 func fetchOpenPredictions(ctx context.Context, db *sql.DB) ([]OpenPredictionMatch, error) {
-	// Get all pending matches with their participants
+	// Get predictable matches that are still pending (matchmaker sets predictable flag)
 	query := `
 		SELECT m.match_id, m.created_at,
 		       mp1.bot_id as bot_a_id, b1.name as bot_a_name,
@@ -1001,18 +1001,18 @@ func fetchOpenPredictions(ctx context.Context, db *sql.DB) ([]OpenPredictionMatc
 		JOIN match_participants mp2 ON m.match_id = mp2.match_id AND mp2.player_slot = 1
 		JOIN bots b1 ON mp1.bot_id = b1.bot_id
 		JOIN bots b2 ON mp2.bot_id = b2.bot_id
-		WHERE m.status = 'pending'
+		WHERE m.status = 'pending' AND m.predictable = TRUE
 		ORDER BY m.created_at ASC
 		LIMIT 50
 	`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("query pending matches: %w", err)
+		return nil, fmt.Errorf("query predictable matches: %w", err)
 	}
 	defer rows.Close()
 
-	var allMatches []OpenPredictionMatch
+	var matches []OpenPredictionMatch
 	for rows.Next() {
 		var m OpenPredictionMatch
 		var isSeries bool
@@ -1023,122 +1023,22 @@ func fetchOpenPredictions(ctx context.Context, db *sql.DB) ([]OpenPredictionMatc
 			&isSeries,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("scan pending match: %w", err)
+			return nil, fmt.Errorf("scan predictable match: %w", err)
 		}
 		m.IsSeriesMatch = isSeries
-		allMatches = append(allMatches, m)
+		matches = append(matches, m)
 	}
 
-	if len(allMatches) == 0 {
-		return []OpenPredictionMatch{}, nil
-	}
-
-	// Get top 20 bot IDs for top-20 vs top-20 check
-	topBotIDs := make(map[string]bool)
-	topRows, err := db.QueryContext(ctx, `
-		SELECT bot_id FROM bots
-		WHERE status = 'active'
-		ORDER BY rating_mu DESC
-		LIMIT 20
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("query top bots: %w", err)
-	}
-	defer topRows.Close()
-	for topRows.Next() {
-		var botID string
-		if err := topRows.Scan(&botID); err != nil {
-			return nil, err
-		}
-		topBotIDs[botID] = true
-	}
-
-	// Get top 10 bot IDs for evolved vs top-10 check
-	top10BotIDs := make(map[string]bool)
-	top10Rows, err := db.QueryContext(ctx, `
-		SELECT bot_id FROM bots
-		WHERE status = 'active' AND evolved = false
-		ORDER BY rating_mu DESC
-		LIMIT 10
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("query top 10 bots: %w", err)
-	}
-	defer top10Rows.Close()
-	for top10Rows.Next() {
-		var botID string
-		if err := top10Rows.Scan(&botID); err != nil {
-			return nil, err
-		}
-		top10BotIDs[botID] = true
-	}
-
-	// Build pair frequency map for rivalry detection (count completed h2h matches)
-	// LIMIT to most common pairings to prevent OOMKill - we only need enough
-	// to detect rivalries (typically < 100 pairs have >= 3 matches)
-	pairFrequency := make(map[string]int)
-	freqRows, err := db.QueryContext(ctx, `
-		SELECT mp1.bot_id, mp2.bot_id, COUNT(*)
-		FROM matches m
-		JOIN match_participants mp1 ON m.match_id = mp1.match_id AND mp1.player_slot = 0
-		JOIN match_participants mp2 ON m.match_id = mp2.match_id AND mp2.player_slot = 1
-		WHERE m.status = 'completed'
-		GROUP BY mp1.bot_id, mp2.bot_id
-		ORDER BY COUNT(*) DESC
-		LIMIT 1000
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("query pair frequency: %w", err)
-	}
-	defer freqRows.Close()
-	for freqRows.Next() {
-		var botA, botB string
-		var count int
-		if err := freqRows.Scan(&botA, &botB, &count); err != nil {
-			return nil, err
-		}
-		pairFrequency[botA+":"+botB] = count
-	}
-
-	// Filter matches that are "predictable"
+	// Calculate head-to-head records for all predictable matches (limit to 10)
 	var predictableMatches []OpenPredictionMatch
-	for _, m := range allMatches {
-		isPredictable := false
-
-		// Check: both bots in top 20
-		if topBotIDs[m.BotAID] && topBotIDs[m.BotBID] {
-			isPredictable = true
-		}
-
-		// Check: rivalry match (at least 3 previous h2h matches)
-		if freq, ok := pairFrequency[m.BotAID+":"+m.BotBID]; ok && freq >= 3 {
-			isPredictable = true
-		}
-
-		// Check: series match
-		if m.IsSeriesMatch {
-			isPredictable = true
-		}
-
-		// Check: evolved bot vs top-10 human-written bot
-		if m.AEvolved && top10BotIDs[m.BotBID] {
-			isPredictable = true
-		}
-		if m.BEvolved && top10BotIDs[m.BotAID] {
-			isPredictable = true
-		}
-
-		if isPredictable {
-			// Calculate head-to-head record
-			h2hRecord := computeHeadToHeadRecord(ctx, db, m.BotAID, m.BotBID)
-			m.HeadToHeadRecord = &h2hRecord
-			predictableMatches = append(predictableMatches, m)
-		}
-
-		// Limit to next 10 matches
-		if len(predictableMatches) >= 10 {
+	for i, m := range matches {
+		if i >= 10 {
 			break
 		}
+		// Calculate head-to-head record
+		h2hRecord := computeHeadToHeadRecord(ctx, db, m.BotAID, m.BotBID)
+		m.HeadToHeadRecord = &h2hRecord
+		predictableMatches = append(predictableMatches, m)
 	}
 
 	return predictableMatches, nil

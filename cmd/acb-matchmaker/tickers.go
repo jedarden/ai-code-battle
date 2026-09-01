@@ -439,9 +439,17 @@ func (m *Matchmaker) createMatch(
 	}
 	defer tx.Rollback()
 
+	// Determine if this match should be flagged as predictable (§14.5)
+	predictable, err := m.isPredictableMatch(ctx, participants)
+	if err != nil {
+		log.Printf("matchmaker: predictable check failed: %v", err)
+		// Continue with predictable=false rather than failing match creation
+		predictable = false
+	}
+
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO matches (match_id, map_id, map_seed, status) VALUES ($1, $2, $3, 'pending')`,
-		matchID, mapID, mapSeed); err != nil {
+		`INSERT INTO matches (match_id, map_id, map_seed, status, predictable) VALUES ($1, $2, $3, 'pending', $4)`,
+		matchID, mapID, mapSeed, predictable); err != nil {
 		return fmt.Errorf("insert match: %w", err)
 	}
 
@@ -614,4 +622,152 @@ func (m *Matchmaker) queryActiveBotCount(ctx context.Context) (int, error) {
 	var count int
 	err := m.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bots WHERE status = 'active'`).Scan(&count)
 	return count, err
+}
+
+// isPredictableMatch determines if a match should be flagged as predictable (§14.5).
+// A match is predictable if ANY of these criteria are met:
+// - Both bots are in the top 20
+// - It's a rivalry match (at least 3 previous head-to-head matches)
+// - It's a series match
+// - An evolved bot faces a top-10 human-written bot
+func (m *Matchmaker) isPredictableMatch(ctx context.Context, participants []candidateBot) (bool, error) {
+	if len(participants) < 2 {
+		return false, nil
+	}
+
+	// Get bot IDs
+	botAID := participants[0].ID
+	botBID := participants[1].ID
+
+	// Check if it's a series match
+	var isSeriesMatch bool
+	err := m.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM series_games sg
+			JOIN matches m ON sg.match_id = m.match_id
+			WHERE m.match_id IN (
+				SELECT match_id FROM match_participants WHERE bot_id = $1
+				UNION
+				SELECT match_id FROM match_participants WHERE bot_id = $2
+			)
+		)
+	`, botAID, botBID).Scan(&isSeriesMatch)
+	if err != nil {
+		return false, fmt.Errorf("check series match: %w", err)
+	}
+	if isSeriesMatch {
+		return true, nil
+	}
+
+	// Check if it's a rivalry match (at least 3 previous head-to-head matches)
+	var h2hCount int
+	err = m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM matches m
+		JOIN match_participants mp1 ON m.match_id = mp1.match_id
+		JOIN match_participants mp2 ON m.match_id = mp2.match_id
+		WHERE m.status = 'completed'
+		  AND mp1.bot_id = $1
+		  AND mp2.bot_id = $2
+		  AND mp1.bot_id != mp2.bot_id
+	`, botAID, botBID).Scan(&h2hCount)
+	if err != nil {
+		return false, fmt.Errorf("check h2h count: %w", err)
+	}
+	if h2hCount >= 3 {
+		return true, nil
+	}
+
+	// Get top 20 and top 10 bot IDs
+	top20IDs, err := m.queryTopBotIDs(ctx, 20)
+	if err != nil {
+		return false, fmt.Errorf("query top 20: %w", err)
+	}
+
+	top10IDs, err := m.queryTopBotIDs(ctx, 10)
+	if err != nil {
+		return false, fmt.Errorf("query top 10: %w", err)
+	}
+
+	// Check if both bots are in top 20
+	botAInTop20 := contains(top20IDs, botAID)
+	botBInTop20 := contains(top20IDs, botBID)
+	if botAInTop20 && botBInTop20 {
+		return true, nil
+	}
+
+	// Check if an evolved bot faces a top-10 human-written bot
+	var botAEvolved, botBEvolved bool
+	var botAEvolvedPtr, botBEvolvedPtr *bool
+
+	// Get evolved status for both bots
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT evolved FROM bots WHERE bot_id IN ($1, $2)
+	`, botAID, botBID)
+	if err != nil {
+		return false, fmt.Errorf("query evolved status: %w", err)
+	}
+	defer rows.Close()
+
+	i := 0
+	for rows.Next() {
+		var evolved bool
+		if err := rows.Scan(&evolved); err != nil {
+			return false, fmt.Errorf("scan evolved status: %w", err)
+		}
+		if i == 0 {
+			botAEvolved = evolved
+			botAEvolvedPtr = &botAEvolved
+		} else {
+			botBEvolved = evolved
+			botBEvolvedPtr = &botBEvolved
+		}
+		i++
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("iterate evolved status: %w", err)
+	}
+
+	// Check evolved vs top-10 criteria
+	if botAEvolvedPtr != nil && botBEvolvedPtr != nil {
+		if *botAEvolvedPtr && contains(top10IDs, botBID) {
+			return true, nil
+		}
+		if *botBEvolvedPtr && contains(top10IDs, botAID) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// queryTopBotIDs returns bot IDs for the top N bots by rating (rating_mu - 2*rating_phi)
+func (m *Matchmaker) queryTopBotIDs(ctx context.Context, n int) (map[string]bool, error) {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT bot_id
+		FROM bots
+		WHERE status = 'active'
+		ORDER BY (rating_mu - 2*rating_phi) DESC
+		LIMIT $1
+	`, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
+// contains checks if a string exists in a map keys
+func contains(m map[string]bool, id string) bool {
+	_, ok := m[id]
+	return ok
 }
