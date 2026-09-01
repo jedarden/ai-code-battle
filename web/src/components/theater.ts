@@ -1,6 +1,8 @@
 // Theater mode — fullscreen replay viewing per §16.17
 // Controls auto-hide after 3s of mouse inactivity, reappear on mousemove.
 // ESC exits; F key toggles. Works on mobile via Fullscreen API.
+// Mobile: auto-enters on landscape rotate, exits on portrait rotate.
+// Touch: tap=play/pause, swipe=step turns, pinch=zoom, two-finger tap=cycle view, swipe-up=show controls.
 
 export const THEATER_STYLES = `
 /* ─── Theater Mode (§16.17) ────────────────────────────────────────────────── */
@@ -214,6 +216,9 @@ export interface TheaterOptions {
   setTurn: (t: number) => void;
   exitTheater: () => void;
   onCriticalMoment?: () => void;
+  cycleViewMode?: () => void;
+  getCellSize?: () => number;
+  setCellSize?: (size: number) => void;
 }
 
 export class TheaterMode {
@@ -237,6 +242,16 @@ export class TheaterMode {
   private origParent: HTMLElement | null = null;
   private origNextSibling: Node | null = null;
   private fullscreenChangeHandler: () => void;
+  private orientationChangeHandler: () => void;
+
+  // Touch gesture state
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private touchStartTime = 0;
+  private lastTouchDist = 0;
+  private lastTouchCellSize = 10;
+  private pointerCount = 0;
+  private twoFingerTapTimer: ReturnType<typeof setTimeout> | null = null;
 
   private opts: TheaterOptions;
 
@@ -246,7 +261,9 @@ export class TheaterMode {
     this.overlay = document.createElement('div');
     this.overlay.className = 'theater-overlay';
     this.fullscreenChangeHandler = () => this.onFullscreenChange();
+    this.orientationChangeHandler = () => this.onOrientationChange();
     this.buildDOM();
+    this.setupOrientationListener();
   }
 
   /** Returns true if theater mode is currently active. */
@@ -284,7 +301,9 @@ export class TheaterMode {
     // Attach listeners
     this.overlay.addEventListener('mousemove', this.onMouseMove);
     this.overlay.addEventListener('mousedown', this.onMouseMove);
-    this.overlay.addEventListener('touchstart', this.onTouch, { passive: true });
+    this.overlay.addEventListener('touchstart', this.onTouchStart, { passive: true });
+    this.overlay.addEventListener('touchmove', this.onTouchMove, { passive: false });
+    this.overlay.addEventListener('touchend', this.onTouchEnd);
     document.addEventListener('keydown', this.onKeyDown);
 
     document.addEventListener('fullscreenchange', this.fullscreenChangeHandler);
@@ -305,10 +324,14 @@ export class TheaterMode {
     // Remove listeners
     this.overlay.removeEventListener('mousemove', this.onMouseMove);
     this.overlay.removeEventListener('mousedown', this.onMouseMove);
-    this.overlay.removeEventListener('touchstart', this.onTouch);
+    this.overlay.removeEventListener('touchstart', this.onTouchStart);
+    this.overlay.removeEventListener('touchmove', this.onTouchMove);
+    this.overlay.removeEventListener('touchend', this.onTouchEnd);
     document.removeEventListener('keydown', this.onKeyDown);
     document.removeEventListener('fullscreenchange', this.fullscreenChangeHandler);
     document.removeEventListener('webkitfullscreenchange', this.fullscreenChangeHandler);
+    window.removeEventListener('orientationchange', this.orientationChangeHandler);
+    window.removeEventListener('resize', this.orientationChangeHandler);
 
     this.stopUILoop();
     this.clearHideTimer();
@@ -518,9 +541,76 @@ export class TheaterMode {
     this.updateUI();
   };
 
-  private readonly onTouch = (): void => {
+  private readonly onTouchStart = (e: TouchEvent): void => {
+    if (e.touches.length === 1) {
+      this.touchStartX = e.touches[0].clientX;
+      this.touchStartY = e.touches[0].clientY;
+      this.touchStartTime = Date.now();
+      this.pointerCount = 1;
+    } else if (e.touches.length === 2) {
+      this.pointerCount = 2;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      this.lastTouchDist = Math.sqrt(dx * dx + dy * dy);
+      this.lastTouchCellSize = this.opts.getCellSize?.() ?? 10;
+    }
     this.resetHideTimer();
-    this.updateUI();
+  };
+
+  private readonly onTouchMove = (e: TouchEvent): void => {
+    if (e.touches.length === 2 && this.opts.setCellSize) {
+      e.preventDefault(); // Prevent page zoom
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (this.lastTouchDist > 0) {
+        const newSize = Math.max(4, Math.min(20, Math.round(this.lastTouchCellSize * (dist / this.lastTouchDist))));
+        this.opts.setCellSize(newSize);
+      }
+    }
+  };
+
+  private readonly onTouchEnd = (e: TouchEvent): void => {
+    if (this.pointerCount === 1 && e.changedTouches.length === 1) {
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - this.touchStartX;
+      const dy = touch.clientY - this.touchStartY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const elapsed = Date.now() - this.touchStartTime;
+
+      // Tap: play/pause (quick tap with minimal movement)
+      if (elapsed < 300 && dist < 12) {
+        this.opts.togglePlay();
+        this.updateUI();
+        return;
+      }
+
+      // Swipe up from bottom: reveal controls
+      if (dy < -50 && Math.abs(dx) < 50 && this.touchStartY > window.innerHeight - 150) {
+        this.resetHideTimer();
+        return;
+      }
+
+      // Horizontal swipe: step turns
+      if (elapsed < 500 && Math.abs(dx) > 40 && Math.abs(dy) < 50) {
+        if (dx < 0) {
+          this.opts.setTurn(this.opts.getTurn() + 1);
+        } else {
+          this.opts.setTurn(Math.max(0, this.opts.getTurn() - 1));
+        }
+        this.updateUI();
+        return;
+      }
+    } else if (this.pointerCount === 2) {
+      // Two-finger tap: cycle view mode
+      const elapsed = Date.now() - this.touchStartTime;
+      if (elapsed < 300 && this.opts.cycleViewMode) {
+        this.opts.cycleViewMode();
+        this.updateUI();
+      }
+    }
+
+    this.pointerCount = 0;
   };
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
@@ -556,6 +646,31 @@ export class TheaterMode {
         break;
     }
   };
+
+  private setupOrientationListener(): void {
+    window.addEventListener('orientationchange', this.orientationChangeHandler);
+    window.addEventListener('resize', this.orientationChangeHandler);
+  }
+
+  private onOrientationChange(): void {
+    if (!this.active) return;
+
+    // Check if we're in landscape mode (width > height)
+    const isLandscape = window.innerWidth > window.innerHeight;
+
+    if (isLandscape) {
+      // Auto-enter theater on landscape (if not already active)
+      if (!this.active) {
+        this.enter();
+      }
+    } else {
+      // Auto-exit theater on portrait (mobile)
+      if (this.active) {
+        this.exit();
+        this.opts.exitTheater();
+      }
+    }
+  }
 
   private startUILoop(): void {
     const tick = () => {
