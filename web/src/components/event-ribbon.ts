@@ -1,296 +1,319 @@
-// Event Ribbon - Horizontal event strip with proportional positioning
-// Part of replay event ribbon UI (child 2 of multi-part implementation)
+// Event Ribbon Component
+// Horizontal event timeline displaying SignificantEvents proportionally by turn
+// Positioned below the replay canvas as a navigation aid
 
 import type { SignificantEvent } from '../extract-significant-events';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Event Ribbon Component
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface EventRibbonOptions {
-  events: SignificantEvent[];
-  totalTurns: number;
-  onEventClick?: (event: SignificantEvent) => void;
-  onTurnClick?: (turn: number) => void;
+  container: HTMLElement;  // Parent element to render into
+  onEventClick?: (event: SignificantEvent) => void;  // Optional click handler
+  getTurn?: () => number;  // Optional: get current turn for highlighting
 }
 
 export class EventRibbon {
   private container: HTMLElement;
+  private ribbonEl!: HTMLDivElement;
+  private markersContainer!: HTMLDivElement;
+  private onEventClick?: (event: SignificantEvent) => void;
+  private getTurn?: () => number;
   private events: SignificantEvent[] = [];
   private totalTurns: number = 0;
-  private onEventClick?: (event: SignificantEvent) => void;
-  private onTurnClick?: (turn: number) => void;
-  private currentTurn: number = 0;
 
-  constructor(container: HTMLElement, options?: EventRibbonOptions) {
-    this.container = container;
-    this.onEventClick = options?.onEventClick;
-    this.onTurnClick = options?.onTurnClick;
+  constructor(options: EventRibbonOptions) {
+    this.container = options.container;
+    this.onEventClick = options.onEventClick;
+    this.getTurn = options.getTurn;
+    this.buildDOM();
+  }
 
-    if (options?.events) {
-      this.setEvents(options.events, options.totalTurns);
-    } else {
-      this.render();
+  /**
+   * Update the events displayed in the ribbon.
+   * @param events - Array of significant events to display
+   * @param totalTurns - Total number of turns in the replay (for proportional positioning)
+   */
+  public setEvents(events: SignificantEvent[], totalTurns: number): void {
+    this.events = events;
+    this.totalTurns = totalTurns;
+    this.renderMarkers();
+  }
+
+  /**
+   * Clear all events from the ribbon.
+   */
+  public clear(): void {
+    this.events = [];
+    this.totalTurns = 0;
+    this.renderMarkers();
+  }
+
+  /**
+   * Update the current turn highlight (if getTurn was provided).
+   * Call this when the replay turn changes to update the cursor position.
+   */
+  public updateTurnHighlight(): void {
+    if (!this.getTurn) return;
+
+    const currentTurn = this.getTurn();
+    this.updateCursorPosition(currentTurn);
+  }
+
+  /**
+   * Destroy the component and remove from DOM.
+   */
+  public destroy(): void {
+    if (this.ribbonEl && this.ribbonEl.parentNode) {
+      this.ribbonEl.parentNode.removeChild(this.ribbonEl);
     }
   }
 
-  setEvents(events: SignificantEvent[], totalTurns: number): void {
-    this.events = events;
-    this.totalTurns = totalTurns;
-    this.render();
+  // ── Private Methods ─────────────────────────────────────────────────────────────
+
+  private buildDOM(): void {
+    // Main ribbon container
+    this.ribbonEl = document.createElement('div');
+    this.ribbonEl.className = 'event-ribbon';
+    this.ribbonEl.innerHTML = `
+      <div class="event-ribbon-track"></div>
+      <div class="event-ribbon-markers"></div>
+      <div class="event-ribbon-cursor"></div>
+    `;
+    this.container.appendChild(this.ribbonEl);
+
+    // Cache references to key elements
+    this.markersContainer = this.ribbonEl.querySelector('.event-ribbon-markers') as HTMLDivElement;
   }
 
-  setCurrentTurn(turn: number): void {
-    this.currentTurn = turn;
-    this.updateHighlight();
-  }
+  private renderMarkers(): void {
+    // Clear existing markers
+    this.markersContainer.innerHTML = '';
 
-  private render(): void {
     // Handle edge cases
-    if (this.totalTurns <= 0) {
-      this.container.innerHTML = '<div class="ribbon-empty">No turns</div>';
+    if (this.events.length === 0 || this.totalTurns <= 0) {
+      this.ribbonEl.classList.add('event-ribbon-empty');
       return;
     }
 
-    // Create event markers with proportional positioning
-    const eventMarkers = this.events.map((event, idx) => {
-      // Calculate proportional left position
-      const leftPercent = this.calculateLeftPosition(event.turn);
+    this.ribbonEl.classList.remove('event-ribbon-empty');
 
-      // Create marker element
-      return `
-        <div class="ribbon-marker"
-             data-index="${idx}"
-             data-turn="${event.turn}"
-             data-type="${event.type}"
-             style="left: ${leftPercent}%"
-             title="Turn ${event.turn}: ${event.description}">
-          <div class="ribbon-marker-icon"></div>
-          <div class="ribbon-marker-tooltip">${event.description}</div>
-        </div>
-      `;
-    }).join('');
+    // Render a marker for each event
+    for (const event of this.events) {
+      const marker = this.createEventMarker(event);
+      this.markersContainer.appendChild(marker);
+    }
 
-    // Create ribbon structure
-    this.container.innerHTML = `
-      <div class="event-ribbon">
-        <div class="ribbon-track">
-          <div class="ribbon-progress" id="ribbon-progress"></div>
-          ${eventMarkers}
-        </div>
-        <div class="ribbon-turn-label">
-          <span id="ribbon-current">0</span> / <span id="ribbon-total">${this.totalTurns}</span>
-        </div>
-      </div>
+    // Update cursor position if we have a getTurn function
+    if (this.getTurn) {
+      this.updateTurnHighlight();
+    }
+  }
+
+  private createEventMarker(event: SignificantEvent): HTMLDivElement {
+    const marker = document.createElement('div');
+    marker.className = 'event-marker';
+    marker.dataset.turn = event.turn.toString();
+    marker.dataset.eventType = event.type;
+
+    // Calculate proportional position: iconLeft = (eventTurn / totalTurns) * 100%
+    const positionPercent = this.calculatePosition(event.turn);
+    marker.style.left = `${positionPercent}%`;
+
+    // Placeholder marker (no icon yet - that's child 3's work)
+    // For now, render a simple circular marker
+    marker.innerHTML = `
+      <div class="event-marker-dot" title="${this.escapeHtml(event.description)}"></div>
     `;
 
-    // Wire up click handlers
-    this.attachEventHandlers();
-    this.updateHighlight();
-  }
-
-  private calculateLeftPosition(turn: number): number {
-    // Handle edge cases
-    if (this.totalTurns <= 0) return 0;
-    if (this.totalTurns === 1) return 50; // Center position for single-turn game
-
-    // Standard proportional positioning: (turn / totalTurns) * 100
-    // Events on turn 0 should be at the far left (0%)
-    return (turn / this.totalTurns) * 100;
-  }
-
-  private attachEventHandlers(): void {
-    // Event marker clicks
-    this.container.querySelectorAll('.ribbon-marker').forEach(marker => {
+    // Optional click handler
+    if (this.onEventClick) {
       marker.addEventListener('click', (e) => {
         e.stopPropagation();
-        const idx = parseInt((marker as HTMLElement).dataset.index || '0', 10);
-        const turn = parseInt((marker as HTMLElement).dataset.turn || '0', 10);
-
-        if (this.events[idx] && this.onEventClick) {
-          this.onEventClick(this.events[idx]);
-        }
-
-        if (this.onTurnClick) {
-          this.onTurnClick(turn);
-        }
+        this.onEventClick!(event);
       });
-
-      // Hover effects
-      marker.addEventListener('mouseenter', () => {
-        marker.classList.add('ribbon-marker-hover');
-      });
-
-      marker.addEventListener('mouseleave', () => {
-        marker.classList.remove('ribbon-marker-hover');
-      });
-    });
-
-    // Track click for seeking to any turn
-    const track = this.container.querySelector('.ribbon-track');
-    if (track) {
-      track.addEventListener('click', (e: Event) => {
-        const rect = track.getBoundingClientRect();
-        const x = (e as any).clientX - rect.left;
-        const percent = x / rect.width;
-        const turn = Math.floor(percent * this.totalTurns);
-
-        if (this.onTurnClick) {
-          this.onTurnClick(Math.max(0, Math.min(turn, this.totalTurns - 1)));
-        }
-      });
+      marker.style.cursor = 'pointer';
+      marker.classList.add('event-marker-clickable');
     }
+
+    return marker;
   }
 
-  private updateHighlight(): void {
-    const progress = this.container.querySelector('#ribbon-progress') as HTMLElement;
-    const currentLabel = this.container.querySelector('#ribbon-current') as HTMLElement;
-
-    // Update progress indicator
-    if (progress) {
-      const percent = this.calculateLeftPosition(this.currentTurn);
-      progress.style.width = `${percent}%`;
+  private calculatePosition(turn: number): number {
+    // Handle edge cases
+    if (this.totalTurns <= 0) {
+      return 0; // No turns, position at start
     }
 
-    // Update turn label
-    if (currentLabel) {
-      currentLabel.textContent = String(this.currentTurn);
+    if (this.totalTurns === 1) {
+      return 50; // Single turn, center the marker
     }
 
-    // Highlight active event markers
-    this.container.querySelectorAll('.ribbon-marker').forEach(marker => {
-      const turn = parseInt((marker as HTMLElement).dataset.turn || '0', 10);
-      marker.classList.toggle('ribbon-marker-active', turn === this.currentTurn);
-    });
+    // Standard proportional positioning
+    // Clamp to 0-100 range to handle edge cases like turn 0 or turn > totalTurns
+    const rawPosition = (turn / this.totalTurns) * 100;
+    return Math.max(0, Math.min(100, rawPosition));
+  }
+
+  private updateCursorPosition(currentTurn: number): void {
+    const cursor = this.ribbonEl.querySelector('.event-ribbon-cursor') as HTMLElement;
+    if (!cursor) return;
+
+    // Position cursor proportionally
+    const positionPercent = this.calculatePosition(currentTurn);
+    cursor.style.left = `${positionPercent}%`;
+  }
+
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 }
 
-// CSS styles for event ribbon (inject into document)
+// ─────────────────────────────────────────────────────────────────────────────
+// CSS Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const EVENT_RIBBON_STYLES = `
-  .event-ribbon {
-    width: 100%;
-    background-color: var(--bg-secondary, #1e293b);
-    border-radius: 8px;
-    padding: 12px;
-    box-sizing: border-box;
-  }
+/* ─── Event Ribbon (§16.20) ───────────────────────────────────────────────────── */
 
-  .ribbon-track {
-    position: relative;
-    height: 32px;
-    background-color: var(--bg-tertiary, #334155);
-    border-radius: 4px;
-    cursor: pointer;
-    overflow: hidden;
-    margin-bottom: 8px;
-  }
+.event-ribbon {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  background: var(--bg-secondary, #0f172a);
+  border-top: 1px solid var(--border, #1e293b);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
 
-  .ribbon-progress {
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 100%;
-    background-color: var(--accent, #3b82f6);
-    opacity: 0.2;
-    border-radius: 4px;
-    transition: width 0.1s ease-out;
-    pointer-events: none;
-  }
+.event-ribbon-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--border, #1e293b);
+  transform: translateY(-50%);
+}
 
-  .ribbon-marker {
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    cursor: pointer;
-    z-index: 2;
-    transition: transform 0.15s ease-out;
-  }
+.event-ribbon-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  pointer-events: none;
+}
 
-  .ribbon-marker-icon {
-    width: 16px;
-    height: 16px;
-    background-color: var(--accent, #3b82f6);
-    border-radius: 50%;
-    border: 2px solid var(--bg-secondary, #1e293b);
-    box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
-    transition: all 0.15s ease-out;
-  }
+.event-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  transition: transform 0.15s ease;
+}
 
-  .ribbon-marker:hover .ribbon-marker-icon {
-    transform: scale(1.3);
-    background-color: var(--accent-hover, #60a5fa);
-    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
-  }
+.event-marker-clickable:hover {
+  transform: translate(-50%, -50%) scale(1.3);
+  z-index: 10;
+}
 
-  .ribbon-marker-active .ribbon-marker-icon {
-    transform: scale(1.5);
-    background-color: var(--accent-active, #93c5fd);
-    box-shadow: 0 0 12px rgba(59, 130, 246, 0.7);
-    border-color: var(--accent, #3b82f6);
-  }
+.event-marker-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent, #3b82f6);
+  border: 2px solid var(--bg-secondary, #0f172a);
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
 
-  .ribbon-marker-tooltip {
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: rgba(0, 0, 0, 0.9);
-    color: #fff;
-    padding: 6px 10px;
-    border-radius: 4px;
-    font-size: 12px;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s ease-out;
-    margin-bottom: 4px;
-    min-width: 100px;
-    text-align: center;
-  }
+.event-marker-clickable:hover .event-marker-dot {
+  background: var(--accent-hover, #60a5fa);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+}
 
-  .ribbon-marker:hover .ribbon-marker-tooltip,
-  .ribbon-marker-active .ribbon-marker-tooltip {
-    opacity: 1;
-  }
+/* Event type variations (for future icon work) */
+.event-marker[data-event-type="combat"] .event-marker-dot {
+  background: #ef4444; /* Red */
+}
 
-  .ribbon-turn-label {
-    text-align: center;
-    font-size: 12px;
-    color: var(--text-muted, #94a3b8);
-    margin-top: 4px;
-  }
+.event-marker[data-event-type="core_capture"] .event-marker-dot {
+  background: #f59e0b; /* Amber */
+}
 
-  .ribbon-empty {
-    text-align: center;
-    color: var(--text-muted, #94a3b8);
-    font-size: 14px;
-    padding: 16px;
-    background-color: var(--bg-tertiary, #334155);
-    border-radius: 4px;
-  }
+.event-marker[data-event-type="energy_milestone"] .event-marker-dot {
+  background: #22c55e; /* Green */
+}
 
-  /* Event type specific colors (can be customized) */
-  .ribbon-marker[data-type="combat"] .ribbon-marker-icon {
-    background-color: #f97316;
-  }
+.event-marker[data-event-type="mass_death"] .event-marker-dot {
+  background: #8b5cf6; /* Purple */
+}
 
-  .ribbon-marker[data-type="core_capture"] .ribbon-marker-icon {
-    background-color: #3b82f6;
-  }
+.event-marker[data-event-type="momentum_shift"] .event-marker-dot {
+  background: #06b6d4; /* Cyan */
+}
 
-  .ribbon-marker[data-type="energy_milestone"] .ribbon-marker-icon {
-    background-color: #fbbf24;
-  }
+.event-marker[data-event-type="critical_moment"] .event-marker-dot {
+  background: #ec4899; /* Pink */
+}
 
-  .ribbon-marker[data-type="mass_death"] .ribbon-marker-icon {
-    background-color: #ef4444;
-  }
+.event-marker[data-event-type="spawn_wave"] .event-marker-dot {
+  background: #f97316; /* Orange */
+}
 
-  .ribbon-marker[data-type="momentum_shift"] .ribbon-marker-icon {
-    background-color: #8b5cf6;
-  }
+/* Current turn cursor */
+.event-ribbon-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text-primary, #e2e8f0);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+  transition: left 0.1s ease-out;
+}
 
-  .ribbon-marker[data-type="critical_moment"] .ribbon-marker-icon {
-    background-color: #ec4899;
-  }
+.event-ribbon-cursor::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid var(--text-primary, #e2e8f0);
+}
 
-  .ribbon-marker[data-type="spawn_wave"] .ribbon-marker-icon {
-    background-color: #22c55e;
+/* Empty state */
+.event-ribbon-empty {
+  opacity: 0.5;
+}
+
+.event-ribbon-empty::after {
+  content: 'No events to display';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-secondary, #64748b);
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .event-marker,
+  .event-marker-dot,
+  .event-ribbon-cursor {
+    transition: none;
   }
+}
 `;
