@@ -67,10 +67,12 @@ type CandidateMatch struct {
 
 // PlayerData holds player info for enrichment.
 type PlayerData struct {
-	ID     int
-	BotID  string
-	Name   string
-	Rating int
+	ID         int
+	BotID      string
+	Name       string
+	Rating     int
+	IsEvolved  bool
+	Generation int
 }
 
 // StoreInterface defines database operations for enrichment.
@@ -145,11 +147,13 @@ func (s *Store) FindCandidates(ctx context.Context, minTurns, minCrossings int, 
 
 		// Parse participants
 		var participants []struct {
-			BotID      string  `json:"bot_id"`
-			PlayerSlot int     `json:"player_slot"`
-			Name       string  `json:"name"`
-			RatingMu   float64 `json:"rating_mu"`
-			RatingPhi  float64 `json:"rating_phi"`
+			BotID      string   `json:"bot_id"`
+			PlayerSlot int      `json:"player_slot"`
+			Name       string   `json:"name"`
+			RatingMu   float64  `json:"rating_mu"`
+			RatingPhi  float64  `json:"rating_phi"`
+			Evolved    bool     `json:"evolved"`
+			Generation *int     `json:"generation"`
 		}
 		if err := json.Unmarshal([]byte(participantsJSON), &participants); err != nil {
 			continue
@@ -157,12 +161,17 @@ func (s *Store) FindCandidates(ctx context.Context, minTurns, minCrossings int, 
 
 		for _, p := range participants {
 			displayRating := int(p.RatingMu - 2*p.RatingPhi)
-			cm.Players = append(cm.Players, PlayerData{
+			playerData := PlayerData{
 				ID:     p.PlayerSlot,
 				BotID:  p.BotID,
 				Name:   p.Name,
 				Rating: displayRating,
-			})
+			}
+			if p.Evolved && p.Generation != nil {
+				playerData.IsEvolved = true
+				playerData.Generation = *p.Generation
+			}
+			cm.Players = append(cm.Players, playerData)
 		}
 
 		// Calculate win prob crossings (simplified - in real implementation
