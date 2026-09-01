@@ -8,13 +8,14 @@ export interface SeasonTheme {
 }
 
 const THEMES: Record<string, SeasonTheme> = {
-  labyrinth:   { bgPrimary: '#1e1a2e', accentShift: 'hsl(270, 15%, 10%)' },
-  energy_rush: { bgPrimary: '#1a2e1e', accentShift: 'hsl(140, 15%, 10%)' },
-  fog_of_war:  { bgPrimary: '#1a1a3e', accentShift: 'hsl(220, 20%, 12%)' },
-  colosseum:   { bgPrimary: '#2e1a1a', accentShift: 'hsl(0, 15%, 10%)' },
+  the_labyrinth:   { bgPrimary: '#1e1a2e', accentShift: 'hsl(270, 15%, 10%)' },
+  energy_rush:     { bgPrimary: '#1a2e1e', accentShift: 'hsl(140, 15%, 10%)' },
+  fog_of_war:      { bgPrimary: '#1a1a3e', accentShift: 'hsl(220, 20%, 12%)' },
+  the_colosseum:   { bgPrimary: '#2e1a1a', accentShift: 'hsl(0, 15%, 10%)' },
+  shifting_sands:  { bgPrimary: '#2e2a1a', accentShift: 'hsl(45, 15%, 10%)' },
 };
 
-const DEFAULT_BG = '#0f172a';
+const DEFAULT_BG = '#1a1a2e';
 
 /**
  * Apply a seasonal background tint based on the theme name.
