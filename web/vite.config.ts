@@ -1,11 +1,21 @@
 import { defineConfig } from 'vite'
 import { resolve } from 'path'
+import { copyFileSync, existsSync } from 'fs'
+import { join } from 'path'
 
 export default defineConfig({
   root: '.',
   build: {
     outDir: 'dist',
     sourcemap: true,
+// Copy _redirects file for Cloudflare Pages routing
+    closeBundle() {
+      const redirectSrc = join(__dirname, 'public', '_redirects')
+      const redirectDest = join(__dirname, 'dist', '_redirects')
+      if (existsSync(redirectSrc)) {
+        copyFileSync(redirectSrc, redirectDest)
+      }
+    },
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),

@@ -1,0 +1,2 @@
+# Serve standalone embed.html for all /embed/* routes
+/embed/* /embed.html 200
