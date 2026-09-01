@@ -231,7 +231,7 @@ func bundleWarmCards(ctx context.Context, cfg *Config, b2Client B2Client, botIDs
 		}
 		defer rc.Close()
 
-		destPath := filepath.Join(cfg.OutputDir, "cards", botID+".png")
+		destPath := filepath.Join(cfg.OutputDir, "data", "cards", botID+".png")
 		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 			slog.Warn("Failed to create card dir", "error", err)
 			continue

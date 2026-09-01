@@ -131,7 +131,7 @@ func generateBotCard(bot BotCard, cfg CardConfig) (*image.RGBA, error) {
 
 // generateAllBotCards generates PNG cards for all bots and saves them to the output directory
 func generateAllBotCards(data *IndexData, outputDir string) error {
-	cardsDir := filepath.Join(outputDir, "cards")
+	cardsDir := filepath.Join(outputDir, "data", "cards")
 	if err := os.MkdirAll(cardsDir, 0755); err != nil {
 		return fmt.Errorf("create cards directory: %w", err)
 	}
@@ -183,7 +183,7 @@ func generateAllBotCards(data *IndexData, outputDir string) error {
 
 // uploadCardsToR2 uploads generated card images to R2 warm cache
 func uploadCardsToR2(ctx context.Context, cfg *Config, outputDir string) error {
-	cardsDir := filepath.Join(outputDir, "cards")
+	cardsDir := filepath.Join(outputDir, "data", "cards")
 
 	// Check if cards directory exists
 	if _, err := os.Stat(cardsDir); os.IsNotExist(err) {
@@ -219,7 +219,7 @@ func uploadCardsToR2(ctx context.Context, cfg *Config, outputDir string) error {
 
 // uploadCardsToB2 uploads generated card images to B2 cold archive
 func uploadCardsToB2(ctx context.Context, cfg *Config, outputDir string) error {
-	cardsDir := filepath.Join(outputDir, "cards")
+	cardsDir := filepath.Join(outputDir, "data", "cards")
 
 	// Check if cards directory exists
 	if _, err := os.Stat(cardsDir); os.IsNotExist(err) {

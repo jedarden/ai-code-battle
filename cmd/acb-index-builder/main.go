@@ -184,7 +184,7 @@ func runBuildCycle(ctx context.Context, db *sql.DB, cfg *Config) (resultErr erro
 		cfg.OutputDir + "/data/evolution",
 		cfg.OutputDir + "/data/blog",
 		cfg.OutputDir + "/data/commentary",
-		cfg.OutputDir + "/cards",
+		cfg.OutputDir + "/data/cards",
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
