@@ -629,9 +629,10 @@ func updateSeriesResult(ctx context.Context, tx *sql.Tx, matchID string, winnerB
 
 	// Determine if the winner is bot_a or bot_b
 	var botAID string
+	var seriesFormat int
 	err = tx.QueryRowContext(ctx, `
-		SELECT bot_a_id FROM series WHERE id = $1
-	`, seriesID).Scan(&botAID)
+		SELECT bot_a_id, format FROM series WHERE id = $1
+	`, seriesID).Scan(&botAID, &seriesFormat)
 	if err != nil {
 		return fmt.Errorf("find series bot_a: %w", err)
 	}
@@ -650,6 +651,53 @@ func updateSeriesResult(ctx context.Context, tx *sql.Tx, matchID string, winnerB
 	}
 
 	log.Printf("series: game %d result recorded — series %d, winner=%s", gameNum, seriesID, winnerBotID)
+
+	// Check if series is now complete and apply rating bonus to winner
+	// Series is complete when one bot reaches ceil(format/2) wins
+	winsNeeded := (seriesFormat + 1) / 2
+	var aWins, bWins int
+	err = tx.QueryRowContext(ctx, `
+		SELECT a_wins, b_wins FROM series WHERE id = $1
+	`, seriesID).Scan(&aWins, &bWins)
+	if err != nil {
+		return fmt.Errorf("check series completion: %w", err)
+	}
+
+	// If series just completed, apply +10 mu bonus to winner
+	if aWins >= winsNeeded || bWins >= winsNeeded {
+		var seriesWinnerID string
+		if aWins >= winsNeeded {
+			seriesWinnerID = botAID
+		} else {
+			var botBID string
+			err = tx.QueryRowContext(ctx, `
+				SELECT bot_b_id FROM series WHERE id = $1
+			`, seriesID).Scan(&botBID)
+			if err != nil {
+				return fmt.Errorf("find series bot_b: %w", err)
+			}
+			seriesWinnerID = botBID
+		}
+
+		// Apply +10 mu bonus to series winner
+		_, err = tx.ExecContext(ctx, `
+			UPDATE bots SET rating_mu = rating_mu + 10 WHERE bot_id = $1
+		`, seriesWinnerID)
+		if err != nil {
+			return fmt.Errorf("apply series winner bonus: %w", err)
+		}
+
+		// Mark series as completed
+		_, err = tx.ExecContext(ctx, `
+			UPDATE series SET status = 'completed', winner_id = $1, updated_at = NOW() WHERE id = $2
+		`, seriesWinnerID, seriesID)
+		if err != nil {
+			return fmt.Errorf("mark series completed: %w", err)
+		}
+
+		log.Printf("series: completed series %d — winner=%s (+10 mu bonus)", seriesID, seriesWinnerID)
+	}
+
 	return nil
 }
 
