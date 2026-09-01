@@ -159,27 +159,33 @@ function setupLinkListeners(): void {
 }
 
 // ─── Instant back-cache ────────────────────────────────────────────────────────
-// Caches the last N rendered pages with their scroll position so back/forward
-// navigation restores instantly without refetching.
+// Caches the last N rendered pages with their scroll position and associated data
+// so back/forward navigation restores instantly without refetching. Per §16.14 #3.
 
 interface CachedPage {
   html: string;
   scrollY: number;
+  dataKeys: string[]; // SWR cache keys for background-refresh capability
 }
 
-const MAX_CACHE_SIZE = 8;
+const MAX_CACHE_SIZE = 5; // Cache last 5 pages as specified
 const pageCache = new Map<string, CachedPage>();
 
 export function savePageCache(path: string): void {
   const app = document.getElementById('app');
   if (!app) return;
 
+  // Automatically resolve which SWR data keys this route uses
+  const dataMappings = resolveDataMappings(path);
+  const dataKeys = dataMappings.map(m => m.swrKey);
+
   pageCache.set(path, {
     html: app.innerHTML,
     scrollY: window.scrollY,
+    dataKeys,
   });
 
-  // Evict oldest entries beyond cap
+  // Evict oldest entries beyond cap (FIFO eviction)
   if (pageCache.size > MAX_CACHE_SIZE) {
     const firstKey = pageCache.keys().next().value;
     if (firstKey !== undefined) pageCache.delete(firstKey);
@@ -197,8 +203,14 @@ export function restorePageFromCache(path: string): boolean {
   const app = document.getElementById('app');
   if (!app) return false;
 
+  // Restore HTML and scroll position instantly (0ms navigation)
   app.innerHTML = cached.html;
   window.scrollTo(0, cached.scrollY);
+
+  // Note: Background refresh of stale data is handled automatically by the SWR layer
+  // When the page's components call their fetch functions (e.g., fetchLeaderboard()),
+  // those functions use swr() which returns cached data immediately and refreshes
+  // in the background if stale (>5 min old). No explicit refresh needed here.
 
   // Remove from cache so a forward-navigate re-renders fresh
   pageCache.delete(path);
