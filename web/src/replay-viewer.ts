@@ -439,7 +439,7 @@ export class ReplayViewer {
     fromMode: 'standard',
     toMode: 'standard',
     startTime: 0,
-    duration: 400,
+    duration: 300, // 300ms per §16.11
     offscreenFrom: null,
     offscreenTo: null,
   };
@@ -857,44 +857,18 @@ export class ReplayViewer {
       return;
     }
 
-    // Capture the current canvas state as the "from" buffer
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    if (w === 0 || h === 0) {
-      this.viewMode = mode;
-      this.render();
-      return;
-    }
-
-    const fromBuf = document.createElement('canvas');
-    fromBuf.width = w;
-    fromBuf.height = h;
-    fromBuf.getContext('2d')!.drawImage(this.canvas, 0, 0);
-
-    // Switch mode and render the "to" state into an offscreen buffer
+    // Start 300ms cross-fade transition (§16.11)
     const prevMode = this.viewMode;
     this.viewMode = mode;
 
-    const toBuf = document.createElement('canvas');
-    toBuf.width = w;
-    toBuf.height = h;
-    const toCtx = toBuf.getContext('2d')!;
-
-    // Render the new mode into the offscreen buffer
-    const origCtx = this.ctx;
-    (this as any).ctx = toCtx;
-    this.renderViewLayer();
-    (this as any).ctx = origCtx;
-
-    // Start transition
     this.viewTransition = {
       active: true,
       fromMode: prevMode,
       toMode: mode,
       startTime: performance.now(),
-      duration: 400,
-      offscreenFrom: fromBuf,
-      offscreenTo: toBuf,
+      duration: 300,
+      offscreenFrom: null,
+      offscreenTo: null,
     };
 
     this.startRenderLoop();
@@ -1822,38 +1796,256 @@ export class ReplayViewer {
   private render(): void {
     if (!this.replay) return;
 
-    // If a view mode cross-fade is active, blend the two offscreen buffers
+    // If a view mode cross-fade is active, render the transition (§16.11)
     if (this.viewTransition.active) {
-      const { ctx } = this;
-      const now = performance.now();
-      const elapsed = now - this.viewTransition.startTime;
-      let t = Math.min(1, elapsed / this.viewTransition.duration);
-
-      // Ease-in-out cubic
-      t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-      // Blend the two complete frames (both already contain overlays)
-      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      ctx.globalAlpha = 1 - t;
-      if (this.viewTransition.offscreenFrom) {
-        ctx.drawImage(this.viewTransition.offscreenFrom, 0, 0);
-      }
-      ctx.globalAlpha = t;
-      if (this.viewTransition.offscreenTo) {
-        ctx.drawImage(this.viewTransition.offscreenTo, 0, 0);
-      }
-      ctx.globalAlpha = 1;
-
-      // End transition when complete
-      if (elapsed >= this.viewTransition.duration) {
-        this.viewTransition.active = false;
-        this.viewTransition.offscreenFrom = null;
-        this.viewTransition.offscreenTo = null;
-      }
+      this.renderTransition();
       return;
     }
 
     this.renderViewLayer();
+  }
+
+  // Render view mode transition with 300ms cross-fade (§16.11)
+  private renderTransition(): void {
+    if (!this.replay) return;
+
+    const { ctx } = this;
+    const now = performance.now();
+    const elapsed = now - this.viewTransition.startTime;
+    let t = Math.min(1, elapsed / this.viewTransition.duration);
+
+    // Ease-in-out cubic
+    t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+    const turnData = this.replay.turns[this.currentTurn];
+    if (!turnData) return;
+
+    const colors = this.getPlayerColors();
+    const bgColor = this.getBackgroundColor();
+    const neutralColor = this.accessibility.highContrast ? HIGH_CONTRAST_NEUTRAL : NEUTRAL_COLOR;
+    const energyColor = this.getEnergyColor();
+    const wallColor = this.getWallColor();
+    const gridColor = this.getGridColor();
+
+    // Determine visibility for fog of war
+    const visible = this.fogOfWarPlayer !== null
+      ? this.computeVisibility(turnData, this.fogOfWarPlayer)
+      : null;
+
+    // Clear canvas
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // ── Camera transform: clip to map area, apply pan/zoom (§16.12) ──
+    const mapH = this.replay.map.rows * this.cellSize;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, this.canvas.width, mapH);
+    ctx.clip();
+    this.applyCameraTransform();
+
+    // ── Render outgoing view layer (fading out) ──
+    const origMode = this.viewMode;
+    this.viewMode = this.viewTransition.fromMode;
+    ctx.globalAlpha = 1 - t;
+    this.renderViewLayerOnly(turnData, visible, colors, neutralColor, energyColor, wallColor, gridColor);
+    ctx.globalAlpha = 1;
+
+    // ── Render incoming view layer (fading in) ──
+    this.viewMode = this.viewTransition.toMode;
+    ctx.globalAlpha = t;
+    this.renderViewLayerOnly(turnData, visible, colors, neutralColor, energyColor, wallColor, gridColor);
+    ctx.globalAlpha = 1;
+
+    // Restore actual mode
+    this.viewMode = origMode;
+
+    // Draw fog-of-war overlay (full opacity, on top of transition)
+    if (visible) {
+      this.renderFogOverlay(visible);
+    }
+
+    // Draw bots on top at FULL opacity (per §16.11)
+    for (const bot of turnData.bots) {
+      if (!bot.alive) continue;
+      if (visible && !visible.has(this.posKey(bot.position))) continue;
+      const color = colors[bot.owner];
+      this.drawBot(bot, color);
+    }
+
+    // Draw animated particles and effects at full opacity
+    if (!this.accessibility.reducedMotion) {
+      drawEffects(ctx);
+      drawParticles(ctx);
+    }
+
+    // Draw annotation markers on canvas (§16.8) — world-space
+    this.renderAnnotationMarkers(colors);
+
+    ctx.restore();
+    // ── End camera transform ──
+
+    // Draw debug telemetry overlay (screen-space)
+    if (this.showDebug && turnData.debug) {
+      this.renderDebugOverlay(turnData.debug, colors);
+    }
+
+    // Draw score overlay (screen-space, below map)
+    this.drawScoreOverlay(turnData, colors);
+
+    // Update minimap each frame (§7.3)
+    this.renderMinimap();
+
+    // End transition when complete
+    if (elapsed >= this.viewTransition.duration) {
+      this.viewTransition.active = false;
+      this.viewTransition.offscreenFrom = null;
+      this.viewTransition.offscreenTo = null;
+    }
+  }
+
+  // Render only the view layer (no bots, no effects, no overlays) — used for transitions
+  private renderViewLayerOnly(
+    turnData: ReplayTurn,
+    visible: Set<string> | null,
+    colors: string[],
+    neutralColor: string,
+    energyColor: string,
+    wallColor: string,
+    gridColor: string
+  ): void {
+    // Render based on view mode (no bots, no effects)
+    switch (this.viewMode) {
+      case 'dots':
+        // Dots mode has no territory layer — nothing to render
+        break;
+      case 'influence':
+        this.renderInfluenceLayer(turnData, visible, colors, neutralColor, energyColor, wallColor);
+        break;
+      case 'voronoi':
+        this.renderVoronoiLayer(turnData, visible, colors, neutralColor, energyColor, wallColor);
+        break;
+      case 'standard':
+      default:
+        this.renderStandardLayer(turnData, visible, colors, neutralColor, energyColor, wallColor, gridColor);
+        break;
+    }
+  }
+
+  // Standard view layer (no bots, no effects)
+  private renderStandardLayer(
+    turnData: ReplayTurn,
+    visible: Set<string> | null,
+    colors: string[],
+    neutralColor: string,
+    energyColor: string,
+    wallColor: string,
+    gridColor: string
+  ): void {
+    const { ctx, cellSize, showGrid, replay } = this;
+    const { rows, cols } = replay!.map;
+
+    // Draw grid lines
+    if (showGrid) {
+      ctx.strokeStyle = gridColor;
+      ctx.lineWidth = this.accessibility.highContrast ? 1 : 0.5;
+      for (let r = 0; r <= rows; r++) {
+        ctx.beginPath();
+        ctx.moveTo(0, r * cellSize);
+        ctx.lineTo(cols * cellSize, r * cellSize);
+        ctx.stroke();
+      }
+      for (let c = 0; c <= cols; c++) {
+        ctx.beginPath();
+        ctx.moveTo(c * cellSize, 0);
+        ctx.lineTo(c * cellSize, rows * cellSize);
+        ctx.stroke();
+      }
+    }
+
+    // Draw walls
+    for (const wall of this.replay!.map.walls) {
+      this.drawCell(wall.row, wall.col, wallColor);
+    }
+
+    // Draw shrinking zone
+    this.drawZone();
+
+    // Draw cores
+    for (const core of turnData.cores) {
+      if (visible && !visible.has(this.posKey(core.position))) continue;
+      const color = core.active ? colors[core.owner] : neutralColor;
+      this.drawCore(core.position.row, core.position.col, color, core.active);
+    }
+
+    // Draw energy
+    for (const energy of turnData.energy) {
+      if (visible && !visible.has(this.posKey(energy))) continue;
+      this.drawEnergy(energy.row, energy.col, energyColor);
+    }
+  }
+
+  // Influence view layer (no bots, no effects)
+  private renderInfluenceLayer(
+    turnData: ReplayTurn,
+    visible: Set<string> | null,
+    colors: string[],
+    _neutralColor: string,
+    _energyColor: string,
+    _wallColor: string
+  ): void {
+    const { ctx, cellSize, replay } = this;
+    const { rows, cols } = replay!.map;
+
+    // Compute influence map
+    const influence = this.computeInfluenceMap(turnData);
+
+    // Draw influence gradient
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const posKey = `${r},${c}`;
+        if (visible && !visible.has(posKey)) continue;
+
+        const inf = influence[r][c];
+        if (inf.owner >= 0) {
+          // Blend color based on influence strength
+          const baseColor = colors[inf.owner];
+          const alpha = Math.min(0.8, 0.2 + inf.strength * 0.6);
+          ctx.fillStyle = this.hexToRgba(baseColor, alpha);
+          ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+  }
+
+  // Voronoi view layer (no bots, no effects)
+  private renderVoronoiLayer(
+    turnData: ReplayTurn,
+    visible: Set<string> | null,
+    colors: string[],
+    _neutralColor: string,
+    _energyColor: string,
+    _wallColor: string
+  ): void {
+    const { ctx, cellSize, replay } = this;
+    const { rows, cols } = replay!.map;
+
+    // Compute Voronoi territories
+    const territories = this.computeVoronoiTerritories(turnData);
+
+    // Draw territories
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const posKey = `${r},${c}`;
+        if (visible && !visible.has(posKey)) continue;
+
+        const owner = territories[r][c];
+        if (owner >= 0) {
+          ctx.fillStyle = this.hexToRgba(colors[owner], 0.3);
+          ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+        }
+      }
+    }
   }
 
   // Renders the full frame for the current view mode (no transition blending)
