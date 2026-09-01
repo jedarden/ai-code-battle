@@ -1,13 +1,63 @@
 // §16.14 Skeleton screens — per-page placeholder layouts matching final content.
-// Each skeleton function returns HTML that mirrors the real page layout.
-// The shimmer CSS animation is in components.css.
+// Base Skeleton component with shimmer animation and reusable variants.
+// The shimmer CSS animation is in components.css with 1.5s sweep interval.
+
+// ─── Base Skeleton Component ─────────────────────────────────────────────────────
+
+/**
+ * Skeleton component variants
+ */
+export type SkeletonVariant = 'bar' | 'circle' | 'rectangle';
+
+/**
+ * Props for the Skeleton component
+ */
+export interface SkeletonProps {
+  variant: SkeletonVariant;
+  width?: string;
+  height?: string;
+  extra?: string;
+}
+
+/**
+ * Base reusable Skeleton component with shimmer animation
+ * Returns HTML string with proper styling and animation classes
+ *
+ * @param props - Skeleton configuration
+ * @returns HTML string for skeleton element
+ */
+export function Skeleton(props: SkeletonProps): string {
+  const { variant, width = '100%', height = '16px', extra = '' } = props;
+
+  const baseStyle = `width:${width};height:${height};${extra}`;
+
+  switch (variant) {
+    case 'circle':
+      return `<div class="skeleton-circle" style="${baseStyle}"></div>`;
+
+    case 'rectangle':
+      return `<div class="skeleton-bar" style="${baseStyle}border-radius:var(--radius-md);"></div>`;
+
+    case 'bar':
+    default:
+      return `<div class="skeleton-bar" style="${baseStyle}"></div>`;
+  }
+}
+
+// ─── Convenience Functions (backward compatible) ───────────────────────────────────
 
 const shimmer = 'skeleton-bar';
 
+/**
+ * @deprecated Use Skeleton({ variant: 'bar', width, height, extra }) instead
+ */
 function bar(w: string, h: string = '16px', extra = ''): string {
   return `<div class="${shimmer}" style="width:${w};height:${h};${extra}"></div>`;
 }
 
+/**
+ * @deprecated Use Skeleton({ variant: 'circle', width: size, height: size }) instead
+ */
 function circle(size: string): string {
   return `<div class="skeleton-circle" style="width:${size};height:${size}"></div>`;
 }
