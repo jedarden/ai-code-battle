@@ -88,8 +88,9 @@ type DebugInfo struct {
 
 // DebugTarget represents a debug target marker.
 type DebugTarget struct {
-	Position Position `json:"position"`
+	Position Position  `json:"position"`
 	Label    string   `json:"label"`
+	Color    string   `json:"color,omitempty"`
 	Priority float64  `json:"priority"`
 }
 
@@ -173,6 +174,19 @@ func (b *HTTPBot) GetMoves(state *VisibleState) ([]Move, error) {
 	if err := json.Unmarshal(responseBody, &moveResp); err != nil {
 		b.recordFailure()
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Validate debug size (max 10 KB per turn per §14.1)
+	if moveResp.Debug != nil {
+		debugJSON, err := json.Marshal(moveResp.Debug)
+		if err != nil {
+			b.recordFailure()
+			return nil, fmt.Errorf("failed to marshal debug data: %w", err)
+		}
+		if len(debugJSON) > 10*1024 { // 10 KB limit
+			b.recordFailure()
+			return nil, fmt.Errorf("debug data exceeds 10 KB limit (%d bytes)", len(debugJSON))
+		}
 	}
 
 	// Validate moves (basic validation)
