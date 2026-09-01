@@ -294,7 +294,7 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 		if tailErr := w.updateLiveTail(ctx, claimData, result); tailErr != nil {
 			w.logger.Printf("Warning: failed to update live-tail.json: %v", tailErr)
 		}
-		if deltaErr := w.updateLiveDelta(ctx, claimData, ratingUpdates); deltaErr != nil {
+		if deltaErr := w.updateLiveDelta(ctx, claimData, result, ratingUpdates); deltaErr != nil {
 			w.logger.Printf("Warning: failed to update live-delta.json: %v", deltaErr)
 		}
 	}
@@ -697,21 +697,30 @@ func recalcRatings(ctx context.Context, db *DBClient, logger *log.Logger, verbos
 	return nil
 }
 
-// LiveTailEntry represents a single match in the live-tail feed.
-type LiveTailEntry struct {
-	MatchID     string            `json:"match_id"`
-	Players     []string          `json:"players"`
-	Winner      string            `json:"winner"`
-	Scores      map[string]int    `json:"scores"`
-	CompletedAt string            `json:"completed_at"`
-	Turns       int               `json:"turns"`
-	EndReason   string            `json:"end_reason"`
+// LiveTailMatch represents a single match in the live-tail feed.
+type LiveTailMatch struct {
+	ID           string                    `json:"id"`
+	CompletedAt  string                    `json:"completed_at"`
+	Participants []MatchSummaryParticipant `json:"participants"`
+	WinnerID     *string                   `json:"winner_id,omitempty"`
+	MapID        *string                   `json:"map_id,omitempty"`
+	Turns        int                       `json:"turns"`
+	EndReason    string                    `json:"end_reason"`
+	Enriched     bool                      `json:"enriched,omitempty"`
+}
+
+// MatchSummaryParticipant represents a participant in a match summary.
+type MatchSummaryParticipant struct {
+	BotID string `json:"bot_id"`
+	Name  string `json:"name"`
+	Score int    `json:"score"`
+	Won   bool   `json:"won"`
 }
 
 // LiveTailFeed represents the live-tail.json structure.
 type LiveTailFeed struct {
-	Matches []LiveTailEntry `json:"matches"`
-	Updated string           `json:"updated"`
+	Matches []LiveTailMatch `json:"matches"`
+	Updated string           `json:"updated_at"`
 }
 
 // updateLiveTail updates matches/live-tail.json in R2 with the latest completed match.
@@ -723,34 +732,49 @@ func (w *Worker) updateLiveTail(ctx context.Context, claimData *JobClaimData, re
 	if err == nil && len(existingData) > 0 {
 		if err := json.Unmarshal(existingData, &feed); err != nil {
 			w.logger.Printf("Warning: failed to parse existing live-tail.json, starting fresh: %v", err)
-			feed = LiveTailFeed{Matches: []LiveTailEntry{}}
+			feed = LiveTailFeed{Matches: []LiveTailMatch{}}
 		}
 	} else {
 		// File doesn't exist yet, start fresh
-		feed = LiveTailFeed{Matches: []LiveTailEntry{}}
+		feed = LiveTailFeed{Matches: []LiveTailMatch{}}
 	}
 
-	// Build player list and scores from claimData
-	players := make([]string, len(claimData.Participants))
-	scores := make(map[string]int)
+	// Build bot ID to name lookup
+	botNameMap := make(map[string]string)
+	for _, bot := range claimData.Bots {
+		botNameMap[bot.ID] = bot.Name
+	}
+
+	// Build participants array with names and scores
+	participants := make([]MatchSummaryParticipant, len(claimData.Participants))
 	for i, p := range claimData.Participants {
-		players[i] = p.BotID
-		scores[p.BotID] = result.Scores[p.BotID]
+		participants[i] = MatchSummaryParticipant{
+			BotID: p.BotID,
+			Name:  botNameMap[p.BotID],
+			Score: result.Scores[p.BotID],
+			Won:   result.WinnerID == p.BotID,
+		}
+	}
+
+	// Determine winner_id (null for draw)
+	var winnerID *string
+	if result.WinnerID != "" {
+		winnerID = &result.WinnerID
 	}
 
 	// Create new entry
-	entry := LiveTailEntry{
-		MatchID:     claimData.Match.ID,
-		Players:     players,
-		Winner:      result.WinnerID,
-		Scores:      scores,
-		CompletedAt: time.Now().UTC().Format(time.RFC3339),
-		Turns:       result.Turns,
-		EndReason:   result.EndReason,
+	entry := LiveTailMatch{
+		ID:           claimData.Match.ID,
+		CompletedAt:  time.Now().UTC().Format(time.RFC3339),
+		Participants: participants,
+		WinnerID:     winnerID,
+		MapID:        &claimData.Map.ID,
+		Turns:        result.Turns,
+		EndReason:    result.EndReason,
 	}
 
 	// Append new match and trim to last 50
-	feed.Matches = append([]LiveTailEntry{entry}, feed.Matches...)
+	feed.Matches = append([]LiveTailMatch{entry}, feed.Matches...)
 	if len(feed.Matches) > 50 {
 		feed.Matches = feed.Matches[:50]
 	}
@@ -770,48 +794,118 @@ func (w *Worker) updateLiveTail(ctx context.Context, claimData *JobClaimData, re
 	return nil
 }
 
-// LiveDeltaEntry represents rating deltas for a single bot.
-type LiveDeltaEntry struct {
-	BotID           string  `json:"bot_id"`
-	RatingMuDelta   float64 `json:"rating_mu_delta"`
-	MatchesPlayedDelta int  `json:"matches_played_delta"`
+// LeaderboardDeltaEntry represents rating deltas for a single bot.
+type LeaderboardDeltaEntry struct {
+	RatingDelta        float64 `json:"rating_delta"`
+	NewRating          float64 `json:"new_rating"`
+	NewRatingDeviation float64 `json:"new_rating_deviation,omitempty"`
+	NewMatchesPlayed   int     `json:"new_matches_played,omitempty"`
+	NewMatchesWon      int     `json:"new_matches_won,omitempty"`
+	NewWinRate         float64 `json:"new_win_rate,omitempty"`
 }
 
 // LiveDeltaFeed represents the live-delta.json structure.
 type LiveDeltaFeed struct {
-	Deltas  map[string]LiveDeltaEntry `json:"deltas"`
-	Updated string                     `json:"updated"`
+	Deltas  map[string]LeaderboardDeltaEntry `json:"deltas"`
+	Updated string                           `json:"updated_at"`
 }
 
 // updateLiveDelta updates leaderboard/live-delta.json in R2 with rating changes from the latest match.
 // Accumulates deltas since the last full index build.
-func (w *Worker) updateLiveDelta(ctx context.Context, claimData *JobClaimData, ratingUpdates []RatingUpdate) error {
+func (w *Worker) updateLiveDelta(ctx context.Context, claimData *JobClaimData, result *MatchResult, ratingUpdates []RatingUpdate) error {
 	// Download existing live-delta.json
 	var feed LiveDeltaFeed
 	existingData, err := w.r2.Download(ctx, "leaderboard/live-delta.json")
 	if err == nil && len(existingData) > 0 {
 		if err := json.Unmarshal(existingData, &feed); err != nil {
 			w.logger.Printf("Warning: failed to parse existing live-delta.json, starting fresh: %v", err)
-			feed = LiveDeltaFeed{Deltas: make(map[string]LiveDeltaEntry)}
+			feed = LiveDeltaFeed{Deltas: make(map[string]LeaderboardDeltaEntry)}
 		}
 	} else {
 		// File doesn't exist yet, start fresh
-		feed = LiveDeltaFeed{Deltas: make(map[string]LiveDeltaEntry)}
+		feed = LiveDeltaFeed{Deltas: make(map[string]LeaderboardDeltaEntry)}
+	}
+
+	// Query current bot stats (matches_played, matches_won) from database
+	botIDs := make([]string, len(ratingUpdates))
+	for i, update := range ratingUpdates {
+		botIDs[i] = update.BotID
+	}
+
+	// Build bot info map with current stats from database
+	botStats := make(map[string]struct {
+		matchesPlayed int
+		matchesWon    int
+	})
+
+	// Query each bot's current stats from the database
+	for _, botID := range botIDs {
+		var matchesPlayed, matchesWon int
+		err := w.db.db.QueryRowContext(ctx, `
+			SELECT COALESCE(matches_played, 0), COALESCE(matches_won, 0)
+			FROM bots WHERE bot_id = $1
+		`, botID).Scan(&matchesPlayed, &matchesWon)
+		if err != nil {
+			w.logger.Printf("Warning: failed to get stats for bot %s: %v", botID, err)
+			// Use zeros as fallback
+			matchesPlayed, matchesWon = 0, 0
+		}
+
+		// Increment matches played for this match (the update represents the new state)
+		botStats[botID] = struct {
+			matchesPlayed int
+			matchesWon    int
+		}{
+			matchesPlayed: matchesPlayed + 1,
+			matchesWon:    matchesWon,
+		}
+
+		// Increment wins if this bot won
+		if result.WinnerID == botID {
+			botStats[botID].matchesWon++
+		}
 	}
 
 	// Update deltas for each participant
 	for _, update := range ratingUpdates {
-		existing, exists := feed.Deltas[update.BotID]
-		if !exists {
-			existing = LiveDeltaEntry{
-				BotID: update.BotID,
-			}
+		stats, ok := botStats[update.BotID]
+		if !ok {
+			continue
 		}
 
-		// Accumulate rating delta (new mu - old mu)
-		ratingDelta := update.DisplayRating - (update.RatingMuBefore - 2*update.RatingPhiBefore)
-		existing.RatingMuDelta += ratingDelta
-		existing.MatchesPlayedDelta += 1
+		// Calculate new rating state
+		newRating := update.DisplayRating
+		newRatingDeviation := update.RatingPhi
+		newMatchesPlayed := stats.matchesPlayed
+		newMatchesWon := stats.matchesWon
+		newWinRate := 0.0
+		if newMatchesPlayed > 0 {
+			newWinRate = float64(newMatchesWon) / float64(newMatchesPlayed)
+		}
+
+		// Calculate rating delta
+		ratingDelta := newRating - (update.RatingMuBefore - 2*update.RatingPhiBefore)
+
+		// Store or accumulate delta
+		existing, exists := feed.Deltas[update.BotID]
+		if !exists {
+			existing = LeaderboardDeltaEntry{
+				RatingDelta:        ratingDelta,
+				NewRating:          newRating,
+				NewRatingDeviation: newRatingDeviation,
+				NewMatchesPlayed:   newMatchesPlayed,
+				NewMatchesWon:      newMatchesWon,
+				NewWinRate:         newWinRate,
+			}
+		} else {
+			// Accumulate: add delta, replace absolute values
+			existing.RatingDelta += ratingDelta
+			existing.NewRating = newRating
+			existing.NewRatingDeviation = newRatingDeviation
+			existing.NewMatchesPlayed = newMatchesPlayed
+			existing.NewMatchesWon = newMatchesWon
+			existing.NewWinRate = newWinRate
+		}
 
 		feed.Deltas[update.BotID] = existing
 	}
