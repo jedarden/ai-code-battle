@@ -125,9 +125,9 @@ export class EventRibbon {
     // Track click for seeking to any turn
     const track = this.container.querySelector('.ribbon-track');
     if (track) {
-      track.addEventListener('click', (e: MouseEvent) => {
+      track.addEventListener('click', (e: Event) => {
         const rect = track.getBoundingClientRect();
-        const x = e.clientX - rect.left;
+        const x = (e as any).clientX - rect.left;
         const percent = x / rect.width;
         const turn = Math.floor(percent * this.totalTurns);
 
