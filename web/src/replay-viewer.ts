@@ -476,6 +476,9 @@ export class ReplayViewer {
   // Minimap state (§7.3)
   private minimapCanvas: HTMLCanvasElement | null = null;
 
+  // Score overlay click tracking (§16.12)
+  private scoreOverlayBounds: Array<{ playerIdx: number; x: number; y: number; width: number; height: number }> = [];
+
   constructor(canvas: HTMLCanvasElement, options: ViewerOptions = {}) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
@@ -502,6 +505,10 @@ export class ReplayViewer {
 
     // Create screen reader region for announcements
     this.createScreenReaderRegion();
+
+    // Set up event listeners for follow mode activation (§16.12)
+    canvas.addEventListener('click', (e: MouseEvent) => this.handleCanvasClick(e));
+    window.addEventListener('keydown', (e: KeyboardEvent) => this.handleKeyDown(e));
 
     this.render = this.render.bind(this);
   }
@@ -696,6 +703,56 @@ export class ReplayViewer {
     }
     this.render();
     if (this.onFollowChange) this.onFollowChange(null);
+  }
+
+  // Handle clicks on the main canvas (score overlay) (§16.12)
+  private handleCanvasClick(e: MouseEvent): void {
+    if (!this.replay) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Check if click is in score overlay
+    for (const bound of this.scoreOverlayBounds) {
+      if (x >= bound.x && x <= bound.x + bound.width &&
+          y >= bound.y && y <= bound.y + bound.height) {
+        // Click is on a player row - activate follow mode
+        this.setFollowPlayer(bound.playerIdx);
+        // Also set fog-of-war to match for first-person perspective
+        if (this.fogOfWarPlayer !== bound.playerIdx) {
+          this.setFogOfWar(bound.playerIdx);
+        }
+        return;
+      }
+    }
+  }
+
+  // Handle keyboard input for follow mode (§16.12)
+  private handleKeyDown(e: KeyboardEvent): void {
+    if (!this.replay) return;
+
+    // 1-6 keys: follow specific player
+    if (e.key >= '1' && e.key <= '6') {
+      const playerIdx = parseInt(e.key) - 1;
+      if (playerIdx < this.replay.players.length) {
+        this.setFollowPlayer(playerIdx);
+        // Also set fog-of-war to match for first-person perspective
+        if (this.fogOfWarPlayer !== playerIdx) {
+          this.setFogOfWar(playerIdx);
+        }
+      }
+      return;
+    }
+
+    // 0 or Escape: return to full-grid view
+    if (e.key === '0' || e.key === 'Escape') {
+      this.setFollowPlayer(null);
+      // Also clear fog-of-war for omniscient view
+      if (this.fogOfWarPlayer !== null) {
+        this.setFogOfWar(null);
+      }
+      return;
+    }
   }
 
   renderMinimap(): void {
@@ -2834,6 +2891,9 @@ export class ReplayViewer {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
+    // Clear previous bounds and store new ones for click detection
+    this.scoreOverlayBounds = [];
+
     this.replay.players.forEach((player, idx) => {
       const score = turnData.scores[idx] ?? 0;
       const energy = turnData.energy_held[idx] ?? 0;
@@ -2841,6 +2901,15 @@ export class ReplayViewer {
       const color = colors[idx];
       const yOffset = overlayY + padding + idx * lineHeight;
       const isFollowed = this.followPlayer === idx;
+
+      // Store bounds for click detection (§16.12)
+      this.scoreOverlayBounds.push({
+        playerIdx: idx,
+        x: 0,
+        y: yOffset,
+        width: bgWidth,
+        height: lineHeight
+      });
 
       // Highlight row if followed
       if (isFollowed) {
