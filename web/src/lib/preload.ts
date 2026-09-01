@@ -98,7 +98,7 @@ function resolveDataMappings(path: string): DataMapping[] {
 // Tracks which URLs have been prefetched to avoid duplicate requests.
 
 const prefetched = new Set<string>();
-const PRELOAD_DELAY = 150; // ms — debounce per §16.14 (120–200ms range)
+const PRELOAD_DELAY = 100; // ms — debounce per §16.14 (desktop hover delay)
 
 function prefetchMapping(mapping: DataMapping): void {
   if (prefetched.has(mapping.url)) return;
@@ -136,6 +136,16 @@ function setupLinkListeners(): void {
 
     clearTimeout(timer);
     timer = setTimeout(() => prefetchRoute(path), PRELOAD_DELAY);
+  }, { passive: true });
+
+  // Cancel the prefetch timer when mouse leaves a link
+  document.addEventListener('mouseout', (e) => {
+    const anchor = (e.target as HTMLElement).closest('a[href^="#/"]') as HTMLAnchorElement | null;
+    if (!anchor) return;
+    // If the related target (where the mouse is going) is still within the same anchor,
+    // don't cancel the timer (e.g., moving between child elements of the link)
+    if (e.relatedTarget && (e.relatedTarget as Node).parentNode === anchor) return;
+    clearTimeout(timer);
   }, { passive: true });
 
   document.addEventListener('touchstart', (e) => {
