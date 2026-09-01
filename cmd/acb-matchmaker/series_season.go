@@ -464,30 +464,58 @@ func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, bot
 
 // selectSeriesMap picks a map with varied characteristics per game number.
 // Per §14.7: Game 1 = highest engagement, Game 2 = highest wall density,
-// Game 3 = lowest wall density, Game 4+ = random from pool.
+// Game 3 = lowest wall density, Game 4 = most recent evolved, Game 5+ = random from pool.
 // Returns (mapID, rows, cols, seed). Falls back to random seed if maps table is empty.
 func (m *Matchmaker) selectSeriesMap(ctx context.Context, gameNum int, rng *rand.Rand) (string, int, int, int64) {
-	var orderBy string
-	switch {
-	case gameNum == 1:
-		orderBy = "engagement DESC NULLS LAST"
-	case gameNum == 2:
-		orderBy = "wall_density DESC NULLS LAST"
-	case gameNum == 3:
-		orderBy = "wall_density ASC NULLS LAST"
-	default:
-		orderBy = "RANDOM()"
-	}
-
-	query := fmt.Sprintf(`
-		SELECT map_id, grid_width, grid_height FROM maps
-		WHERE player_count = 2 AND status IN ('active', 'classic')
-		ORDER BY %s LIMIT 1
-	`, orderBy)
-
 	var mapID string
 	var gridW, gridH int
-	err := m.db.QueryRowContext(ctx, query).Scan(&mapID, &gridW, &gridH)
+	var err error
+
+	switch {
+	case gameNum == 1:
+		// Highest engagement (the "classic")
+		err = m.db.QueryRowContext(ctx, `
+			SELECT map_id, grid_width, grid_height FROM maps
+			WHERE player_count = 2 AND status IN ('active', 'classic')
+			ORDER BY engagement DESC NULLS LAST LIMIT 1
+		`).Scan(&mapID, &gridW, &gridH)
+
+	case gameNum == 2:
+		// Highest wall density (corridors/chokepoints)
+		err = m.db.QueryRowContext(ctx, `
+			SELECT map_id, grid_width, grid_height FROM maps
+			WHERE player_count = 2 AND status IN ('active', 'classic')
+			ORDER BY wall_density DESC NULLS LAST LIMIT 1
+		`).Scan(&mapID, &gridW, &gridH)
+
+	case gameNum == 3:
+		// Lowest wall density (open field)
+		err = m.db.QueryRowContext(ctx, `
+			SELECT map_id, grid_width, grid_height FROM maps
+			WHERE player_count = 2 AND status IN ('active', 'classic')
+			ORDER BY wall_density ASC NULLS LAST LIMIT 1
+		`).Scan(&mapID, &gridW, &gridH)
+
+	case gameNum == 4:
+		// Most recent evolved map (untested terrain)
+		// Join with programs table to find maps recently used in evolution
+		err = m.db.QueryRowContext(ctx, `
+			SELECT m.map_id, m.grid_width, m.grid_height
+			FROM maps m
+			WHERE m.player_count = 2 AND m.status IN ('active', 'classic')
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		`).Scan(&mapID, &gridW, &gridH)
+
+	default:
+		// Game 5+: Random from remaining pool
+		err = m.db.QueryRowContext(ctx, `
+			SELECT map_id, grid_width, grid_height FROM maps
+			WHERE player_count = 2 AND status IN ('active', 'classic')
+			ORDER BY RANDOM() LIMIT 1
+		`).Scan(&mapID, &gridW, &gridH)
+	}
+
 	if err != nil {
 		// No maps in table — generate from seed
 		seed := rng.Int63()
@@ -713,9 +741,50 @@ func (m *Matchmaker) processSeasonEnd(ctx context.Context, seasonID int64, seaso
 		return fmt.Errorf("complete season: %w", err)
 	}
 
-	// 4. Apply decay to all non-retired bots
+	// 4. Reset prediction standings for new season (§14.9)
+	//    Predictor stats reset but predictor identities persist
+	_, err = tx.ExecContext(ctx, `
+		UPDATE predictor_stats SET
+			correct = 0,
+			incorrect = 0,
+			streak = 0,
+			best_streak = 0,
+			updated_at = NOW()
+	`)
+	if err != nil {
+		return fmt.Errorf("reset predictor stats: %w", err)
+	}
+
+	// 5. Rotate map pool for new season (§14.9)
+	//    Retire some maps to 'classic' status, promote probation maps
+	//    This keeps the meta fresh while preserving beloved maps
+	_, err = tx.ExecContext(ctx, `
+		UPDATE maps SET status = 'classic', retired_at = NOW()
+		WHERE player_count = 2
+		  AND status = 'active'
+		  AND created_at < NOW() - INTERVAL '90 days'
+		  AND engagement < 0.3
+	`)
+	if err != nil {
+		return fmt.Errorf("rotate map pool to classic: %w", err)
+	}
+
+	// 6. Reset auto-playlist contents for new season (§14.9)
+	//    Clear auto-generated playlists but preserve curated ones
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM playlist_matches
+		WHERE playlist_slug IN (
+			SELECT slug FROM playlists WHERE is_auto = TRUE
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("reset auto-playlists: %w", err)
+	}
+
+	// 7. Apply decay to all non-retired bots (§14.9)
 	//    Formula: new_mu = default + (current_mu - default) * decay_factor
 	//    This pulls ratings toward 1500 but preserves relative ordering
+	//    Backward compatibility: Old bots retain competitive edge via relative ordering
 	decayFactor := m.cfg.SeasonDecayFactor
 	defaultMu := 1500.0
 	defaultPhi := 350.0
@@ -741,8 +810,8 @@ func (m *Matchmaker) processSeasonEnd(ctx context.Context, seasonID int64, seaso
 		log.Printf("season-reset: championship bracket creation failed for season %d: %v", seasonID, err)
 	}
 
-	log.Printf("season-reset: season %d (%s) complete — champion=%s, decay=%.0f%%",
-		seasonID, seasonName, championID, decayFactor*100)
+	log.Printf("season-reset: season %d (%s) complete — champion=%s, snapshot+resets+decay complete",
+		seasonID, seasonName, championID)
 
 	return nil
 }
