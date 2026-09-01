@@ -1,34 +1,14 @@
 [Unit]
-Description=Bead Starvation Sync Service
-Documentation=file:///home/coding/ai-code-battle/scripts/bead-starvation-sync
-After=network-online.target
-Wants=network-online.target
+Description=Automated bead store checkpoint sync
+After=network.target
 
 [Service]
 Type=oneshot
 User=coding
 WorkingDirectory=/home/coding/ai-code-battle
-Environment="PATH=/home/coding/.local/bin:/run/current-system/sw/bin:/usr/bin:/bin"
-ExecStart=/run/current-system/sw/bin/bash /home/coding/ai-code-battle/scripts/bead-starvation-sync
-Nice=10
-IOSchedulingClass=idle
-IOSchedulingPriority=7
-
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=false
-ProtectHome=false
-ReadWritePaths=/home/coding/ai-code-battle
-
-# Logging
+ExecStart=/home/coding/ai-code-battle/scripts/bead-starvation-sync.sh
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=bead-starvation-sync
-
-# Failure handling
-Restart=on-failure
-RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
