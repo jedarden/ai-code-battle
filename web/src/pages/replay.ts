@@ -14,6 +14,11 @@ import {
   EVENT_TIMELINE_STYLES,
 } from '../components/event-timeline';
 import {
+  EventRibbon,
+  EVENT_RIBBON_STYLES,
+} from '../components/event-ribbon';
+import { extractSignificantEvents, type SignificantEvent } from '../extract-significant-events';
+import {
   computeAllDensities,
   computeSpeedSchedule,
   createDirectorState,
@@ -527,6 +532,7 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
     </style>
     <style>${ANNOTATION_OVERLAY_STYLES}</style>
     <style>${EVENT_TIMELINE_STYLES}</style>
+    <style>${EVENT_RIBBON_STYLES}</style>
     <style>${THEATER_STYLES}</style>
   `;
 
@@ -1042,6 +1048,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
 
   let annotationOverlay: AnnotationOverlay | null = null;
   let eventTimeline: EventTimeline | null = null;
+  let eventRibbon: EventRibbon | null = null;
   let allAnnotations: Annotation[] = [];
   let clickedGridPosition: Position | undefined;
   let canvasAnnotationHint: HTMLDivElement | null = null;
@@ -1051,12 +1058,44 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     viewer.setAnnotations(allAnnotations);
     // Push annotations to the event timeline for badge rendering
     eventTimeline?.setAnnotations(allAnnotations);
+    // Update event ribbon turn highlight
+    eventRibbon?.updateTurnHighlight();
   }
 
   function initAnnotations(replay: Replay): void {
     const overlayContainer = document.getElementById('annotation-overlay-container');
     const formContainer = document.getElementById('annotation-form-container');
     if (!overlayContainer || !formContainer) return;
+
+    // Initialize EventRibbon (mobile event timeline ribbon)
+    const mobileTimelineContainer = document.getElementById('mobile-timeline');
+    if (mobileTimelineContainer) {
+      eventRibbon = new EventRibbon({
+        container: mobileTimelineContainer,
+        onEventClick: (event: SignificantEvent) => {
+          // Click-to-scrub: jump to the clicked event's turn
+          viewer.setTurn(event.turn);
+          updateUI();
+          updateEventLog();
+          updateMobileUI();
+          updateMobileTimeline();
+          updateAnnotationOverlay();
+          updateTranscript();
+        },
+        onTurnClick: (turn: number) => {
+          viewer.setTurn(turn);
+          updateUI();
+          updateEventLog();
+        },
+        getTurn: () => viewer.getTurn(),
+      });
+
+      // Extract and populate significant events
+      const significantEvents = extractSignificantEvents(replay);
+      const totalTurns = replay.turns.length;
+      mobileTimelineContainer.innerHTML = ''; // Clear loading message
+      eventRibbon.setEvents(significantEvents, totalTurns);
+    }
 
     // Initialize EventTimeline (desktop)
     const timelineContainer = document.getElementById('event-timeline-container');
@@ -1131,6 +1170,9 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     }
     if (eventTimeline) {
       eventTimeline.setCurrentTurn(viewer.getTurn());
+    }
+    if (eventRibbon) {
+      eventRibbon.updateTurnHighlight();
     }
   }
 
