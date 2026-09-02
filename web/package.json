@@ -5,7 +5,9 @@
   "description": "AI Code Battle web frontend - deployed via Argo Workflows to Cloudflare Pages",
   "scripts": {
     "dev": "vite",
+    "type-check": "tsc --noEmit",
     "build": "tsc && vite build",
+    "build-with-timeout": "timeout 60s tsc && timeout 120s vite build",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
