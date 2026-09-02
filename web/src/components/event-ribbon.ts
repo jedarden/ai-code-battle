@@ -25,21 +25,26 @@ export class EventRibbon {
   private getTurn?: () => number;
   private events: SignificantEvent[] = [];
   private totalTurns: number = 0;
+  private legendVisible: boolean = true;
+  private legendEl?: HTMLElement;
+  private legendCloseButton?: HTMLButtonElement;
 
   constructor(options: EventRibbonOptions) {
     this.container = options.container;
     this.onEventClick = options.onEventClick;
     this.getTurn = options.getTurn;
 
+    this.buildDOM();
+
     // Initialize events and totalTurns if provided
-    if (options.events !== undefined) {
+    if (options.events !== undefined && options.totalTurns !== undefined) {
+      this.setEvents(options.events, options.totalTurns);
+    } else if (options.events !== undefined) {
       this.events = options.events;
     }
     if (options.totalTurns !== undefined) {
       this.totalTurns = options.totalTurns;
     }
-
-    this.buildDOM();
   }
 
   /**
@@ -79,12 +84,36 @@ export class EventRibbon {
    */
   public renderLegend(): void {
     // Check if legend already exists
-    if (this.container.querySelector('.event-ribbon-legend')) {
+    if (this.legendEl) {
       return; // Already rendered
     }
 
     const legend = document.createElement('div');
     legend.className = 'event-ribbon-legend';
+    this.legendEl = legend;
+
+    // Create legend header with close button
+    const header = document.createElement('div');
+    header.className = 'event-legend-header';
+
+    const headerTitle = document.createElement('span');
+    headerTitle.className = 'event-legend-title';
+    headerTitle.textContent = 'Event Types';
+
+    this.legendCloseButton = document.createElement('button');
+    this.legendCloseButton.className = 'event-legend-close';
+    this.legendCloseButton.setAttribute('type', 'button');
+    this.legendCloseButton.setAttribute('aria-label', 'Hide legend');
+    this.legendCloseButton.innerHTML = '×';
+    this.legendCloseButton.addEventListener('click', () => this.hideLegend());
+
+    header.appendChild(headerTitle);
+    header.appendChild(this.legendCloseButton);
+    legend.appendChild(header);
+
+    // Create legend content container
+    const content = document.createElement('div');
+    content.className = 'event-legend-content';
 
     // Get all event types and their styles
     const eventTypes: Array<{ type: SignificantEventType; label: string; icon: string }> = [
@@ -107,10 +136,42 @@ export class EventRibbon {
         <span class="event-legend-label">${label}</span>
       `;
 
-      legend.appendChild(item);
+      content.appendChild(item);
     }
 
+    legend.appendChild(content);
     this.container.appendChild(legend);
+  }
+
+  /**
+   * Hide the legend.
+   */
+  public hideLegend(): void {
+    if (this.legendEl) {
+      this.legendEl.classList.add('event-ribbon-legend-hidden');
+      this.legendVisible = false;
+    }
+  }
+
+  /**
+   * Show the legend.
+   */
+  public showLegend(): void {
+    if (this.legendEl) {
+      this.legendEl.classList.remove('event-ribbon-legend-hidden');
+      this.legendVisible = true;
+    }
+  }
+
+  /**
+   * Toggle legend visibility.
+   */
+  public toggleLegend(): void {
+    if (this.legendVisible) {
+      this.hideLegend();
+    } else {
+      this.showLegend();
+    }
   }
 
   /**
@@ -133,15 +194,22 @@ export class EventRibbon {
     // Main ribbon container
     this.ribbonEl = document.createElement('div');
     this.ribbonEl.className = 'event-ribbon';
-    this.ribbonEl.innerHTML = `
-      <div class="event-ribbon-track"></div>
-      <div class="event-ribbon-markers"></div>
-      <div class="event-ribbon-cursor"></div>
-    `;
-    this.container.appendChild(this.ribbonEl);
 
-    // Cache references to key elements
-    this.markersContainer = this.ribbonEl.querySelector('.event-ribbon-markers') as HTMLDivElement;
+    // Create child elements programmatically to ensure they're properly constructed
+    const track = document.createElement('div');
+    track.className = 'event-ribbon-track';
+
+    this.markersContainer = document.createElement('div');
+    this.markersContainer.className = 'event-ribbon-markers';
+
+    const cursor = document.createElement('div');
+    cursor.className = 'event-ribbon-cursor';
+
+    this.ribbonEl.appendChild(track);
+    this.ribbonEl.appendChild(this.markersContainer);
+    this.ribbonEl.appendChild(cursor);
+
+    this.container.appendChild(this.ribbonEl);
   }
 
   private renderMarkers(): void {
@@ -156,9 +224,33 @@ export class EventRibbon {
 
     this.ribbonEl.classList.remove('event-ribbon-empty');
 
-    // Render a marker for each event with proper z-index stacking
+    // Group events by turn for layering
+    const eventsByTurn = new Map<number, number[]>();
+    this.events.forEach((event, index) => {
+      const turn = event.turn;
+      if (!eventsByTurn.has(turn)) {
+        eventsByTurn.set(turn, []);
+      }
+      eventsByTurn.get(turn)!.push(index);
+    });
+
+    // Render a marker for each event with proper z-index stacking and visual offset
     for (let i = 0; i < this.events.length; i++) {
-      const marker = this.createEventMarker(this.events[i], i);
+      const event = this.events[i];
+      const marker = this.createEventMarker(event, i);
+
+      // Apply vertical offset for events on the same turn
+      const turnEvents = eventsByTurn.get(event.turn) || [];
+      const eventIndexOnTurn = turnEvents.indexOf(i);
+      if (turnEvents.length > 1) {
+        // Offset vertically: -6px per event to create stacking effect
+        // Range: -6px (top) to +6px (bottom) for up to 3 events
+        const offsetStep = 6;
+        const maxOffset = (turnEvents.length - 1) * offsetStep;
+        const offset = eventIndexOnTurn * offsetStep - (maxOffset / 2);
+        marker.style.transform = `translate(-50%, calc(-50% + ${offset}px))`;
+      }
+
       this.markersContainer.appendChild(marker);
     }
 
@@ -188,6 +280,10 @@ export class EventRibbon {
 
     // Get event type label for tooltip
     const eventTypeLabel = this.getEventTypeLabel(event.type);
+
+    // Store the original transform for hover preservation
+    const baseTransform = marker.style.transform || 'translate(-50%, -50%)';
+    marker.dataset.baseTransform = baseTransform;
 
     // Render icon with proper styling and tooltip
     marker.innerHTML = `
@@ -402,8 +498,11 @@ export const EVENT_RIBBON_STYLES = `
 }
 
 .event-marker-clickable:hover {
-  transform: translate(-50%, -50%) scale(1.3);
   z-index: 100;
+}
+
+.event-marker-clickable:hover .event-marker-icon {
+  transform: scale(1.3);
 }
 
 /* Icon styling */
@@ -512,12 +611,70 @@ export const EVENT_RIBBON_STYLES = `
 
 /* Event legend (optional) */
 .event-ribbon-legend {
-  display: flex;
-  gap: 12px;
-  padding: 8px 12px;
   background: var(--bg-secondary, #0f172a);
   border-top: 1px solid var(--border, #1e293b);
   font-size: 0.75rem;
+  transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+  max-height: 200px;
+  overflow: hidden;
+  opacity: 1;
+}
+
+.event-ribbon-legend-hidden {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top: none;
+}
+
+.event-legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #1e293b);
+}
+
+.event-legend-title {
+  font-weight: 600;
+  color: var(--text-primary, #e2e8f0);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+.event-legend-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #64748b);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.event-legend-close:hover {
+  color: var(--text-primary, #e2e8f0);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.event-legend-close:active {
+  transform: scale(0.95);
+}
+
+.event-legend-content {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
   flex-wrap: wrap;
   justify-content: center;
 }

@@ -55,14 +55,6 @@ function bar(w: string, h: string = '16px', extra = ''): string {
   return `<div class="${shimmer}" style="width:${w};height:${h};${extra}"></div>`;
 }
 
-/**
- * @deprecated Use Skeleton({ variant: 'circle', width: size, height: size }) instead
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _circle(size: string): string {
-  return `<div class="skeleton-circle" style="width:${size};height:${size}"></div>`;
-}
-
 // ─── Per-page skeletons ────────────────────────────────────────────────────────
 
 export function skeletonLeaderboard(): string {
