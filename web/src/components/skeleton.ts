@@ -58,7 +58,8 @@ function bar(w: string, h: string = '16px', extra = ''): string {
 /**
  * @deprecated Use Skeleton({ variant: 'circle', width: size, height: size }) instead
  */
-function circle(size: string): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _circle(size: string): string {
   return `<div class="skeleton-circle" style="width:${size};height:${size}"></div>`;
 }
 
@@ -89,22 +90,61 @@ export function skeletonLeaderboard(): string {
 export function skeletonBotProfile(): string {
   return `
     <div class="skeleton-page">
-      ${bar('160px', '14px', 'margin-bottom:16px')}
-      <div class="skeleton-profile-header">
-        ${circle('64px')}
-        <div class="skeleton-profile-info">
-          ${bar('180px', '24px')}
-          ${bar('120px', '14px', 'margin-top:8px')}
+      <!-- Breadcrumb -->
+      <div class="skeleton-row" style="margin-bottom:16px">
+        ${Skeleton({ variant: 'bar', width: '80px', height: '14px' })}
+        ${Skeleton({ variant: 'bar', width: '12px', height: '14px', extra: 'margin:0 8px' })}
+        ${Skeleton({ variant: 'bar', width: '120px', height: '14px' })}
+      </div>
+
+      <!-- Profile Header -->
+      <div class="skeleton-row" style="justify-content:space-between;align-items:flex-start;margin-bottom:24px">
+        <div style="flex:1">
+          ${Skeleton({ variant: 'bar', width: '200px', height: '32px', extra: 'margin-bottom:12px' })}
+          ${Skeleton({ variant: 'bar', width: '100px', height: '20px' })}
         </div>
-        <div class="skeleton-profile-stats">
-          ${bar('80px', '32px')} ${bar('80px', '32px')} ${bar('80px', '32px')}
+        ${Skeleton({ variant: 'rectangle', width: '140px', height: '36px' })}
+      </div>
+
+      <!-- Rating Section -->
+      <div style="margin-bottom:24px">
+        ${Skeleton({ variant: 'bar', width: '80px', height: '24px', extra: 'margin-bottom:16px' })}
+        <div class="skeleton-row" style="gap:16px;align-items:flex-end;margin-bottom:16px">
+          ${Skeleton({ variant: 'bar', width: '80px', height: '48px' })}
+          ${Skeleton({ variant: 'bar', width: '60px', height: '24px' })}
+        </div>
+        ${Skeleton({ variant: 'rectangle', width: '100%', height: '100px', extra: 'border-radius:8px' })}
+      </div>
+
+      <!-- Stats Section -->
+      <div style="margin-bottom:24px">
+        ${Skeleton({ variant: 'bar', width: '100px', height: '24px', extra: 'margin-bottom:16px' })}
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
+          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
+          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
+          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
         </div>
       </div>
-      <div style="margin-top:24px">
-        ${bar('100%', '200px', 'border-radius:8px')}
+
+      <!-- Info Section (collapsed) -->
+      <div style="margin-bottom:24px">
+        ${Skeleton({ variant: 'bar', width: '60px', height: '24px', extra: 'margin-bottom:12px' })}
+        ${Skeleton({ variant: 'bar', width: '100%', height: '16px' })}
       </div>
-      <div style="margin-top:24px">
-        ${Array.from({ length: 5 }, () => `<div class="skeleton-row" style="margin-bottom:8px">${bar('100%')}</div>`).join('')}
+
+      <!-- Rivals Section (collapsed) -->
+      <div style="margin-bottom:24px">
+        ${Skeleton({ variant: 'bar', width: '70px', height: '24px', extra: 'margin-bottom:12px' })}
+        ${Skeleton({ variant: 'bar', width: '100%', height: '16px' })}
+      </div>
+
+      <!-- Recent Matches Section (lazy-loaded placeholder) -->
+      <div style="min-height:80px">
+        ${Skeleton({ variant: 'bar', width: '120px', height: '24px', extra: 'margin-bottom:12px' })}
+        <div class="skeleton-row" style="margin-bottom:8px">
+          ${Skeleton({ variant: 'bar', width: '100%', height: '48px' })}
+        </div>
       </div>
     </div>`;
 }
