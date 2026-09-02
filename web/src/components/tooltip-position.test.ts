@@ -1,21 +1,24 @@
 /**
  * Unit tests for the tooltip positioning helper (§16.15)
- * Verifies adjacency, centering, non-overlap, and determinism for all four
- * placements.
+ * Verifies adjacency, centering, non-overlap, determinism, and viewport
+ * overflow detection for all four placements.
  */
 
 import { describe, it, expect } from 'vitest';
 import {
   computeTooltipPosition,
+  placementOverflowsViewport,
   TOOLTIP_OFFSET_PX,
   type TooltipAnchorRect,
   type TooltipPlacement,
   type TooltipSize,
+  type ViewportBounds,
 } from './tooltip-position';
 
 const ANCHOR: TooltipAnchorRect = { x: 100, y: 200, width: 24, height: 24 };
 const TOOLTIP: TooltipSize = { width: 160, height: 48 };
 const PLACEMENTS: TooltipPlacement[] = ['above', 'below', 'left', 'right'];
+const VIEWPORT: ViewportBounds = { width: 1024, height: 768 };
 
 /** Tooltip rectangle implied by a computed position and the tooltip size. */
 function tooltipRect(position: { x: number; y: number }) {
@@ -136,6 +139,110 @@ describe('computeTooltipPosition', () => {
       };
       expect(computeTooltipPosition(domRect, TOOLTIP, 'above')).toEqual(
         computeTooltipPosition(ANCHOR, TOOLTIP, 'above'),
+      );
+    });
+  });
+});
+
+describe('placementOverflowsViewport', () => {
+  describe('above', () => {
+    it('should report no overflow when the tooltip fits above the anchor', () => {
+      // Rect [32,192] x [140,188] sits fully inside 1024x768.
+      expect(placementOverflowsViewport(ANCHOR, TOOLTIP, 'above', VIEWPORT)).toBe(
+        false,
+      );
+    });
+
+    it('should report overflow when the tooltip crosses the top edge', () => {
+      const nearTop: TooltipAnchorRect = { x: 100, y: 30, width: 24, height: 24 };
+      // y = 30 - 48 - 12 = -30, so the tooltip's top edge crosses y=0.
+      expect(placementOverflowsViewport(nearTop, TOOLTIP, 'above', VIEWPORT)).toBe(
+        true,
+      );
+    });
+  });
+
+  describe('below', () => {
+    it('should report no overflow when the tooltip fits below the anchor', () => {
+      // Rect [32,192] x [236,284] sits fully inside 1024x768.
+      expect(placementOverflowsViewport(ANCHOR, TOOLTIP, 'below', VIEWPORT)).toBe(
+        false,
+      );
+    });
+
+    it('should report overflow when the tooltip crosses the bottom edge', () => {
+      const nearBottom: TooltipAnchorRect = {
+        x: 100,
+        y: 730,
+        width: 24,
+        height: 24,
+      };
+      // y = 730 + 24 + 12 = 766, so the bottom edge lands at 814 > 768.
+      expect(
+        placementOverflowsViewport(nearBottom, TOOLTIP, 'below', VIEWPORT),
+      ).toBe(true);
+    });
+  });
+
+  describe('left', () => {
+    it('should report no overflow when the tooltip fits left of the anchor', () => {
+      // x = 500 - 160 - 12 = 328, so the rect [328,488] clears the left edge.
+      const midViewport: TooltipAnchorRect = {
+        x: 500,
+        y: 200,
+        width: 24,
+        height: 24,
+      };
+      expect(
+        placementOverflowsViewport(midViewport, TOOLTIP, 'left', VIEWPORT),
+      ).toBe(false);
+    });
+
+    it('should report overflow when the tooltip crosses the left edge', () => {
+      // x = 100 - 160 - 12 = -72, so the tooltip's left edge crosses x=0.
+      expect(placementOverflowsViewport(ANCHOR, TOOLTIP, 'left', VIEWPORT)).toBe(
+        true,
+      );
+    });
+  });
+
+  describe('right', () => {
+    it('should report no overflow when the tooltip fits right of the anchor', () => {
+      // x = 100 + 24 + 12 = 136, so the rect [136,296] clears the right edge.
+      expect(placementOverflowsViewport(ANCHOR, TOOLTIP, 'right', VIEWPORT)).toBe(
+        false,
+      );
+    });
+
+    it('should report overflow when the tooltip crosses the right edge', () => {
+      const nearRight: TooltipAnchorRect = {
+        x: 990,
+        y: 200,
+        width: 24,
+        height: 24,
+      };
+      // x = 990 + 24 + 12 = 1026, so the right edge lands at 1186 > 1024.
+      expect(placementOverflowsViewport(nearRight, TOOLTIP, 'right', VIEWPORT)).toBe(
+        true,
+      );
+    });
+  });
+
+  describe('edge handling', () => {
+    it('should not count a rectangle that exactly touches the viewport edge', () => {
+      // x = 828 + 24 + 12 = 864, so the right edge lands exactly on 1024.
+      const touching: TooltipAnchorRect = { x: 828, y: 200, width: 24, height: 24 };
+      expect(placementOverflowsViewport(touching, TOOLTIP, 'right', VIEWPORT)).toBe(
+        false,
+      );
+    });
+
+    it('should check the cross axis even when the placement axis fits', () => {
+      // 'above' clears the top edge (y = 140), but the centered rect spans
+      // [932,1092] horizontally, past the 1024 right edge.
+      const nearRight: TooltipAnchorRect = { x: 1000, y: 200, width: 24, height: 24 };
+      expect(placementOverflowsViewport(nearRight, TOOLTIP, 'above', VIEWPORT)).toBe(
+        true,
       );
     });
   });

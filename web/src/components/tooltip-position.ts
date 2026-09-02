@@ -55,6 +55,43 @@ export interface TooltipSize {
 export type TooltipPlacement = 'above' | 'below' | 'left' | 'right';
 
 /**
+ * Viewport the tooltip must fit inside, in the same coordinate space as the
+ * anchor rect and anchored at its top-left corner, so `window.innerWidth`
+ * and `window.innerHeight` can be passed directly.
+ */
+export interface ViewportBounds {
+  width: number;
+  height: number;
+}
+
+/**
+ * Report whether the tooltip rectangle implied by `placement` would extend
+ * past any viewport edge.
+ *
+ * Evaluates exactly the coordinates `computeTooltipPosition` produces for the
+ * same inputs, so a placement that reports `false` here is guaranteed to
+ * render fully inside the viewport. A rectangle that merely touches an edge
+ * (e.g. its right edge landing on `viewport.width`) does not count as
+ * overflow — only a positive crossing does. All four edges are checked for
+ * every placement, since the cross axis is centered and can overflow too.
+ * Pure arithmetic; no DOM reads.
+ */
+export function placementOverflowsViewport(
+  anchor: TooltipAnchorRect,
+  tooltip: TooltipSize,
+  placement: TooltipPlacement,
+  viewport: ViewportBounds,
+): boolean {
+  const position = computeTooltipPosition(anchor, tooltip, placement);
+  return (
+    position.x < 0 ||
+    position.y < 0 ||
+    position.x + tooltip.width > viewport.width ||
+    position.y + tooltip.height > viewport.height
+  );
+}
+
+/**
  * Compute tooltip top-left coordinates adjacent to an anchor element.
  *
  * Behavior by placement:
@@ -73,6 +110,10 @@ export type TooltipPlacement = 'above' | 'below' | 'left' | 'right';
  * Coordinates may be fractional when the centered position falls on a half
  * pixel; subpixel `left`/`top` values are fine for the absolutely positioned
  * tooltip. Sizes are assumed non-negative.
+ *
+ * To find out whether a placement fits the viewport before committing to it,
+ * see `placementOverflowsViewport`, which evaluates exactly these
+ * coordinates.
  */
 export function computeTooltipPosition(
   anchor: TooltipAnchorRect,
