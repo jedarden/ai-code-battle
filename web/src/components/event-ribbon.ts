@@ -618,6 +618,8 @@ export const EVENT_RIBBON_STYLES = `
   max-height: 200px;
   overflow: hidden;
   opacity: 1;
+  margin-top: 4px;
+  border-radius: 0 0 8px 8px;
 }
 
 .event-ribbon-legend-hidden {
@@ -809,6 +811,48 @@ export const EVENT_RIBBON_STYLES = `
   .event-marker-icon,
   .event-ribbon-cursor {
     transition: none;
+  }
+}
+
+/* Responsive legend adjustments */
+@media (max-width: 640px) {
+  .event-legend-content {
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .event-legend-item {
+    font-size: 0.7rem;
+  }
+
+  .event-legend-icon {
+    font-size: 14px;
+  }
+
+  .event-legend-header {
+    padding: 6px 8px;
+  }
+
+  .event-legend-title {
+    font-size: 0.65rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .event-legend-content {
+    gap: 6px;
+    justify-content: flex-start;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .event-legend-item {
+    flex-shrink: 0;
+    padding-right: 8px;
+  }
+
+  .event-legend-item:last-child {
+    padding-right: 0;
   }
 }
 `;

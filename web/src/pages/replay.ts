@@ -1109,6 +1109,9 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       const totalTurns = replay.turns.length;
       mobileTimelineContainer.innerHTML = ''; // Clear loading message
       eventRibbon.setEvents(significantEvents, totalTurns);
+
+      // Render legend below the event ribbon
+      eventRibbon.renderLegend();
     }
 
     // Initialize EventTimeline (desktop)
