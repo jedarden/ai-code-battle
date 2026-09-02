@@ -58,23 +58,23 @@ function bar(w: string, h: string = '16px', extra = ''): string {
 // ─── Per-page skeletons ────────────────────────────────────────────────────────
 
 export function skeletonLeaderboard(): string {
-  const rows = Array.from({ length: 10 }, () => {
-    return `<div class="skeleton-row" style="display:grid;grid-template-columns:40px 180px 100px 60px 60px 80px;align-items:center;gap:8px;padding:8px 0;">
-      ${bar('40px', '16px', 'border-radius:4px')}
-      ${bar('140px', '16px')}
-      ${bar('80px', '16px')}
-      ${bar('50px', '16px')}
-      ${bar('50px', '16px')}
-      ${bar('60px', '16px')}
+  // Match exact flexbox layout and column widths from live leaderboard (.lb-row)
+  // Columns: rank(40px) + name(flex:1,min120px) + rating(100px) + wl(60px) + winrate(70px) + status(80px) + expand(20px)
+  const rows = Array.from({ length: 15 }, () => {
+    return `<div class="skeleton-row" style="display:flex;align-items:center;gap:var(--space-md);padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--border);min-height:48px;box-sizing:border-box;">
+      ${Skeleton({ variant: 'bar', width: '40px', height: '16px', extra: 'border-radius:4px;flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: '140px', height: '16px', extra: 'flex:1;min-width:120px' })}
+      ${Skeleton({ variant: 'bar', width: '100px', height: '16px', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: '60px', height: '16px', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: '70px', height: '16px', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: '80px', height: '16px', extra: 'flex-shrink:0;font-size:0.8rem' })}
+      ${Skeleton({ variant: 'bar', width: '20px', height: '16px', extra: 'flex-shrink:0' })}
     </div>`;
   }).join('');
   return `
     <div class="skeleton-page">
       <h1 class="page-title">Leaderboard</h1>
-      ${bar('200px', '14px', 'margin-bottom:24px')}
-      <div class="skeleton-table-header" style="display:grid;grid-template-columns:40px 180px 100px 60px 60px 80px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
-        ${bar('40px', '12px')} ${bar('60px', '12px')} ${bar('100px', '12px')} ${bar('60px', '12px')} ${bar('50px', '12px')} ${bar('60px', '12px')}
-      </div>
+      ${Skeleton({ variant: 'bar', width: '200px', height: '14px', extra: 'margin-bottom:24px' })}
       ${rows}
     </div>`;
 }
