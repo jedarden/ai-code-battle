@@ -1438,3 +1438,69 @@ code {
   color: var(--text-secondary);
   font-size: 0.875rem;
 }
+
+/* ─── Tooltip (§16.15) ───────────────────────────────────────────────────────────── */
+
+.tooltip {
+  position: absolute;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 300px;
+  z-index: var(--z-tooltip, 1000);
+  pointer-events: none;
+  animation: tooltip-fade-in 150ms ease-out;
+}
+
+.tooltip-content {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.tooltip-content p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.tooltip-content strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.tooltip-arrow {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid var(--bg-secondary);
+}
+
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip {
+    animation: none;
+  }
+
+  @keyframes tooltip-fade-in {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
