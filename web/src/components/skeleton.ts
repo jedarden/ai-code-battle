@@ -148,10 +148,22 @@ export function skeletonReplay(): string {
       <div class="replay-layout" style="display:flex;gap:20px">
         <div class="replay-main" style="flex:1;min-width:0">
           <div class="canvas-wrapper" style="background-color:var(--bg-secondary);border-radius:8px;padding:10px;overflow:auto;max-height:80vh;position:relative">
-            ${Skeleton({ variant: 'rectangle', width: '100%', height: '60vh', extra: 'background:var(--bg-tertiary)' })}
+            ${Skeleton({ variant: 'rectangle', width: '100%', height: '400px', extra: 'background:var(--bg-tertiary)' })}
           </div>
-          <div style="margin-top:12px">
-            ${Skeleton({ variant: 'bar', width: '100%', height: '24px', extra: 'border-radius:4px' })}
+          <div class="mobile-replay-controls" style="margin-top:12px">
+            <div class="mobile-playback-bar" style="display:flex;gap:8px;margin-bottom:8px">
+              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
+              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
+              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px;background:var(--accent)' })}
+              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
+              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
+              ${Skeleton({ variant: 'bar', width: '60px', height: '32px', extra: 'border-radius:4px' })}
+              ${Skeleton({ variant: 'bar', width: '70px', height: '32px', extra: 'border-radius:4px' })}
+            </div>
+            ${Skeleton({ variant: 'bar', width: '100%', height: '4px', extra: 'border-radius:2px;background:var(--bg-tertiary)' })}
+          </div>
+          <div class="mobile-event-timeline" style="margin-top:12px;padding:8px;background:var(--bg-secondary);border-radius:6px;min-height:32px">
+            ${Skeleton({ variant: 'bar', width: '40%', height: '16px' })}
           </div>
         </div>
         <div class="replay-sidebar" style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:15px">
