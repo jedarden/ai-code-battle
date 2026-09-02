@@ -28,11 +28,16 @@ export class EventRibbon {
   private legendVisible: boolean = true;
   private legendEl?: HTMLElement;
   private legendCloseButton?: HTMLButtonElement;
+  private legendToggleButton?: HTMLButtonElement;
+  private readonly STORAGE_KEY = 'event-ribbon-legend-visible';
 
   constructor(options: EventRibbonOptions) {
     this.container = options.container;
     this.onEventClick = options.onEventClick;
     this.getTurn = options.getTurn;
+
+    // Load saved legend visibility preference
+    this.legendVisible = this.loadLegendPreference();
 
     this.buildDOM();
 
@@ -111,6 +116,17 @@ export class EventRibbon {
     header.appendChild(this.legendCloseButton);
     legend.appendChild(header);
 
+    // Create toggle button (visible only when legend is hidden)
+    this.legendToggleButton = document.createElement('button');
+    this.legendToggleButton.className = 'event-legend-toggle';
+    this.legendToggleButton.setAttribute('type', 'button');
+    this.legendToggleButton.setAttribute('aria-label', 'Show legend');
+    this.legendToggleButton.innerHTML = '☰ Event Types';
+    this.legendToggleButton.addEventListener('click', () => this.showLegend());
+    this.container.appendChild(this.legendToggleButton);
+
+    // Create legend content container
+
     // Create legend content container
     const content = document.createElement('div');
     content.className = 'event-legend-content';
@@ -141,25 +157,40 @@ export class EventRibbon {
 
     legend.appendChild(content);
     this.container.appendChild(legend);
+
+    // Apply saved visibility preference
+    if (!this.legendVisible) {
+      this.hideLegend(false); // Don't save preference on initial load
+    }
   }
 
   /**
    * Hide the legend.
+   * @param savePreference - Whether to save to localStorage (default: true)
    */
-  public hideLegend(): void {
+  public hideLegend(savePreference: boolean = true): void {
     if (this.legendEl) {
       this.legendEl.classList.add('event-ribbon-legend-hidden');
+      this.container.classList.add('event-ribbon-legend-hidden-container');
       this.legendVisible = false;
+      if (savePreference) {
+        this.saveLegendPreference(false);
+      }
     }
   }
 
   /**
    * Show the legend.
+   * @param savePreference - Whether to save to localStorage (default: true)
    */
-  public showLegend(): void {
+  public showLegend(savePreference: boolean = true): void {
     if (this.legendEl) {
       this.legendEl.classList.remove('event-ribbon-legend-hidden');
+      this.container.classList.remove('event-ribbon-legend-hidden-container');
       this.legendVisible = true;
+      if (savePreference) {
+        this.saveLegendPreference(true);
+      }
     }
   }
 
@@ -171,6 +202,31 @@ export class EventRibbon {
       this.hideLegend();
     } else {
       this.showLegend();
+    }
+  }
+
+  /**
+   * Load legend visibility preference from localStorage.
+   * @returns true if legend should be visible, false otherwise (default: true)
+   */
+  private loadLegendPreference(): boolean {
+    try {
+      const saved = localStorage.getItem(this.STORAGE_KEY);
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true; // Default to visible if localStorage fails
+    }
+  }
+
+  /**
+   * Save legend visibility preference to localStorage.
+   * @param visible - Whether the legend should be visible
+   */
+  private saveLegendPreference(visible: boolean): void {
+    try {
+      localStorage.setItem(this.STORAGE_KEY, String(visible));
+    } catch {
+      // Silently fail if localStorage is unavailable
     }
   }
 
@@ -629,6 +685,40 @@ export const EVENT_RIBBON_STYLES = `
   padding-top: 0;
   padding-bottom: 0;
   border-top: none;
+}
+
+/* Legend toggle button (visible when legend is hidden) */
+.event-legend-toggle {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: var(--bg-secondary, #0f172a);
+  border: 1px solid var(--border, #1e293b);
+  color: var(--text-secondary, #64748b);
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.event-legend-toggle:hover {
+  background: var(--bg-tertiary, #1e293b);
+  color: var(--text-primary, #e2e8f0);
+  border-color: var(--border-active, #334155);
+}
+
+.event-legend-toggle:active {
+  transform: scale(0.98);
+}
+
+/* Show toggle button only when legend is hidden */
+.event-ribbon-legend-hidden-container .event-legend-toggle {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .event-legend-header {
