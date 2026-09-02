@@ -35,6 +35,7 @@ import { setActiveReplay } from '../components/pip-registry';
 import { getPipMatchId, restorePip } from '../components/pip';
 import { fetchReplayFromUrl } from '../lib/replay-data';
 import { hapticPulse, isHapticEnabled, setHapticEnabled } from '../lib/ambient';
+import { skeletonReplay } from '../components/skeleton';
 
 const loadReplayViewer = () => import('../replay-viewer');
 
@@ -42,19 +43,32 @@ export function renderReplayPage(params: Record<string, string>): void {
   const app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = `
-    <div class="replay-page">
-      <h1 class="page-title">Replay Viewer</h1>
-      <div id="replay-loading" style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
-        Loading replay viewer...
-      </div>
-    </div>
-  `;
+  // Render skeleton immediately for zero layout shift
+  app.innerHTML = skeletonReplay();
 
   loadReplayViewer().then(({ ReplayViewer }) => {
     // If params.url is not set but params.id is, construct the URL from the match ID
     const replayUrl = params.url || (params.id ? `/data/replays/${params.id}.json.gz` : undefined);
-    initReplayViewerWithClass(ReplayViewer, replayUrl);
+
+    // Fade out skeleton, then load real content with fade in
+    const skeletonPage = app.querySelector('.skeleton-page') as HTMLElement;
+    if (skeletonPage) {
+      skeletonPage.style.opacity = '0';
+      setTimeout(() => {
+        initReplayViewerWithClass(ReplayViewer, replayUrl);
+        // Fade in the real content
+        const replayPage = app.querySelector('.replay-page') as HTMLElement;
+        if (replayPage) {
+          replayPage.style.opacity = '0';
+          requestAnimationFrame(() => {
+            replayPage.style.transition = 'opacity 150ms ease';
+            replayPage.style.opacity = '1';
+          });
+        }
+      }, 150); // Wait for fade out to complete
+    } else {
+      initReplayViewerWithClass(ReplayViewer, replayUrl);
+    }
   });
 }
 

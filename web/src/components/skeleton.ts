@@ -144,13 +144,21 @@ export function skeletonBotProfile(): string {
 export function skeletonReplay(): string {
   return `
     <div class="skeleton-page">
-      ${bar('200px', '24px', 'margin-bottom:16px')}
-      <div class="skeleton-canvas" style="width:100%;aspect-ratio:1/1;border-radius:8px"></div>
-      <div style="margin-top:12px">
-        ${bar('100%', '24px', 'border-radius:4px')}
-      </div>
-      <div class="skeleton-row" style="margin-top:16px">
-        ${bar('60px', '32px')} ${bar('60px', '32px')} ${bar('80px', '32px')} ${bar('80px', '32px', 'margin-left:auto')}
+      <h1 class="page-title">Replay Viewer</h1>
+      <div class="replay-layout" style="display:flex;gap:20px">
+        <div class="replay-main" style="flex:1;min-width:0">
+          <div class="canvas-wrapper" style="background-color:var(--bg-secondary);border-radius:8px;padding:10px;overflow:auto;max-height:80vh;position:relative">
+            ${Skeleton({ variant: 'rectangle', width: '100%', height: '60vh', extra: 'background:var(--bg-tertiary)' })}
+          </div>
+          <div style="margin-top:12px">
+            ${Skeleton({ variant: 'bar', width: '100%', height: '24px', extra: 'border-radius:4px' })}
+          </div>
+        </div>
+        <div class="replay-sidebar" style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:15px">
+          ${Skeleton({ variant: 'rectangle', width: '100%', height: '150px', extra: 'background:var(--bg-secondary)' })}
+          ${Skeleton({ variant: 'rectangle', width: '100%', height: '120px', extra: 'background:var(--bg-secondary)' })}
+          ${Skeleton({ variant: 'rectangle', width: '100%', height: '100px', extra: 'background:var(--bg-secondary)' })}
+        </div>
       </div>
     </div>`;
 }
