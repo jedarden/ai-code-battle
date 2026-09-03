@@ -288,6 +288,30 @@ describe('EventRibbon', () => {
       markers[0]?.dispatchEvent(new MouseEvent('mouseleave'));
       expect(zIndexOf(markers[0])).toBe(10);
     });
+
+    it('should cap layered z-indexes below the hover raise however large the stack grows', () => {
+      // A turn would need ~90+ stacked events to outgrow the cap; the point is
+      // that the invariant (hover raise beats every layered value) holds by
+      // construction, not by assumption about stack size
+      const events: SignificantEvent[] = Array.from({ length: 95 }, (_, i) => ({
+        type: 'combat' as const,
+        turn: 50,
+        description: `Event ${i}`,
+        emoji: '⚔️',
+      }));
+      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+
+      const zIndexes = Array.from(container.querySelectorAll('.event-marker')).map(zIndexOf);
+
+      // No layered value may reach the hover raise (100): hovering must be
+      // able to lift any marker above all of its stacked siblings
+      for (const z of zIndexes) {
+        expect(z).toBeLessThan(100);
+      }
+      // Ascending in extraction order until the cap, then pinned at the cap
+      expect(zIndexes[0]).toBe(10);
+      expect(zIndexes.slice(89)).toEqual([99, 99, 99, 99, 99, 99]);
+    });
   });
 
   describe('Event handling', () => {
