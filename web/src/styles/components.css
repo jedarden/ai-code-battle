@@ -646,14 +646,28 @@ code {
 
 /* Leaderboard row (desktop — both virtual and static) */
 .lb-row {
+  /* Single source of truth for desktop row geometry; the skeleton
+     (web/src/components/skeleton.ts) mirrors these values so the two cannot
+     drift. Children below consume them via inheritance. */
+  --lb-row-min-height: 48px;
+  --lb-row-gap: var(--space-md);
+  --lb-row-padding: var(--space-sm) var(--space-md);
+  --lb-col-rank: 40px;
+  --lb-col-name-min: 120px;
+  --lb-col-rating: 100px;
+  --lb-col-wl: 60px;
+  --lb-col-winrate: 70px;
+  --lb-col-status: 80px;
+  --lb-col-expand: 20px;
+
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-sm) var(--space-md);
+  gap: var(--lb-row-gap);
+  padding: var(--lb-row-padding);
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   transition: background-color var(--transition-fast);
-  min-height: 48px;
+  min-height: var(--lb-row-min-height);
   box-sizing: border-box;
 }
 
@@ -667,7 +681,7 @@ code {
 
 .lb-rank {
   font-weight: 600;
-  width: 40px;
+  width: var(--lb-col-rank);
   flex-shrink: 0;
 }
 
@@ -681,7 +695,7 @@ code {
 
 .lb-name {
   flex: 1;
-  min-width: 120px;
+  min-width: var(--lb-col-name-min);
 }
 
 .lb-name a {
@@ -694,7 +708,7 @@ code {
 }
 
 .lb-rating {
-  width: 100px;
+  width: var(--lb-col-rating);
   text-align: right;
 }
 
@@ -709,23 +723,23 @@ code {
 }
 
 .lb-wl {
-  width: 60px;
+  width: var(--lb-col-wl);
   text-align: center;
 }
 
 .lb-winrate {
-  width: 70px;
+  width: var(--lb-col-winrate);
   text-align: right;
 }
 
 .lb-status {
-  width: 80px;
+  width: var(--lb-col-status);
   text-align: center;
   font-size: 0.8rem;
 }
 
 .lb-expand-icon {
-  width: 20px;
+  width: var(--lb-col-expand);
   text-align: center;
   color: var(--text-muted);
   font-size: 0.75rem;
