@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:run": "vitest run",
+    "test:run": "vitest run && playwright test",
+    "test:unit": "vitest run",
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium"
   },

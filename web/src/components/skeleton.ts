@@ -51,16 +51,7 @@ export function Skeleton(props: SkeletonProps): string {
   }
 }
 
-// ─── Convenience Functions (backward compatible) ───────────────────────────────────
-
-const shimmer = 'skeleton-bar';
-
-/**
- * @deprecated Use Skeleton({ variant: 'bar', width, height, extra }) instead
- */
-function bar(w: string, h: string = '16px', extra = ''): string {
-  return `<div class="${shimmer}" style="width:${w};height:${h};${extra}"></div>`;
-}
+// ─── Shared page-section skeletons ──────────────────────────────────────────────
 
 /**
  * Canvas skeleton component matching the replay canvas dimensions
@@ -317,17 +308,17 @@ export function skeletonReplay(): string {
 export function skeletonPlaylists(): string {
   const cards = Array.from({ length: 6 }, () =>
     `<div class="skeleton-card">
-      ${bar('100%', '140px', 'border-radius:6px 6px 0 0')}
+      ${Skeleton({ variant: 'bar', width: '100%', height: '140px', extra: 'border-radius:6px 6px 0 0' })}
       <div style="padding:12px">
-        ${bar('70%')}
-        ${bar('100%', '12px', 'margin-top:8px')}
+        ${Skeleton({ variant: 'bar', width: '70%' })}
+        ${Skeleton({ variant: 'bar', width: '100%', height: '12px', extra: 'margin-top:8px' })}
       </div>
     </div>`
   ).join('');
   return `
     <div class="skeleton-page">
       <h1 class="page-title">Replay Playlists</h1>
-      ${bar('300px', '14px', 'margin-bottom:24px')}
+      ${Skeleton({ variant: 'bar', width: '300px', height: '14px', extra: 'margin-bottom:24px' })}
       <div class="skeleton-grid">${cards}</div>
     </div>`;
 }
@@ -335,7 +326,7 @@ export function skeletonPlaylists(): string {
 export function skeletonMatches(): string {
   const rows = Array.from({ length: 8 }, () =>
     `<div class="skeleton-row" style="padding:12px 0;border-bottom:1px solid var(--border)">
-      ${bar('200px')} ${bar('60px', '16px', 'margin-left:auto')} ${bar('100px')}
+      ${Skeleton({ variant: 'bar', width: '200px' })} ${Skeleton({ variant: 'bar', width: '60px', height: '16px', extra: 'margin-left:auto' })} ${Skeleton({ variant: 'bar', width: '100px' })}
     </div>`
   ).join('');
   return `
@@ -352,24 +343,24 @@ export function skeletonEvolution(): string {
       <div class="skeleton-row" style="gap:12px;margin-bottom:24px">
         ${Array.from({ length: 4 }, () =>
           `<div class="skeleton-card" style="flex:1;text-align:center;padding:16px">
-            ${bar('60px', '14px', 'margin:0 auto 8px')}
-            ${bar('40px', '24px', 'margin:0 auto')}
+            ${Skeleton({ variant: 'bar', width: '60px', height: '14px', extra: 'margin:0 auto 8px' })}
+            ${Skeleton({ variant: 'bar', width: '40px', height: '24px', extra: 'margin:0 auto' })}
           </div>`
         ).join('')}
       </div>
-      ${bar('100%', '300px', 'border-radius:8px')}
-      ${bar('100%', '120px', 'border-radius:8px;margin-top:16px')}
+      ${Skeleton({ variant: 'bar', width: '100%', height: '300px', extra: 'border-radius:8px' })}
+      ${Skeleton({ variant: 'bar', width: '100%', height: '120px', extra: 'border-radius:8px;margin-top:16px' })}
     </div>`;
 }
 
 export function skeletonBlog(): string {
   const posts = Array.from({ length: 4 }, () =>
     `<div class="skeleton-card">
-      ${bar('70%', '20px')}
-      ${bar('100%', '12px', 'margin-top:8px')}
-      ${bar('100%', '12px', 'margin-top:4px')}
-      ${bar('50%', '12px', 'margin-top:4px')}
-      ${bar('60px', '14px', 'margin-top:8px')}
+      ${Skeleton({ variant: 'bar', width: '70%', height: '20px' })}
+      ${Skeleton({ variant: 'bar', width: '100%', height: '12px', extra: 'margin-top:8px' })}
+      ${Skeleton({ variant: 'bar', width: '100%', height: '12px', extra: 'margin-top:4px' })}
+      ${Skeleton({ variant: 'bar', width: '50%', height: '12px', extra: 'margin-top:4px' })}
+      ${Skeleton({ variant: 'bar', width: '60px', height: '14px', extra: 'margin-top:8px' })}
     </div>`
   ).join('');
   return `
@@ -382,9 +373,9 @@ export function skeletonBlog(): string {
 export function skeletonSeasons(): string {
   const cards = Array.from({ length: 3 }, () =>
     `<div class="skeleton-card">
-      ${bar('50%', '20px')}
-      ${bar('100%', '14px', 'margin-top:8px')}
-      ${bar('80px', '28px', 'margin-top:12px;border-radius:6px')}
+      ${Skeleton({ variant: 'bar', width: '50%', height: '20px' })}
+      ${Skeleton({ variant: 'bar', width: '100%', height: '14px', extra: 'margin-top:8px' })}
+      ${Skeleton({ variant: 'bar', width: '80px', height: '28px', extra: 'margin-top:12px;border-radius:6px' })}
     </div>`
   ).join('');
   return `
@@ -399,7 +390,7 @@ export function skeletonGeneric(title: string): string {
     <div class="skeleton-page">
       <h1 class="page-title">${title}</h1>
       <div style="display:flex;flex-direction:column;gap:12px">
-        ${bar('100%')} ${bar('80%')} ${bar('100%')} ${bar('60%')} ${bar('90%')}
+        ${Skeleton({ variant: 'bar', width: '100%' })} ${Skeleton({ variant: 'bar', width: '80%' })} ${Skeleton({ variant: 'bar', width: '100%' })} ${Skeleton({ variant: 'bar', width: '60%' })} ${Skeleton({ variant: 'bar', width: '90%' })}
       </div>
     </div>`;
 }
