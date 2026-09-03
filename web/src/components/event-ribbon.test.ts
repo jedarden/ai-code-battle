@@ -1,14 +1,18 @@
 // Event Ribbon Component Tests
 // Test edge cases and proportional positioning
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { EventRibbon } from './event-ribbon';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { EventRibbon, EVENT_RIBBON_STYLES } from './event-ribbon';
 import type { SignificantEvent } from '../extract-significant-events';
 
 describe('EventRibbon', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    // Fresh body per test: the shared tooltip (and earlier containers) would
+    // otherwise leak between tests and document.querySelector would find a
+    // stale tooltip
+    document.body.innerHTML = '';
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -180,9 +184,108 @@ describe('EventRibbon', () => {
       const marker = container.querySelector('.event-marker');
       const transform = marker?.getAttribute('style') || '';
 
-      // Single event should have transform set (via CSS class default)
-      // The transform is set in createEventMarker line 285: baseTransform = marker.style.transform
-      expect(transform.length).toBeGreaterThan(0);
+      // A lone event is simply centered — no cascade offset
+      expect(transform).toContain('translate(-50%, -50%)');
+      expect(transform).not.toContain('calc(');
+    });
+  });
+
+  describe('Z-index layering (same-turn stacking)', () => {
+    const zIndexOf = (m: Element): number =>
+      parseInt(m.getAttribute('style')?.match(/z-index: (\d+)/)?.[1] || '0');
+
+    it('should stack same-turn events at increasing z-index starting from the base', () => {
+      const events: SignificantEvent[] = [
+        { type: 'combat', turn: 50, description: 'Combat 1', emoji: '⚔️' },
+        { type: 'energy_milestone', turn: 50, description: 'Energy milestone', emoji: '💎' },
+        { type: 'spawn_wave', turn: 50, description: 'Spawn wave', emoji: '🐣' },
+      ];
+      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+
+      const markers = container.querySelectorAll('.event-marker');
+
+      // Extraction order within the turn: base, base+1, base+2
+      expect(Array.from(markers).map(zIndexOf)).toEqual([10, 11, 12]);
+    });
+
+    it('should keep events on different turns at the same z-index', () => {
+      const events: SignificantEvent[] = [
+        { type: 'combat', turn: 10, description: 'Early', emoji: '⚔️' },
+        { type: 'energy_milestone', turn: 50, description: 'Mid', emoji: '💎' },
+        { type: 'spawn_wave', turn: 90, description: 'Late', emoji: '🐣' },
+      ];
+      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+
+      const markers = container.querySelectorAll('.event-marker');
+
+      // Layering is scoped per turn: different-turn events are unaffected
+      expect(Array.from(markers).map(zIndexOf)).toEqual([10, 10, 10]);
+    });
+
+    it('should assign identical layering on re-render (deterministic)', () => {
+      const events: SignificantEvent[] = [
+        { type: 'combat', turn: 30, description: 'A', emoji: '⚔️' },
+        { type: 'energy_milestone', turn: 30, description: 'B', emoji: '💎' },
+        { type: 'combat', turn: 60, description: 'C', emoji: '⚔️' },
+        { type: 'combat', turn: 60, description: 'D', emoji: '⚔️' },
+      ];
+      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+
+      const snapshot = (): string[] =>
+        Array.from(container.querySelectorAll('.event-marker')).map(m => m.getAttribute('style') || '');
+
+      const first = snapshot();
+      ribbon.setEvents(events, 100);
+      expect(snapshot()).toEqual(first);
+    });
+
+    it('should clamp the cascade spread when many events share a turn', () => {
+      const events: SignificantEvent[] = Array.from({ length: 8 }, (_, i) => ({
+        type: 'combat' as const,
+        turn: 50,
+        description: `Event ${i}`,
+        emoji: '⚔️',
+      }));
+      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+
+      const markers = container.querySelectorAll('.event-marker');
+      expect(markers.length).toBe(8);
+
+      const offsets = Array.from(markers).map(m =>
+        parseFloat(m.getAttribute('style')?.match(/calc\(-50% \+ (-?[\d.]+)px\)/)?.[1] || '0')
+      );
+
+      // The spread compresses so outer icons stay inside the 48px ribbon
+      // (±12px of usable space around the track)
+      for (const offset of offsets) {
+        expect(Math.abs(offset)).toBeLessThanOrEqual(12);
+      }
+      // Still ascending with extraction order and symmetric around the track
+      expect([...offsets].sort((a, b) => a - b)).toEqual(offsets);
+      expect(offsets[0]).toBe(-offsets[offsets.length - 1]);
+    });
+
+    it('should raise a hovered marker above stacked siblings and restore it on leave', () => {
+      const events: SignificantEvent[] = [
+        { type: 'combat', turn: 50, description: 'Combat 1', emoji: '⚔️' },
+        { type: 'energy_milestone', turn: 50, description: 'Energy milestone', emoji: '💎' },
+      ];
+      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+
+      const markers = container.querySelectorAll('.event-marker');
+
+      // First marker starts below its stacked sibling
+      expect(zIndexOf(markers[0])).toBe(10);
+      expect(zIndexOf(markers[1])).toBe(11);
+
+      // Hover lifts it above every sibling
+      const icon = markers[0]?.querySelector('.event-marker-icon') as HTMLElement;
+      icon.dispatchEvent(new MouseEvent('mouseenter'));
+      expect(zIndexOf(markers[0])).toBe(100);
+
+      // Leaving restores the layered z-index
+      markers[0]?.dispatchEvent(new MouseEvent('mouseleave'));
+      expect(zIndexOf(markers[0])).toBe(10);
     });
   });
 
@@ -603,184 +706,106 @@ describe('EventRibbon', () => {
     });
   });
 
-  describe('Tooltip functionality (§14.8)', () => {
-    it('should render tooltip element for each event marker', () => {
-      const events: SignificantEvent[] = [
-        { type: 'combat', turn: 10, description: 'Test combat', emoji: '⚔️' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
 
-      const tooltip = container.querySelector('.event-tooltip');
+  // ── Shared tooltip ───────────────────────────────────────────────────────────────
+  // The ribbon has exactly ONE tooltip, created in the constructor and appended
+  // to document.body (see the "Tooltip placement" notes in event-ribbon.ts for
+  // why it cannot live inside the ribbon). Hovering an icon fills it with that
+  // event's content, positions it next to the icon, and shows it.
+
+  describe('Tooltip functionality (§14.8)', () => {
+    const getTooltip = (): HTMLElement =>
+      document.querySelector('.event-tooltip') as HTMLElement;
+
+    const firstIcon = (): HTMLElement =>
+      container.querySelector('.event-marker-icon') as HTMLElement;
+
+    /** Construct a ribbon, dropping tooltips orphaned by earlier constructions */
+    function freshRibbon(events: SignificantEvent[], totalTurns = 100): EventRibbon {
+      document.querySelectorAll('.event-tooltip').forEach(t => t.remove());
+      return new EventRibbon({ container, events, totalTurns });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should render a single shared tooltip attached to the document body', () => {
+      freshRibbon([{ type: 'combat', turn: 10, description: 'Test combat', emoji: '⚔️' }]);
+
+      const tooltip = getTooltip();
       expect(tooltip).toBeTruthy();
+      expect(tooltip.parentElement).toBe(document.body);
+      expect(tooltip.getAttribute('role')).toBe('tooltip');
+      expect(tooltip.getAttribute('aria-hidden')).toBe('true');
+      // The tooltip itself must NOT live inside the ribbon: the ribbon clips
+      // its overflow, so an in-ribbon tooltip could never be fully visible
+      expect(container.querySelector('.event-tooltip')).toBeNull();
     });
 
     it('should show tooltip on icon hover', () => {
-      const events: SignificantEvent[] = [
-        { type: 'combat', turn: 10, description: 'Test combat', emoji: '⚔️' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+      freshRibbon([{ type: 'combat', turn: 10, description: 'Test combat', emoji: '⚔️' }]);
+      const tooltip = getTooltip();
 
-      const icon = container.querySelector('.event-marker-icon');
-      const tooltip = container.querySelector('.event-tooltip');
+      expect(tooltip.getAttribute('aria-hidden')).toBe('true');
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(false);
 
-      expect(tooltip?.getAttribute('aria-hidden')).toBe('true');
-      expect(tooltip?.classList.contains('event-tooltip-visible')).toBe(false);
+      firstIcon().dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
 
-      // Simulate hover
-      icon?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-
-      expect(tooltip?.getAttribute('aria-hidden')).toBe('false');
-      expect(tooltip?.classList.contains('event-tooltip-visible')).toBe(true);
+      expect(tooltip.getAttribute('aria-hidden')).toBe('false');
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true);
     });
 
-    it('should hide tooltip on icon mouse leave', () => {
-      const events: SignificantEvent[] = [
-        { type: 'combat', turn: 10, description: 'Test combat', emoji: '⚔️' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
-
-      const icon = container.querySelector('.event-marker-icon');
-      const tooltip = container.querySelector('.event-tooltip');
-
-      // Show tooltip first
-      icon?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-      expect(tooltip?.classList.contains('event-tooltip-visible')).toBe(true);
-
-      // Hide tooltip on leave
-      icon?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
-      expect(tooltip?.getAttribute('aria-hidden')).toBe('true');
-      expect(tooltip?.classList.contains('event-tooltip-visible')).toBe(false);
-    });
-
-    it('should display event type label in tooltip header', () => {
-      const events: SignificantEvent[] = [
-        { type: 'combat', turn: 10, description: 'Test combat', emoji: '⚔️' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
-
-      const tooltipType = container.querySelector('.event-tooltip-type');
-      expect(tooltipType?.textContent).toBe('Combat');
-    });
-
-    it('should display event description in tooltip body', () => {
-      const events: SignificantEvent[] = [
+    it('should display event type, description and turn of the hovered event', () => {
+      freshRibbon([
         { type: 'energy_milestone', turn: 25, description: 'Energy threshold reached', emoji: '💎' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+      ]);
+      const tooltip = getTooltip();
 
-      const tooltipDesc = container.querySelector('.event-tooltip-description');
-      expect(tooltipDesc?.textContent).toBe('Energy threshold reached');
+      firstIcon().dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+      expect(tooltip.querySelector('.event-tooltip-icon')?.textContent).toBe('💎');
+      expect(tooltip.querySelector('.event-tooltip-type')?.textContent).toBe('Energy Milestone');
+      expect(tooltip.querySelector('.event-tooltip-description')?.textContent).toBe('Energy threshold reached');
+      expect(tooltip.querySelector('.event-tooltip-turn')?.textContent).toBe('Turn 25');
     });
 
-    it('should display turn number in tooltip', () => {
-      const events: SignificantEvent[] = [
+    it('should swap content when hovering a different event', () => {
+      freshRibbon([
+        { type: 'combat', turn: 10, description: 'First skirmish', emoji: '⚔️' },
         { type: 'core_capture', turn: 42, description: 'Core captured', emoji: '🏰' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+      ]);
+      const tooltip = getTooltip();
+      const icons = container.querySelectorAll('.event-marker-icon');
 
-      const tooltipTurn = container.querySelector('.event-tooltip-turn');
-      expect(tooltipTurn?.textContent).toBe('Turn 42');
+      icons[0].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      expect(tooltip.querySelector('.event-tooltip-type')?.textContent).toBe('Combat');
+
+      icons[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      expect(tooltip.querySelector('.event-tooltip-type')?.textContent).toBe('Core Capture');
+      expect(tooltip.querySelector('.event-tooltip-turn')?.textContent).toBe('Turn 42');
     });
 
-    it('should render tooltip icon matching event emoji', () => {
-      const events: SignificantEvent[] = [
-        { type: 'mass_death', turn: 15, description: 'Many units died', emoji: '💀' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+    it('should escape html in event descriptions', () => {
+      freshRibbon([
+        { type: 'combat', turn: 3, description: '<img src=x onerror=alert(1)>', emoji: '⚔️' },
+      ]);
+      const tooltip = getTooltip();
 
-      const tooltipIcon = container.querySelector('.event-tooltip-icon');
-      expect(tooltipIcon?.textContent).toBe('💀');
+      firstIcon().dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+      const description = tooltip.querySelector('.event-tooltip-description') as HTMLElement;
+      expect(description.querySelector('img')).toBeNull();
+      expect(description.textContent).toBe('<img src=x onerror=alert(1)>');
     });
 
-    it('should position tooltip to avoid viewport overflow (right edge)', () => {
-      // Mock viewport width
-      Object.defineProperty(window, 'innerWidth', { value: 400, writable: true });
+    it('should fall back to the default icon when the event has no emoji', () => {
+      freshRibbon([{ type: 'spawn_wave', turn: 5, description: 'Spawn' }]);
+      const tooltip = getTooltip();
 
-      const events: SignificantEvent[] = [
-        { type: 'combat', turn: 95, description: 'Late game combat', emoji: '⚔️' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+      firstIcon().dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
 
-      const icon = container.querySelector('.event-marker-icon') as HTMLElement;
-      const tooltip = container.querySelector('.event-tooltip') as HTMLElement;
-
-      // Mock getBoundingClientRect for marker near right edge
-      const marker = container.querySelector('.event-marker') as HTMLElement;
-      marker.getBoundingClientRect = () => ({
-        left: 380,
-        top: 100,
-        width: 24,
-        height: 24,
-        right: 404,
-        bottom: 124,
-        x: 380,
-        y: 100,
-        toJSON: () => ({}),
-      });
-
-      // Mock tooltip rect
-      tooltip.getBoundingClientRect = () => ({
-        left: 0,
-        top: 0,
-        width: 200,
-        height: 60,
-        right: 200,
-        bottom: 60,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      });
-
-      // Trigger tooltip show
-      icon?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-
-      // Tooltip should be positioned to not overflow right edge
-      const tooltipLeft = parseInt(tooltip.style.left || '0');
-      expect(tooltipLeft).toBeLessThanOrEqual(400 - 200 - 8); // viewportWidth - tooltipWidth - padding
-    });
-
-    it('should position tooltip to avoid viewport overflow (left edge)', () => {
-      const events: SignificantEvent[] = [
-        { type: 'spawn_wave', turn: 2, description: 'Early spawn', emoji: '🐣' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
-
-      const icon = container.querySelector('.event-marker-icon') as HTMLElement;
-      const tooltip = container.querySelector('.event-tooltip') as HTMLElement;
-
-      // Mock getBoundingClientRect for marker near left edge
-      const marker = container.querySelector('.event-marker') as HTMLElement;
-      marker.getBoundingClientRect = () => ({
-        left: 4,
-        top: 100,
-        width: 24,
-        height: 24,
-        right: 28,
-        bottom: 124,
-        x: 4,
-        y: 100,
-        toJSON: () => ({}),
-      });
-
-      // Mock tooltip rect
-      tooltip.getBoundingClientRect = () => ({
-        left: 0,
-        top: 0,
-        width: 200,
-        height: 60,
-        right: 200,
-        bottom: 60,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      });
-
-      // Trigger tooltip show
-      icon?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-
-      // Tooltip should be positioned to not overflow left edge
-      const tooltipLeft = parseInt(tooltip.style.left || '0');
-      expect(tooltipLeft).toBeGreaterThanOrEqual(8); // Minimum padding
+      expect(tooltip.querySelector('.event-tooltip-icon')?.textContent).toBe('🐣');
     });
 
     it('should work for all 7 event types', () => {
@@ -793,46 +818,519 @@ describe('EventRibbon', () => {
         { type: 'critical_moment', turn: 60, description: 'Critical', emoji: '🌟' },
         { type: 'spawn_wave', turn: 70, description: 'Spawn', emoji: '🐣' },
       ];
+      const labels = [
+        'Combat', 'Core Capture', 'Energy Milestone', 'Mass Death',
+        'Momentum Shift', 'Critical Moment', 'Spawn Wave',
+      ];
 
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
-
-      const tooltips = container.querySelectorAll('.event-tooltip');
-      expect(tooltips.length).toBe(7);
-
-      // Check that all tooltips are initially hidden
-      tooltips.forEach(tooltip => {
-        expect(tooltip.getAttribute('aria-hidden')).toBe('true');
-        expect(tooltip.classList.contains('event-tooltip-visible')).toBe(false);
-      });
-
-      // Check that each tooltip can be shown
+      freshRibbon(events);
+      const tooltip = getTooltip();
       const icons = container.querySelectorAll('.event-marker-icon');
+
       icons.forEach((icon, index) => {
-        const tooltip = tooltips[index] as HTMLElement;
         icon.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
         expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true);
-        icon.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
-        expect(tooltip.classList.contains('event-tooltip-visible')).toBe(false);
+        expect(tooltip.querySelector('.event-tooltip-type')?.textContent).toBe(labels[index]);
       });
     });
 
-    it('should have smooth hover transitions', () => {
-      const events: SignificantEvent[] = [
-        { type: 'combat', turn: 10, description: 'Combat', emoji: '⚔️' },
-      ];
-      const ribbon = new EventRibbon({ container, events, totalTurns: 100 });
+    it('should hide tooltip after the pointer leaves the grace period', () => {
+      vi.useFakeTimers();
+      freshRibbon([{ type: 'combat', turn: 10, description: 'Test combat', emoji: '⚔️' }]);
+      const tooltip = getTooltip();
+      const icon = firstIcon();
 
+      icon.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true);
+
+      icon.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+
+      // The hide is delayed slightly so crossing the gap between adjacent
+      // icons does not flicker the tooltip
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true);
+
+      vi.advanceTimersByTime(150);
+
+      expect(tooltip.getAttribute('aria-hidden')).toBe('true');
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(false);
+    });
+
+    it('should cancel a pending hide when re-entering an icon', () => {
+      vi.useFakeTimers();
+      freshRibbon([
+        { type: 'combat', turn: 10, description: 'Left event', emoji: '⚔️' },
+        { type: 'combat', turn: 12, description: 'Right event', emoji: '⚔️' },
+      ]);
+      const tooltip = getTooltip();
+      const icons = container.querySelectorAll('.event-marker-icon');
+
+      icons[0].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      icons[0].dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      icons[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+      vi.advanceTimersByTime(150);
+
+      // Still visible, now showing the newly hovered event
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true);
+      expect(tooltip.querySelector('.event-tooltip-description')?.textContent).toBe('Right event');
+    });
+
+    it('should apply position to the shared tooltip as pixel offsets', () => {
+      freshRibbon([{ type: 'combat', turn: 50, description: 'Combat', emoji: '⚔️' }]);
+      const tooltip = getTooltip();
+
+      firstIcon().dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+      expect(tooltip.style.left).toMatch(/^-?\d+(\.\d+)?px$/);
+      expect(tooltip.style.top).toMatch(/^-?\d+(\.\d+)?px$/);
+    });
+
+    it('should transition fade and movement from the stylesheet, not an inline override', () => {
+      freshRibbon([{ type: 'combat', turn: 50, description: 'Combat', emoji: '⚔️' }]);
+      const tooltip = getTooltip();
+
+      firstIcon().dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+      // The transition comes from the .event-tooltip rule in the shipped CSS
+      const tooltipRule = EVENT_RIBBON_STYLES.match(/\.event-tooltip\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(tooltipRule).toContain('transition');
+      expect(tooltipRule).toContain('opacity');
+      expect(tooltipRule).toContain('transform');
+      expect(tooltipRule).toContain('left');
+      expect(tooltipRule).toContain('top');
+
+      // An inline transition would replace the whole shorthand and kill the
+      // opacity/transform fade, so the component must not set one
+      expect(tooltip.style.transition).toBe('');
+    });
+
+    it('should remove the shared tooltip when destroy is called', () => {
+      const ribbon = freshRibbon([{ type: 'combat', turn: 10, description: 'Combat', emoji: '⚔️' }]);
+      expect(getTooltip()).toBeTruthy();
+
+      ribbon.destroy();
+
+      expect(document.querySelector('.event-tooltip')).toBeNull();
+    });
+  });
+
+  describe('Tooltip positioning and edge detection', () => {
+    const TOOLTIP_WIDTH = 200;
+    const TOOLTIP_HEIGHT = 60;
+    const GAP = 12;
+    const EDGE_PADDING = 8;
+
+    const getTooltip = (): HTMLElement =>
+      document.querySelector('.event-tooltip') as HTMLElement;
+    const getArrow = (): HTMLElement =>
+      getTooltip().querySelector('.event-tooltip-arrow') as HTMLElement;
+
+    function freshRibbon(events?: SignificantEvent[]): EventRibbon {
+      document.querySelectorAll('.event-tooltip').forEach(t => t.remove());
+      return new EventRibbon({
+        container,
+        events: events ?? [{ type: 'combat', turn: 50, description: 'Mid-game combat', emoji: '⚔️' }],
+        totalTurns: 100,
+      });
+    }
+
+    function mockMarkerRect(left: number, top: number, width = 24, height = 24): void {
+      const marker = container.querySelector('.event-marker') as HTMLElement;
+      marker.getBoundingClientRect = () => ({
+        left,
+        top,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        x: left,
+        y: top,
+        toJSON: () => ({}),
+      });
+    }
+
+    function mockTooltipRect(width = TOOLTIP_WIDTH, height = TOOLTIP_HEIGHT): void {
+      const tooltip = getTooltip();
+      tooltip.getBoundingClientRect = () => ({
+        left: 0,
+        top: 0,
+        width,
+        height,
+        right: width,
+        bottom: height,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+    }
+
+    function showTooltip(): { icon: HTMLElement; tooltip: HTMLElement } {
       const icon = container.querySelector('.event-marker-icon') as HTMLElement;
-      const tooltip = container.querySelector('.event-tooltip') as HTMLElement;
+      const tooltip = getTooltip();
+      icon.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      return { icon, tooltip };
+    }
 
-      // Check that tooltip has transition property (from CSS classes)
-      const tooltipStyles = window.getComputedStyle(tooltip);
-      expect(tooltipStyles.transition).toContain('opacity');
-      expect(tooltipStyles.transition).toContain('transform');
+    function setViewport(width: number, height: number): void {
+      Object.defineProperty(window, 'innerWidth', { value: width, writable: true });
+      Object.defineProperty(window, 'innerHeight', { value: height, writable: true });
+    }
 
-      // Check that icon has transition property (from CSS classes)
-      const iconStyles = window.getComputedStyle(icon);
-      expect(iconStyles.transition).toContain('transform');
+    afterEach(() => {
+      setViewport(1024, 768); // jsdom defaults
+    });
+
+    describe('Edge detection: flip direction', () => {
+      it('should flip tooltip below when marker is near top edge', () => {
+        setViewport(800, 600);
+
+        // Marker near top edge (only 50px above, not enough for tooltip + gap)
+        freshRibbon();
+        mockTooltipRect();
+        mockMarkerRect(200, 50);
+        const { tooltip } = showTooltip();
+
+        // Tooltip should be positioned below the marker
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+        const markerBottom = 50 + 24;
+        expect(tooltipTop).toBe(markerBottom + GAP);
+      });
+
+      it('should position tooltip above when marker has space above', () => {
+        setViewport(800, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker in middle with plenty of space above
+        mockMarkerRect(200, 300);
+        const { tooltip } = showTooltip();
+
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+        expect(tooltipTop).toBe(300 - TOOLTIP_HEIGHT - GAP);
+      });
+
+      it('should flip tooltip to the side when no vertical space fits it', () => {
+        setViewport(500, 100);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker mid-screen in a short viewport: neither above (100 - 112)
+        // nor below fits, so the tooltip is placed beside the marker. The
+        // viewport stays wide enough that the right side has room for the
+        // whole tooltip (500 - 232 - 8 >= 200 + 12); a width where neither
+        // side fits exercises the fallback clamp instead of the flip.
+        mockMarkerRect(200, 50);
+        const { tooltip } = showTooltip();
+
+        const tooltipLeft = parseInt(tooltip.style.left || '0');
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+
+        // Right of the marker, vertically centred and clamped to the viewport
+        expect(tooltipLeft).toBe(200 + 24 + GAP);
+        expect(tooltipTop).toBeGreaterThanOrEqual(EDGE_PADDING);
+        expect(tooltipTop + TOOLTIP_HEIGHT).toBeLessThanOrEqual(100 - EDGE_PADDING);
+      });
+
+      it('should clamp tooltip to viewport when no direction has enough space', () => {
+        setViewport(300, 120);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker in center of tiny viewport - no direction fits
+        mockMarkerRect(150, 60);
+        const { tooltip } = showTooltip();
+
+        const tooltipLeft = parseInt(tooltip.style.left || '0');
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+
+        expect(tooltipLeft).toBeGreaterThanOrEqual(EDGE_PADDING);
+        expect(tooltipLeft + TOOLTIP_WIDTH).toBeLessThanOrEqual(300);
+        expect(tooltipTop).toBeGreaterThanOrEqual(-TOOLTIP_HEIGHT); // May partially overflow vertically
+      });
+    });
+
+    describe('Viewport overflow prevention', () => {
+      it('should never overflow the right edge of viewport', () => {
+        setViewport(500, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        mockMarkerRect(480, 300);
+        const { tooltip } = showTooltip();
+
+        const tooltipLeft = parseInt(tooltip.style.left || '0');
+        expect(tooltipLeft + TOOLTIP_WIDTH).toBeLessThanOrEqual(500 - EDGE_PADDING);
+      });
+
+      it('should never overflow the left edge of viewport', () => {
+        setViewport(500, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        mockMarkerRect(10, 300);
+        const { tooltip } = showTooltip();
+
+        const tooltipLeft = parseInt(tooltip.style.left || '0');
+        expect(tooltipLeft).toBeGreaterThanOrEqual(EDGE_PADDING);
+      });
+
+      it('should never overflow the bottom edge of viewport', () => {
+        setViewport(500, 400);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker near bottom of viewport
+        mockMarkerRect(250, 380);
+        const { tooltip } = showTooltip();
+
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+        expect(tooltipTop + TOOLTIP_HEIGHT).toBeLessThanOrEqual(400 - EDGE_PADDING);
+      });
+
+      it('should never overflow the top edge of viewport', () => {
+        setViewport(500, 400);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker near top of viewport
+        mockMarkerRect(250, 5);
+        const { tooltip } = showTooltip();
+
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+        expect(tooltipTop).toBeGreaterThanOrEqual(-TOOLTIP_HEIGHT);
+      });
+    });
+
+    describe('Minimum viewport width scenarios', () => {
+      it('should handle very narrow viewport (200px)', () => {
+        setViewport(200, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        mockMarkerRect(100, 300);
+        const { tooltip } = showTooltip();
+
+        // Tooltip wider than viewport is clamped to the leading edge; the
+        // stylesheet caps its width at 100vw minus edge padding so it still
+        // fits once rendered
+        const tooltipLeft = parseInt(tooltip.style.left || '0');
+        expect(tooltipLeft).toBeGreaterThanOrEqual(EDGE_PADDING);
+        const cssRule = EVENT_RIBBON_STYLES.match(/\.event-tooltip\s*\{[^}]*\}/)?.[0] ?? '';
+        expect(cssRule).toContain('calc(100vw - 16px)');
+      });
+
+      it('should handle minimum viewport width (320px)', () => {
+        setViewport(320, 480);
+
+        freshRibbon();
+        mockTooltipRect();
+
+        for (const pos of [0, 80, 160, 240, 320]) {
+          mockMarkerRect(pos, 240);
+          const { tooltip } = showTooltip();
+
+          const tooltipLeft = parseInt(tooltip.style.left || '0');
+          // Tooltip must never be positioned outside viewport bounds
+          expect(tooltipLeft).toBeGreaterThanOrEqual(EDGE_PADDING);
+          expect(tooltipLeft + TOOLTIP_WIDTH).toBeLessThanOrEqual(320 - EDGE_PADDING + 1);
+
+          // Hide tooltip before next iteration
+          tooltip.style.left = '';
+        }
+      });
+
+      it('should handle viewport smaller than tooltip width', () => {
+        setViewport(150, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        mockMarkerRect(75, 300);
+        const { tooltip } = showTooltip();
+
+        // Tooltip should be clamped to stay as visible as possible
+        const tooltipLeft = parseInt(tooltip.style.left || '0');
+        expect(tooltipLeft).toBeGreaterThanOrEqual(EDGE_PADDING);
+      });
+    });
+
+    describe('Position updates on hover', () => {
+      it('should update tooltip position when hovering different markers', () => {
+        setViewport(800, 600);
+
+        const events: SignificantEvent[] = [
+          { type: 'combat', turn: 10, description: 'Early', emoji: '⚔️' },
+          { type: 'momentum_shift', turn: 90, description: 'Late', emoji: '📈' },
+        ];
+        freshRibbon(events);
+        mockTooltipRect();
+
+        const markers = container.querySelectorAll('.event-marker');
+        const icons = container.querySelectorAll('.event-marker-icon');
+        const tooltip = getTooltip();
+
+        // Mock first marker (left side)
+        (markers[0] as HTMLElement).getBoundingClientRect = () => ({
+          left: 100, top: 300, width: 24, height: 24,
+          right: 124, bottom: 324, x: 100, y: 300, toJSON: () => ({}),
+        });
+        // Mock second marker (right side)
+        (markers[1] as HTMLElement).getBoundingClientRect = () => ({
+          left: 600, top: 300, width: 24, height: 24,
+          right: 624, bottom: 324, x: 600, y: 300, toJSON: () => ({}),
+        });
+
+        // Hover first icon
+        icons[0].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        const pos0 = parseInt(tooltip.style.left || '0');
+
+        // Hover second icon
+        icons[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        const pos1 = parseInt(tooltip.style.left || '0');
+
+        // Positions should differ based on marker location
+        expect(pos0).not.toBe(pos1);
+        expect(pos0).toBe(100 + 12 - TOOLTIP_WIDTH / 2);
+        expect(pos1).toBe(600 + 12 - TOOLTIP_WIDTH / 2);
+      });
+
+      it('should keep animating position across icons within the grace period', () => {
+        vi.useFakeTimers();
+        setViewport(800, 600);
+
+        const events: SignificantEvent[] = [
+          { type: 'combat', turn: 10, description: 'Early', emoji: '⚔️' },
+          { type: 'momentum_shift', turn: 12, description: 'Next', emoji: '📈' },
+        ];
+        freshRibbon(events);
+        mockTooltipRect();
+
+        const markers = container.querySelectorAll('.event-marker');
+        const icons = container.querySelectorAll('.event-marker-icon');
+        const tooltip = getTooltip();
+
+        (markers[0] as HTMLElement).getBoundingClientRect = () => ({
+          left: 100, top: 300, width: 24, height: 24,
+          right: 124, bottom: 324, x: 100, y: 300, toJSON: () => ({}),
+        });
+        (markers[1] as HTMLElement).getBoundingClientRect = () => ({
+          left: 200, top: 300, width: 24, height: 24,
+          right: 224, bottom: 324, x: 200, y: 300, toJSON: () => ({}),
+        });
+
+        icons[0].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        const pos0 = tooltip.style.left;
+        icons[0].dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+
+        // Re-enter a sibling before the hide fires: the tooltip stays visible,
+        // so the left/top transition animates the move instead of crossfading
+        icons[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        vi.advanceTimersByTime(150);
+
+        expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true);
+        expect(tooltip.style.left).not.toBe(pos0);
+      });
+    });
+
+    describe('Arrow positioning', () => {
+      it('should position arrow at bottom for top placement', () => {
+        setViewport(800, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker with space above
+        mockMarkerRect(400, 300);
+        showTooltip();
+
+        const arrow = getArrow();
+        expect(arrow.style.bottom).toBe('-6px');
+        expect(arrow.classList.contains('event-tooltip-arrow-flipped')).toBe(false);
+      });
+
+      it('should position arrow at top (flipped) for bottom placement', () => {
+        setViewport(800, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker near top edge - tooltip must flip below
+        mockMarkerRect(400, 20);
+        showTooltip();
+
+        const arrow = getArrow();
+        expect(arrow.classList.contains('event-tooltip-arrow-flipped')).toBe(true);
+      });
+
+      it('should keep the arrow inside the tooltip when it is edge-clamped', () => {
+        setViewport(500, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker near the left edge: the tooltip clamps to the padding edge,
+        // leaving the marker centre almost at the tooltip's left border
+        mockMarkerRect(4, 300);
+        showTooltip();
+
+        const arrow = getArrow();
+        expect(parseInt(arrow.style.left)).toBeGreaterThanOrEqual(10);
+        expect(parseInt(arrow.style.left)).toBeLessThanOrEqual(TOOLTIP_WIDTH - 10);
+
+        // And the mirrored case on the right edge
+        mockMarkerRect(480, 300);
+        showTooltip();
+        expect(parseInt(arrow.style.left)).toBeLessThanOrEqual(TOOLTIP_WIDTH - 10);
+        expect(parseInt(arrow.style.left)).toBeGreaterThanOrEqual(10);
+      });
+
+      it('should reset arrow placement when tooltip is hidden', () => {
+        vi.useFakeTimers();
+        setViewport(800, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        mockMarkerRect(400, 20);
+        const { icon, tooltip } = showTooltip();
+
+        // Bottom placement flips the arrow to the top
+        expect(tooltip.querySelector('.event-tooltip-arrow')?.classList.contains('event-tooltip-arrow-flipped')).toBe(true);
+
+        icon.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+        vi.advanceTimersByTime(150);
+
+        const arrow = getArrow();
+        expect(tooltip.classList.contains('event-tooltip-visible')).toBe(false);
+        expect(arrow.classList.contains('event-tooltip-arrow-flipped')).toBe(false);
+      });
+    });
+
+    describe('Tooltip adjacent to icon (non-overlapping)', () => {
+      it('should not overlap the marker icon when positioned above', () => {
+        setViewport(800, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        mockMarkerRect(400, 300);
+        const { tooltip } = showTooltip();
+
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+
+        // Tooltip bottom edge must be above the marker top (with gap)
+        expect(tooltipTop + TOOLTIP_HEIGHT).toBeLessThanOrEqual(300);
+      });
+
+      it('should not overlap the marker icon when positioned below', () => {
+        setViewport(800, 600);
+
+        freshRibbon();
+        mockTooltipRect();
+        // Marker near top - tooltip flips below
+        mockMarkerRect(400, 20);
+        const { tooltip } = showTooltip();
+
+        const tooltipTop = parseInt(tooltip.style.top || '0');
+        const markerBottom = 20 + 24;
+
+        // Tooltip top edge must be below the marker bottom (with gap)
+        expect(tooltipTop).toBeGreaterThanOrEqual(markerBottom);
+      });
     });
   });
 });
