@@ -29,18 +29,22 @@ export interface SkeletonProps {
 export function Skeleton(props: SkeletonProps): string {
   const { variant, width = '100%', height = '16px', extra = '' } = props;
 
-  const baseStyle = `width:${width};height:${height};${extra}`;
+  // Dimensions first, then the variant default, then extra — so an extra can
+  // override the default (last declaration wins) and every declaration stays
+  // semicolon-terminated when the pieces are concatenated.
+  const dims = `width:${width};height:${height};`;
+  const tail = extra && !extra.endsWith(';') ? `${extra};` : extra;
 
   switch (variant) {
     case 'circle':
-      return `<div class="skeleton-circle" style="${baseStyle}"></div>`;
+      return `<div class="skeleton-circle" style="${dims}${tail}"></div>`;
 
     case 'rectangle':
-      return `<div class="skeleton-bar" style="${baseStyle}border-radius:var(--radius-md);"></div>`;
+      return `<div class="skeleton-bar" style="${dims}border-radius:var(--radius-md);${tail}"></div>`;
 
     case 'bar':
     default:
-      return `<div class="skeleton-bar" style="${baseStyle}"></div>`;
+      return `<div class="skeleton-bar" style="${dims}${tail}"></div>`;
   }
 }
 
@@ -108,11 +112,40 @@ export function skeletonLeaderboard(): string {
       ${Skeleton({ variant: 'bar', width: 'var(--lb-col-expand)', extra: 'flex-shrink:0' })}
     </div>`;
   }).join('');
+  // Mobile cards mirror renderMobileCard (web/src/pages/leaderboard.ts): the
+  // placeholders reuse the live .leaderboard-mobile-card / .mobile-card-toggle /
+  // .leaderboard-mobile-* classes (styles/mobile.css phone block + components.css)
+  // so gap, padding, background, radius, margin-bottom and the collapsed-details
+  // geometry come from the same rules the real cards use and cannot drift. Only
+  // the placeholder bars carry inline dimensions. Toggle and arrow are divs, not
+  // button/span — a skeleton has nothing to activate — and the cards carry no
+  // role or data attributes, matching the decorative rows above.
+  const card = `
+    <div class="leaderboard-mobile-card">
+      <div class="mobile-card-toggle">
+        <div class="leaderboard-mobile-rank">${Skeleton({ variant: 'bar', width: '24px', height: '20px', extra: 'margin:0 auto' })}</div>
+        <div class="leaderboard-mobile-info">
+          ${Skeleton({ variant: 'bar', width: '70%', height: '16px', extra: 'margin-bottom:8px' })}
+          <div class="leaderboard-mobile-rating">${Skeleton({ variant: 'bar', width: '48px', height: '16px', extra: 'display:inline-block;vertical-align:middle' })}${Skeleton({ variant: 'bar', width: '28px', height: '12px', extra: 'display:inline-block;vertical-align:middle;margin-left:4px' })}</div>
+        </div>
+        <div class="mobile-card-arrow">${Skeleton({ variant: 'bar', width: '8px', height: '12px' })}</div>
+      </div>
+      <div class="leaderboard-mobile-details">
+        ${Array.from({ length: 4 }, () => `
+        <div class="leaderboard-mobile-stat">
+          ${Skeleton({ variant: 'bar', width: '44px', height: '12px' })}
+          ${Skeleton({ variant: 'bar', width: '56px', height: '12px' })}
+        </div>`).join('')}
+        ${Skeleton({ variant: 'rectangle', width: '100%', height: '40px', extra: 'margin-top:10px' })}
+      </div>
+    </div>`;
+  const cards = Array.from({ length: 8 }, () => card).join('');
   return `
     <div class="skeleton-page">
       <h1 class="page-title">Leaderboard</h1>
       ${Skeleton({ variant: 'bar', width: '200px', height: '14px', extra: 'margin-bottom:24px' })}
       <div id="lb-desktop">${rows}</div>
+      <div id="lb-mobile" class="mobile-cards">${cards}</div>
     </div>`;
 }
 
