@@ -644,6 +644,16 @@ code {
   min-width: 200px;
 }
 
+/* Leaderboard page — same width box as .skeleton-page so the data-load swap
+   shifts nothing: skeletonLeaderboard() renders inside .skeleton-page
+   (max-width 1200px + auto margins), and without the same constraint here the
+   live rows come out wider on >1200px viewports and every column lands at a
+   different x than the placeholder that stood in for it. */
+.leaderboard-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
 /* Leaderboard row (desktop — both virtual and static) */
 .lb-row {
   /* Single source of truth for desktop row geometry; the skeleton

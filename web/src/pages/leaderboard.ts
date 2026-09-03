@@ -130,7 +130,11 @@ function renderStaticTable(container: HTMLElement, entries: LeaderboardEntry[]):
   initDesktopExpandToggle(container);
 }
 
-function renderDesktopRow(entry: LeaderboardEntry, _index: number): string {
+// Exported so the rendered-layout harness (web/layout-tests/fixture.ts) can
+// lay out the real row markup next to skeletonLeaderboard()'s placeholders and
+// measure them under the same rules — the skeleton's parity guarantee is
+// against this function's output, not against a mirror of it.
+export function renderDesktopRow(entry: LeaderboardEntry, _index: number): string {
   const rankClass = entry.rank <= 3 ? `rank-${entry.rank}` : '';
   const statusClass = entry.health_status === 'healthy' ? 'status-healthy' :
                       entry.health_status === 'unhealthy' ? 'status-unhealthy' : 'status-unknown';

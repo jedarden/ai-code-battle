@@ -67,3 +67,30 @@ export async function measureAll(page: Page, selector: string): Promise<RectSnap
     });
   }, selector);
 }
+
+/**
+ * Reads the named computed styles off the first element matching `selector`,
+ * keyed by property name exactly as handed in (longhand or shorthand, e.g.
+ * "gap", "padding-left", "min-height"). Lengths come back resolved to px in
+ * Chromium, so a declaration like `padding: var(--space-sm) var(--space-md)`
+ * reads as "8px"/"16px" — the laid-out value, not the var() text. Parity
+ * assertions use this to compare what the two rows' shared rule *resolved to*
+ * against the geometry measure()/measureAll() read off the same elements.
+ */
+export async function readStyles(
+  page: Page,
+  selector: string,
+  properties: string[]
+): Promise<Record<string, string>> {
+  return page.evaluate(
+    ({ sel, props }): Record<string, string> => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error(`readStyles(): no element matches "${sel}"`);
+      const computed = getComputedStyle(el);
+      const out: Record<string, string> = {};
+      for (const prop of props) out[prop] = computed.getPropertyValue(prop);
+      return out;
+    },
+    { sel: selector, props: properties }
+  );
+}

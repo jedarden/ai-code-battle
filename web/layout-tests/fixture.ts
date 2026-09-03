@@ -16,6 +16,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { skeletonLeaderboard } from '../src/components/skeleton';
+import { renderDesktopRow } from '../src/pages/leaderboard';
+import type { LeaderboardEntry } from '../src/api-types';
 
 const stylesDir = resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles');
 
@@ -38,24 +40,25 @@ function inlineStyles(): string {
 }
 
 /**
- * Mirrors renderDesktopRow (web/src/pages/leaderboard.ts) node for node with
- * static sample values. That renderer is module-private and this child ships
- * only the measuring capability, so the mirror lives here; a parity child can
- * swap in the exported renderer without touching the measurement API. Keep the
- * element types and classes identical — geometry comes from the live rules, so
- * drift here silently re-bases every parity assertion.
+ * A static entry shaped like the API payload, fed to the real renderDesktopRow
+ * (web/src/pages/leaderboard.ts). Ranks start at 4 so no row picks up the
+ * .rank-1/2/3 podium background — the parity assertions compare geometry, and
+ * a class-plain row is easier to reason about than a tinted one. The renderer
+ * itself is what runs in the app; nothing here mirrors its markup any more.
  */
-function liveDesktopRow(rank: number): string {
-  return `
-    <div class="lb-row rank-${rank}" data-bot-id="bot-${rank}" tabindex="0" role="button" aria-expanded="false">
-      <span class="lb-rank">${rank}</span>
-      <span class="lb-name"><a href="#/bot/bot-${rank}">Bot ${rank}</a></span>
-      <span class="lb-rating"><span class="rating-value">${1000 + rank}</span><span class="rating-dev">±50</span></span>
-      <span class="lb-wl">10/${10 + rank}</span>
-      <span class="lb-winrate">83.${rank}%</span>
-      <span class="lb-status status-healthy">healthy</span>
-      <span class="lb-expand-icon" aria-hidden="true">▸</span>
-    </div>`;
+function sampleEntry(rank: number): LeaderboardEntry {
+  return {
+    rank,
+    bot_id: `bot-${rank}`,
+    name: `Bot ${rank}`,
+    owner_id: 'owner-parity',
+    rating: 1000 + rank,
+    rating_deviation: 50,
+    matches_played: 24,
+    matches_won: 10 + rank,
+    win_rate: 41.7,
+    health_status: 'healthy',
+  };
 }
 
 /**
@@ -104,7 +107,14 @@ export function buildFixtureHtml(): string {
   // live containers get their own ids (#live-lb-*) — the skeleton markup owns
   // the real page's #lb-desktop/#lb-mobile — while the live *classes* stay
   // identical so the same rules govern them.
-  const rows = [1, 2, 3].map(liveDesktopRow).join('\n');
+  //
+  // The live block sits inside .leaderboard-page because that is the container
+  // the real data-load swap renders into (renderLeaderboard in
+  // web/src/pages/leaderboard.ts): the skeleton measures under .skeleton-page,
+  // so the live row must measure under the live page's own wrapper for
+  // "aligned columns" to compare like with like. #leaderboard-content is
+  // omitted — it carries no rule of its own.
+  const rows = [4, 5, 6].map((rank) => renderDesktopRow(sampleEntry(rank), 0)).join('\n');
   const cards = [1, 2, 3].map(liveMobileCard).join('\n');
   return `<!DOCTYPE html>
 <html lang="en">
@@ -122,8 +132,10 @@ export function buildFixtureHtml(): string {
   </section>
 
   <section id="live-fixture" aria-label="live leaderboard fixture">
-    <div id="live-lb-desktop">${rows}</div>
-    <div id="live-lb-mobile" class="mobile-cards">${cards}</div>
+    <div class="leaderboard-page">
+      <div id="live-lb-desktop">${rows}</div>
+      <div id="live-lb-mobile" class="mobile-cards">${cards}</div>
+    </div>
   </section>
 </body>
 </html>`;
