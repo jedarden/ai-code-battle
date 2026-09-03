@@ -35,10 +35,6 @@ const stylesDir = resolve(dirname(fileURLToPath(import.meta.url)), '../src/style
  */
 const STYLESHEETS = ['base.css', 'components.css', 'mobile.css'] as const;
 
-function inlineStyles(): string {
-  return STYLESHEETS.map((file) => readFileSync(join(stylesDir, file), 'utf8')).join('\n');
-}
-
 /**
  * A static entry shaped like the API payload, fed to the real renderDesktopRow
  * and renderMobileCard (web/src/pages/leaderboard.ts). Ranks start at 4 so no
@@ -62,6 +58,14 @@ function sampleEntry(rank: number): LeaderboardEntry {
   };
 }
 
+/**
+ * Inlines the app stylesheets — exported for the swap-parity spec, which
+ * measures the .fade-in rule off a real cascade rather than the fixture page.
+ */
+export function inlineStyles(): string {
+  return STYLESHEETS.map((file) => readFileSync(join(stylesDir, file), 'utf8')).join('\n');
+}
+
 export function buildFixtureHtml(): string {
   // One document carries both blocks so parity assertions compare skeleton and
   // live geometry under the same viewport and the same stylesheet set. The
@@ -70,11 +74,16 @@ export function buildFixtureHtml(): string {
   // identical so the same rules govern them.
   //
   // The live block sits inside .leaderboard-page because that is the container
-  // the real data-load swap renders into (renderLeaderboard in
-  // web/src/pages/leaderboard.ts): the skeleton measures under .skeleton-page,
-  // so the live row must measure under the live page's own wrapper for
-  // "aligned columns" to compare like with like. #leaderboard-content is
-  // omitted — it carries no rule of its own.
+  // the real data-load swap renders into (renderLeaderboardPage +
+  // renderLeaderboard in web/src/pages/leaderboard.ts): the skeleton measures
+  // under .skeleton-page, so the live row must measure under the live page's
+  // own wrapper for "aligned columns" to compare like with like. The header
+  // above the rows is mirrored literally — h1.page-title, updated-at, hint —
+  // because the real markup only exists after the page's fetch resolves;
+  // src/pages/leaderboard.test.ts pins the real page against this same
+  // contract, so the mirror cannot drift unnoticed. #leaderboard-content (as
+  // #live-lb-content) is kept because the swap-parity spec measures through
+  // it; it carries no rule of its own.
   const rows = [4, 5, 6].map((rank) => renderDesktopRow(sampleEntry(rank), 0)).join('\n');
   const cards = [4, 5, 6].map((rank) => renderMobileCard(sampleEntry(rank))).join('\n');
   return `<!DOCTYPE html>
@@ -94,8 +103,13 @@ export function buildFixtureHtml(): string {
 
   <section id="live-fixture" aria-label="live leaderboard fixture">
     <div class="leaderboard-page">
-      <div id="live-lb-desktop">${rows}</div>
-      <div id="live-lb-mobile" class="mobile-cards" role="list">${cards}</div>
+      <h1 class="page-title">Leaderboard</h1>
+      <div id="live-lb-content">
+        <p class="updated-at">Last updated: Sep 3, 2026, 12:00:00 PM</p>
+        <p class="lb-hint">Click a row to see full stats</p>
+        <div id="live-lb-desktop">${rows}</div>
+        <div id="live-lb-mobile" class="mobile-cards" role="list">${cards}</div>
+      </div>
     </div>
   </section>
 </body>

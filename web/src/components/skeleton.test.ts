@@ -161,6 +161,72 @@ describe('skeletonLeaderboard desktop rows', () => {
   });
 });
 
+describe('skeletonLeaderboard header stand-ins', () => {
+  // The swap target's header (renderLeaderboardPage + renderLeaderboard,
+  // pages/leaderboard.ts): h1.page-title, then the updated-at and hint lines,
+  // all above #lb-desktop. Everything the swap needs to keep still lives in
+  // the shared rules — the h1 and both line wrappers reuse the live classes,
+  // and the bars are sized to the font metrics of the text they stand in
+  // for: root font-size (base.css html rule) × the live rule's font-size ×
+  // body line-height.
+  const htmlRule = baseCss.match(/(?:^|\})\s*html\s*\{([^}]*)\}/)?.[1] ?? '';
+  const bodyRule = baseCss.match(/(?:^|\})\s*body\s*\{([^}]*)\}/)?.[1] ?? '';
+  const updatedAtRule = componentsCss.match(/\.updated-at\s*\{([^}]*)\}/)?.[1] ?? '';
+  const lbHintRule = componentsCss.match(/\.lb-hint\s*\{([^}]*)\}/)?.[1] ?? '';
+
+  const rootPx = parseFloat(decl(htmlRule, 'font-size'));
+  const textLineHeight = parseFloat(decl(bodyRule, 'line-height'));
+  const lineBoxPx = (ruleCss: string): number =>
+    parseFloat(decl(ruleCss, 'font-size')) * rootPx * textLineHeight;
+
+  function pageRoot(): HTMLElement {
+    const doc = new DOMParser().parseFromString(skeletonLeaderboard(), 'text/html');
+    const el = doc.querySelector('.skeleton-page');
+    expect(el, 'skeleton must keep its .skeleton-page root').toBeTruthy();
+    return el!;
+  }
+
+  function barHeight(wrapperClass: string): number {
+    const wrapper = pageRoot().querySelector(`:scope > .${wrapperClass}`);
+    expect(wrapper, `skeleton must render the .${wrapperClass} stand-in`).toBeTruthy();
+    const bar = wrapper!.querySelector('.skeleton-bar');
+    expect(bar, `the .${wrapperClass} stand-in must hold a shimmer bar`).toBeTruthy();
+    return parseFloat(decl(bar!.getAttribute('style') ?? '', 'height'));
+  }
+
+  it('repeats the live header: page-title h1, updated-at line, hint line, in order', () => {
+    const [h1, updatedAt, hint, desktop, mobile] = Array.from(pageRoot().children);
+    expect(h1.tagName).toBe('H1');
+    expect(h1.className).toBe('page-title');
+    expect(h1.textContent).toBe('Leaderboard');
+    expect(updatedAt.className).toBe('updated-at');
+    expect(hint.className).toBe('lb-hint');
+    expect(desktop.id).toBe('lb-desktop');
+    expect(mobile.id).toBe('lb-mobile');
+  });
+
+  it('takes no spacing of its own: the live classes own the margins', () => {
+    const root = pageRoot();
+    for (const cls of ['updated-at', 'lb-hint']) {
+      const wrapper = root.querySelector(`:scope > .${cls}`);
+      expect(wrapper, `.${cls} stand-in must exist`).toBeTruthy();
+      expect(wrapper!.getAttribute('style'), `${cls} margin comes from its live rule`).toBeNull();
+    }
+    // ...and the rules must actually declare the margins, so an inline-free
+    // wrapper cannot silently fall back to nothing.
+    expect(decl(updatedAtRule, 'margin-bottom')).toBe('var(--space-md)');
+    expect(decl(lbHintRule, 'margin-bottom')).toBe('var(--space-sm)');
+  });
+
+  it('sizes the updated-at bar to the live line it stands in for', () => {
+    expect(barHeight('updated-at')).toBeCloseTo(lineBoxPx(updatedAtRule), 6);
+  });
+
+  it('sizes the hint bar to the live line it stands in for', () => {
+    expect(barHeight('lb-hint')).toBeCloseTo(lineBoxPx(lbHintRule), 6);
+  });
+});
+
 describe('skeletonLeaderboard mobile cards', () => {
   function mobileContainer(): HTMLElement {
     const doc = new DOMParser().parseFromString(skeletonLeaderboard(), 'text/html');

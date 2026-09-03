@@ -147,10 +147,24 @@ export function skeletonLeaderboard(): string {
       </div>
     </div>`;
   const cards = Array.from({ length: 8 }, () => card).join('');
+  // Header stand-ins mirror renderLeaderboardPage + renderLeaderboard
+  // (web/src/pages/leaderboard.ts) line for line, so the data-load swap keeps
+  // every row and card at the y its placeholder occupied (§16.14 #2 zero
+  // layout shift). The h1 reuses the live .page-title rule, whose
+  // margin-bottom (var(--space-lg)) is what the bare h1 rule's smaller
+  // --space-md would otherwise change on the swap; the updated-at and hint
+  // bars are sized to the text metrics they stand in for — font-size ×
+  // line-height (1.5 for text, base.css) — and the wrappers carry no inline
+  // margins: the live .updated-at / .lb-hint rules own those, so the spacing
+  // above the first row cannot drift. The wrappers are divs, not p — the HTML
+  // parser closes a p around a block child, which would shred the wrapper —
+  // and p vs div lays out identically here because both classes declare their
+  // own margin-bottom and color (base.css's bare p rule never applies).
   return `
     <div class="skeleton-page">
       <h1 class="page-title">Leaderboard</h1>
-      ${Skeleton({ variant: 'bar', width: '200px', height: '14px', extra: 'margin-bottom:24px' })}
+      <div class="updated-at">${Skeleton({ variant: 'bar', width: '200px', height: '18px' })}</div>
+      <div class="lb-hint">${Skeleton({ variant: 'bar', width: '180px', height: '19.2px' })}</div>
       <div id="lb-desktop">${rows}</div>
       <div id="lb-mobile" class="mobile-cards" role="list">${cards}</div>
     </div>`;

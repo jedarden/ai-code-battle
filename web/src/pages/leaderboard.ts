@@ -5,6 +5,7 @@
 import { fetchLeaderboardWithDeltas, type LeaderboardEntry } from '../api-types';
 import { VirtualList } from '../lib/virtual-list';
 import { initLazySections, lazySection } from '../lib/lazy-section';
+import { skeletonLeaderboard } from '../components/skeleton';
 
 const ROW_HEIGHT = 48;
 
@@ -12,24 +13,31 @@ export async function renderLeaderboardPage(): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = `
-    <div class="leaderboard-page">
-      <h1>Leaderboard</h1>
-      <div id="leaderboard-content" class="loading">Loading...</div>
-    </div>
-  `;
-
-  const content = document.getElementById('leaderboard-content');
-  if (!content) return;
+  app.innerHTML = skeletonLeaderboard();
 
   try {
     const data = await fetchLeaderboardWithDeltas();
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.innerHTML = `
+      <div class="leaderboard-page fade-in">
+        <h1 class="page-title">Leaderboard</h1>
+        <div id="leaderboard-content"></div>
+      </div>
+    `;
+    const content = document.getElementById('leaderboard-content');
+    if (!content) return;
     renderLeaderboard(content, data.entries, data.updated_at);
   } catch (error) {
-    content.innerHTML = `
-      <div class="error">
-        <p>Failed to load leaderboard: ${error}</p>
-        <p class="hint">The leaderboard data may not be available yet. Check back after some matches have been played.</p>
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.innerHTML = `
+      <div class="leaderboard-page fade-in">
+        <h1 class="page-title">Leaderboard</h1>
+        <div class="error">
+          <p>Failed to load leaderboard: ${error}</p>
+          <p class="hint">The leaderboard data may not be available yet. Check back after some matches have been played.</p>
+        </div>
       </div>
     `;
   }
@@ -53,9 +61,15 @@ function renderLeaderboard(
 
   const useVirtualList = entries.length > 50;
 
+  // The lines above the first row are data-invariant on purpose (§16.14 #2):
+  // skeletonLeaderboard() stands in for exactly this h1 + updated-at + hint
+  // block, so if the hint appeared only for the virtual list the swap would
+  // push every row down by one line for >50 entries and leave the skeleton's
+  // placeholders misaligned. The hint text is true for the static table too —
+  // those rows are expandable (initDesktopExpandToggle).
   container.innerHTML = `
     <p class="updated-at">Last updated: ${formatTimestamp(updatedAt)}</p>
-    <p class="lb-hint">${useVirtualList ? 'Click a row to see full stats' : ''}</p>
+    <p class="lb-hint">Click a row to see full stats</p>
     <div id="lb-desktop"></div>
     <div id="lb-mobile" class="mobile-cards" role="list"></div>
   `;
