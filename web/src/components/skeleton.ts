@@ -123,17 +123,25 @@ export function skeletonLeaderboard(): string {
   // .leaderboard-mobile-* classes (styles/mobile.css phone block + components.css)
   // so gap, padding, background, radius, margin-bottom and the collapsed-details
   // geometry come from the same rules the real cards use and cannot drift, and
-  // the container is the live #lb-mobile.mobile-cards, whose display comes from
-  // the phone/tablet/desktop media blocks in styles/mobile.css. Only
-  // the placeholder bars carry inline dimensions. Toggle and arrow are divs, not
-  // button/span — a skeleton has nothing to activate — and the cards carry no
-  // role or data attributes, matching the decorative rows above.
+  // the container is the live #lb-mobile.mobile-cards with the live role="list"
+  // (renderLeaderboard's markup), whose display comes from the
+  // phone/tablet/desktop media blocks in styles/mobile.css. Only the placeholder
+  // bars carry inline dimensions. Toggle and arrow are divs, not button/span —
+  // a skeleton has nothing to activate — so the toggle carries inline the one
+  // quantity it cannot reach through a class: base.css's tap-target rule gives
+  // every real button min-height:44px, and that floor is what actually sets the
+  // live toggle's height (its 13.33px UA text sits well under it), so the
+  // stand-in floor is what makes the swap height-neutral. The name bar carries
+  // no margin for the same reason — the live .leaderboard-mobile-name has none
+  // — and stays below the floor with the rating line, leaving the toggle's
+  // height to the floor on both sides. The cards carry no role or data
+  // attributes, so unlike the live listitems they announce nothing.
   const card = `
     <div class="leaderboard-mobile-card">
-      <div class="mobile-card-toggle">
+      <div class="mobile-card-toggle" style="min-height:44px">
         <div class="leaderboard-mobile-rank">${Skeleton({ variant: 'bar', width: '24px', height: '20px', extra: 'margin:0 auto' })}</div>
         <div class="leaderboard-mobile-info">
-          ${Skeleton({ variant: 'bar', width: '70%', height: '16px', extra: 'margin-bottom:8px' })}
+          ${Skeleton({ variant: 'bar', width: '70%', height: '16px' })}
           <div class="leaderboard-mobile-rating">${Skeleton({ variant: 'bar', width: '48px', height: '16px', extra: 'display:inline-block;vertical-align:middle' })}${Skeleton({ variant: 'bar', width: '28px', height: '12px', extra: 'display:inline-block;vertical-align:middle;margin-left:4px' })}</div>
         </div>
         <div class="mobile-card-arrow">${Skeleton({ variant: 'bar', width: '8px', height: '12px' })}</div>
@@ -153,7 +161,7 @@ export function skeletonLeaderboard(): string {
       <h1 class="page-title">Leaderboard</h1>
       ${Skeleton({ variant: 'bar', width: '200px', height: '14px', extra: 'margin-bottom:24px' })}
       <div id="lb-desktop">${rows}</div>
-      <div id="lb-mobile" class="mobile-cards">${cards}</div>
+      <div id="lb-mobile" class="mobile-cards" role="list">${cards}</div>
     </div>`;
 }
 

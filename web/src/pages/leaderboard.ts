@@ -212,7 +212,11 @@ function renderMobileCards(container: HTMLElement, entries: LeaderboardEntry[]):
   }
 }
 
-function renderMobileCard(entry: LeaderboardEntry): string {
+// Exported so the rendered-layout harness (web/layout-tests/fixture.ts) can
+// lay the real card markup out next to skeletonLeaderboard()'s placeholders
+// and measure them under the same rules — the skeleton's parity guarantee is
+// against this function's output, not against a mirror of it.
+export function renderMobileCard(entry: LeaderboardEntry): string {
   const rankClass = entry.rank <= 3 ? `rank-${entry.rank}` : '';
   const statusClass = entry.health_status === 'healthy' ? 'status-healthy' :
                       entry.health_status === 'unhealthy' ? 'status-unhealthy' : 'status-unknown';

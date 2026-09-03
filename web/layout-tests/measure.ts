@@ -94,3 +94,27 @@ export async function readStyles(
     { sel: selector, props: properties }
   );
 }
+
+/**
+ * Reads the named attributes off the first element matching `selector`. Not
+ * geometry, but read off the same rendered page for the same reason: the swap
+ * replaces the skeleton node with the live one, so the attributes the two
+ * containers hand back (role, class) are part of the parity guarantee, and a
+ * text-level parse cannot see what the DOM actually ended up with.
+ */
+export async function readAttrs(
+  page: Page,
+  selector: string,
+  names: string[]
+): Promise<Record<string, string | null>> {
+  return page.evaluate(
+    ({ sel, names }): Record<string, string | null> => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error(`readAttrs(): no element matches "${sel}"`);
+      const out: Record<string, string | null> = {};
+      for (const name of names) out[name] = el.getAttribute(name);
+      return out;
+    },
+    { sel: selector, names }
+  );
+}

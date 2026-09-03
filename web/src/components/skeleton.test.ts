@@ -199,10 +199,21 @@ describe('skeletonLeaderboard mobile cards', () => {
   });
 
   it('mirrors the toggle row: rank, name, rating with smaller deviation, arrow', () => {
+    // The live toggle is a <button>, so base.css's tap-target rule floors it at
+    // 44px — the quantity that actually sets its height. The stand-in is a div
+    // (a skeleton has nothing to activate) and cannot inherit an element
+    // selector, so it must carry that floor inline, matching the rule exactly.
+    const tapTargetRule = baseCss.match(/button,\s*a,\s*input,\s*select,\s*textarea\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(tapTargetRule, 'tap-target rule not found in base.css').not.toBe('');
+    expect(decl(tapTargetRule, 'min-height')).toBe('44px');
+    // The name bar stands in for .leaderboard-mobile-name, which carries no
+    // margin of its own — and the stand-in columns must stay under the floor
+    // that governs both toggles (the rendered parity spec measures the result).
     for (const card of mobileContainer().children) {
       const toggle = card.children[0];
       expect(toggle.classList.contains('mobile-card-toggle')).toBe(true);
       expect(toggle.tagName).toBe('DIV');
+      expect(decl(toggle.getAttribute('style') ?? '', 'min-height')).toBe('44px');
       const [rank, info, arrow] = Array.from(toggle.children);
       expect(rank.classList.contains('leaderboard-mobile-rank')).toBe(true);
       expect(rank.querySelectorAll('.skeleton-bar').length).toBe(1);
@@ -211,7 +222,10 @@ describe('skeletonLeaderboard mobile cards', () => {
       expect(arrow.querySelectorAll('.skeleton-bar').length).toBe(1);
 
       const infoBars = Array.from(info.children);
-      expect(infoBars[0].classList.contains('skeleton-bar')).toBe(true);
+      const nameBar = infoBars[0];
+      expect(nameBar.classList.contains('skeleton-bar')).toBe(true);
+      expect(nameBar.getAttribute('style'), 'name bar must not add a margin the live name lacks')
+        .not.toContain('margin-bottom');
       const rating = infoBars[1];
       expect(rating.classList.contains('leaderboard-mobile-rating')).toBe(true);
       const [ratingBar, deviationBar] = Array.from(rating.children);
@@ -268,10 +282,14 @@ describe('skeletonLeaderboard mobile cards', () => {
 
   it('keeps the mobile placeholders decorative and shimmer-only', () => {
     const container = mobileContainer();
-    expect(container.getAttribute('role')).toBeNull();
+    // The container carries the live list role (renderLeaderboard's
+    // #lb-mobile markup in pages/leaderboard.ts); the cards inside stay plain
+    // divs — a skeleton announces nothing, unlike the live role="listitem"s.
+    expect(container.getAttribute('role')).toBe('list');
     expect(container.innerHTML).not.toContain('<button');
     expect(container.innerHTML).not.toContain('<a ');
     expect(container.innerHTML).not.toContain('data-bot-id');
+    expect(container.innerHTML).not.toContain('role="listitem"');
     expect(container.innerHTML).not.toMatch(/animation\s*:/);
   });
 });

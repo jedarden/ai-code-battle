@@ -16,7 +16,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { skeletonLeaderboard } from '../src/components/skeleton';
-import { renderDesktopRow } from '../src/pages/leaderboard';
+import { renderDesktopRow, renderMobileCard } from '../src/pages/leaderboard';
 import type { LeaderboardEntry } from '../src/api-types';
 
 const stylesDir = resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles');
@@ -41,10 +41,11 @@ function inlineStyles(): string {
 
 /**
  * A static entry shaped like the API payload, fed to the real renderDesktopRow
- * (web/src/pages/leaderboard.ts). Ranks start at 4 so no row picks up the
- * .rank-1/2/3 podium background — the parity assertions compare geometry, and
- * a class-plain row is easier to reason about than a tinted one. The renderer
- * itself is what runs in the app; nothing here mirrors its markup any more.
+ * and renderMobileCard (web/src/pages/leaderboard.ts). Ranks start at 4 so no
+ * row or card picks up the .rank-1/2/3 podium tint — the parity assertions
+ * compare geometry, and a class-plain row is easier to reason about than a
+ * tinted one. The renderers themselves are what run in the app; nothing here
+ * mirrors their markup any more.
  */
 function sampleEntry(rank: number): LeaderboardEntry {
   return {
@@ -61,46 +62,6 @@ function sampleEntry(rank: number): LeaderboardEntry {
   };
 }
 
-/**
- * Mirrors renderMobileCard (web/src/pages/leaderboard.ts) with the same static
- * values — button toggle, arrow span, four stats, full-stats link.
- */
-function liveMobileCard(rank: number): string {
-  return `
-    <div class="leaderboard-mobile-card" role="listitem" data-bot-id="bot-${rank}" aria-expanded="false">
-      <button class="mobile-card-toggle" aria-label="Expand details for Bot ${rank}" type="button">
-        <div class="leaderboard-mobile-rank rank-${rank}">${rank}</div>
-        <div class="leaderboard-mobile-info">
-          <div class="leaderboard-mobile-name">Bot ${rank}</div>
-          <div class="leaderboard-mobile-rating">${1000 + rank} <span style="opacity:.6;font-size:.8em">±50</span></div>
-        </div>
-        <span class="mobile-card-arrow" aria-hidden="true">▸</span>
-      </button>
-      <div class="leaderboard-mobile-details">
-        <div class="leaderboard-mobile-stat">
-          <span class="leaderboard-mobile-stat-label">W / L</span>
-          <span class="leaderboard-mobile-stat-value">10 / ${rank}</span>
-        </div>
-        <div class="leaderboard-mobile-stat">
-          <span class="leaderboard-mobile-stat-label">Win Rate</span>
-          <span class="leaderboard-mobile-stat-value">83.${rank}%</span>
-        </div>
-        <div class="leaderboard-mobile-stat">
-          <span class="leaderboard-mobile-stat-label">Matches</span>
-          <span class="leaderboard-mobile-stat-value">${10 + rank}</span>
-        </div>
-        <div class="leaderboard-mobile-stat">
-          <span class="leaderboard-mobile-stat-label">Status</span>
-          <span class="leaderboard-mobile-stat-value status-healthy">healthy</span>
-        </div>
-        <a href="#/bot/bot-${rank}"
-           class="btn small"
-           style="margin-top:10px;display:block;text-align:center"
-           aria-label="Full stats for Bot ${rank}">Full Stats →</a>
-      </div>
-    </div>`;
-}
-
 export function buildFixtureHtml(): string {
   // One document carries both blocks so parity assertions compare skeleton and
   // live geometry under the same viewport and the same stylesheet set. The
@@ -115,7 +76,7 @@ export function buildFixtureHtml(): string {
   // "aligned columns" to compare like with like. #leaderboard-content is
   // omitted — it carries no rule of its own.
   const rows = [4, 5, 6].map((rank) => renderDesktopRow(sampleEntry(rank), 0)).join('\n');
-  const cards = [1, 2, 3].map(liveMobileCard).join('\n');
+  const cards = [4, 5, 6].map((rank) => renderMobileCard(sampleEntry(rank))).join('\n');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -134,7 +95,7 @@ export function buildFixtureHtml(): string {
   <section id="live-fixture" aria-label="live leaderboard fixture">
     <div class="leaderboard-page">
       <div id="live-lb-desktop">${rows}</div>
-      <div id="live-lb-mobile" class="mobile-cards">${cards}</div>
+      <div id="live-lb-mobile" class="mobile-cards" role="list">${cards}</div>
     </div>
   </section>
 </body>
