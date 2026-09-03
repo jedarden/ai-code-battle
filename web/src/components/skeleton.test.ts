@@ -24,6 +24,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { skeletonLeaderboard, skeletonBotProfile, Skeleton } from './skeleton';
+import { renderDesktopRow } from '../pages/leaderboard';
+import type { LeaderboardEntry } from '../api-types';
 
 // vitest stubs CSS imports by default, so read the stylesheet source straight
 // off disk — it is the single source of truth the bars must resolve from.
@@ -158,6 +160,93 @@ describe('skeletonLeaderboard desktop rows', () => {
     expect(decl(lbRowRule, 'padding')).toBe('var(--lb-row-padding)');
     expect(decl(lbRowRule, 'border-bottom')).toBe('1px solid var(--border)');
     expect(decl(lbRowRule, 'box-sizing')).toBe('border-box');
+  });
+});
+
+// ─── Live-column parity ─────────────────────────────────────────────────────────
+// The bars promise the columns the live renderDesktopRow() row draws once the
+// data lands. The guards above hold the bars against the --lb-col-*
+// declarations; these hold the two sides against each other: the column list
+// comes from renderDesktopRow() itself — the same source of truth the
+// rendered-layout harness lays out (web/layout-tests/
+// leaderboard-desktop-parity.spec.ts) — and every live column rule must take
+// its width from the same shared declaration its bar references, so a
+// hardcoded column width, a stale bar var, or a column added to the renderer
+// fails here in `npm test` and not only in the browser harness.
+
+// Column data is geometry-blind; only .lb-name's text varies with it.
+const parityEntry: LeaderboardEntry = {
+  rank: 4,
+  bot_id: 'bot-parity',
+  name: 'Parity Bot',
+  owner_id: 'owner-parity',
+  rating: 1000,
+  rating_deviation: 50,
+  matches_played: 24,
+  matches_won: 10,
+  win_rate: 41.7,
+  health_status: 'healthy',
+};
+
+function liveColumnClasses(): string[] {
+  const doc = new DOMParser().parseFromString(renderDesktopRow(parityEntry, 0), 'text/html');
+  const row = doc.querySelector('.lb-row');
+  expect(row, 'renderDesktopRow must render a .lb-row').toBeTruthy();
+  return Array.from(row!.children).map(el => el.classList[0]);
+}
+
+// Live column class → the shared .lb-row declaration its width must come from.
+// Fixed columns are sized by `width`; the name column flexes, so the
+// declaration that actually sizes it under flex:1 is its `min-width` floor.
+const COLUMN_WIDTH: Record<string, { prop: 'width' | 'min-width'; varName: string; flex?: string }> = {
+  'lb-rank': { prop: 'width', varName: '--lb-col-rank' },
+  'lb-name': { prop: 'min-width', varName: '--lb-col-name-min', flex: '1' },
+  'lb-rating': { prop: 'width', varName: '--lb-col-rating' },
+  'lb-wl': { prop: 'width', varName: '--lb-col-wl' },
+  'lb-winrate': { prop: 'width', varName: '--lb-col-winrate' },
+  'lb-status': { prop: 'width', varName: '--lb-col-status' },
+  'lb-expand-icon': { prop: 'width', varName: '--lb-col-expand' },
+};
+
+describe('skeletonLeaderboard bars vs the live columns', () => {
+  it('renders exactly one bar per live column', () => {
+    const columns = liveColumnClasses();
+    expect(columns.length).toBeGreaterThan(0);
+    for (const cls of columns) {
+      expect(COLUMN_WIDTH[cls], `live column .${cls} must be mapped to its shared width var`)
+        .toBeTruthy();
+    }
+    for (const row of desktopContainer().children) {
+      expect(Array.from(row.children), `one bar per live column (${columns.join(', ')})`)
+        .toHaveLength(columns.length);
+    }
+  });
+
+  it('takes each bar width from the same declaration its live column consumes', () => {
+    const columns = liveColumnClasses();
+    const rows = Array.from(desktopContainer().children);
+
+    columns.forEach((cls, i) => {
+      const { prop, varName, flex } = COLUMN_WIDTH[cls];
+      const rule = componentsCss.match(new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+      expect(rule, `.${cls} rule not found in components.css`).not.toBe('');
+      // Live side: the column's own rule must reach its width through the
+      // shared .lb-row declaration — a hardcoded px there is the drift that
+      // silently puts the column and its bar on different widths.
+      expect(decl(rule, prop), `.${cls} width must come from ${varName}`).toBe(`var(${varName})`);
+      if (flex) {
+        expect(decl(rule, 'flex'), `.${cls} must flex like its bar does`).toBe(flex);
+      }
+      // Skeleton side: the bar in that column's position references the same
+      // declaration — one declaration per column, consumed from both sides.
+      for (const row of rows) {
+        const style = row.children[i].getAttribute('style') ?? '';
+        expect(decl(style, prop), `bar ${i} must mirror .${cls}'s ${prop}`).toBe(`var(${varName})`);
+        if (flex) {
+          expect(decl(style, 'flex'), `bar ${i} must flex like .${cls} does`).toBe(flex);
+        }
+      }
+    });
   });
 });
 
