@@ -11,9 +11,12 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:browser": "playwright test",
+    "test:browser:install": "playwright install chromium"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "agentation": "^3.0.2",
