@@ -17,6 +17,8 @@ export interface SkeletonProps {
   width?: string;
   height?: string;
   extra?: string;
+  /** Extra classes after the base one, e.g. the live column class a bar stands in for. */
+  className?: string;
 }
 
 /**
@@ -27,24 +29,25 @@ export interface SkeletonProps {
  * @returns HTML string for skeleton element
  */
 export function Skeleton(props: SkeletonProps): string {
-  const { variant, width = '100%', height = '16px', extra = '' } = props;
+  const { variant, width = '100%', height = '16px', extra = '', className = '' } = props;
 
   // Dimensions first, then the variant default, then extra — so an extra can
   // override the default (last declaration wins) and every declaration stays
   // semicolon-terminated when the pieces are concatenated.
   const dims = `width:${width};height:${height};`;
   const tail = extra && !extra.endsWith(';') ? `${extra};` : extra;
+  const cls = className ? `skeleton-bar ${className}` : 'skeleton-bar';
 
   switch (variant) {
     case 'circle':
       return `<div class="skeleton-circle" style="${dims}${tail}"></div>`;
 
     case 'rectangle':
-      return `<div class="skeleton-bar" style="${dims}border-radius:var(--radius-md);${tail}"></div>`;
+      return `<div class="${cls}" style="${dims}border-radius:var(--radius-md);${tail}"></div>`;
 
     case 'bar':
     default:
-      return `<div class="skeleton-bar" style="${dims}${tail}"></div>`;
+      return `<div class="${cls}" style="${dims}${tail}"></div>`;
   }
 }
 
@@ -100,15 +103,18 @@ export function skeletonLeaderboard(): string {
   // bar widths below, so skeleton and live rows cannot drift. Columns mirror
   // renderDesktopRow (web/src/pages/leaderboard.ts):
   // rank + name(flex:1) + rating + wl + winrate + status + expand.
-  // Rows live in #lb-desktop so the live responsive rules govern visibility.
+  // Rows live in #lb-desktop so the live responsive rules govern visibility,
+  // and the wl/status bars carry the live .lb-wl/.lb-status classes so the
+  // @media (max-width: 768px) rule that collapses those columns on the real
+  // row collapses them here too — no skeleton-only breakpoint or display rule.
   const rows = Array.from({ length: 15 }, () => {
     return `<div class="lb-row">
       ${Skeleton({ variant: 'bar', width: 'var(--lb-col-rank)', extra: 'flex-shrink:0' })}
       ${Skeleton({ variant: 'bar', width: 'var(--lb-col-name-min)', extra: 'flex:1;min-width:var(--lb-col-name-min)' })}
       ${Skeleton({ variant: 'bar', width: 'var(--lb-col-rating)', extra: 'flex-shrink:0' })}
-      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-wl)', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-wl)', extra: 'flex-shrink:0', className: 'lb-wl' })}
       ${Skeleton({ variant: 'bar', width: 'var(--lb-col-winrate)', extra: 'flex-shrink:0' })}
-      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-status)', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-status)', extra: 'flex-shrink:0', className: 'lb-status' })}
       ${Skeleton({ variant: 'bar', width: 'var(--lb-col-expand)', extra: 'flex-shrink:0' })}
     </div>`;
   }).join('');
@@ -116,7 +122,9 @@ export function skeletonLeaderboard(): string {
   // placeholders reuse the live .leaderboard-mobile-card / .mobile-card-toggle /
   // .leaderboard-mobile-* classes (styles/mobile.css phone block + components.css)
   // so gap, padding, background, radius, margin-bottom and the collapsed-details
-  // geometry come from the same rules the real cards use and cannot drift. Only
+  // geometry come from the same rules the real cards use and cannot drift, and
+  // the container is the live #lb-mobile.mobile-cards, whose display comes from
+  // the phone/tablet/desktop media blocks in styles/mobile.css. Only
   // the placeholder bars carry inline dimensions. Toggle and arrow are divs, not
   // button/span — a skeleton has nothing to activate — and the cards carry no
   // role or data attributes, matching the decorative rows above.
@@ -150,62 +158,88 @@ export function skeletonLeaderboard(): string {
 }
 
 export function skeletonBotProfile(): string {
+  // Mirrors renderProfile (web/src/pages/bot-profile.ts) section for section:
+  // .profile-header (§16.14 Performance Trifecta #2 avatar-area circle, then
+  // name h1 + .profile-status chip + share-card button), then .profile-grid
+  // with the ratings, stats, meta, rivals and lazy history sections in the
+  // live order. The root is the
+  // live .bot-profile-page rule (max-width 900px + padding), and every wrapper
+  // reuses the live class, so page width, header flex layout, grid columns
+  // (auto-fit → 1 column on phone, 2 on tablet), section chrome, toggle rows
+  // and the collapsed .section-content boxes all come from the same rules the
+  // real page uses and cannot drift. Only the bars carry inline dimensions,
+  // derived from the text metrics they stand in for (font-size × line-height).
+  // The avatar circle stands in for the header's leading visual block only —
+  // the live header renders no avatar and none is added there. It is 64px
+  // square, which fits inside the 74px .profile-header-main column (40px name
+  // bar + var(--space-sm) 8px + 26px chip): .profile-header is
+  // align-items:flex-start, so that column stays the tallest child and the
+  // header's footprint is unchanged, while the column's flex:1 absorbs the
+  // circle's width. Shimmer and the 50% radius come from the shared
+  // .skeleton-circle rules (components.css) — nothing inline, no extra class.
+  // No breadcrumb: the skeleton replaces the whole app during load, and the
+  // real page renders its breadcrumb only once the profile has arrived.
+  // Toggle rows and the history placeholder are divs, not button/observer —
+  // a skeleton has nothing to activate — so they carry no aria or data
+  // attributes, and the history shimmer is the live .lazy-placeholder rule
+  // (components.css), the same one lazySection renders below the fold.
+  const toggleRow = (labelWidth: string) => `
+    <div class="section-toggle">
+      ${Skeleton({ variant: 'bar', width: labelWidth, height: '20px' })}
+      ${Skeleton({ variant: 'bar', width: '10px', height: '12px' })}
+    </div>`;
   return `
-    <div class="skeleton-page">
-      <!-- Breadcrumb -->
-      <div class="skeleton-row" style="margin-bottom:16px">
-        ${Skeleton({ variant: 'bar', width: '80px', height: '14px' })}
-        ${Skeleton({ variant: 'bar', width: '12px', height: '14px', extra: 'margin:0 8px' })}
-        ${Skeleton({ variant: 'bar', width: '120px', height: '14px' })}
-      </div>
-
-      <!-- Profile Header -->
-      <div class="skeleton-row" style="justify-content:space-between;align-items:flex-start;margin-bottom:24px">
-        <div style="flex:1">
-          ${Skeleton({ variant: 'bar', width: '200px', height: '32px', extra: 'margin-bottom:12px' })}
-          ${Skeleton({ variant: 'bar', width: '100px', height: '20px' })}
+    <div class="bot-profile-page">
+      <div class="profile-header">
+        ${Skeleton({ variant: 'circle', width: '64px', height: '64px' })}
+        <div class="profile-header-main">
+          ${Skeleton({ variant: 'bar', width: '220px', height: '40px', extra: 'margin-bottom:var(--space-sm)' })}
+          ${Skeleton({ variant: 'bar', width: '80px', height: '26px', extra: 'border-radius:var(--radius-sm)' })}
         </div>
-        ${Skeleton({ variant: 'rectangle', width: '140px', height: '36px' })}
+        ${Skeleton({ variant: 'rectangle', width: '128px', height: '36px' })}
       </div>
 
-      <!-- Rating Section -->
-      <div style="margin-bottom:24px">
-        ${Skeleton({ variant: 'bar', width: '80px', height: '24px', extra: 'margin-bottom:16px' })}
-        <div class="skeleton-row" style="gap:16px;align-items:flex-end;margin-bottom:16px">
-          ${Skeleton({ variant: 'bar', width: '80px', height: '48px' })}
-          ${Skeleton({ variant: 'bar', width: '60px', height: '24px' })}
+      <div class="profile-grid">
+        <div class="profile-section ratings">
+          ${Skeleton({ variant: 'bar', width: '80px', height: '30px', extra: 'margin-bottom:var(--space-md)' })}
+          <div class="rating-display">
+            ${Skeleton({ variant: 'bar', width: '140px', height: '60px' })}
+            ${Skeleton({ variant: 'bar', width: '48px', height: '24px' })}
+          </div>
+          <div class="rating-chart">
+            ${Skeleton({ variant: 'rectangle', width: '100%', height: '60px' })}
+            <div class="rating-range">
+              ${Skeleton({ variant: 'bar', width: '56px', height: '12px' })}
+              ${Skeleton({ variant: 'bar', width: '56px', height: '12px' })}
+            </div>
+          </div>
         </div>
-        ${Skeleton({ variant: 'rectangle', width: '100%', height: '100px', extra: 'border-radius:8px' })}
-      </div>
 
-      <!-- Stats Section -->
-      <div style="margin-bottom:24px">
-        ${Skeleton({ variant: 'bar', width: '100px', height: '24px', extra: 'margin-bottom:16px' })}
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
-          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
-          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
-          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
-          ${Skeleton({ variant: 'rectangle', width: '100%', height: '80px', extra: 'border-radius:8px' })}
+        <div class="profile-section stats expandable-section">
+          ${toggleRow('80px')}
+          <div class="section-content expanded">
+            <div class="stats-grid">
+              ${Array.from({ length: 4 }, () => `
+              <div class="stat">
+                ${Skeleton({ variant: 'bar', width: '56px', height: '36px' })}
+                ${Skeleton({ variant: 'bar', width: '72px', height: '18px' })}
+              </div>`).join('')}
+            </div>
+          </div>
         </div>
-      </div>
 
-      <!-- Info Section (collapsed) -->
-      <div style="margin-bottom:24px">
-        ${Skeleton({ variant: 'bar', width: '60px', height: '24px', extra: 'margin-bottom:12px' })}
-        ${Skeleton({ variant: 'bar', width: '100%', height: '16px' })}
-      </div>
+        <div class="profile-section meta expandable-section">
+          ${toggleRow('40px')}
+          <div class="section-content"></div>
+        </div>
 
-      <!-- Rivals Section (collapsed) -->
-      <div style="margin-bottom:24px">
-        ${Skeleton({ variant: 'bar', width: '70px', height: '24px', extra: 'margin-bottom:12px' })}
-        ${Skeleton({ variant: 'bar', width: '100%', height: '16px' })}
-      </div>
+        <div class="profile-section rivals expandable-section">
+          ${toggleRow('56px')}
+          <div class="section-content"></div>
+        </div>
 
-      <!-- Recent Matches Section (lazy-loaded placeholder) -->
-      <div style="min-height:80px">
-        ${Skeleton({ variant: 'bar', width: '120px', height: '24px', extra: 'margin-bottom:12px' })}
-        <div class="skeleton-row" style="margin-bottom:8px">
-          ${Skeleton({ variant: 'bar', width: '100%', height: '48px' })}
+        <div class="lazy-section">
+          <div class="lazy-placeholder" style="min-height:80px"></div>
         </div>
       </div>
     </div>`;
