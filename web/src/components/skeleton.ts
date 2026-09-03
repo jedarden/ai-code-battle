@@ -90,24 +90,29 @@ export function ScrubberSkeleton(): string {
 // ─── Per-page skeletons ────────────────────────────────────────────────────────
 
 export function skeletonLeaderboard(): string {
-  // Match exact flexbox layout and column widths from live leaderboard (.lb-row)
-  // Columns: rank(40px) + name(flex:1,min120px) + rating(100px) + wl(60px) + winrate(70px) + status(80px) + expand(20px)
+  // Desktop rows reuse the live .lb-row rule (styles/components.css): geometry
+  // (gap, padding, border-bottom, min-height, box-sizing) comes from that rule,
+  // and the --lb-col-* custom properties declared on it stay in scope for the
+  // bar widths below, so skeleton and live rows cannot drift. Columns mirror
+  // renderDesktopRow (web/src/pages/leaderboard.ts):
+  // rank + name(flex:1) + rating + wl + winrate + status + expand.
+  // Rows live in #lb-desktop so the live responsive rules govern visibility.
   const rows = Array.from({ length: 15 }, () => {
-    return `<div class="skeleton-row" style="display:flex;align-items:center;gap:var(--space-md);padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--border);min-height:48px;box-sizing:border-box;">
-      ${Skeleton({ variant: 'bar', width: '40px', height: '16px', extra: 'border-radius:4px;flex-shrink:0' })}
-      ${Skeleton({ variant: 'bar', width: '140px', height: '16px', extra: 'flex:1;min-width:120px' })}
-      ${Skeleton({ variant: 'bar', width: '100px', height: '16px', extra: 'flex-shrink:0' })}
-      ${Skeleton({ variant: 'bar', width: '60px', height: '16px', extra: 'flex-shrink:0' })}
-      ${Skeleton({ variant: 'bar', width: '70px', height: '16px', extra: 'flex-shrink:0' })}
-      ${Skeleton({ variant: 'bar', width: '80px', height: '16px', extra: 'flex-shrink:0;font-size:0.8rem' })}
-      ${Skeleton({ variant: 'bar', width: '20px', height: '16px', extra: 'flex-shrink:0' })}
+    return `<div class="lb-row">
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-rank)', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-name-min)', extra: 'flex:1;min-width:var(--lb-col-name-min)' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-rating)', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-wl)', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-winrate)', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-status)', extra: 'flex-shrink:0' })}
+      ${Skeleton({ variant: 'bar', width: 'var(--lb-col-expand)', extra: 'flex-shrink:0' })}
     </div>`;
   }).join('');
   return `
     <div class="skeleton-page">
       <h1 class="page-title">Leaderboard</h1>
       ${Skeleton({ variant: 'bar', width: '200px', height: '14px', extra: 'margin-bottom:24px' })}
-      ${rows}
+      <div id="lb-desktop">${rows}</div>
     </div>`;
 }
 
