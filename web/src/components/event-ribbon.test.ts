@@ -3,7 +3,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventRibbon, EVENT_RIBBON_STYLES } from './event-ribbon';
-import type { SignificantEvent } from '../extract-significant-events';
+import { EVENT_TYPE_REGISTRY, getEventTypeDescriptor } from './event-type-registry';
+import type { SignificantEvent, SignificantEventType } from '../extract-significant-events';
 
 describe('EventRibbon', () => {
   let container: HTMLElement;
@@ -498,6 +499,69 @@ describe('EventRibbon', () => {
       expect(container.querySelector('.event-marker-icon.momentum_shift')?.textContent?.trim()).toBe('📈');
       expect(container.querySelector('.event-marker-icon.critical_moment')?.textContent?.trim()).toBe('🌟');
       expect(container.querySelector('.event-marker-icon.spawn_wave')?.textContent?.trim()).toBe('🐣');
+    });
+  });
+
+  // ── Event type registry ──────────────────────────────────────────────────────────
+  // Icons, names and colors come from the event type registry
+  // (event-type-registry.ts) instead of inline tables here. These tests pin the
+  // ribbon side of that contract; the registry's own unit tests live in
+  // event-type-registry.test.ts.
+
+  describe('Event type registry', () => {
+    it('should render an unknown event type with the fallback marker, not an empty one', () => {
+      const events: SignificantEvent[] = [
+        { type: 'mystery_type' as SignificantEventType, turn: 40, description: 'From a newer replay' },
+      ];
+      new EventRibbon({ container, events, totalTurns: 100 });
+
+      const icon = container.querySelector('.event-marker-icon') as HTMLElement;
+      expect(icon).toBeTruthy();
+      expect(icon.textContent?.trim()).toBe(getEventTypeDescriptor('mystery_type').icon);
+      expect(icon.getAttribute('style')).toContain(`color: ${getEventTypeDescriptor('mystery_type').color}`);
+      // An unvalidated type from replay data must not reach the class name
+      expect(icon.className).not.toContain('mystery_type');
+    });
+
+    it('should take marker icon and color from the registry', () => {
+      const events: SignificantEvent[] = [
+        { type: 'combat', turn: 10, description: 'Combat' },
+        { type: 'spawn_wave', turn: 30, description: 'Spawn' },
+      ];
+      new EventRibbon({ container, events, totalTurns: 100 });
+
+      const combat = container.querySelector('.event-marker-icon.combat') as HTMLElement;
+      const spawn = container.querySelector('.event-marker-icon.spawn_wave') as HTMLElement;
+      // getAttribute (not .style.color) — jsdom normalizes the latter to rgb()
+      expect(combat.getAttribute('style')).toContain(`color: ${EVENT_TYPE_REGISTRY.combat.color}`);
+      expect(combat.textContent?.trim()).toBe(EVENT_TYPE_REGISTRY.combat.icon);
+      expect(spawn.getAttribute('style')).toContain(`color: ${EVENT_TYPE_REGISTRY.spawn_wave.color}`);
+      expect(spawn.textContent?.trim()).toBe(EVENT_TYPE_REGISTRY.spawn_wave.icon);
+    });
+
+    it('should build the legend from the registry', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+
+      const items = container.querySelectorAll('.event-legend-item');
+      expect(items.length).toBe(Object.keys(EVENT_TYPE_REGISTRY).length);
+
+      // Each entry shows exactly the icon and display name the registry holds
+      // for the type stamped on it
+      items.forEach(item => {
+        const style = getEventTypeDescriptor(item.getAttribute('data-event-type') || '');
+        expect(item.querySelector('.event-legend-icon')?.textContent).toBe(style.icon);
+        expect(item.querySelector('.event-legend-label')?.textContent).toBe(style.name);
+      });
+    });
+
+    it('should generate the per-type marker CSS from the registry', () => {
+      for (const [type, { color }] of Object.entries(EVENT_TYPE_REGISTRY)) {
+        const rule = EVENT_RIBBON_STYLES.match(
+          new RegExp(`\\.event-marker-icon\\.${type}\\s*\\{[^}]*\\}`)
+        )?.[0] ?? '';
+        expect(rule, `CSS rule for ${type}`).toContain(`color: ${color} !important`);
+      }
     });
   });
 

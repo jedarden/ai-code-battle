@@ -2,7 +2,13 @@
 // Horizontal event timeline displaying SignificantEvents proportionally by turn
 // Positioned below the replay canvas as a navigation aid
 
-import type { SignificantEvent, SignificantEventType } from '../extract-significant-events';
+import type { SignificantEvent } from '../extract-significant-events';
+import {
+  EVENT_TYPE_REGISTRY,
+  eventTypeColorWithAlpha,
+  getEventTypeDescriptor,
+  isKnownEventType,
+} from './event-type-registry';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Overlap layering (same-turn stacking)
@@ -79,6 +85,7 @@ export class EventRibbon {
   private ribbonEl!: HTMLDivElement;
   private markersContainer!: HTMLDivElement;
   private onEventClick?: (event: SignificantEvent) => void;
+  private onTurnClick?: (turn: number) => void;
   private getTurn?: () => number;
   private events: SignificantEvent[] = [];
   private totalTurns: number = 0;
@@ -93,6 +100,7 @@ export class EventRibbon {
   constructor(options: EventRibbonOptions) {
     this.container = options.container;
     this.onEventClick = options.onEventClick;
+    this.onTurnClick = options.onTurnClick;
     this.getTurn = options.getTurn;
 
     // Load saved legend visibility preference
@@ -180,25 +188,17 @@ export class EventRibbon {
     const content = document.createElement('div');
     content.className = 'event-legend-content';
 
-    // Get all event types and their styles
-    const eventTypes: Array<{ type: SignificantEventType; label: string; icon: string }> = [
-      { type: 'combat', label: 'Combat', icon: '⚔️' },
-      { type: 'core_capture', label: 'Core Capture', icon: '🏰' },
-      { type: 'energy_milestone', label: 'Energy', icon: '💎' },
-      { type: 'mass_death', label: 'Mass Death', icon: '💀' },
-      { type: 'momentum_shift', label: 'Momentum Shift', icon: '📈' },
-      { type: 'critical_moment', label: 'Critical Moment', icon: '🌟' },
-      { type: 'spawn_wave', label: 'Spawn Wave', icon: '🐣' },
-    ];
-
-    for (const { type, label, icon } of eventTypes) {
+    // Legend entries come straight from the event type registry — the same
+    // source the markers and the tooltip read — so an icon, name or color can
+    // never disagree between the ribbon and its key
+    for (const [type, style] of Object.entries(EVENT_TYPE_REGISTRY)) {
       const item = document.createElement('div');
       item.className = 'event-legend-item';
+      item.dataset.eventType = type;
 
-      const style = this.getEventStyle(type);
       item.innerHTML = `
-        <span class="event-legend-icon" style="color: ${style.color}">${icon}</span>
-        <span class="event-legend-label">${label}</span>
+        <span class="event-legend-icon" style="color: ${style.color}">${style.icon}</span>
+        <span class="event-legend-label">${style.name}</span>
       `;
 
       content.appendChild(item);
@@ -411,14 +411,20 @@ export class EventRibbon {
     // Vertical cascade so co-located icons all stay partially visible
     marker.style.transform = this.getStackedTransform(withinTurnIndex, turnEventCount);
 
-    // Get icon and color for event type
-    const eventStyle = this.getEventStyle(event.type);
+    // Icon and color come from the registry. A type with no entry still
+    // resolves — to the unknown-type fallback — so the marker is never empty.
+    const eventStyle = getEventTypeDescriptor(event.type);
+
+    // The type class only exists for known types: it selects the per-type CSS
+    // rule (generated from the registry, see EVENT_RIBBON_STYLES), and an
+    // unknown type arriving in replay data must not reach a class name raw
+    const typeClass = isKnownEventType(event.type) ? ` ${event.type}` : '';
 
     // Render icon (the tooltip itself is a single shared element on
     // document.body — see buildTooltip)
     marker.innerHTML = `
-      <div class="event-marker-icon ${event.type}" style="color: ${eventStyle.color}">
-        ${event.emoji || eventStyle.defaultIcon}
+      <div class="event-marker-icon${typeClass}" style="color: ${eventStyle.color}">
+        ${event.emoji || eventStyle.icon}
       </div>
     `;
 
@@ -511,32 +517,6 @@ export class EventRibbon {
     return div.innerHTML;
   }
 
-  private getEventStyle(eventType: SignificantEventType): { color: string; defaultIcon: string } {
-    const styles: Record<SignificantEventType, { color: string; defaultIcon: string }> = {
-      combat: { color: '#ef4444', defaultIcon: '⚔️' },                    // Red/warning
-      core_capture: { color: '#3b82f6', defaultIcon: '🏰' },             // Blue/primary
-      energy_milestone: { color: '#06b6d4', defaultIcon: '💎' },          // Cyan/teal
-      mass_death: { color: '#6b7280', defaultIcon: '💀' },               // Dark grey/death
-      momentum_shift: { color: '#22c55e', defaultIcon: '📈' },             // Green/growth
-      critical_moment: { color: '#eab308', defaultIcon: '🌟' },           // Yellow/gold
-      spawn_wave: { color: '#a855f7', defaultIcon: '🐣' },                // Purple/special
-    };
-    return styles[eventType] || { color: '#6b7280', defaultIcon: '•' };
-  }
-
-  private getEventTypeLabel(eventType: SignificantEventType): string {
-    const labels: Record<SignificantEventType, string> = {
-      combat: 'Combat',
-      core_capture: 'Core Capture',
-      energy_milestone: 'Energy Milestone',
-      mass_death: 'Mass Death',
-      momentum_shift: 'Momentum Shift',
-      critical_moment: 'Critical Moment',
-      spawn_wave: 'Spawn Wave',
-    };
-    return labels[eventType] || 'Event';
-  }
-
   /**
    * Create the single shared tooltip and attach it to document.body.
    * See the "Tooltip placement" notes at the top of this file for why it
@@ -617,14 +597,15 @@ export class EventRibbon {
   }
 
   private renderTooltipContent(event: SignificantEvent): void {
-    const style = this.getEventStyle(event.type);
+    // Type facts (icon fallback, display name) come from the registry
+    const style = getEventTypeDescriptor(event.type);
     const icon = this.tooltipEl.querySelector('.event-tooltip-icon') as HTMLElement;
     const type = this.tooltipEl.querySelector('.event-tooltip-type') as HTMLElement;
     const description = this.tooltipEl.querySelector('.event-tooltip-description') as HTMLElement;
     const turn = this.tooltipEl.querySelector('.event-tooltip-turn') as HTMLElement;
 
-    icon.innerHTML = this.escapeHtml(event.emoji || style.defaultIcon);
-    type.textContent = this.getEventTypeLabel(event.type);
+    icon.innerHTML = this.escapeHtml(event.emoji || style.icon);
+    type.textContent = style.name;
     description.innerHTML = this.escapeHtml(event.description);
     turn.textContent = `Turn ${event.turn}`;
   }
@@ -774,6 +755,20 @@ export class EventRibbon {
 // CSS Styles
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Per-type marker colors, generated from the event type registry so a color
+ * change there lands in the markers, the tooltip and the legend together.
+ * !important beats the inline color set on each icon; the point of the rules
+ * is to keep the glow (text-shadow) derived from the same color as the icon.
+ */
+const EVENT_TYPE_MARKER_CSS = Object.entries(EVENT_TYPE_REGISTRY)
+  .map(([type, style]) => `/* ${style.name} */
+.event-marker-icon.${type} {
+  color: ${style.color} !important;
+  text-shadow: 0 0 8px ${eventTypeColorWithAlpha(style.color, 0.6)};
+}`)
+  .join('\n\n');
+
 export const EVENT_RIBBON_STYLES = `
 /* ─── Event Ribbon (§16.20) ───────────────────────────────────────────────────── */
 
@@ -852,41 +847,8 @@ export const EVENT_RIBBON_STYLES = `
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
 }
 
-/* Event type specific colors */
-.event-marker-icon.combat {
-  color: #ef4444 !important;
-  text-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
-}
-
-.event-marker-icon.core_capture {
-  color: #3b82f6 !important;
-  text-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
-}
-
-.event-marker-icon.energy_milestone {
-  color: #06b6d4 !important;
-  text-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
-}
-
-.event-marker-icon.mass_death {
-  color: #6b7280 !important;
-  text-shadow: 0 0 8px rgba(107, 114, 128, 0.6);
-}
-
-.event-marker-icon.momentum_shift {
-  color: #22c55e !important;
-  text-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
-}
-
-.event-marker-icon.critical_moment {
-  color: #eab308 !important;
-  text-shadow: 0 0 8px rgba(234, 179, 8, 0.6);
-}
-
-.event-marker-icon.spawn_wave {
-  color: #a855f7 !important;
-  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
-}
+/* Event type specific colors — generated from the event type registry */
+${EVENT_TYPE_MARKER_CSS}
 
 /* Current turn cursor */
 .event-ribbon-cursor {
