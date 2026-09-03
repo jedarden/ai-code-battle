@@ -5,9 +5,11 @@
 import type { SignificantEvent } from '../extract-significant-events';
 import {
   EVENT_TYPE_REGISTRY,
+  UNKNOWN_EVENT_TYPE,
   eventTypeColorWithAlpha,
   getEventTypeDescriptor,
   isKnownEventType,
+  type EventTypeDescriptor,
 } from './event-type-registry';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +93,7 @@ export class EventRibbon {
   private totalTurns: number = 0;
   private legendVisible: boolean = true;
   private legendEl?: HTMLElement;
+  private legendContentEl?: HTMLElement;
   private legendCloseButton?: HTMLButtonElement;
   private legendToggleButton?: HTMLButtonElement;
   private readonly STORAGE_KEY = 'event-ribbon-legend-visible';
@@ -129,6 +132,7 @@ export class EventRibbon {
     this.events = events;
     this.totalTurns = totalTurns;
     this.renderMarkers();
+    this.renderLegendEntries();
   }
 
   /**
@@ -138,6 +142,7 @@ export class EventRibbon {
     this.events = [];
     this.totalTurns = 0;
     this.renderMarkers();
+    this.renderLegendEntries();
   }
 
   /**
@@ -187,24 +192,13 @@ export class EventRibbon {
     // Create legend content container
     const content = document.createElement('div');
     content.className = 'event-legend-content';
-
-    // Legend entries come straight from the event type registry — the same
-    // source the markers and the tooltip read — so an icon, name or color can
-    // never disagree between the ribbon and its key
-    for (const [type, style] of Object.entries(EVENT_TYPE_REGISTRY)) {
-      const item = document.createElement('div');
-      item.className = 'event-legend-item';
-      item.dataset.eventType = type;
-
-      item.innerHTML = `
-        <span class="event-legend-icon" style="color: ${style.color}">${style.icon}</span>
-        <span class="event-legend-label">${style.name}</span>
-      `;
-
-      content.appendChild(item);
-    }
-
     legend.appendChild(content);
+    this.legendContentEl = content;
+
+    // Entries are filled by the same path setEvents/clear use, so the shell
+    // (built once, here) stays separate from the entries (rebuilt on every
+    // event update) and the key can never hold a stale set
+    this.renderLegendEntries();
 
     // Both go into the stack root: the legend sits directly below the ribbon,
     // and the toggle chip occupies the same slot once the legend collapses, so
@@ -224,6 +218,63 @@ export class EventRibbon {
     if (!this.legendVisible) {
       this.hideLegend(false); // Don't save preference on initial load
     }
+  }
+
+  /**
+   * Rebuild the legend's entries from the registry plus the event types
+   * actually present in the data.
+   *
+   * Every registry type always gets an entry, so the key reads as a key even
+   * before any event arrives. A type arriving in the replay data that the
+   * registry doesn't know gets an entry too, resolved to UNKNOWN_EVENT_TYPE —
+   * the same descriptor the marker for that event renders — so the key covers
+   * everything the ribbon can show and never disagrees with it. A no-op until
+   * renderLegend has built the shell (the constructor can run this before any
+   * legend exists, via setEvents).
+   */
+  private renderLegendEntries(): void {
+    const content = this.legendContentEl;
+    if (!content) return;
+
+    // Data-derived types with no registry entry, in first-appearance order —
+    // this.events arrives turn-sorted, so that is also turn order
+    const unknownTypes: string[] = [];
+    for (const event of this.events) {
+      if (!isKnownEventType(event.type) && !unknownTypes.includes(event.type)) {
+        unknownTypes.push(event.type);
+      }
+    }
+
+    // Rebuild in place: emptying the container and refilling keeps the legend,
+    // its header and its toggle exactly where they are, so repeated setEvents
+    // calls can neither duplicate entries nor leak their nodes
+    content.innerHTML = '';
+
+    for (const [type, style] of Object.entries(EVENT_TYPE_REGISTRY)) {
+      content.appendChild(this.createLegendItem(type, style, false));
+    }
+    for (const type of unknownTypes) {
+      content.appendChild(this.createLegendItem(type, UNKNOWN_EVENT_TYPE, true));
+    }
+  }
+
+  /**
+   * Build one legend entry: icon and color from the descriptor, which is the
+   * same object the marker for this type renders from, so the key and the
+   * ribbon can't drift. The type string only ever lands in a dataset field
+   * (never in HTML), so an unvalidated replay type can't inject markup.
+   */
+  private createLegendItem(type: string, style: EventTypeDescriptor, unknown: boolean): HTMLElement {
+    const item = document.createElement('div');
+    item.className = unknown ? 'event-legend-item event-legend-item-unknown' : 'event-legend-item';
+    item.dataset.eventType = type;
+
+    item.innerHTML = `
+      <span class="event-legend-icon" style="color: ${style.color}">${style.icon}</span>
+      <span class="event-legend-label">${style.name}</span>
+    `;
+
+    return item;
   }
 
   /**
@@ -1011,12 +1062,28 @@ ${EVENT_TYPE_MARKER_CSS}
   display: flex;
   align-items: center;
   gap: 4px;
-  color: var(--text-secondary, #64748b);
+  /* #94a3b8 rather than the #64748b used elsewhere: this text renders at
+     0.75rem on --bg-secondary, and the darker fallback only reaches ~3.1:1
+     there — under the 4.5:1 small text needs. #94a3b8 is 5.7:1. */
+  color: var(--text-secondary, #94a3b8);
 }
 
 .event-legend-icon {
   font-size: 16px;
   line-height: 1;
+  /* Same scrim the markers carry. The icon fills are the marker colors — they
+     have to match, so they cannot be lightened for a light surface — and this
+     dark halo keeps every one of them legible if --bg-secondary is themed
+     light instead of falling back to #0f172a. */
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+/* An event type the registry doesn't know, resolved to the unknown-type
+   default. Marked typographically rather than by dimming, which would cost the
+   label the contrast the rest of the key is held to. */
+.event-legend-item-unknown .event-legend-label {
+  font-style: italic;
+  border-bottom: 1px dashed currentColor;
 }
 
 /* Tooltip styles (§14.8) */

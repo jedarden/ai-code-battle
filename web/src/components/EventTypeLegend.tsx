@@ -9,15 +9,16 @@
 
 import React from 'react';
 import type { SignificantEventType } from '../extract-significant-events';
+import { EVENT_TYPE_REGISTRY, getEventTypeDescriptor, type EventTypeDescriptor } from './event-type-registry';
 
 /**
- * Event type configuration with icon, color, and label
+ * Event type configuration with icon, color, and label.
+ * Sourced from the event type registry — the same single source the ribbon
+ * markers, tooltip and legend read — so this key can never drift from what
+ * the ribbon actually shows.
  */
-interface EventTypeConfig {
+interface EventTypeConfig extends EventTypeDescriptor {
   type: SignificantEventType;
-  label: string;
-  icon: string;
-  color: string;
 }
 
 /**
@@ -29,19 +30,6 @@ export interface EventTypeLegendProps {
   /** Optional additional CSS classes */
   className?: string;
 }
-
-/**
- * Event type style definitions matching the event-ribbon.ts configuration
- */
-const EVENT_TYPE_STYLES: Record<SignificantEventType, { icon: string; color: string; label: string }> = {
-  combat: { icon: '⚔️', color: '#ef4444', label: 'Combat' },
-  core_capture: { icon: '🏰', color: '#3b82f6', label: 'Core Capture' },
-  energy_milestone: { icon: '💎', color: '#06b6d4', label: 'Energy Milestone' },
-  mass_death: { icon: '💀', color: '#6b7280', label: 'Mass Death' },
-  momentum_shift: { icon: '📈', color: '#22c55e', label: 'Momentum Shift' },
-  critical_moment: { icon: '🌟', color: '#eab308', label: 'Critical Moment' },
-  spawn_wave: { icon: '🐣', color: '#a855f7', label: 'Spawn Wave' },
-};
 
 /**
  * EventTypeLegend component displays event type mappings with icons and colors
@@ -60,18 +48,21 @@ export const EventTypeLegend: React.FC<EventTypeLegendProps> = ({
   className = ''
 }) => {
   // Use all event types if not provided
-  const typesToDisplay = eventTypes || (Object.keys(EVENT_TYPE_STYLES) as SignificantEventType[]);
+  const typesToDisplay = eventTypes || (Object.keys(EVENT_TYPE_REGISTRY) as SignificantEventType[]);
 
-  // Map event types to their configurations
+  // Resolve through the registry's own lookup rather than indexing it
+  // directly: a value outside the union — reachable from unvalidated data via
+  // a plain-JS caller — then falls back to the unknown-type descriptor instead
+  // of producing an entry with no icon, name or color
   const eventConfigs: EventTypeConfig[] = typesToDisplay.map(type => ({
     type,
-    ...EVENT_TYPE_STYLES[type]
+    ...getEventTypeDescriptor(type)
   }));
 
   return (
     <div className={`event-type-legend ${className}`.trim()}>
       <div className="event-type-legend-content">
-        {eventConfigs.map(({ type, label, icon, color }) => (
+        {eventConfigs.map(({ type, name, icon, color }) => (
           <div key={type} className="event-type-legend-item">
             <span
               className="event-type-legend-icon"
@@ -81,7 +72,7 @@ export const EventTypeLegend: React.FC<EventTypeLegendProps> = ({
               {icon}
             </span>
             <span className="event-type-legend-label">
-              {label}
+              {name}
             </span>
           </div>
         ))}

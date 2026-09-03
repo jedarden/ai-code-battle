@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventRibbon, EVENT_RIBBON_STYLES } from './event-ribbon';
-import { EVENT_TYPE_REGISTRY, getEventTypeDescriptor } from './event-type-registry';
+import { EVENT_TYPE_REGISTRY, UNKNOWN_EVENT_TYPE, getEventTypeDescriptor } from './event-type-registry';
 import type { SignificantEvent, SignificantEventType } from '../extract-significant-events';
 
 describe('EventRibbon', () => {
@@ -791,6 +791,202 @@ describe('EventRibbon', () => {
       const headerTitle = container.querySelector('.event-legend-title');
       expect(headerTitle).toBeTruthy();
       expect(headerTitle?.textContent).toBe('Event Types');
+    });
+  });
+
+  // ── Legend entries ─────────────────────────────────────────────────────────────
+  // The key has to cover every type the ribbon can actually show: the registry
+  // types, plus any type arriving in the replay data that the registry doesn't
+  // know — mapped to the registry's unknown-type default, exactly like the
+  // marker for that event. setEvents/clear rebuild the entries in place, so
+  // repeated renders must not duplicate entries or leak nodes.
+
+  describe('Legend entries (registry + data, idempotent)', () => {
+    const UNKNOWN = 'mystery_event';
+
+    const makeEvent = (type: string, turn: number): SignificantEvent => ({
+      type: type as SignificantEventType,
+      turn,
+      description: `${type} at turn ${turn}`,
+    });
+
+    it('should add an entry for an unknown type present in the data, using the registry default', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.setEvents([makeEvent('combat', 0), makeEvent(UNKNOWN, 3)], 10);
+      ribbon.renderLegend();
+
+      // 7 registry types + the unknown one from the data
+      const items = container.querySelectorAll('.event-legend-item');
+      expect(items.length).toBe(Object.keys(EVENT_TYPE_REGISTRY).length + 1);
+
+      const unknownItem = container.querySelector(
+        `.event-legend-item[data-event-type="${UNKNOWN}"]`
+      ) as HTMLElement;
+      expect(unknownItem).toBeTruthy();
+      expect(unknownItem.classList.contains('event-legend-item-unknown')).toBe(true);
+
+      // Same descriptor the marker for that event resolves to
+      const icon = unknownItem.querySelector('.event-legend-icon') as HTMLElement;
+      const label = unknownItem.querySelector('.event-legend-label') as HTMLElement;
+      expect(icon.textContent).toBe(UNKNOWN_EVENT_TYPE.icon);
+      expect(label.textContent).toBe(UNKNOWN_EVENT_TYPE.name);
+      expect(icon.getAttribute('style')).toContain(`color: ${UNKNOWN_EVENT_TYPE.color}`);
+    });
+
+    it('should collapse repeated occurrences of an unknown type to a single entry', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.setEvents(
+        [makeEvent(UNKNOWN, 1), makeEvent(UNKNOWN, 4), makeEvent('combat', 6)],
+        10
+      );
+      ribbon.renderLegend();
+
+      expect(
+        container.querySelectorAll(`.event-legend-item[data-event-type="${UNKNOWN}"]`).length
+      ).toBe(1);
+      expect(container.querySelectorAll('.event-legend-item').length).toBe(
+        Object.keys(EVENT_TYPE_REGISTRY).length + 1
+      );
+    });
+
+    it('should keep every registry type represented when the data adds an unknown type', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.setEvents([makeEvent(UNKNOWN, 1)], 10);
+      ribbon.renderLegend();
+
+      for (const type of Object.keys(EVENT_TYPE_REGISTRY)) {
+        expect(
+          container.querySelector(`.event-legend-item[data-event-type="${type}"]`)
+        ).toBeTruthy();
+      }
+    });
+
+    it('should match the marker icon and color for the same type', () => {
+      const ribbon = new EventRibbon({
+        container,
+        events: [makeEvent('combat', 2), makeEvent('spawn_wave', 5)],
+        totalTurns: 10,
+      });
+      ribbon.renderLegend();
+
+      for (const type of ['combat', 'spawn_wave']) {
+        const legendIcon = container.querySelector(
+          `.event-legend-item[data-event-type="${type}"] .event-legend-icon`
+        ) as HTMLElement;
+        const markerIcon = container.querySelector(`.event-marker-icon.${type}`) as HTMLElement;
+
+        expect(legendIcon.textContent?.trim()).toBe(markerIcon.textContent?.trim());
+        expect(legendIcon.getAttribute('style')).toContain(EVENT_TYPE_REGISTRY[type].color);
+        expect(markerIcon.getAttribute('style')).toContain(EVENT_TYPE_REGISTRY[type].color);
+      }
+    });
+
+    it('should re-render in place when events change, without duplicating entries or nodes', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+      expect(container.querySelectorAll('.event-legend-item').length).toBe(
+        Object.keys(EVENT_TYPE_REGISTRY).length
+      );
+
+      ribbon.setEvents([makeEvent('combat', 0), makeEvent(UNKNOWN, 1)], 10);
+      expect(container.querySelectorAll('.event-legend-item').length).toBe(
+        Object.keys(EVENT_TYPE_REGISTRY).length + 1
+      );
+      expect(
+        container.querySelectorAll(`.event-legend-item[data-event-type="${UNKNOWN}"]`).length
+      ).toBe(1);
+
+      // Same data again — idempotent, no second copy of the unknown entry
+      ribbon.setEvents([makeEvent('combat', 0), makeEvent(UNKNOWN, 1)], 10);
+      expect(container.querySelectorAll('.event-legend-item').length).toBe(
+        Object.keys(EVENT_TYPE_REGISTRY).length + 1
+      );
+
+      // Exactly one of each structural node, in the component (not leaked to
+      // the body the way the tooltip deliberately is)
+      expect(container.querySelectorAll('.event-ribbon-legend').length).toBe(1);
+      expect(container.querySelectorAll('.event-legend-header').length).toBe(1);
+      expect(container.querySelectorAll('.event-legend-content').length).toBe(1);
+      expect(container.querySelectorAll('.event-legend-toggle').length).toBe(1);
+      expect(document.body.querySelectorAll('.event-ribbon-legend').length).toBe(1);
+    });
+
+    it('should drop data-derived entries when the ribbon is cleared', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.setEvents([makeEvent(UNKNOWN, 1)], 10);
+      ribbon.renderLegend();
+      expect(container.querySelectorAll('.event-legend-item').length).toBe(
+        Object.keys(EVENT_TYPE_REGISTRY).length + 1
+      );
+
+      ribbon.clear();
+
+      expect(container.querySelectorAll('.event-legend-item').length).toBe(
+        Object.keys(EVENT_TYPE_REGISTRY).length
+      );
+      expect(
+        container.querySelector(`.event-legend-item[data-event-type="${UNKNOWN}"]`)
+      ).toBeFalsy();
+    });
+  });
+
+  // ── Legend legibility (contrast) ───────────────────────────────────────────────
+  // Legibility is computed, not eyeballed: WCAG relative-luminance ratios
+  // against both darks the stylesheet can put behind the entries (the themed
+  // --bg-secondary value and its hardcoded fallback) — 3:1 for the icon fills
+  // (graphical objects) and 4.5:1 for the label text. The fills are fixed by
+  // the registry (they must match the markers), so light-surface legibility is
+  // provided by the drop-shadow scrim the legend icons share with the markers
+  // rather than by recoloring.
+
+  describe('Legend legibility (contrast)', () => {
+    const lin = (c: number): number => {
+      const s = c / 255;
+      return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    const luminance = (hex: string): number => {
+      const v = hex.replace('#', '');
+      return (
+        0.2126 * lin(parseInt(v.slice(0, 2), 16)) +
+        0.7152 * lin(parseInt(v.slice(2, 4), 16)) +
+        0.0722 * lin(parseInt(v.slice(4, 6), 16))
+      );
+    };
+    const contrast = (a: string, b: string): number => {
+      const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (l1 + 0.05) / (l2 + 0.05);
+    };
+
+    const darkSurfaces = ['#1e293b', '#0f172a']; // themed --bg-secondary, then its CSS fallback
+
+    it('should keep every registry icon fill at or above 3:1 on the dark legend surfaces', () => {
+      for (const [, { color }] of Object.entries(EVENT_TYPE_REGISTRY)) {
+        for (const bg of darkSurfaces) {
+          expect(contrast(color, bg)).toBeGreaterThanOrEqual(3);
+        }
+      }
+    });
+
+    it('should keep the unknown-type default fill at or above 3:1 on the dark surfaces', () => {
+      for (const bg of darkSurfaces) {
+        expect(contrast(UNKNOWN_EVENT_TYPE.color, bg)).toBeGreaterThanOrEqual(3);
+      }
+    });
+
+    it('should keep the label fallback at or above 4.5:1 on the dark surfaces', () => {
+      const itemRule = EVENT_RIBBON_STYLES.match(/\.event-legend-item\s*\{[^}]*\}/)?.[0] ?? '';
+      const fallback = itemRule.match(/color:\s*var\(--text-secondary,\s*(#[0-9a-fA-F]{6})\)/)?.[1];
+
+      // The old fallback (#64748b) measured 3.1:1 — under what small text needs
+      expect(fallback?.toLowerCase()).toBe('#94a3b8');
+      for (const bg of darkSurfaces) {
+        expect(contrast(fallback || '', bg)).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it('should carry the marker drop-shadow scrim on legend icons for light surfaces', () => {
+      const iconRule = EVENT_RIBBON_STYLES.match(/\.event-legend-icon\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(iconRule).toContain('drop-shadow');
     });
   });
 
