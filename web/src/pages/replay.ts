@@ -1084,6 +1084,11 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     // Initialize EventRibbon (mobile event timeline ribbon)
     const mobileTimelineContainer = document.getElementById('mobile-timeline');
     if (mobileTimelineContainer) {
+      // Clear the placeholder/turn-dot markup BEFORE constructing the ribbon:
+      // the constructor appends its DOM to the container, so wiping afterwards
+      // would discard the ribbon and leave the markers rendering into a
+      // detached node
+      mobileTimelineContainer.innerHTML = '';
       eventRibbon = new EventRibbon({
         container: mobileTimelineContainer,
         onEventClick: (event: SignificantEvent) => {
@@ -1107,7 +1112,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       // Extract and populate significant events
       const significantEvents = extractSignificantEvents(replay);
       const totalTurns = replay.turns.length;
-      mobileTimelineContainer.innerHTML = ''; // Clear loading message
       eventRibbon.setEvents(significantEvents, totalTurns);
 
       // Render legend below the event ribbon

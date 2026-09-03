@@ -75,6 +75,7 @@ export interface EventRibbonOptions {
 
 export class EventRibbon {
   private container: HTMLElement;
+  private rootEl!: HTMLDivElement;
   private ribbonEl!: HTMLDivElement;
   private markersContainer!: HTMLDivElement;
   private onEventClick?: (event: SignificantEvent) => void;
@@ -175,17 +176,6 @@ export class EventRibbon {
     header.appendChild(this.legendCloseButton);
     legend.appendChild(header);
 
-    // Create toggle button (visible only when legend is hidden)
-    this.legendToggleButton = document.createElement('button');
-    this.legendToggleButton.className = 'event-legend-toggle';
-    this.legendToggleButton.setAttribute('type', 'button');
-    this.legendToggleButton.setAttribute('aria-label', 'Show legend');
-    this.legendToggleButton.innerHTML = '☰ Event Types';
-    this.legendToggleButton.addEventListener('click', () => this.showLegend());
-    this.container.appendChild(this.legendToggleButton);
-
-    // Create legend content container
-
     // Create legend content container
     const content = document.createElement('div');
     content.className = 'event-legend-content';
@@ -215,7 +205,20 @@ export class EventRibbon {
     }
 
     legend.appendChild(content);
-    this.container.appendChild(legend);
+
+    // Both go into the stack root: the legend sits directly below the ribbon,
+    // and the toggle chip occupies the same slot once the legend collapses, so
+    // neither can end up beside the ribbon or on top of another control
+    this.rootEl.appendChild(legend);
+
+    // Create toggle button (visible only when legend is hidden)
+    this.legendToggleButton = document.createElement('button');
+    this.legendToggleButton.className = 'event-legend-toggle';
+    this.legendToggleButton.setAttribute('type', 'button');
+    this.legendToggleButton.setAttribute('aria-label', 'Show legend');
+    this.legendToggleButton.innerHTML = '☰ Event Types';
+    this.legendToggleButton.addEventListener('click', () => this.showLegend());
+    this.rootEl.appendChild(this.legendToggleButton);
 
     // Apply saved visibility preference
     if (!this.legendVisible) {
@@ -293,7 +296,11 @@ export class EventRibbon {
    * Destroy the component and remove from DOM.
    */
   public destroy(): void {
-    if (this.ribbonEl && this.ribbonEl.parentNode) {
+    // The stack root holds the ribbon (and, once renderLegend runs, the legend
+    // and its toggle), so removing it takes the whole component out of the DOM
+    if (this.rootEl && this.rootEl.parentNode) {
+      this.rootEl.parentNode.removeChild(this.rootEl);
+    } else if (this.ribbonEl && this.ribbonEl.parentNode) {
       this.ribbonEl.parentNode.removeChild(this.ribbonEl);
     }
     // Also remove legend if it exists
@@ -314,6 +321,16 @@ export class EventRibbon {
   // ── Private Methods ─────────────────────────────────────────────────────────────
 
   private buildDOM(): void {
+    // Stack root: the ribbon and the legend keep their vertical order here,
+    // inside this component, instead of trusting the parent's layout — the
+    // replay page mounts the ribbon into a flex-row scroller (#mobile-timeline),
+    // which would otherwise place the legend beside the ribbon (off-screen in
+    // the scroll area) rather than below it. position: relative also gives the
+    // legend toggle a containing block, so it never anchors to a distant
+    // positioned ancestor elsewhere on the page.
+    this.rootEl = document.createElement('div');
+    this.rootEl.className = 'event-ribbon-root';
+
     // Main ribbon container
     this.ribbonEl = document.createElement('div');
     this.ribbonEl.className = 'event-ribbon';
@@ -332,7 +349,8 @@ export class EventRibbon {
     this.ribbonEl.appendChild(this.markersContainer);
     this.ribbonEl.appendChild(cursor);
 
-    this.container.appendChild(this.ribbonEl);
+    this.rootEl.appendChild(this.ribbonEl);
+    this.container.appendChild(this.rootEl);
   }
 
   private renderMarkers(): void {
@@ -427,11 +445,15 @@ export class EventRibbon {
       marker.addEventListener('mouseleave', collapseLayer);
     }
 
-    // Optional click handler
-    if (this.onEventClick) {
+    // Optional click handler — a marker click is both "jump to this event" and
+    // "jump to this turn", so both callbacks fire from the same listener.
+    // stopPropagation keeps the click off the track's seek handler below, which
+    // would otherwise compute the turn from the click coordinates a second time.
+    if (this.onEventClick || this.onTurnClick) {
       marker.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.onEventClick!(event);
+        this.onEventClick?.(event);
+        this.onTurnClick?.(event.turn);
       });
       marker.style.cursor = 'pointer';
       marker.classList.add('event-marker-clickable');
@@ -930,11 +952,23 @@ export const EVENT_RIBBON_STYLES = `
   border-top: none;
 }
 
-/* Legend toggle button (visible when legend is hidden) */
+/* Stack root — wraps the ribbon, the legend and the legend toggle so their
+   vertical order is fixed inside the component, whatever layout the parent
+   container imposes on its children */
+.event-ribbon-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Legend toggle button — occupies the collapsed legend's slot below the
+   ribbon, so it stays discoverable without ever covering a marker */
 .event-legend-toggle {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
+  display: none;
+  align-self: flex-end;
+  margin: 6px 8px 8px;
   background: var(--bg-secondary, #0f172a);
   border: 1px solid var(--border, #1e293b);
   color: var(--text-secondary, #64748b);
@@ -942,10 +976,7 @@ export const EVENT_RIBBON_STYLES = `
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 10;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .event-legend-toggle:hover {
@@ -960,8 +991,8 @@ export const EVENT_RIBBON_STYLES = `
 
 /* Show toggle button only when legend is hidden */
 .event-ribbon-legend-hidden-container .event-legend-toggle {
-  opacity: 1;
-  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
 }
 
 .event-legend-header {

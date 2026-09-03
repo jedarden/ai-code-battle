@@ -706,6 +706,82 @@ describe('EventRibbon', () => {
     });
   });
 
+  // ── Legend placement ─────────────────────────────────────────────────────────────
+  // The replay page mounts the ribbon into #mobile-timeline, a flex-row
+  // scroller. The ribbon therefore carries its own stack root so the legend
+  // always ends up BELOW the ribbon (never beside it in the scroll area) and
+  // the toggle button anchors inside the component rather than to some
+  // distant positioned ancestor. jsdom has no layout engine, so the vertical
+  // order is asserted structurally plus against the shipped CSS.
+
+  describe('Legend placement (below the ribbon)', () => {
+    it('should wrap the ribbon and legend in a stack root, legend directly below', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+
+      const root = container.querySelector('.event-ribbon-root') as HTMLElement;
+      const ribbonEl = container.querySelector('.event-ribbon') as HTMLElement;
+      const legend = container.querySelector('.event-ribbon-legend') as HTMLElement;
+
+      expect(root).toBeTruthy();
+      expect(ribbonEl.parentElement).toBe(root);
+      expect(legend.parentElement).toBe(root);
+      expect(ribbonEl.nextElementSibling).toBe(legend);
+    });
+
+    it('should pin the vertical stacking in the stylesheet, not inline styles', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+
+      const root = container.querySelector('.event-ribbon-root') as HTMLElement;
+      expect(root.style.flexDirection).toBe(''); // comes from the CSS, not JS
+
+      const rootRule = EVENT_RIBBON_STYLES.match(/\.event-ribbon-root\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(rootRule).toContain('flex-direction: column');
+      expect(rootRule).toContain('position: relative');
+    });
+
+    it('should render the toggle button inside the stack root, below the ribbon', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+
+      const root = container.querySelector('.event-ribbon-root') as HTMLElement;
+      const ribbonEl = container.querySelector('.event-ribbon') as HTMLElement;
+      const toggle = container.querySelector('.event-legend-toggle') as HTMLElement;
+
+      expect(toggle).toBeTruthy();
+      expect(toggle.parentElement).toBe(root);
+      expect(ribbonEl.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('should keep the toggle out of the layout while the legend is shown', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+
+      // display:none while shown — the chip must not reserve a gap under the
+      // ribbon, and must not paint over the markers either
+      const hiddenRule = EVENT_RIBBON_STYLES.match(/\.event-legend-toggle\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(hiddenRule).toContain('display: none');
+
+      const shownRule = EVENT_RIBBON_STYLES.match(
+        /\.event-ribbon-legend-hidden-container \.event-legend-toggle\s*\{[^}]*\}/
+      )?.[0] ?? '';
+      expect(shownRule).toContain('display: inline-flex');
+    });
+
+    it('should remove ribbon, legend and toggle together on destroy', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+      expect(container.querySelector('.event-legend-toggle')).toBeTruthy();
+
+      ribbon.destroy();
+
+      expect(container.querySelector('.event-ribbon')).toBeFalsy();
+      expect(container.querySelector('.event-ribbon-legend')).toBeFalsy();
+      expect(container.querySelector('.event-legend-toggle')).toBeFalsy();
+    });
+  });
+
 
   // ── Shared tooltip ───────────────────────────────────────────────────────────────
   // The ribbon has exactly ONE tooltip, created in the constructor and appended
