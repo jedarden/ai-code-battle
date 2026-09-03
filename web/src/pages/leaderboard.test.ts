@@ -14,13 +14,17 @@
  * text (components.css is the single source of truth the .fade-in rule lives
  * in); the rendered-layout harness (web/layout-tests/
  * leaderboard-swap-parity.spec.ts) reads the same rule out of a real cascade.
+ *
+ * The last unpinned drift vector was numeric rather than structural: the
+ * VirtualList ROW_HEIGHT constant versus the --lb-row-min-height the .lb-row
+ * rule declares. The guard at the bottom holds the two against each other.
  */
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { renderLeaderboardPage } from './leaderboard';
+import { renderLeaderboardPage, ROW_HEIGHT } from './leaderboard';
 import { fetchLeaderboardWithDeltas, type LeaderboardEntry } from '../api-types';
 import { skeletonLeaderboard } from '../components/skeleton';
 
@@ -229,5 +233,25 @@ describe('leaderboard skeleton → content swap', () => {
     const page = document.querySelector('#app > .leaderboard-page');
     expect(page!.classList.contains('fade-in')).toBe(true);
     expect(page!.querySelector('.empty-state')).toBeTruthy();
+  });
+});
+
+// ─── ROW_HEIGHT ↔ the shared row min-height ─────────────────────────────────────
+// renderDesktopList passes ROW_HEIGHT to VirtualList as rowHeight on
+// >50-entry boards, while the rows it renders take their height from the
+// --lb-row-min-height custom property declared on .lb-row in
+// styles/components.css. Nothing else ties the two together: if either side
+// changes without the other, VirtualList rows overlap or gap against
+// .lb-row min-height on exactly the large leaderboards the virtual list
+// exists for, shifting the §16.14 #2 skeleton→content swap there.
+// skeleton.test.ts pins the CSS literal alone — this guard holds it against
+// the constant the renderer actually consumes.
+describe('VirtualList ROW_HEIGHT vs the shared .lb-row min-height', () => {
+  it('keeps ROW_HEIGHT equal to the --lb-row-min-height the rows render at', () => {
+    const lbRowRule = componentsCss.match(/\.lb-row\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(lbRowRule, '.lb-row rule not found in components.css').not.toBe('');
+    const minHeight = lbRowRule.match(/--lb-row-min-height\s*:\s*([^;]+)/)?.[1]?.trim() ?? '';
+    expect(minHeight, '--lb-row-min-height must stay a concrete px length').toMatch(/^[\d.]+px$/);
+    expect(parseFloat(minHeight)).toBe(ROW_HEIGHT);
   });
 });

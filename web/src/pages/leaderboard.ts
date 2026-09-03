@@ -7,7 +7,11 @@ import { VirtualList } from '../lib/virtual-list';
 import { initLazySections, lazySection } from '../lib/lazy-section';
 import { skeletonLeaderboard } from '../components/skeleton';
 
-const ROW_HEIGHT = 48;
+// Must stay in lockstep with --lb-row-min-height on .lb-row
+// (styles/components.css): VirtualList positions rows with this constant, and
+// a divergence from the CSS min-height overlaps or gaps rows on >50-entry
+// boards. leaderboard.test.ts holds the two against each other.
+export const ROW_HEIGHT = 48;
 
 export async function renderLeaderboardPage(): Promise<void> {
   const app = document.getElementById('app');
