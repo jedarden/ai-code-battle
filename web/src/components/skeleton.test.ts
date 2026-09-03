@@ -699,6 +699,10 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     const statsGrid = content.children[0];
     expect(statsGrid.className).toBe('stats-grid');
     expect(decl(statsGridRule, 'grid-template-columns')).toBe('repeat(4, 1fr)');
+    // …and the skeleton must resolve from that live rule, never duplicate it:
+    // the element carries no inline grid, so the shared declaration governs.
+    expect(statsGrid.getAttribute('style'), 'stats grid must not duplicate the shared rule inline').toBeNull();
+    expect(skeletonBotProfile()).not.toMatch(/style="[^"]*grid-template-columns/);
     expect(statRule, '.stat rule not found in components.css').not.toBe('');
     expect(decl(statRule, 'flex-direction')).toBe('column');
 
@@ -744,8 +748,9 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
 
   it('stays decorative: no interactive elements, no CSS of its own', () => {
     const doc = profileDoc();
-    expect(doc.querySelector('button')).toBeNull();
-    expect(doc.querySelector('a')).toBeNull();
+    // No interactive elements anywhere — the share-card button, the section
+    // toggles and the breadcrumb link all stand in as plain divs.
+    expect(doc.querySelectorAll('button, a, input, select, textarea')).toHaveLength(0);
     expect(skeletonBotProfile()).not.toContain('<style');
     expect(skeletonBotProfile()).not.toMatch(/animation\s*:/);
     const hooks = doc.querySelectorAll('[data-section], [aria-expanded], [id]');
