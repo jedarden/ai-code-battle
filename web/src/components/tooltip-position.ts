@@ -11,8 +11,10 @@
  * placement. Deciding *which* placement fits the available space is the
  * caller's policy — the helpers here only answer narrow questions about a
  * placement (`placementOverflowsViewport`) or flip the choice across the
- * anchor when it overflows (`resolveTooltipPlacement`); see `positionTooltip`
- * in event-ribbon.ts for a caller that measures the viewport and picks a side.
+ * anchor when it overflows (`resolveTooltipPlacement`, which answers with the
+ * effective placement and the coordinates computed for it); see
+ * `positionTooltip` in event-ribbon.ts for a caller that measures the viewport
+ * and picks a side.
  *
  * @see §16.15 Tooltips and popovers
  */
@@ -96,8 +98,30 @@ export function placementOverflowsViewport(
 }
 
 /**
- * Resolve the placement to use for `preferred`, flipping it across the anchor
- * when the preferred side does not fit the viewport.
+ * The placement the resolver settled on, with the top-left coordinates
+ * computed for it. `position` is always the one `computeTooltipPosition`
+ * produces for the returned `placement`, so a caller that consumes both can
+ * position the tooltip and its arrow without recomputing anything.
+ */
+export interface ResolvedTooltipPlacement {
+  /** Effective placement — `preferred` unless it flipped across the anchor. */
+  placement: TooltipPlacement;
+  /** Top-left coordinates for `placement`, adjacent to the anchor. */
+  position: TooltipPosition;
+}
+
+/** The placement each placement flips to across the anchor. */
+const FLIPPED: Record<TooltipPlacement, TooltipPlacement> = {
+  above: 'below',
+  below: 'above',
+  left: 'right',
+  right: 'left',
+};
+
+/**
+ * Resolve the placement to use for `preferred` and the coordinates that go
+ * with it, flipping the placement across the anchor when the preferred side
+ * does not fit the viewport.
  *
  * `above` that would push the tooltip past the viewport top becomes `below`,
  * `below` that would push it past the viewport bottom becomes `above`, `left`
@@ -115,25 +139,19 @@ export function placementOverflowsViewport(
  * the placement axis; the flip then happens anyway, because the preferred
  * side is the one that already lost.
  *
- * Pure arithmetic; no DOM reads. See `computeTooltipPosition` for the
- * coordinates the returned placement produces.
+ * The returned `position` is computed for the returned `placement`, so a flip
+ * moves the coordinates with it. Pure arithmetic; no DOM reads.
  */
 export function resolveTooltipPlacement(
   anchor: TooltipAnchorRect,
   tooltip: TooltipSize,
   preferred: TooltipPlacement,
   viewport: ViewportBounds,
-): TooltipPlacement {
-  switch (preferred) {
-    case 'above':
-      return crossesFacingEdge(anchor, tooltip, 'above', viewport) ? 'below' : 'above';
-    case 'below':
-      return crossesFacingEdge(anchor, tooltip, 'below', viewport) ? 'above' : 'below';
-    case 'left':
-      return crossesFacingEdge(anchor, tooltip, 'left', viewport) ? 'right' : 'left';
-    case 'right':
-      return crossesFacingEdge(anchor, tooltip, 'right', viewport) ? 'left' : 'right';
-  }
+): ResolvedTooltipPlacement {
+  const placement = crossesFacingEdge(anchor, tooltip, preferred, viewport)
+    ? FLIPPED[preferred]
+    : preferred;
+  return { placement, position: computeTooltipPosition(anchor, tooltip, placement) };
 }
 
 /**
