@@ -164,11 +164,18 @@ export class EventRibbon {
     // Initialize events and totalTurns if provided
     if (options.events !== undefined && options.totalTurns !== undefined) {
       this.setEvents(options.events, options.totalTurns);
-    } else if (options.events !== undefined) {
-      this.events = options.events;
-    }
-    if (options.totalTurns !== undefined) {
-      this.totalTurns = options.totalTurns;
+    } else {
+      if (options.events !== undefined) {
+        this.events = options.events;
+      }
+      if (options.totalTurns !== undefined) {
+        this.totalTurns = options.totalTurns;
+      }
+      // setEvents is the only route to a first render, and bare construction
+      // takes neither branch of it — run the marker render here so a ribbon
+      // built with no events lands in the empty state that setEvents([], n)
+      // and clear() produce, rather than in a ribbon with no state at all
+      this.renderMarkers();
     }
   }
 
