@@ -1,12 +1,14 @@
 /**
  * Unit tests for the tooltip positioning helper (§16.15)
  * Verifies adjacency, centering, non-overlap, determinism, viewport
- * overflow detection for all four placements, and the flip across the
- * anchor on overflow on both axes.
+ * overflow detection for all four placements, the flip across the
+ * anchor on overflow on both axes, and the clamping that keeps the
+ * tooltip inside the viewport when neither placement fits.
  */
 
 import { describe, it, expect } from 'vitest';
 import {
+  clampTooltipPosition,
   computeTooltipPosition,
   placementOverflowsViewport,
   resolveTooltipPlacement,
@@ -23,12 +25,12 @@ const PLACEMENTS: TooltipPlacement[] = ['above', 'below', 'left', 'right'];
 const VIEWPORT: ViewportBounds = { width: 1024, height: 768 };
 
 /** Tooltip rectangle implied by a computed position and the tooltip size. */
-function tooltipRect(position: { x: number; y: number }) {
+function tooltipRect(position: { x: number; y: number }, size: TooltipSize = TOOLTIP) {
   return {
     left: position.x,
     top: position.y,
-    right: position.x + TOOLTIP.width,
-    bottom: position.y + TOOLTIP.height,
+    right: position.x + size.width,
+    bottom: position.y + size.height,
   };
 }
 
@@ -36,8 +38,9 @@ function tooltipRect(position: { x: number; y: number }) {
 function overlapsAnchor(
   position: { x: number; y: number },
   anchor: TooltipAnchorRect = ANCHOR,
+  size: TooltipSize = TOOLTIP,
 ): boolean {
-  const rect = tooltipRect(position);
+  const rect = tooltipRect(position, size);
   return (
     rect.left < anchor.x + anchor.width &&
     rect.right > anchor.x &&
@@ -253,6 +256,103 @@ describe('placementOverflowsViewport', () => {
   });
 });
 
+describe('clampTooltipPosition', () => {
+  it('should return a position that already fits unchanged', () => {
+    // Rect [32,192] x [140,188] sits fully inside 1024x768.
+    const inside = { x: 32, y: 140 };
+    expect(clampTooltipPosition(inside, TOOLTIP, VIEWPORT)).toEqual(inside);
+  });
+
+  it('should pull a negative x back to the viewport left edge', () => {
+    // -72 is exactly the 'left' placement for ANCHOR: 100 - 160 - 12.
+    const clamped = clampTooltipPosition({ x: -72, y: 200 }, TOOLTIP, VIEWPORT);
+    expect(clamped.x).toBe(0);
+    expect(clamped.y).toBe(200);
+  });
+
+  it('should pull a right overflow back to viewport.width - tooltip.width', () => {
+    // 932 + 160 = 1092, past the 1024 right edge by 68.
+    const clamped = clampTooltipPosition({ x: 932, y: 200 }, TOOLTIP, VIEWPORT);
+    expect(clamped.x).toBe(VIEWPORT.width - TOOLTIP.width);
+    expect(clamped.y).toBe(200);
+  });
+
+  it('should pull a negative y back to the viewport top edge', () => {
+    // -30 is exactly the 'above' placement for the nearTop anchor: 30 - 48 - 12.
+    const clamped = clampTooltipPosition({ x: 200, y: -30 }, TOOLTIP, VIEWPORT);
+    expect(clamped.y).toBe(0);
+    expect(clamped.x).toBe(200);
+  });
+
+  it('should pull a bottom overflow back to viewport.height - tooltip.height', () => {
+    // 766 + 48 = 814, past the 768 bottom edge by 46.
+    const clamped = clampTooltipPosition({ x: 200, y: 766 }, TOOLTIP, VIEWPORT);
+    expect(clamped.y).toBe(VIEWPORT.height - TOOLTIP.height);
+    expect(clamped.x).toBe(200);
+  });
+
+  it('should clamp each axis independently', () => {
+    // Both axes overflow here, and neither clamp may disturb the other.
+    const clamped = clampTooltipPosition({ x: 932, y: -30 }, TOOLTIP, VIEWPORT);
+    expect(clamped).toEqual({ x: VIEWPORT.width - TOOLTIP.width, y: 0 });
+  });
+
+  it('should leave a rectangle that exactly touches the viewport edges', () => {
+    // Rect [0,160] x [720,768]: top-left on the origin, bottom edge on 768.
+    const touching = { x: 0, y: VIEWPORT.height - TOOLTIP.height };
+    expect(clampTooltipPosition(touching, TOOLTIP, VIEWPORT)).toEqual(touching);
+  });
+
+  it('should pin x to 0 when the tooltip is wider than the viewport', () => {
+    // The clamp range [0, -176] is empty, so 0 wins and the tooltip
+    // necessarily crosses the right edge.
+    const wide: TooltipSize = { width: 1200, height: 48 };
+    const clamped = clampTooltipPosition({ x: 136, y: 200 }, wide, VIEWPORT);
+    expect(clamped.x).toBe(0);
+    expect(clamped.y).toBe(200);
+  });
+
+  it('should pin y to 0 when the tooltip is taller than the viewport', () => {
+    const tall: TooltipSize = { width: 160, height: 400 };
+    const cramped: ViewportBounds = { width: 1024, height: 200 };
+    const clamped = clampTooltipPosition({ x: 32, y: 236 }, tall, cramped);
+    expect(clamped.y).toBe(0);
+    expect(clamped.x).toBe(32);
+  });
+
+  it('should land the clamped rectangle inside the viewport', () => {
+    for (const position of [
+      { x: -72, y: 200 },
+      { x: 932, y: -30 },
+      { x: 500, y: 766 },
+    ]) {
+      const rect = tooltipRect(clampTooltipPosition(position, TOOLTIP, VIEWPORT));
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(rect.top).toBeGreaterThanOrEqual(0);
+      expect(rect.right).toBeLessThanOrEqual(VIEWPORT.width);
+      expect(rect.bottom).toBeLessThanOrEqual(VIEWPORT.height);
+    }
+  });
+
+  it('should set the clamped tooltip down on top of the anchor when necessary', () => {
+    // A 300px tooltip on a 320px viewport leaves 20px beside an icon whose
+    // left edge is at 40, so clamping drags the rectangle over the icon.
+    // Overlap is the accepted cost of keeping the tooltip readable.
+    const narrow: ViewportBounds = { width: 320, height: 480 };
+    const wide: TooltipSize = { width: 300, height: 48 };
+    const icon: TooltipAnchorRect = { x: 40, y: 100, width: 24, height: 24 };
+    const clamped = clampTooltipPosition({ x: 76, y: 88 }, wide, narrow);
+
+    expect(clamped.x).toBe(narrow.width - wide.width);
+    const overlaps =
+      clamped.x < icon.x + icon.width &&
+      clamped.x + wide.width > icon.x &&
+      clamped.y < icon.y + icon.height &&
+      clamped.y + wide.height > icon.y;
+    expect(overlaps).toBe(true);
+  });
+});
+
 describe('resolveTooltipPlacement', () => {
   // nearTop/nearBottom sit at the horizontal interior so only the vertical
   // axis is in play; nearLeft/nearRight/midViewport sit at the vertical
@@ -429,5 +529,144 @@ describe('resolveTooltipPlacement', () => {
     expect(resolveTooltipPlacement(ANCHOR, wide, 'right', VIEWPORT).placement).toBe(
       'left',
     );
+  });
+
+  describe('minimum viewport width', () => {
+    // A phone-width viewport beside an icon near its left edge: the 300px
+    // tooltip leaves 20px of room to the icon's right and none to its left,
+    // so neither horizontal placement fits and only clamping is left.
+    const NARROW: ViewportBounds = { width: 320, height: 480 };
+    const wideTooltip: TooltipSize = { width: 300, height: 48 };
+    const leftIcon: TooltipAnchorRect = { x: 40, y: 100, width: 24, height: 24 };
+
+    /** Resolve `preferred` for the narrow viewport and the left-edge icon. */
+    function resolvedNarrow(preferred: TooltipPlacement) {
+      return resolveTooltipPlacement(leftIcon, wideTooltip, preferred, NARROW);
+    }
+
+    it('should clamp both horizontal placements inside the viewport', () => {
+      // 'right' lands at x = 40 + 24 + 12 = 76, crossing the 320 right edge,
+      // so it flips to 'left' at x = 40 - 300 - 12 = -272, which clamps to 0.
+      const flipped = resolvedNarrow('right');
+      expect(flipped.placement).toBe('left');
+      expect(flipped.position).toEqual({ x: 0, y: 88 });
+
+      // 'left' crosses the left edge immediately, flips to 'right' at x = 76,
+      // and that clamps to the 20px the viewport can give it.
+      const clamped = resolvedNarrow('left');
+      expect(clamped.placement).toBe('right');
+      expect(clamped.position).toEqual({ x: NARROW.width - wideTooltip.width, y: 88 });
+    });
+
+    it('should keep the clamped rectangle entirely within the viewport', () => {
+      for (const preferred of ['above', 'below', 'left', 'right'] as const) {
+        const { position } = resolvedNarrow(preferred);
+        const rect = tooltipRect(position, wideTooltip);
+        expect(rect.left).toBeGreaterThanOrEqual(0);
+        expect(rect.top).toBeGreaterThanOrEqual(0);
+        expect(rect.right).toBeLessThanOrEqual(NARROW.width);
+        expect(rect.bottom).toBeLessThanOrEqual(NARROW.height);
+      }
+    });
+
+    it('should overlap the anchor rather than leave the viewport', () => {
+      // Both horizontal placements are clamped over the icon: the rectangle
+      // spanning [0,300] or [20,320] covers the icon's [40,64]. Overlap is
+      // the accepted cost — outside the viewport the tooltip is unreadable.
+      for (const preferred of ['left', 'right'] as const) {
+        const { position } = resolvedNarrow(preferred);
+        expect(overlapsAnchor(position, leftIcon, wideTooltip)).toBe(true);
+      }
+
+      // The vertical placements clamp horizontally too (their centered x is
+      // 40 + 12 - 150 = -98) but land clear of the icon vertically, so
+      // clamping alone does not imply overlap.
+      expect(overlapsAnchor(resolvedNarrow('above').position, leftIcon, wideTooltip)).toBe(
+        false,
+      );
+    });
+
+    it('should report overflow for a placement whose clamped coordinates fit', () => {
+      // The predicate evaluates the placement's own coordinates, not the
+      // resolver's clamped ones, so it still says 'left' does not fit even
+      // though the resolver returns in-viewport coordinates for it.
+      expect(placementOverflowsViewport(leftIcon, wideTooltip, 'left', NARROW)).toBe(
+        true,
+      );
+      expect(resolvedNarrow('left').placement).toBe('right');
+    });
+
+    it('should clamp a kept placement whose centered cross axis overflows', () => {
+      // nearRight 'above' clears the top edge (y = 140) and keeps its
+      // placement, but its centered x = 932 crosses the 1024 right edge. The
+      // flip cannot repair that, so the clamp pulls x back instead.
+      const { placement, position } = resolved(nearRight, 'above');
+      expect(placement).toBe('above');
+      expect(position.x).toBe(VIEWPORT.width - TOOLTIP.width);
+      expect(position.y).toBe(140);
+      // The clamp slides the tooltip sideways along the cross axis only, so
+      // it stays TOOLTIP_OFFSET_PX clear of the anchor on the placement axis
+      // — overlap here needs a clamp on the axis the tooltip is placed on,
+      // as in the narrow-viewport cases above.
+      expect(overlapsAnchor(position, nearRight)).toBe(false);
+    });
+
+    it('should clamp the vertical axis when neither above nor below fits', () => {
+      // A 120px tooltip on a 200px-tall viewport beside an anchor whose
+      // bottom edge is at 114: 'above' needs 132px of headroom, 'below' 132px
+      // of floor, and neither is there.
+      const short: ViewportBounds = { width: 1024, height: 200 };
+      const midTooltip: TooltipSize = { width: 160, height: 120 };
+      const midAnchor: TooltipAnchorRect = { x: 100, y: 90, width: 24, height: 24 };
+
+      // 'above' flips to 'below' at y = 90 + 24 + 12 = 126, clamped to the
+      // 80px the viewport can give it.
+      const flipped = resolveTooltipPlacement(midAnchor, midTooltip, 'above', short);
+      expect(flipped.placement).toBe('below');
+      expect(flipped.position.y).toBe(short.height - midTooltip.height);
+      expect(flipped.position.x).toBe(32);
+
+      // 'below' flips to 'above' at y = 90 - 120 - 12 = -42, clamped to 0.
+      const clamped = resolveTooltipPlacement(midAnchor, midTooltip, 'below', short);
+      expect(clamped.placement).toBe('above');
+      expect(clamped.position.y).toBe(0);
+      expect(overlapsAnchor(clamped.position, midAnchor, midTooltip)).toBe(true);
+    });
+
+    it('should pin a tooltip larger than the viewport to the viewport origin', () => {
+      // Neither axis can be pulled inside a viewport smaller than the
+      // tooltip; the clamp pins the leading edges to 0 and the far edges
+      // necessarily cross.
+      const wide: TooltipSize = { width: 1200, height: 48 };
+      const wideResult = resolveTooltipPlacement(ANCHOR, wide, 'left', VIEWPORT);
+      expect(wideResult.placement).toBe('right');
+      expect(wideResult.position.x).toBe(0);
+
+      const tall: TooltipSize = { width: 160, height: 400 };
+      const cramped: ViewportBounds = { width: 1024, height: 200 };
+      const tallResult = resolveTooltipPlacement(ANCHOR, tall, 'above', cramped);
+      expect(tallResult.placement).toBe('below');
+      expect(tallResult.position.y).toBe(0);
+    });
+
+    it('should leave the coordinates untouched when the placement fits', () => {
+      // Clamping only ever moves a position that already overflowed, so the
+      // interior anchors and the repaired flips keep the exact coordinates
+      // computeTooltipPosition produces — adjacency is untouched.
+      for (const [anchor, preferred] of [
+        [midViewport, 'above'],
+        [midViewport, 'below'],
+        [midViewport, 'left'],
+        [midViewport, 'right'],
+        [nearTop, 'above'],
+        [nearBottom, 'below'],
+        [nearLeft, 'left'],
+        [nearRight, 'right'],
+      ] as const) {
+        const { placement, position } = resolved(anchor, preferred);
+        expect(position).toEqual(computeTooltipPosition(anchor, TOOLTIP, placement));
+        expect(overlapsAnchor(position, anchor)).toBe(false);
+      }
+    });
   });
 });

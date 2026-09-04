@@ -12,9 +12,9 @@
  * caller's policy — the helpers here only answer narrow questions about a
  * placement (`placementOverflowsViewport`) or flip the choice across the
  * anchor when it overflows (`resolveTooltipPlacement`, which answers with the
- * effective placement and the coordinates computed for it); see
- * `positionTooltip` in event-ribbon.ts for a caller that measures the viewport
- * and picks a side.
+ * effective placement and the coordinates to render for it, clamped to the
+ * viewport when neither side of the anchor fits); see `positionTooltip` in
+ * event-ribbon.ts for a caller that measures the viewport and picks a side.
  *
  * @see §16.15 Tooltips and popovers
  */
@@ -76,7 +76,9 @@ export interface ViewportBounds {
  *
  * Evaluates exactly the coordinates `computeTooltipPosition` produces for the
  * same inputs, so a placement that reports `false` here is guaranteed to
- * render fully inside the viewport. A rectangle that merely touches an edge
+ * render fully inside the viewport. A `true` means the placement alone does
+ * not fit — `resolveTooltipPlacement` may still return coordinates for it
+ * that do, by clamping them. A rectangle that merely touches an edge
  * (e.g. its right edge landing on `viewport.width`) does not count as
  * overflow — only a positive crossing does. All four edges are checked for
  * every placement, since the cross axis is centered and can overflow too.
@@ -106,7 +108,11 @@ export function placementOverflowsViewport(
 export interface ResolvedTooltipPlacement {
   /** Effective placement — `preferred` unless it flipped across the anchor. */
   placement: TooltipPlacement;
-  /** Top-left coordinates for `placement`, adjacent to the anchor. */
+  /**
+   * Top-left coordinates for `placement`, adjacent to the anchor and clamped
+   * to the viewport when the placement cannot fit without overflow. Exactly
+   * `computeTooltipPosition`'s output unless that clamping moved it.
+   */
   position: TooltipPosition;
 }
 
@@ -119,9 +125,10 @@ const FLIPPED: Record<TooltipPlacement, TooltipPlacement> = {
 };
 
 /**
- * Resolve the placement to use for `preferred` and the coordinates that go
- * with it, flipping the placement across the anchor when the preferred side
- * does not fit the viewport.
+ * Resolve the placement to use for `preferred` and the coordinates to render
+ * it at, flipping the placement across the anchor when the preferred side
+ * does not fit the viewport and clamping the coordinates to the viewport when
+ * neither side does.
  *
  * `above` that would push the tooltip past the viewport top becomes `below`,
  * `below` that would push it past the viewport bottom becomes `above`, `left`
@@ -139,8 +146,26 @@ const FLIPPED: Record<TooltipPlacement, TooltipPlacement> = {
  * the placement axis; the flip then happens anyway, because the preferred
  * side is the one that already lost.
  *
- * The returned `position` is computed for the returned `placement`, so a flip
- * moves the coordinates with it. Pure arithmetic; no DOM reads.
+ * The returned `position` is computed for the returned `placement` and then
+ * passed through `clampTooltipPosition`, so it renders entirely inside the
+ * viewport whenever the tooltip is no larger than the viewport on either
+ * axis. A placement that fits is returned with exactly the coordinates
+ * `computeTooltipPosition` produces — clamping only ever moves a position
+ * that already overflowed, so adjacency to the anchor is preserved wherever
+ * it is achievable.
+ *
+ * When both sides of an axis lose — a narrow viewport that leaves less room
+ * beside the anchor than the tooltip needs, or a centered cross axis that
+ * overflows — clamping pulls the tooltip inside the edge it crossed and can
+ * set it down on top of the anchor. Overlapping the icon beats leaving the
+ * viewport: a tooltip outside it is unreadable, and the overlap is
+ * short-lived — the opaque tooltip covers the icon only while it is shown,
+ * and the icon is back the moment the pointer moves on. Callers drawing an
+ * arrow from the tooltip to the anchor clamp the arrow's offset the same way,
+ * so it stays attached to a tooltip that has been pulled over its anchor.
+ * A tooltip larger than the viewport on an axis cannot be pulled inside that
+ * axis at all; it is pinned to that axis's origin (x = 0 or y = 0) and
+ * necessarily crosses the far edge. Pure arithmetic; no DOM reads.
  */
 export function resolveTooltipPlacement(
   anchor: TooltipAnchorRect,
@@ -151,7 +176,14 @@ export function resolveTooltipPlacement(
   const placement = crossesFacingEdge(anchor, tooltip, preferred, viewport)
     ? FLIPPED[preferred]
     : preferred;
-  return { placement, position: computeTooltipPosition(anchor, tooltip, placement) };
+  return {
+    placement,
+    position: clampTooltipPosition(
+      computeTooltipPosition(anchor, tooltip, placement),
+      tooltip,
+      viewport,
+    ),
+  };
 }
 
 /**
@@ -182,6 +214,37 @@ function crossesFacingEdge(
 }
 
 /**
+ * Clamp a tooltip position so the tooltip rectangle stays inside `viewport`.
+ *
+ * Each axis is clamped independently: `x` into `[0, viewport.width -
+ * tooltip.width]` and `y` into `[0, viewport.height - tooltip.height]`, so
+ * the tooltip neither crosses the viewport's leading (left/top) edge nor
+ * trails past its far (right/bottom) edge. A position that already fits is
+ * returned unchanged — a rectangle that merely touches an edge counts as
+ * fitting, matching `placementOverflowsViewport`, which treats only a
+ * positive crossing as overflow.
+ *
+ * Clamping is the move left for a placement nothing else can fix: the caller
+ * has already flipped across the anchor by the time this runs, so both sides
+ * have lost. Pulling the tooltip inside can set it down on top of the anchor,
+ * which the unclamped placements never do — overlap with the anchor is the
+ * accepted cost of keeping the tooltip readable. A tooltip larger than the
+ * viewport on an axis makes that axis's range empty; the position is pinned
+ * to `0` there and the tooltip necessarily crosses the far edge. Pure
+ * arithmetic; no DOM reads.
+ */
+export function clampTooltipPosition(
+  position: TooltipPosition,
+  tooltip: TooltipSize,
+  viewport: ViewportBounds,
+): TooltipPosition {
+  return {
+    x: Math.max(0, Math.min(position.x, viewport.width - tooltip.width)),
+    y: Math.max(0, Math.min(position.y, viewport.height - tooltip.height)),
+  };
+}
+
+/**
  * Compute tooltip top-left coordinates adjacent to an anchor element.
  *
  * Behavior by placement:
@@ -201,9 +264,11 @@ function crossesFacingEdge(
  * pixel; subpixel `left`/`top` values are fine for the absolutely positioned
  * tooltip. Sizes are assumed non-negative.
  *
- * To find out whether a placement fits the viewport before committing to it,
- * see `placementOverflowsViewport`, which evaluates exactly these
- * coordinates.
+ * The viewport is deliberately not consulted: these coordinates are honored
+ * verbatim, overflow included. To find out whether a placement fits before
+ * committing to it, see `placementOverflowsViewport`, which evaluates exactly
+ * these coordinates; to pull an unfit position back inside, see
+ * `clampTooltipPosition`.
  */
 export function computeTooltipPosition(
   anchor: TooltipAnchorRect,
