@@ -55,6 +55,25 @@ describe('EVENT_TYPE_REGISTRY', () => {
     expect(new Set(entries.map(e => e.color)).size).toBe(entries.length);
   });
 
+  it('should pin the semantic color each event type reads as', () => {
+    // The acceptance list for the ribbon names a color family per type: combat
+    // red/warning, core capture blue/primary, energy cyan/teal, mass death
+    // dark grey, momentum green/growth, critical moment yellow/gold, spawn
+    // wave purple/special. The markers, the glow derived from them, the
+    // tooltip, the legend and the generated marker CSS all take these values
+    // through the registry, and the tests around them only ever read the color
+    // back out of it or check that the seven differ — so without this pin a
+    // swap between two types would leave the whole suite green while changing
+    // what every marker on the ribbon means.
+    expect(EVENT_TYPE_REGISTRY.combat.color).toBe('#ef4444'); // Red/warning
+    expect(EVENT_TYPE_REGISTRY.core_capture.color).toBe('#3b82f6'); // Blue/primary
+    expect(EVENT_TYPE_REGISTRY.energy_milestone.color).toBe('#06b6d4'); // Cyan/teal
+    expect(EVENT_TYPE_REGISTRY.mass_death.color).toBe('#6b7280'); // Dark grey/death
+    expect(EVENT_TYPE_REGISTRY.momentum_shift.color).toBe('#22c55e'); // Green/growth
+    expect(EVENT_TYPE_REGISTRY.critical_moment.color).toBe('#eab308'); // Yellow/gold
+    expect(EVENT_TYPE_REGISTRY.spawn_wave.color).toBe('#a855f7'); // Purple/special
+  });
+
   it('should use valid hex colors so derived glows can be computed', () => {
     for (const [type, { color }] of Object.entries(EVENT_TYPE_REGISTRY)) {
       expect(color, `color for ${type}`).toMatch(/^#[0-9a-f]{6}$/i);
