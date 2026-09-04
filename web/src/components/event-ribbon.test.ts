@@ -585,6 +585,27 @@ describe('EventRibbon', () => {
       expect(tapTargetRule).toContain('margin: -11px;');
       expect(tapTargetRule).toContain('box-sizing: content-box;');
     });
+
+    it('should pin the marker to the vertical center of the ribbon', () => {
+      // Centering is two halves that only work together: the marker is
+      // anchored at top: 50% and then pulled back up by half its own height
+      // with the translate. The same-turn offset tests pin the translate half
+      // as it reaches the inline style attribute, so a drift of the anchor —
+      // top: 50% becoming top: 0 — would leave every test green while parking
+      // the icons on the ribbon's top edge. Both halves are pinned here on the
+      // stylesheet rule, alongside the track, which centers itself the same
+      // way and is what the icons are centered against.
+      const markerRule = EVENT_RIBBON_STYLES.match(/\.event-marker\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(markerRule, 'the .event-marker rule').not.toBe('');
+      expect(markerRule).toContain('position: absolute;');
+      expect(markerRule).toContain('top: 50%;');
+      expect(markerRule).toContain('transform: translate(-50%, -50%);');
+
+      const trackRule = EVENT_RIBBON_STYLES.match(/\.event-ribbon-track\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(trackRule, 'the .event-ribbon-track rule').not.toBe('');
+      expect(trackRule).toContain('top: 50%;');
+      expect(trackRule).toContain('transform: translateY(-50%);');
+    });
   });
 
   // ── Event type registry ──────────────────────────────────────────────────────────
