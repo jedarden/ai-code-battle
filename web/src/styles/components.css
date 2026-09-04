@@ -435,6 +435,46 @@ code {
 .status-unhealthy { color: var(--error); }
 .status-unknown { color: var(--text-muted); }
 
+/* Replay page — same width box as .skeleton-page so the skeleton-to-content
+   swap shifts nothing: skeletonReplay() renders inside .skeleton-page
+   (max-width 1200px + auto margins), and without the same constraint here the
+   live page comes out full-bleed on >1200px viewports and the canvas wrapper
+   lands at a different x than the placeholder that stood in for it. */
+.replay-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Replay layout — the two-column wrapper the live page and its skeleton both
+   render. mobile.css's media blocks are written against this base (phone:
+   flex-direction column, sidebar 100%; tablet: row, sidebar 280px; desktop:
+   sidebar 300px) and do nothing without it — flex-direction on a non-flex
+   block is inert, so before this rule the sidebar stacked under the main
+   column on every viewport the skeleton showed it beside. */
+.replay-layout {
+  display: flex;
+  gap: 20px;
+}
+
+/* flex:1 keeps the main column filling whatever the shared box has left of
+   the sidebar; min-width:0 lets the canvas shrink inside it instead of
+   pushing the layout past the 1200px constraint. */
+.replay-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Fixed 300px, non-shrinking: the sidebar's x is a function of the shared box
+   alone, which is what makes the wrapper land at the same x on both sides of
+   the swap (mobile.css re-widths it 280px tablet / 100% phone). */
+.replay-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  flex-shrink: 0;
+  width: 300px;
+}
+
 /* Replay Canvas */
 .canvas-wrapper {
   background-color: var(--bg-secondary);
