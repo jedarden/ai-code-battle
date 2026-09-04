@@ -171,66 +171,51 @@ export function skeletonLeaderboard(): string {
 }
 
 export function skeletonBotProfile(): string {
-  // Mirrors renderBotProfilePage + renderProfile (web/src/pages/bot-profile.ts)
-  // node for node: the live .bot-profile-page (max-width 900px + padding) holds
-  // nav.breadcrumb, then .profile-header (§16.14 Performance Trifecta #2
-  // avatar-area circle, then the .profile-header-main column — name h1 +
-  // .profile-status chip — then the share-card button), then .profile-grid
-  // with the ratings, stats, meta, rivals and lazy history sections in the
-  // live order. The skeleton keeps its .skeleton-page root like every page
-  // skeleton; that wrapper is max-width 1200px + auto margins with no padding,
-  // so the 900px column it wraps sits exactly where the live page — which
-  // swaps in a bare .bot-profile-page — puts it. Every wrapper reuses the live
-  // class, so breadcrumb flex/gap, header flex layout, grid columns
-  // (auto-fit → 1 column on phone, 2 on tablet), section chrome, toggle rows
-  // and the collapsed .section-content boxes all come from the same rules the
-  // real page uses and cannot drift. Only the bars carry inline dimensions,
-  // derived from the text metrics they stand in for — the stand-in's font-size
-  // × line-height (1.5 for text, 1.25 for headings, both declared in
-  // base.css), plus its own vertical padding where the live element has any:
-  //   breadcrumb bars    0.875rem × 1.5                          = 21px
+  // Mirrors renderProfile (web/src/pages/bot-profile.ts) node for node: the
+  // live .bot-profile-page (max-width 900px + padding) holds .profile-header —
+  // the .profile-header-main column (name h1 + .profile-status chip) then the
+  // share-card button; the live header renders no avatar and none is invented
+  // here — followed by .profile-grid with the ratings, stats, meta, rivals and
+  // lazy history sections in the live order. The breadcrumb is not mirrored:
+  // it belongs to renderBotProfilePage's shell, outside the content block the
+  // skeleton stands in for. The skeleton keeps its .skeleton-page root like
+  // every page skeleton; that wrapper is max-width 1200px + auto margins with
+  // no padding, so the 900px column it wraps sits exactly where the live page
+  // puts it. Every wrapper reuses the live class, so header flex layout, grid
+  // columns (auto-fit → 1 column on phone, 2 on tablet), section chrome,
+  // toggle rows and the collapsed .section-content boxes all come from the
+  // same rules the real page uses and cannot drift. Only the bars carry
+  // inline dimensions, derived from the text metrics they stand in for — the
+  // stand-in's font-size × line-height (1.5 for text, 1.25 for headings, both
+  // declared in base.css), plus its own vertical padding where the live
+  // element has any:
   //   name h1 bar        2rem × 1.25 (.profile-header h1)         = 40px
   //   status chip bar    0.75rem × 1.5 + 2 × var(--space-xs)      = 26px
   //   share-card button  0.875rem × 1.5 + 2 × var(--space-sm) (.btn) = 37px
   //   ratings h2 bar     1.5rem × 1.25 (base h2 rule)             = 30px
   //   rating-main bar    2.5rem × 1.5                             = 60px
   //   rating-dev bar     1rem × 1.5                               = 24px
+  //   range bars         0.75rem × 1.5 (.rating-range)            = 18px
   //   toggle h2 bar      1rem × 1.25 (.section-toggle h2)         = 20px
+  //   toggle icon bar    0.75rem × 1.5 (.section-toggle-icon)     = 18px
   //   stat value/label   1.5rem / 0.75rem × 1.5                   = 36px / 18px
   // Margins that the element's own rule can't reach the bar with reuse the
   // same custom properties the live rule declares (var(--space-*)).
-  // The avatar circle stands in for the header's leading visual block only —
-  // the live header renders no avatar and none is added there. It is 64px
-  // square, which fits inside the 74px .profile-header-main column (40px name
-  // bar + var(--space-sm) 8px + 26px chip): .profile-header is
-  // align-items:flex-start, so that column stays the tallest child and the
-  // header's footprint is unchanged, while the column's flex:1 absorbs the
-  // circle's width. Shimmer and the 50% radius come from the shared
-  // .skeleton-circle rules (components.css) — nothing inline, no extra class.
-  // The breadcrumb bars stand in for the "Leaderboard" link and the bot name;
-  // the " / " between them is the live breadcrumb's own static separator, so
-  // the flex row — bar, gap, slash, gap, bar — is identical to the rendered
-  // one. Toggle rows and the history placeholder are divs, not
-  // button/observer — a skeleton has nothing to activate — so they carry no
-  // aria or data attributes, and the history shimmer is the live
-  // .lazy-placeholder rule (components.css), the same one lazySection renders
-  // below the fold.
+  // Shimmer comes from the shared .skeleton-bar rule (components.css) on every
+  // placeholder, and from the shared .lazy-placeholder rule — the same one
+  // lazySection renders below the fold — on the history block, so this file
+  // declares no animation CSS of its own. Toggle rows and the history
+  // placeholder are divs, not button/observer — a skeleton has nothing to
+  // activate — so they carry no aria, id or data attributes.
   const toggleRow = (labelWidth: string) => `
     <div class="section-toggle">
       ${Skeleton({ variant: 'bar', width: labelWidth, height: '20px' })}
-      ${Skeleton({ variant: 'bar', width: '10px', height: '12px' })}
+      ${Skeleton({ variant: 'bar', width: '10px', height: '18px' })}
     </div>`;
   return `
     <div class="skeleton-page">
       <div class="bot-profile-page">
-        <nav class="breadcrumb">
-          ${Skeleton({ variant: 'bar', width: '80px', height: '21px' })}
-          /
-          ${Skeleton({ variant: 'bar', width: '120px', height: '21px' })}
-        </nav>
-
         <div class="profile-header">
-          ${Skeleton({ variant: 'circle', width: '64px', height: '64px' })}
           <div class="profile-header-main">
             ${Skeleton({ variant: 'bar', width: '220px', height: '40px', extra: 'margin-bottom:var(--space-sm)' })}
             ${Skeleton({ variant: 'bar', width: '80px', height: '26px', extra: 'border-radius:var(--radius-sm)' })}
@@ -248,8 +233,8 @@ export function skeletonBotProfile(): string {
             <div class="rating-chart">
               ${Skeleton({ variant: 'rectangle', width: '100%', height: '60px' })}
               <div class="rating-range">
-                ${Skeleton({ variant: 'bar', width: '56px', height: '12px' })}
-                ${Skeleton({ variant: 'bar', width: '56px', height: '12px' })}
+                ${Skeleton({ variant: 'bar', width: '56px', height: '18px' })}
+                ${Skeleton({ variant: 'bar', width: '56px', height: '18px' })}
               </div>
             </div>
           </div>

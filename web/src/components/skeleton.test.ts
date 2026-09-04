@@ -7,16 +7,14 @@
  * #lb-mobile .mobile-cards card structure as renderMobileCard, whose geometry
  * comes from the .leaderboard-mobile-* rules in styles/mobile.css.
  * skeletonBotProfile() must render the same .bot-profile-page structure as
- * renderBotProfilePage + renderProfile (pages/bot-profile.ts): breadcrumb,
- * header, grid sections in the live order, every wrapper reusing the live
- * class so the shared rules govern it. It keeps the shared .skeleton-page
- * root, which is layout-transparent here (max-width + auto margins, no
- * padding), so the wrapped 900px column sits where the live page puts its
- * bare .bot-profile-page and the swap shifts nothing.
- * §16.14 Performance Trifecta #2 additionally requires one avatar-area circle
- * in that header; the live header itself renders no avatar, so the circle is
- * sized to fit inside the .profile-header-main column and leave the header's
- * footprint unchanged.
+ * renderProfile (pages/bot-profile.ts): header, grid sections in the live
+ * order, every wrapper reusing the live class so the shared rules govern it.
+ * It keeps the shared .skeleton-page root, which is layout-transparent here
+ * (max-width + auto margins, no padding), so the wrapped 900px column sits
+ * where the live page puts it and the swap shifts nothing. The breadcrumb is
+ * not part of that structure — it belongs to renderBotProfilePage's shell,
+ * outside the content the skeleton stands in for — and the live header renders
+ * no avatar, so no avatar-area circle is invented for it either.
  */
 
 import { readFileSync } from 'node:fs';
@@ -650,7 +648,6 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   // leaderboard rules above.
   const pageRule = componentsCss.match(/\.bot-profile-page\s*\{([^}]*)\}/)?.[1] ?? '';
   const skeletonPageRule = componentsCss.match(/\.skeleton-page\s*\{([^}]*)\}/)?.[1] ?? '';
-  const breadcrumbRule = componentsCss.match(/\.breadcrumb\s*\{([^}]*)\}/)?.[1] ?? '';
   const headerRule = componentsCss.match(/\.profile-header\s*\{([^}]*)\}/)?.[1] ?? '';
   const headerMainRule = componentsCss.match(/\.profile-header-main\s*\{([^}]*)\}/)?.[1] ?? '';
   const gridRule = componentsCss.match(/\.profile-grid\s*\{([^}]*)\}/)?.[1] ?? '';
@@ -702,49 +699,25 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(root.children).toHaveLength(1);
   });
 
-  it('opens with the live breadcrumb: link bar, static separator, name bar', () => {
-    expect(breadcrumbRule, '.breadcrumb rule not found in components.css').not.toBe('');
-    expect(decl(breadcrumbRule, 'gap')).toBe('var(--space-sm)');
-    expect(decl(breadcrumbRule, 'margin-bottom')).toBe('var(--space-lg)');
-    expect(decl(breadcrumbRule, 'font-size')).toBe('0.875rem');
-
-    const nav = profileRoot().children[0];
-    expect(nav.tagName).toBe('NAV');
-    expect(nav.className).toBe('breadcrumb');
-    expect(nav.getAttribute('style')).toBeNull();
-
-    // <a>Leaderboard</a> / <span>Name</span> on the live page: bars stand in
-    // for the link and the name (0.875rem × 1.5 body line-height = 21px), the
-    // " / " is the live markup's own static text, so the flex row — bar, gap,
-    // slash, gap, bar — is identical to the rendered one. A skeleton has
-    // nothing to navigate to, so the link stand-in is a div, not an anchor.
-    const [linkBar, nameBar] = Array.from(nav.children).map(barOf);
-    expect(nav.children).toHaveLength(2);
-    expect(linkBar.tagName).toBe('DIV');
-    expect(nameBar.tagName).toBe('DIV');
-    const text = Array.from(nav.childNodes)
-      .filter(n => n.nodeType === nav.TEXT_NODE)
-      .map(n => n.textContent?.trim())
-      .filter(Boolean);
-    expect(text).toEqual(['/']);
-    for (const bar of [linkBar, nameBar]) {
-      expect(decl(bar.getAttribute('style') ?? '', 'height')).toBe('21px');
-    }
-  });
-
-  it('renders the real header: avatar circle, name, status chip, share-card button', () => {
+  it('renders the real header: name, status chip, share-card button — no avatar', () => {
     expect(headerRule, '.profile-header rule not found in components.css').not.toBe('');
     expect(decl(headerRule, 'justify-content')).toBe('space-between');
     expect(decl(headerRule, 'margin-bottom')).toBe('var(--space-lg)');
     expect(headerMainRule, '.profile-header-main rule not found in components.css').not.toBe('');
     expect(decl(headerMainRule, 'flex')).toBe('1');
 
-    const header = profileRoot().children[1];
+    // The header is the page's first child: the breadcrumb it used to follow
+    // is renderBotProfilePage's shell, not part of renderProfile's content.
+    const header = profileRoot().children[0];
     expect(header.className).toBe('profile-header');
     expect(header.getAttribute('style')).toBeNull();
+    expect(header.children).toHaveLength(2);
 
-    const [circle, main, button] = Array.from(header.children);
-    expect(circle.className).toBe('skeleton-circle');
+    // The live header renders no avatar and neither does the skeleton.
+    expect(profileDoc().querySelector('.skeleton-circle')).toBeNull();
+    expect(skeletonBotProfile()).not.toContain('skeleton-circle');
+
+    const [main, button] = Array.from(header.children);
     expect(main.className).toBe('profile-header-main');
     const headerBars = Array.from(main.children).map(barOf);
     expect(headerBars).toHaveLength(2);
@@ -764,49 +737,22 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(decl(button.getAttribute('style') ?? '', 'height')).toBe('37px');
   });
 
-  it('adds exactly one §16.14 avatar circle that fits inside the header-main column', () => {
-    // Shimmer and the 50% radius are the shared .skeleton-circle rules — the
-    // circle must reach them through the base Skeleton() output class alone.
+  it('reuses the shared shimmer rules and declares none of its own', () => {
+    // Every bar reaches the base .skeleton-bar rule (components.css) through
+    // the shared Skeleton() output class alone — the same rule the leaderboard
+    // skeleton uses — and the history block reuses the live .lazy-placeholder
+    // rule. Nothing here copies the animation inline.
     const shimmerRule = componentsCss.match(/\.skeleton-bar,\s*\.skeleton-circle,\s*\.skeleton-canvas\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(shimmerRule, 'shared skeleton shimmer rule not found in components.css').not.toBe('');
     expect(shimmerRule).toContain('skeleton-shimmer 1.5s');
-    const circleRule = componentsCss.match(/\.skeleton-circle\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(circleRule, '.skeleton-circle rule not found in components.css').not.toBe('');
-    expect(decl(circleRule, 'border-radius')).toBe('50%');
-    expect(decl(circleRule, 'flex-shrink')).toBe('0');
-
-    const doc = profileDoc();
-    expect(doc.querySelectorAll('.skeleton-circle')).toHaveLength(1);
-
-    const header = profileRoot().children[1];
-    const [circle, main] = Array.from(header.children);
-    // Base Skeleton() output: exactly the shared class, no inline copy of what
-    // the shared rules already provide, nothing interactive.
-    expect(circle.className).toBe('skeleton-circle');
-    expect(circle.getAttribute('style')).not.toMatch(/animation|border-radius/);
-    expect(circle.getAttribute('role')).toBeNull();
-
-    // Square — a circle, not an ellipse.
-    const style = circle.getAttribute('style') ?? '';
-    expect(decl(style, 'width')).toBe(decl(style, 'height'));
-
-    // Footprint guard: .profile-header is align-items:flex-start, so the
-    // header's height is its tallest child — the .profile-header-main column
-    // (name bar + var(--space-sm) + chip bar). The circle must stay inside
-    // that column height, and its width is absorbed by the column's flex:1,
-    // so adding it leaves the header's footprint unchanged.
-    const spaceSm = parseFloat(decl(baseCss, '--space-sm'));
-    expect(spaceSm).toBeGreaterThan(0);
-    const [nameBar, chipBar] = Array.from(main.children).map(bar =>
-      parseFloat(decl(bar.getAttribute('style') ?? '', 'height'))
-    );
-    expect(parseFloat(decl(style, 'height'))).toBeLessThanOrEqual(nameBar + spaceSm + chipBar);
+    expect(skeletonBotProfile()).not.toMatch(/animation\s*:/);
+    expect(skeletonBotProfile()).not.toContain('<style');
   });
 
   it('orders the grid sections ratings, stats, meta, rivals, lazy history', () => {
     expect(gridRule, '.profile-grid rule not found in components.css').not.toBe('');
     expect(decl(gridRule, 'grid-template-columns')).toBe('repeat(auto-fit, minmax(280px, 1fr))');
-    const grid = profileRoot().children[2];
+    const grid = profileRoot().children[1];
     expect(grid.className).toBe('profile-grid');
     const shapes = Array.from(grid.children).map(el => el.className);
     expect(shapes).toEqual([
@@ -828,7 +774,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   it('stands in for the rating block: heading, main/dev pair, chart with range row', () => {
     expect(displayRule, '.rating-display rule not found in components.css').not.toBe('');
     expect(decl(displayRule, 'margin-bottom')).toBe('var(--space-md)');
-    const ratings = profileRoot().children[2].children[0];
+    const ratings = profileRoot().children[1].children[0];
 
     // First child is the <h2>Rating</h2> stand-in, spaced like the base h2 rule.
     const heading = barOf(ratings.children[0]);
@@ -857,7 +803,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   it('renders the stats section expanded with four .stat cells', () => {
     expect(toggleRule, '.section-toggle rule not found in components.css').not.toBe('');
     expect(decl(toggleRule, 'padding')).toBe('var(--space-md)');
-    const stats = profileRoot().children[2].children[1];
+    const stats = profileRoot().children[1].children[1];
 
     const [toggle, content] = Array.from(stats.children);
     expect(toggle.className).toBe('section-toggle');
@@ -893,7 +839,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   it('leaves meta and rivals collapsed through the shared .section-content rule', () => {
     expect(decl(contentRule, 'max-height')).toBe('0');
     expect(decl(contentRule, 'overflow')).toBe('hidden');
-    const grid = profileRoot().children[2];
+    const grid = profileRoot().children[1];
     for (const name of ['meta', 'rivals']) {
       const section = grid.querySelector(`.profile-section.${name}`);
       expect(section, `${name} section missing`).toBeTruthy();
@@ -910,7 +856,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     // lazySection renders below the fold — never from inline animation CSS.
     expect(lazyPlaceholderRule).toContain('skeleton-shimmer');
 
-    const lazy = profileRoot().children[2].children[4];
+    const lazy = profileRoot().children[1].children[4];
     expect(lazy.className).toBe('lazy-section');
     const placeholder = lazy.children[0];
     expect(placeholder.className).toBe('lazy-placeholder');
@@ -921,8 +867,8 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
 
   it('stays decorative: no interactive elements, no CSS of its own', () => {
     const doc = profileDoc();
-    // No interactive elements anywhere — the share-card button, the section
-    // toggles and the breadcrumb link all stand in as plain divs.
+    // No interactive elements anywhere — the share-card button and the section
+    // toggles all stand in as plain divs.
     expect(doc.querySelectorAll('button, a, input, select, textarea')).toHaveLength(0);
     expect(skeletonBotProfile()).not.toContain('<style');
     expect(skeletonBotProfile()).not.toMatch(/animation\s*:/);
@@ -935,7 +881,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     const mobileStats = mobileCss.match(/\.stats-grid\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(mobileGrid).toContain('grid-template-columns: 1fr');
     expect(mobileStats).toContain('repeat(2, 1fr)');
-    for (const wrapper of doc.querySelectorAll('.skeleton-page, .bot-profile-page, .breadcrumb, .profile-header, .profile-header-main, .profile-grid, .profile-section, .rating-display, .rating-chart, .rating-range, .stats-grid, .stat, .section-toggle, .section-content, .lazy-section')) {
+    for (const wrapper of doc.querySelectorAll('.skeleton-page, .bot-profile-page, .profile-header, .profile-header-main, .profile-grid, .profile-section, .rating-display, .rating-chart, .rating-range, .stats-grid, .stat, .section-toggle, .section-content, .lazy-section')) {
       const style = wrapper.getAttribute('style');
       expect(style === null || style === 'min-height:80px', `no inline layout on ${wrapper.className}`).toBe(true);
     }
