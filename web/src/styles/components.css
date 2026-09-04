@@ -544,11 +544,24 @@ code {
 }
 
 .skeleton-profile-heading {
+  /* The one bar quantity that moves with the breakpoint — mobile.css shrinks
+     the bare h2 to 1.25rem on phone — so it lives here with its derivation
+     instead of inline on the bar, and mobile.css's phone block re-declares it. */
+  height: 30px; /* base h2 1.5rem × 1.25 line-height, base.css */
   margin-bottom: var(--space-md); /* base h1..h6 rule, base.css */
 }
 
 .skeleton-profile-chip {
   border-radius: var(--radius-sm); /* .profile-status */
+}
+
+/* The share-card button stand-in: the base tap-target floor (base.css, button
+   min-height 44px) is what sets the live .btn's height — the button's own
+   content (0.875rem × 1.5 + 2 × var(--space-sm) = 37px) sits below it.
+   mobile.css's phone block raises the live floor to 48px and re-declares this
+   height, the same way it re-declares .skeleton-profile-heading. */
+.skeleton-profile-btn {
+  height: 44px;
 }
 
 .skeleton-table-header {
@@ -1335,6 +1348,7 @@ code {
 }
 
 .rating-sparkline {
+  display: block; /* as an inline replaced box the svg sat on the text baseline and dragged ~7px of line-box descent below it — space the block-level sparkline the bot-profile skeleton stands in for does not reproduce */
   width: 100%;
   height: 60px;
 }

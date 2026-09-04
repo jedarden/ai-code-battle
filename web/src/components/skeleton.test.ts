@@ -7,14 +7,16 @@
  * #lb-mobile .mobile-cards card structure as renderMobileCard, whose geometry
  * comes from the .leaderboard-mobile-* rules in styles/mobile.css.
  * skeletonBotProfile() must render the same .bot-profile-page structure as
- * renderProfile (pages/bot-profile.ts): header, grid sections in the live
- * order, every wrapper reusing the live class so the shared rules govern it.
- * It keeps the shared .skeleton-page root, which is layout-transparent here
- * (max-width + auto margins, no padding), so the wrapped 900px column sits
- * where the live page puts it and the swap shifts nothing. The breadcrumb is
- * not part of that structure — it belongs to renderBotProfilePage's shell,
- * outside the content the skeleton stands in for — and the live header renders
- * no avatar, so no avatar-area circle is invented for it either.
+ * renderBotProfilePage's swap (pages/bot-profile.ts): breadcrumb, header, grid
+ * sections in the live order, every wrapper reusing the live class so the
+ * shared rules govern it. It keeps the shared .skeleton-page root, which is
+ * layout-transparent here (max-width + auto margins, no padding), so the
+ * wrapped 900px column sits where the live page puts it and the swap shifts
+ * nothing. The breadcrumb is mirrored as a bar because the swap renders it:
+ * leaving it out let the real row (44px — its <a> picks up the base tap-target
+ * floor — plus a 24px margin) appear above the header on the swap and shove
+ * the whole page down. The live header renders no avatar, so no avatar-area
+ * circle is invented for it.
  */
 
 import { readFileSync } from 'node:fs';
@@ -668,11 +670,25 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   // class re-declaring that one quantity from the same custom property.
   const headerH1Rule = componentsCss.match(/(?:^|\})\s*\.profile-header h1\s*\{([^}]*)\}/)?.[1] ?? '';
   const statusRule = componentsCss.match(/(?:^|\})\s*\.profile-status\s*\{([^}]*)\}/)?.[1] ?? '';
-  // The base heading group is the only `h1, h2` selector in base.css.
+  const breadcrumbRule = componentsCss.match(/\.breadcrumb\s*\{([^}]*)\}/)?.[1] ?? '';
+  // The base heading group is the only `h1, h2` selector in base.css, and the
+  // base tap-target group is the only `button, a` selector there.
   const headingBaseRule = baseCss.match(/h1,\s*h2[^{]*\{([^}]*)\}/)?.[1] ?? '';
+  const h2BaseRule = baseCss.match(/(?:^|\n)h2\s*\{([^}]*)\}/)?.[1] ?? '';
+  const tapTargetRule = baseCss.match(/button,\s*a[^{]*\{([^}]*)\}/)?.[1] ?? '';
   const skeletonNameRule = componentsCss.match(/\.skeleton-profile-name\s*\{([^}]*)\}/)?.[1] ?? '';
   const skeletonHeadingRule = componentsCss.match(/\.skeleton-profile-heading\s*\{([^}]*)\}/)?.[1] ?? '';
   const skeletonChipRule = componentsCss.match(/\.skeleton-profile-chip\s*\{([^}]*)\}/)?.[1] ?? '';
+  const skeletonBtnRule = componentsCss.match(/\.skeleton-profile-btn\s*\{([^}]*)\}/)?.[1] ?? '';
+  // Phone re-declarations live in mobile.css's (max-width: 639px) block, where
+  // the live rules they mirror (h2 1.25rem, .btn min-height 48px) also live.
+  const phoneBlockStart = mobileCss.indexOf('@media (max-width: 639px)');
+  const phoneHeadingRule = mobileCss.match(/\.skeleton-profile-heading\s*\{([^}]*)\}/)?.[1] ?? '';
+  const phoneHeadingInPhoneBlock = phoneHeadingRule !== '' && mobileCss.indexOf('.skeleton-profile-heading') > phoneBlockStart;
+  const phoneBtnRule = mobileCss.match(/\.skeleton-profile-btn\s*\{([^}]*)\}/)?.[1] ?? '';
+  const phoneBtnInPhoneBlock = phoneBtnRule !== '' && mobileCss.indexOf('.skeleton-profile-btn') > phoneBlockStart;
+  const phoneH2Rule = mobileCss.match(/^\s{2}h2\s*\{([^}]*)\}/m)?.[1] ?? '';
+  const phoneBtnFloorRule = mobileCss.match(/\.btn\s*\{([^}]*)\}/)?.[1] ?? '';
 
   function profileDoc(): Document {
     return new DOMParser().parseFromString(skeletonBotProfile(), 'text/html');
@@ -682,6 +698,15 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     const el = profileDoc().querySelector('.bot-profile-page');
     expect(el, 'skeleton must render inside the live .bot-profile-page container').toBeTruthy();
     return el!;
+  }
+
+  /** The .profile-grid, addressed by class rather than by child index — the
+   * breadcrumb row ahead of it is part of the mirrored structure, not a
+   * reason for every test here to count children from the top. */
+  function profileGrid(): HTMLElement {
+    const grid = Array.from(profileRoot().children).find(el => el.className === 'profile-grid');
+    expect(grid, 'skeleton must render the .profile-grid after the breadcrumb and header').toBeTruthy();
+    return grid!;
   }
 
   function barOf(el: Element): HTMLElement {
@@ -713,6 +738,30 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(root.children).toHaveLength(1);
   });
 
+  it('holds the breadcrumb row the swap renders above the content', () => {
+    // The swap replaces app.innerHTML with .bot-profile-page > nav.breadcrumb
+    // + the content block, so the skeleton must hold the row's space: the live
+    // nav is 44px tall (its <a> picks up the base tap-target floor) plus the
+    // live .breadcrumb rule's margin — dropping it let the real row appear on
+    // the swap and shove the entire page down by 68px.
+    expect(breadcrumbRule, '.breadcrumb rule not found in components.css').not.toBe('');
+    expect(decl(breadcrumbRule, 'display')).toBe('flex');
+    expect(decl(breadcrumbRule, 'margin-bottom')).toBe('var(--space-lg)');
+    expect(decl(tapTargetRule, 'min-height')).toBe('44px');
+
+    const nav = profileRoot().children[0];
+    expect(nav.tagName).toBe('NAV');
+    expect(nav.className).toBe('breadcrumb');
+    expect(nav.getAttribute('style')).toBeNull();
+
+    const bars = Array.from(nav.children).map(barOf);
+    expect(bars).toHaveLength(1);
+    expect(decl(bars[0].getAttribute('style') ?? '', 'height')).toBe('44px');
+    // The row's height comes from the floor, not from a text metric, so the
+    // bar carries no skeleton class of its own — nothing here to re-declare.
+    expect(bars[0].className).toBe('skeleton-bar');
+  });
+
   it('renders the real header: name, status chip, share-card button — no avatar', () => {
     expect(headerRule, '.profile-header rule not found in components.css').not.toBe('');
     expect(decl(headerRule, 'justify-content')).toBe('space-between');
@@ -720,9 +769,9 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(headerMainRule, '.profile-header-main rule not found in components.css').not.toBe('');
     expect(decl(headerMainRule, 'flex')).toBe('1');
 
-    // The header is the page's first child: the breadcrumb it used to follow
-    // is renderBotProfilePage's shell, not part of renderProfile's content.
-    const header = profileRoot().children[0];
+    // Second child: the breadcrumb row the swap renders first holds its space
+    // ahead of the header (see the breadcrumb test above).
+    const header = profileRoot().children[1];
     expect(header.className).toBe('profile-header');
     expect(header.getAttribute('style')).toBeNull();
     expect(header.children).toHaveLength(2);
@@ -754,13 +803,21 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(decl(skeletonChipRule, 'border-radius')).toBe(decl(statusRule, 'border-radius'));
     expect(headerBars[1].getAttribute('style'), 'the chip radius comes from the shared class').not.toContain('border-radius');
     // The share-card stand-in is a rectangle, rounded like .btn.
-    expect(barOf(button).className).toBe('skeleton-bar');
+    expect(barOf(button).className).toBe('skeleton-bar skeleton-profile-btn');
     expect(decl(button.getAttribute('style') ?? '', 'border-radius')).toBe('var(--radius-md)');
-    // .btn height: 0.875rem × 1.5 line-height + 2 × var(--space-sm) padding.
+    // .btn's height is the base tap-target floor, not its text: the button's
+    // own content (0.875rem × 1.5 line-height + 2 × var(--space-sm) padding)
+    // is 37px and sits below the 44px floor, so the stand-in's height is the
+    // floor — owned by the shared class, because mobile.css raises the floor
+    // to 48px on phone and the inline declaration could not follow it.
     const btnRule = componentsCss.match(/\.btn\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(decl(btnRule, 'padding')).toBe('var(--space-sm) var(--space-md)');
     expect(decl(btnRule, 'font-size')).toBe('0.875rem');
-    expect(decl(button.getAttribute('style') ?? '', 'height')).toBe('37px');
+    expect(skeletonBtnRule, '.skeleton-profile-btn rule not found in components.css').not.toBe('');
+    expect(decl(skeletonBtnRule, 'height')).toBe(decl(tapTargetRule, 'min-height'));
+    expect(button.getAttribute('style'), 'the button height comes from the shared class').not.toContain('height');
+    expect(phoneBtnInPhoneBlock, '.skeleton-profile-btn must be re-declared inside mobile.css phone block').toBe(true);
+    expect(decl(phoneBtnRule, 'height')).toBe(decl(phoneBtnFloorRule, 'min-height'));
   });
 
   it('takes no spacing of its own: the shared .skeleton-profile-* rules own the margins', () => {
@@ -795,7 +852,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   it('orders the grid sections ratings, stats, meta, rivals, lazy history', () => {
     expect(gridRule, '.profile-grid rule not found in components.css').not.toBe('');
     expect(decl(gridRule, 'grid-template-columns')).toBe('repeat(auto-fit, minmax(280px, 1fr))');
-    const grid = profileRoot().children[1];
+    const grid = profileGrid();
     expect(grid.className).toBe('profile-grid');
     const shapes = Array.from(grid.children).map(el => el.className);
     expect(shapes).toEqual([
@@ -817,18 +874,27 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   it('stands in for the rating block: heading, main/dev pair, chart with range row', () => {
     expect(displayRule, '.rating-display rule not found in components.css').not.toBe('');
     expect(decl(displayRule, 'margin-bottom')).toBe('var(--space-md)');
-    const ratings = profileRoot().children[1].children[0];
+    const ratings = profileGrid().children[0];
 
     // First child is the <h2>Rating</h2> stand-in: its height is the text
-    // metric it stands in for (inline), its margin the base heading rule's —
+    // metric it stands in for and its margin the base heading rule's — both
     // through the shared class, which must keep re-declaring exactly what the
-    // base h1..h6 rule declares, since a div cannot carry that rule.
+    // base h1..h6 rule declares, since a div cannot carry that rule. The
+    // height lives in the class rather than inline because mobile.css shrinks
+    // the bare h2 on phone, and an inline declaration could not follow it.
     const heading = barOf(ratings.children[0]);
-    expect(decl(heading.getAttribute('style') ?? '', 'height')).toBe('30px');
-    expect(skeletonHeadingRule, '.skeleton-profile-heading rule not found in components.css').not.toBe('');
     expect(heading.className).toBe('skeleton-bar skeleton-profile-heading');
+    expect(skeletonHeadingRule, '.skeleton-profile-heading rule not found in components.css').not.toBe('');
+    // 1.5rem (base h2) × 1.25 line-height = 30px on tablet and up …
+    expect(decl(h2BaseRule, 'font-size')).toBe('1.5rem');
+    expect(decl(skeletonHeadingRule, 'height')).toBe('30px');
     expect(decl(skeletonHeadingRule, 'margin-bottom')).toBe(decl(headingBaseRule, 'margin-bottom'));
-    expect(heading.getAttribute('style'), 'the h2 margin comes from the shared class').not.toContain('margin');
+    expect(heading.getAttribute('style'), 'the h2 height and margin come from the shared class').not.toMatch(/(?:^|;)\s*(?:height|margin)/);
+    // … and 1.25rem × 1.25 = 25px on phone, where mobile.css re-declares the
+    // stand-in's height from the same rule the live h2 answers to.
+    expect(phoneHeadingInPhoneBlock, '.skeleton-profile-heading must be re-declared inside mobile.css phone block').toBe(true);
+    expect(decl(phoneH2Rule, 'font-size')).toBe('1.25rem');
+    expect(decl(phoneHeadingRule, 'height')).toBe('25px');
 
     // .rating-display main/dev bars, the main one taller (2.5rem vs 1rem text).
     const display = ratings.querySelector('.rating-display');
@@ -852,7 +918,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   it('renders the stats section expanded with four .stat cells', () => {
     expect(toggleRule, '.section-toggle rule not found in components.css').not.toBe('');
     expect(decl(toggleRule, 'padding')).toBe('var(--space-md)');
-    const stats = profileRoot().children[1].children[1];
+    const stats = profileGrid().children[1];
 
     const [toggle, content] = Array.from(stats.children);
     expect(toggle.className).toBe('section-toggle');
@@ -888,7 +954,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   it('leaves meta and rivals collapsed through the shared .section-content rule', () => {
     expect(decl(contentRule, 'max-height')).toBe('0');
     expect(decl(contentRule, 'overflow')).toBe('hidden');
-    const grid = profileRoot().children[1];
+    const grid = profileGrid();
     for (const name of ['meta', 'rivals']) {
       const section = grid.querySelector(`.profile-section.${name}`);
       expect(section, `${name} section missing`).toBeTruthy();
@@ -905,7 +971,7 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     // lazySection renders below the fold — never from inline animation CSS.
     expect(lazyPlaceholderRule).toContain('skeleton-shimmer');
 
-    const lazy = profileRoot().children[1].children[4];
+    const lazy = profileGrid().children[4];
     expect(lazy.className).toBe('lazy-section');
     const placeholder = lazy.children[0];
     expect(placeholder.className).toBe('lazy-placeholder');

@@ -441,6 +441,18 @@
     gap: var(--space-sm);
   }
 
+  /* bot-profile skeleton bars (web/src/components/skeleton.ts) re-derive their
+     heights here from the same phone rules the live elements answer to: the
+     bare h2 drops to 1.25rem (typography block above) and .btn's tap-target
+     floor rises to 48px (rule above). Desktop heights stay in components.css. */
+  .skeleton-profile-heading {
+    height: 25px; /* phone h2 1.25rem × 1.25 line-height */
+  }
+
+  .skeleton-profile-btn {
+    height: 48px; /* phone .btn min-height */
+  }
+
   .profile-header-main {
     text-align: center;
   }
