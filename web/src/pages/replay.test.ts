@@ -10,6 +10,22 @@ declare global {
   var fetch: any;
 }
 
+/**
+ * Wait for an element to appear in the DOM.
+ * The replay page mounts real content only after the lazy-loaded viewer module
+ * resolves plus a 150ms skeleton fade-out, so tests must wait for the element
+ * rather than sleeping a fixed duration.
+ */
+async function waitForElement(id: string, timeoutMs = 2000): Promise<HTMLElement> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const el = document.getElementById(id);
+    if (el) return el;
+    if (Date.now() > deadline) throw new Error(`#${id} did not appear within ${timeoutMs}ms`);
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+}
+
 describe('replay.ts error handling (URL load button)', () => {
   beforeEach(() => {
     // Ensure matchMedia is mocked before any module loads
@@ -79,12 +95,9 @@ describe('replay.ts error handling (URL load button)', () => {
     const { renderReplayPage } = await import('./replay');
     renderReplayPage({});
 
-    // Wait for async module loading (first import takes longer)
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Get the URL input and load button
-    const urlInput = document.getElementById('url-input') as HTMLInputElement;
-    const loadBtn = document.getElementById('load-url-btn') as HTMLButtonElement;
+    // Wait for the real content to mount (lazy import + 150ms skeleton fade)
+    const urlInput = (await waitForElement('url-input')) as HTMLInputElement;
+    const loadBtn = (await waitForElement('load-url-btn')) as HTMLButtonElement;
 
     expect(urlInput).toBeTruthy();
     expect(loadBtn).toBeTruthy();
@@ -116,10 +129,8 @@ describe('replay.ts error handling (URL load button)', () => {
     const { renderReplayPage } = await import('./replay');
     renderReplayPage({});
 
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const urlInput = document.getElementById('url-input') as HTMLInputElement;
-    const loadBtn = document.getElementById('load-url-btn') as HTMLButtonElement;
+    const urlInput = (await waitForElement('url-input')) as HTMLInputElement;
+    const loadBtn = (await waitForElement('load-url-btn')) as HTMLButtonElement;
     urlInput.value = testUrl;
     loadBtn.click();
 
@@ -159,10 +170,8 @@ describe('replay.ts error handling (URL load button)', () => {
     const { renderReplayPage } = await import('./replay');
     renderReplayPage({});
 
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const urlInput = document.getElementById('url-input') as HTMLInputElement;
-    const loadBtn = document.getElementById('load-url-btn') as HTMLButtonElement;
+    const urlInput = (await waitForElement('url-input')) as HTMLInputElement;
+    const loadBtn = (await waitForElement('load-url-btn')) as HTMLButtonElement;
     urlInput.value = testUrl;
     loadBtn.click();
 
@@ -187,10 +196,8 @@ describe('replay.ts error handling (URL load button)', () => {
     const { renderReplayPage } = await import('./replay');
     renderReplayPage({});
 
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const urlInput = document.getElementById('url-input') as HTMLInputElement;
-    const loadBtn = document.getElementById('load-url-btn') as HTMLButtonElement;
+    const urlInput = (await waitForElement('url-input')) as HTMLInputElement;
+    const loadBtn = (await waitForElement('load-url-btn')) as HTMLButtonElement;
     urlInput.value = testUrl;
     loadBtn.click();
 
@@ -216,10 +223,8 @@ describe('replay.ts error handling (URL load button)', () => {
     const { renderReplayPage } = await import('./replay');
     renderReplayPage({});
 
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    let urlInput = document.getElementById('url-input') as HTMLInputElement;
-    let loadBtn = document.getElementById('load-url-btn') as HTMLButtonElement;
+    let urlInput = (await waitForElement('url-input')) as HTMLInputElement;
+    let loadBtn = (await waitForElement('load-url-btn')) as HTMLButtonElement;
     urlInput.value = notFoundUrl;
     loadBtn.click();
 
@@ -240,10 +245,8 @@ describe('replay.ts error handling (URL load button)', () => {
 
     renderReplayPage({});
 
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    urlInput = document.getElementById('url-input') as HTMLInputElement;
-    loadBtn = document.getElementById('load-url-btn') as HTMLButtonElement;
+    urlInput = (await waitForElement('url-input')) as HTMLInputElement;
+    loadBtn = (await waitForElement('load-url-btn')) as HTMLButtonElement;
     urlInput.value = serverErrorUrl;
     loadBtn.click();
 
@@ -253,5 +256,37 @@ describe('replay.ts error handling (URL load button)', () => {
     html = noReplayDiv.innerHTML;
     expect(html).toContain('Could not load this replay');
     expect(html).not.toContain('not available yet');
+  });
+
+  it('should render skeleton immediately and replace it when content loads', async () => {
+    const { renderReplayPage } = await import('./replay');
+    renderReplayPage({});
+
+    // Skeleton mounts synchronously, before the lazy-loaded viewer resolves
+    const skeleton = document.querySelector('.skeleton-page');
+    expect(skeleton).toBeTruthy();
+
+    // Skeleton mirrors the real page structure at the same DOM positions:
+    // canvas wrapper, then mobile controls, then event timeline inside
+    // .replay-main, with the sidebar as the layout wrapper's last child.
+    const skeletonMain = skeleton!.querySelector('.replay-main');
+    expect(skeletonMain!.querySelector('.canvas-wrapper')).toBeTruthy();
+    expect(skeletonMain!.querySelector('.mobile-replay-controls')).toBeTruthy();
+    expect(skeletonMain!.querySelector('.mobile-event-timeline')).toBeTruthy();
+    expect(skeleton!.querySelector('.replay-layout > .replay-sidebar')).toBeTruthy();
+
+    // Real content replaces the skeleton once loading completes
+    await waitForElement('url-input');
+    expect(document.querySelector('.skeleton-page')).toBeFalsy();
+    expect(document.querySelector('.replay-page')).toBeTruthy();
+
+    // The live page takes the same positions back, so the 150ms skeleton
+    // fade-out (§16.14 zero layout shift) leaves each section where its
+    // placeholder sat.
+    const liveMain = document.querySelector('.replay-page .replay-main');
+    expect(liveMain!.querySelector('.canvas-wrapper')).toBeTruthy();
+    expect(liveMain!.querySelector('.mobile-replay-controls')).toBeTruthy();
+    expect(liveMain!.querySelector('.mobile-event-timeline')).toBeTruthy();
+    expect(document.querySelector('.replay-page .replay-layout > .replay-sidebar')).toBeTruthy();
   });
 });
