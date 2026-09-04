@@ -9,8 +9,10 @@
  * (e.g. `element.getBoundingClientRect()`) and the rendered tooltip, passes
  * both in, and gets back deterministic coordinates for the requested
  * placement. Deciding *which* placement fits the available space is the
- * caller's policy — see `positionTooltip` in event-ribbon.ts, which measures
- * the viewport and picks a side before delegating the arithmetic.
+ * caller's policy — the helpers here only answer narrow questions about a
+ * placement (`placementOverflowsViewport`) or flip the vertical half of the
+ * choice (`resolveVerticalTooltipPlacement`); see `positionTooltip` in
+ * event-ribbon.ts for a caller that measures the viewport and picks a side.
  *
  * @see §16.15 Tooltips and popovers
  */
@@ -50,7 +52,9 @@ export interface TooltipSize {
  * Placement is honored verbatim: `computeTooltipPosition` never flips to
  * another side and never clamps to the viewport, so identical inputs always
  * yield identical coordinates for a given placement. Callers that need
- * flip/fit behavior choose the placement themselves before calling.
+ * flip behavior resolve the placement first — see
+ * `resolveVerticalTooltipPlacement` for the vertical sides and
+ * `placementOverflowsViewport` for detecting an unfit placement.
  */
 export type TooltipPlacement = 'above' | 'below' | 'left' | 'right';
 
@@ -89,6 +93,63 @@ export function placementOverflowsViewport(
     position.x + tooltip.width > viewport.width ||
     position.y + tooltip.height > viewport.height
   );
+}
+
+/**
+ * Resolve the vertical placement to use for `preferred`, flipping it across
+ * the anchor when the preferred side does not fit the viewport.
+ *
+ * `above` that would push the tooltip past the viewport top becomes `below`,
+ * and `below` that would push it past the viewport bottom becomes `above`.
+ * An interior anchor — one whose preferred side fits — keeps its preferred
+ * placement, so nothing moves unless something actually overflows. The
+ * horizontal placements have no vertical side to flip and pass through
+ * unchanged.
+ *
+ * Only the edge the preferred side faces decides the flip. That is
+ * `placementOverflowsViewport` narrowed to the one edge a vertical flip can
+ * repair: a placement's other edges (the far vertical edge, and the centered
+ * cross axis) are identical for `above` and `below`, so overflowing them is
+ * not a reason to move the tooltip — that needs clamping instead. Both sides
+ * can still lose, when the tooltip is taller than the viewport; the flip then
+ * happens anyway, because the non-preferred side is the only one left.
+ *
+ * Pure arithmetic; no DOM reads. See `computeTooltipPosition` for the
+ * coordinates the returned placement produces.
+ */
+export function resolveVerticalTooltipPlacement(
+  anchor: TooltipAnchorRect,
+  tooltip: TooltipSize,
+  preferred: TooltipPlacement,
+  viewport: ViewportBounds,
+): TooltipPlacement {
+  switch (preferred) {
+    case 'above':
+      return crossesFacingEdge(anchor, tooltip, 'above', viewport) ? 'below' : 'above';
+    case 'below':
+      return crossesFacingEdge(anchor, tooltip, 'below', viewport) ? 'above' : 'below';
+    case 'left':
+    case 'right':
+      return preferred;
+  }
+}
+
+/**
+ * Whether `placement` pushes the tooltip past the viewport edge it faces:
+ * the top edge for `above`, the bottom edge for `below`. Touching the edge
+ * is not enough — only a positive crossing counts, matching
+ * `placementOverflowsViewport`. The coordinates come from
+ * `computeTooltipPosition`, so this predicate can never disagree with the
+ * position that actually renders for the same inputs.
+ */
+function crossesFacingEdge(
+  anchor: TooltipAnchorRect,
+  tooltip: TooltipSize,
+  placement: 'above' | 'below',
+  viewport: ViewportBounds,
+): boolean {
+  const { y } = computeTooltipPosition(anchor, tooltip, placement);
+  return placement === 'above' ? y < 0 : y + tooltip.height > viewport.height;
 }
 
 /**
