@@ -1264,6 +1264,41 @@ describe('EventRibbon', () => {
       expect(tooltip.style.transition).toBe('');
     });
 
+    it('should drop the movement transitions under prefers-reduced-motion', () => {
+      // jsdom cannot evaluate media queries, so this holds the reduced-motion
+      // contract against the shipped stylesheet text, the way the legend
+      // placement tests hold their layout contract against it
+      const reduced = EVENT_RIBBON_STYLES.match(
+        /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\n\}/
+      )?.[0] ?? '';
+      expect(reduced).toBeTruthy();
+
+      // The position glide is precisely the motion this query removes: left/top
+      // (and the fade's translateY step) must leave the transition list so the
+      // tooltip snaps between icons instead of animating, while the short
+      // opacity/visibility crossfade is all that remains of show and hide
+      const tooltipRule = reduced.match(/\.event-tooltip\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(tooltipRule).toContain('transition');
+      expect(tooltipRule).toContain('opacity');
+      expect(tooltipRule).toContain('visibility');
+      expect(tooltipRule).not.toContain('left');
+      expect(tooltipRule).not.toContain('top');
+      expect(tooltipRule).not.toContain('transform');
+
+      // The arrow rides on the tooltip while it is visible, so it must arrive
+      // with a box that has already snapped rather than trailing it across the
+      // screen — the one thing the query must disable outright
+      const arrowRule = reduced.match(/\.event-tooltip-arrow\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(arrowRule).toContain('transition: none');
+
+      // Reduced motion is the only regime without the glide: the base rule the
+      // pointer actually sees keeps left/top, so the query removes the
+      // movement rather than the stylesheet never having had it
+      const baseRule = EVENT_RIBBON_STYLES.match(/\.event-tooltip\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(baseRule).toContain('left');
+      expect(baseRule).toContain('top');
+    });
+
     it('should remove the shared tooltip when destroy is called', () => {
       const ribbon = freshRibbon([{ type: 'combat', turn: 10, description: 'Combat', emoji: '⚔️' }]);
       expect(getTooltip()).toBeTruthy();

@@ -1207,19 +1207,23 @@ ${EVENT_TYPE_MARKER_CSS}
   filter: brightness(1.2);
 }
 
-/* Reduced motion for tooltips */
+/* Reduced motion — one block for everything the ribbon animates. The
+   tooltip's position glide is exactly the motion this query exists to remove:
+   left/top (and the fade's translateY step) stay out of the transition list,
+   so a move between icons snaps into place rather than animating, and only
+   the brief opacity/visibility crossfade is left to show it appearing. The
+   arrow loses its transitions outright — it rides on the tooltip while the
+   tooltip is visible, so left untransitioned it arrives together with a box
+   that has already snapped, instead of trailing it across the screen. */
 @media (prefers-reduced-motion: reduce) {
   .event-tooltip {
     transition: opacity 0.1s ease, visibility 0.1s ease;
   }
 
-  .event-marker-icon {
+  .event-tooltip-arrow {
     transition: none;
   }
-}
 
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
   .event-marker,
   .event-marker-icon,
   .event-ribbon-cursor {
