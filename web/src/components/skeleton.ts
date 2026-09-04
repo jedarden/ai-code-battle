@@ -61,8 +61,12 @@ export function Skeleton(props: SkeletonProps): string {
 
 /**
  * Canvas skeleton component matching the replay canvas dimensions
- * Matches: .canvas-wrapper styling (var(--bg-secondary), border-radius: 8px, padding: 10px)
- * Canvas: 100% width, 400px height (matches replay skeleton placeholder)
+ * The live canvas has no width/height attributes until a replay loads
+ * (web/src/pages/replay.ts), so it renders at its intrinsic 300×150 ratio
+ * under `.canvas-wrapper canvas { width:100%; height:auto }` — an
+ * aspect-ratio bar tracks that height at every viewport, where a fixed
+ * pixel height could not. No `background` extra: it would reset the shared
+ * gradient and kill the shimmer.
  *
  * @returns HTML string for canvas skeleton element
  */
@@ -70,15 +74,16 @@ export function CanvasSkeleton(): string {
   return Skeleton({
     variant: 'rectangle',
     width: '100%',
-    height: '400px',
-    extra: 'background:var(--bg-tertiary)'
+    height: '',
+    extra: 'aspect-ratio:2/1'
   });
 }
 
 /**
  * Scrubber skeleton component matching the replay scrubber dimensions
- * Matches: input[type="range"] styling (width: 100%)
- * Height: 4px (thin bar for timeline scrubber)
+ * Matches: the mobile turn slider, a bare `input[type="range"]` — an `input`,
+ * so base.css's tap-target group (`button, a, input, select, textarea`)
+ * floors its box at 44px — plus the live inline margin-top:4px.
  *
  * @returns HTML string for scrubber skeleton element
  */
@@ -86,8 +91,8 @@ export function ScrubberSkeleton(): string {
   return Skeleton({
     variant: 'bar',
     width: '100%',
-    height: '4px',
-    extra: 'border-radius:2px;background:var(--bg-tertiary)'
+    height: '44px',
+    extra: 'margin-top:4px'
   });
 }
 
@@ -296,34 +301,72 @@ export function skeletonBotProfile(): string {
 }
 
 export function skeletonReplay(): string {
+  // Mirrors the live replay page node for node — initReplayViewerWithClass's
+  // markup template (web/src/pages/replay.ts): .skeleton-page wraps the live
+  // .replay-page —
+  // the bot-profile pattern — so every .replay-page-scoped rule reaches the
+  // skeleton's copy of the same markup (mobile.css drops
+  // .replay-page .page-title to 1.25rem on phone, where a bare .page-title
+  // stays 1.5rem; without the nested wrapper the swap changed the title's
+  // size and margin and moved the page under it), then .replay-layout with
+  // .replay-main (canvas wrapper, then the two mobile chrome blocks) and
+  // .replay-sidebar last. Every wrapper reuses the live class, so the flex
+  // row (components.css .replay-layout/.replay-main/.replay-sidebar), the
+  // phone column and the ≥640px hiding of the mobile chrome (mobile.css) and
+  // the sidebar widths (280px tablet, 300px desktop, 100% phone) come from
+  // the same rules the real page answers and cannot drift. Only the stand-in
+  // bars carry inline dimensions, derived from the metrics they stand in
+  // for:
+  //   canvas bar      100% × aspect-ratio 2/1 (CanvasSkeleton) — the live
+  //                   canvas is an attribute-default 300×150 element under
+  //                   `.canvas-wrapper canvas { width:100%; height:auto }`
+  //                   until a replay loads
+  //   no-replay bar   1rem × 1.5 = 24px — the live #no-replay div is a bare
+  //                   block of body text inside the same wrapper
+  //   control bars    44px tap-target floor (base.css button group; the real
+  //                   controls are .btn.small)
+  //   turn-info bar   0.75rem × 1.5 + 2 × var(--space-xs) = 26px — the
+  //                   .mobile-speed-display span's text plus its own padding
+  //   scrubber bar    44px (ScrubberSkeleton) + the live input's inline
+  //                   margin-top:4px
+  //   timeline bar    26px — the live placeholder span's text + its 4px
+  //                   vertical padding inside .mobile-event-timeline
+  // so the phone swap moves nothing: wrapper, controls, timeline and sidebar
+  // all keep the box their placeholder occupied. No stand-in overrides
+  // `background` — the shorthand resets the shared gradient and kills the
+  // shimmer. The sidebar's panels are content-sized on the live page, so
+  // their stand-ins fix their own heights; the column's x/width is what the
+  // parity spec (web/layout-tests/replay-swap-parity.spec.ts) holds to.
   return `
     <div class="skeleton-page">
-      <h1 class="page-title">Replay Viewer</h1>
-      <div class="replay-layout" style="display:flex;gap:20px">
-        <div class="replay-main" style="flex:1;min-width:0">
-          <div class="canvas-wrapper" style="background-color:var(--bg-secondary);border-radius:8px;padding:10px;overflow:auto;max-height:80vh;position:relative">
-            ${CanvasSkeleton()}
-          </div>
-          <div class="mobile-replay-controls" style="margin-top:12px">
-            <div class="mobile-playback-bar" style="display:flex;gap:8px;margin-bottom:8px">
-              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
-              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
-              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px;background:var(--accent)' })}
-              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
-              ${Skeleton({ variant: 'bar', width: '40px', height: '32px', extra: 'border-radius:4px' })}
-              ${Skeleton({ variant: 'bar', width: '60px', height: '32px', extra: 'border-radius:4px' })}
-              ${Skeleton({ variant: 'bar', width: '70px', height: '32px', extra: 'border-radius:4px' })}
+      <div class="replay-page">
+        <h1 class="page-title">Replay Viewer</h1>
+        <div class="replay-layout">
+          <div class="replay-main">
+            <div class="canvas-wrapper">
+              ${CanvasSkeleton()}
+              ${Skeleton({ variant: 'bar', width: '180px', height: '24px' })}
             </div>
-            ${ScrubberSkeleton()}
+            <div class="mobile-replay-controls">
+              <div class="mobile-playback-bar">
+                ${Skeleton({ variant: 'bar', width: '40px', height: '44px', extra: 'border-radius:4px' })}
+                ${Skeleton({ variant: 'bar', width: '40px', height: '44px', extra: 'border-radius:4px' })}
+                ${Skeleton({ variant: 'bar', width: '40px', height: '44px', extra: 'border-radius:4px' })}
+                ${Skeleton({ variant: 'bar', width: '40px', height: '44px', extra: 'border-radius:4px' })}
+                ${Skeleton({ variant: 'bar', width: '52px', height: '26px' })}
+                ${Skeleton({ variant: 'bar', width: '60px', height: '44px', extra: 'border-radius:4px' })}
+              </div>
+              ${ScrubberSkeleton()}
+            </div>
+            <div class="mobile-event-timeline">
+              ${Skeleton({ variant: 'bar', width: '60px', height: '26px' })}
+            </div>
           </div>
-          <div class="mobile-event-timeline" style="margin-top:12px;padding:8px;background:var(--bg-secondary);border-radius:6px;min-height:32px">
-            ${Skeleton({ variant: 'bar', width: '40%', height: '16px' })}
+          <div class="replay-sidebar">
+            ${Skeleton({ variant: 'rectangle', width: '100%', height: '150px' })}
+            ${Skeleton({ variant: 'rectangle', width: '100%', height: '120px' })}
+            ${Skeleton({ variant: 'rectangle', width: '100%', height: '100px' })}
           </div>
-        </div>
-        <div class="replay-sidebar" style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:15px">
-          ${Skeleton({ variant: 'rectangle', width: '100%', height: '150px', extra: 'background:var(--bg-secondary)' })}
-          ${Skeleton({ variant: 'rectangle', width: '100%', height: '120px', extra: 'background:var(--bg-secondary)' })}
-          ${Skeleton({ variant: 'rectangle', width: '100%', height: '100px', extra: 'background:var(--bg-secondary)' })}
         </div>
       </div>
     </div>`;
