@@ -7,6 +7,7 @@ import { fetchBotProfile, fetchRivalries, type BotProfile, type RivalryEntry } f
 import { updateOGTags, getBotProfileOGTags, resetOGTags } from '../og-tags';
 import { initLazySections, lazySection } from '../lib/lazy-section';
 import { downloadBotCard } from '../components/bot-card';
+import { skeletonBotProfile } from '../components/skeleton';
 
 export async function renderBotProfilePage(params: Record<string, string>): Promise<void> {
   const app = document.getElementById('app');
@@ -14,25 +15,13 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
 
   const botId = params.id;
 
-  app.innerHTML = `
-    <div class="bot-profile-page">
-      <nav class="breadcrumb">
-        <a href="#/leaderboard">Leaderboard</a> / <span id="bot-breadcrumb-name">Loading...</span>
-      </nav>
-      <div id="profile-content" class="loading">Loading...</div>
-    </div>
-  `;
-
-  const content = document.getElementById('profile-content');
-  const breadcrumbName = document.getElementById('bot-breadcrumb-name');
-  if (!content) return;
+  app.innerHTML = skeletonBotProfile();
 
   try {
     const [profile, rivalriesData] = await Promise.all([
       fetchBotProfile(botId),
       fetchRivalries().catch(() => ({ updated_at: '', rivalries: [] })),
     ]);
-    if (breadcrumbName) breadcrumbName.textContent = profile.name;
 
     updateOGTags(getBotProfileOGTags({
       id: profile.id,
@@ -43,23 +32,52 @@ export async function renderBotProfilePage(params: Record<string, string>): Prom
       evolved: profile.evolved,
     }));
 
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.innerHTML = `
+      <div class="bot-profile-page fade-in">
+        <nav class="breadcrumb">
+          <a href="#/leaderboard">Leaderboard</a> / <span>${escapeHtml(profile.name)}</span>
+        </nav>
+        <div id="profile-content"></div>
+      </div>
+    `;
+    const content = document.getElementById('profile-content');
+    if (!content) return;
     renderProfile(content, profile, rivalriesData.rivalries);
   } catch (error) {
     resetOGTags();
-    content.innerHTML = `
-      <div class="error">
-        <p>Failed to load bot profile: ${error}</p>
-        <p class="hint">This bot may not exist or data is not yet available.</p>
-        <a href="#/leaderboard" class="btn secondary">Back to Leaderboard</a>
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.innerHTML = `
+      <div class="bot-profile-page fade-in">
+        <nav class="breadcrumb">
+          <a href="#/leaderboard">Leaderboard</a> / <span>Error</span>
+        </nav>
+        <div class="error">
+          <p>Failed to load bot profile: ${error}</p>
+          <p class="hint">This bot may not exist or data is not yet available.</p>
+          <a href="#/leaderboard" class="btn secondary">Back to Leaderboard</a>
+        </div>
       </div>
     `;
   }
 }
 
-function renderProfile(container: HTMLElement, profile: BotProfile, rivalries: RivalryEntry[] = []): void {
+/**
+ * The profile page's markup, without the wiring renderProfile adds on top
+ * (chart, toggles, lazy observer, share button). Split out so the skeleton
+ * parity fixture (web/layout-tests/bot-profile-fixture.ts) can lay out the
+ * real markup —
+ * skeletonBotProfile stands in for this exact block — without the
+ * IntersectionObserver that would swap the history placeholder for real
+ * content mid-measurement. renderProfile is the only app caller; keep the two
+ * in lockstep.
+ */
+export function renderProfileMarkup(profile: BotProfile, rivalries: RivalryEntry[] = []): string {
   const losses = profile.matches_played - profile.matches_won;
 
-  container.innerHTML = `
+  return `
     <div class="profile-header">
       <div class="profile-header-main">
         <h1>${escapeHtml(profile.name)}</h1>
@@ -152,6 +170,10 @@ function renderProfile(container: HTMLElement, profile: BotProfile, rivalries: R
       )}
     </div>
   `;
+}
+
+function renderProfile(container: HTMLElement, profile: BotProfile, rivalries: RivalryEntry[] = []): void {
+  container.innerHTML = renderProfileMarkup(profile, rivalries);
 
   // Render rating chart (always visible)
   renderRatingChart(profile);
@@ -302,7 +324,8 @@ function wireShowMoreMatches(contentEl: HTMLElement): void {
   });
 }
 
-function renderRatingChart(profile: BotProfile): void {
+/** Exported for the skeleton parity fixture (web/layout-tests/bot-profile-fixture.ts). */
+export function renderRatingChart(profile: BotProfile): void {
   const chartContainer = document.getElementById('rating-chart');
   if (!chartContainer || profile.rating_history.length < 2) {
     if (chartContainer) {
