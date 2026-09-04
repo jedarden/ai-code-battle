@@ -1066,6 +1066,137 @@ describe('EventRibbon', () => {
     });
   });
 
+  // ── Legend placement (responsive, in flow) ───────────────────────────────────────
+  // The ribbon and the legend share one in-flow column (.event-ribbon-root), so
+  // mounting the legend cannot move or resize the ribbon and the group cannot
+  // cover what surrounds it. jsdom has no layout engine — the rendered half of
+  // these guarantees is measured by layout-tests/event-ribbon-legend-placement.spec.ts
+  // in headless Chromium. What jsdom *can* hold is the contract that layout
+  // depends on: the legend sits below the ribbon as a sibling rather than inside
+  // it, nothing in the group is lifted out of flow, and the legend wraps into its
+  // parent's width instead of spilling past it.
+
+  describe('Legend placement (responsive, in flow)', () => {
+    const SAMPLE: SignificantEvent[] = [
+      { type: 'combat', turn: 10, description: 'Skirmish', emoji: '⚔️' },
+      { type: 'combat', turn: 35, description: 'Ambush', emoji: '⚔️' },
+      { type: 'energy', turn: 60, description: 'Energy milestone', emoji: '⚡' },
+    ];
+
+    /** The full CSS rule for a selector, or '' when the stylesheet dropped it. */
+    const rule = (selector: string): string =>
+      EVENT_RIBBON_STYLES.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`))?.[0] ?? '';
+
+    it('should mount the legend and the toggle as siblings of the ribbon in one root', () => {
+      const ribbon = new EventRibbon({ container, events: SAMPLE, totalTurns: 100 });
+      ribbon.renderLegend();
+
+      // "Below the ribbon" is laid out by this one column: ribbon first, legend
+      // second, toggle last. A legend appended to the container instead of the
+      // root would escape the column and land wherever the page puts it, which
+      // is exactly the floating-over-the-timeline placement this slice removes
+      const root = container.querySelector('.event-ribbon-root') as HTMLElement;
+      const order = Array.from(root.children, (el) => el.className);
+      expect(order).toEqual(['event-ribbon', 'event-ribbon-legend', 'event-legend-toggle']);
+      // ...and nothing leaked out into the container the root itself lives in
+      expect(container.querySelectorAll('.event-ribbon-legend').length).toBe(1);
+    });
+
+    it('should leave the ribbon subtree byte-identical when the legend is mounted', () => {
+      const ribbon = new EventRibbon({ container, events: SAMPLE, totalTurns: 100 });
+      const before = (container.querySelector('.event-ribbon') as HTMLElement).outerHTML;
+      const parentBefore = (container.querySelector('.event-ribbon') as HTMLElement).parentElement;
+
+      ribbon.renderLegend();
+
+      const ribbonEl = container.querySelector('.event-ribbon') as HTMLElement;
+      // Every marker's inline left/top/z-index lives in this markup, so byte
+      // equality is exactly "no marker moved, no marker was resized" — the
+      // legend mounted elsewhere in the group cannot have touched it
+      expect(ribbonEl.outerHTML).toBe(before);
+      // ...and the ribbon was not re-parented or re-wrapped to make room for it
+      expect(ribbonEl.parentElement).toBe(parentBefore);
+    });
+
+    it('should compute identical marker positions with and without the legend', () => {
+      const withLegendHost = document.createElement('div');
+      const withoutLegendHost = document.createElement('div');
+      container.appendChild(withLegendHost);
+      container.appendChild(withoutLegendHost);
+
+      const withLegend = new EventRibbon({ container: withLegendHost, events: SAMPLE, totalTurns: 100 });
+      withLegend.renderLegend();
+      const withoutLegend = new EventRibbon({ container: withoutLegendHost, events: SAMPLE, totalTurns: 100 });
+
+      const geometry = (host: HTMLElement): string[] =>
+        Array.from(host.querySelectorAll('.event-marker'), (m) => {
+          const el = m as HTMLElement;
+          return `${el.style.left}|${el.style.top}|${el.style.zIndex}`;
+        });
+
+      expect(geometry(withLegendHost).length).toBeGreaterThan(0);
+      expect(geometry(withLegendHost)).toEqual(geometry(withoutLegendHost));
+    });
+
+    it('should keep the ribbon and legend in normal flow, never overlapping neighbours', () => {
+      const rootRule = rule('\\.event-ribbon-root');
+      const legendRule = rule('\\.event-ribbon-legend');
+
+      // relative keeps the element in flow (absolute/fixed would lift it out and
+      // let the group paint over whatever sits before or after it on the page)
+      expect(rootRule).toContain('position: relative');
+      expect(rootRule).not.toContain('position: absolute');
+      expect(rootRule).not.toContain('position: fixed');
+      // the legend declares no position at all: it stays static, in flow
+      expect(legendRule).not.toContain('position: absolute');
+      expect(legendRule).not.toContain('position: fixed');
+    });
+
+    it('should wrap legend entries inside the legend rather than spilling past it', () => {
+      // wrap, not nowrap: entries reflow onto further rows as the container
+      // narrows, which is what keeps them inside the legend's own width
+      const contentRule = rule('\\.event-legend-content');
+      expect(contentRule).toContain('flex-wrap: wrap');
+      expect(contentRule).not.toContain('white-space: nowrap');
+
+      // the wrapped rows are bounded by a max-height with overflow hidden, so a
+      // long key grows to the cap instead of pushing the ribbon or the page about
+      const legendRule = rule('\\.event-ribbon-legend');
+      expect(legendRule).toMatch(/max-height:\s*\d+px/);
+      expect(legendRule).not.toMatch(/max-height:\s*none/);
+      expect(legendRule).toContain('overflow: hidden');
+    });
+
+    it('should narrow past 480px into a swipeable row rather than an overflow', () => {
+      // The second regime is deliberate: on a phone the key is one row the user
+      // swipes, with entries at their natural width. What it must never become
+      // is an overflow — so the row is scrollable in place, the entries keep
+      // their width instead of being squashed, and nothing here widens the
+      // legend beyond its parent's box
+      const narrow = EVENT_RIBBON_STYLES.match(
+        /@media \(max-width: 480px\)\s*\{\s*\.event-legend-content\s*\{[^}]*\}/
+      )?.[0] ?? '';
+      expect(narrow).toContain('flex-wrap: nowrap');
+      expect(narrow).toContain('overflow-x: auto');
+
+      const narrowItem = EVENT_RIBBON_STYLES.match(
+        /@media \(max-width: 480px\)\s*\{[^@]*?\.event-legend-item\s*\{[^}]*\}/
+      )?.[0] ?? '';
+      expect(narrowItem).toContain('flex-shrink: 0');
+    });
+
+    it('should let the stack root shrink inside a flex-row parent', () => {
+      // #mobile-timeline lays its children out in a row inside an overflow-x
+      // scroller. A flex item's automatic minimum size is its content's
+      // min-content width, so without min-width: 0 a wide legend would widen the
+      // root past the scroller and push the ribbon off-screen
+      const rootRule = rule('\\.event-ribbon-root');
+      expect(rootRule).toContain('min-width: 0');
+      // ...and the root claims exactly the parent's width, never more
+      expect(rootRule).toContain('width: 100%');
+    });
+  });
+
 
   // ── Shared tooltip ───────────────────────────────────────────────────────────────
   // The ribbon has exactly ONE tooltip, created in the constructor and appended
