@@ -575,7 +575,9 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
-  /* Replay viewer - two column on tablet */
+  /* Replay viewer - two column on tablet. Applies above the 900px stacking
+     block below: 901-1023px only, and the 280px sidebar is what the desktop
+     block raises back to 300px at 1024px. */
   .replay-layout {
     flex-direction: row;
   }
@@ -616,6 +618,31 @@
   .mobile-debug-sheet,
   .sandbox-mobile-message {
     display: none;
+  }
+}
+
+/* Replay keeps the phone column through the tablet band, to 900px. The canvas
+   is the page's whole point and a two-column row from 640px leaves it
+   ~300-600px wide — narrower than the phone gets — and 900px is also where
+   the page's transcript and debug panels stop being bottom sheets, so the
+   layout and its panels change shape together. Above it the tablet block's
+   row applies (901-1023px, 280px sidebar).
+
+   This is the one cascade both the live page and skeletonReplay() answer to,
+   which is why it lives here and not in the page's own <style> block: that
+   block is document-global once the swap lands, and sitting later in document
+   order it shadowed this column across 640-900px — so the skeleton, laid out
+   before the block existed, stayed two-column at 768px while the page it was
+   replaced by stacked, and everything below the canvas moved. Declared after
+   the tablet block so it wins their 640-900px overlap at equal specificity;
+   the phone block already says the same thing under 640px. */
+@media (max-width: 900px) {
+  .replay-layout {
+    flex-direction: column;
+  }
+
+  .replay-sidebar {
+    width: 100%;
   }
 }
 

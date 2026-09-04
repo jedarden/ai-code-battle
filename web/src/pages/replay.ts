@@ -80,6 +80,16 @@ export function renderReplayPage(params: Record<string, string>): void {
  * next to skeletonReplay() rather than a hand-mirrored copy that could drift,
  * and so the jsdom guard's "skeletonReplay mirrors replayPageMarkup" name
  * points at a real symbol.
+ *
+ * Those blocks therefore own only what the skeleton does not render: panel
+ * chrome and the sidebar's contents. Every class skeletonReplay() shares —
+ * .replay-page, .page-title, .replay-layout, .replay-main, .canvas-wrapper,
+ * .replay-sidebar and the two mobile chrome blocks — is styled by
+ * styles/components.css and styles/mobile.css alone, because the skeleton is
+ * laid out before any of this markup (and so any of its CSS) exists; a rule
+ * for a shared class here would style the parity fixture's skeleton section
+ * too, hiding a swap that moves the page. skeleton.test.ts holds the block to
+ * that.
  */
 export function replayPageMarkup(initialUrl?: string): string {
   return `
@@ -357,13 +367,11 @@ export function replayPageMarkup(initialUrl?: string): string {
     </div>
 
     <style>
-      .replay-page .page-title { margin-bottom: 20px; }
-      .replay-layout { display: flex; gap: 20px; }
-      .replay-main { flex: 1; min-width: 0; }
-      .canvas-wrapper { background-color: var(--bg-secondary); border-radius: 8px; padding: 10px; overflow: auto; max-height: 80vh; }
+      /* Page-local rules only — the shared layout classes are styled by
+         components.css/mobile.css, not here (see replayPageMarkup's doc
+         comment for why). */
       #replay-canvas { display: block; }
       .no-replay-message { color: var(--text-muted); text-align: center; padding: 60px 20px; }
-      .replay-sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 15px; }
       .panel { background-color: var(--bg-secondary); border-radius: 8px; padding: 15px; }
       .panel h2 { font-size: 1rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
       .load-controls { display: flex; flex-direction: column; gap: 10px; }
@@ -429,10 +437,6 @@ export function replayPageMarkup(initialUrl?: string): string {
       .map-vote-count.positive { color: #22c55e; }
       .map-vote-count.negative { color: #ef4444; }
       .map-vote-status { text-align: center; color: var(--text-muted); font-size: 0.7rem; margin-top: 6px; min-height: 1em; }
-      @media (max-width: 900px) {
-        .replay-layout { flex-direction: column; }
-        .replay-sidebar { width: 100%; }
-      }
       /* Debug telemetry panel */
       .debug-panel { padding: 0; overflow: hidden; }
       .debug-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 15px; cursor: pointer; user-select: none; }

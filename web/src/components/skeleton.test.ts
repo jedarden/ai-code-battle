@@ -41,6 +41,11 @@ const stylesDir = resolve(dirname(fileURLToPath(import.meta.url)), '../styles');
 const componentsCss = readFileSync(resolve(stylesDir, 'components.css'), 'utf8');
 const mobileCss = readFileSync(resolve(stylesDir, 'mobile.css'), 'utf8');
 const baseCss = readFileSync(resolve(stylesDir, 'base.css'), 'utf8');
+// The shipped copy of the replay layout: index.html's inline <style> is the
+// only stylesheet the browser loads (no src/styles/*.css reaches the bundle),
+// so it carries its own copy of the rules the skeleton and live page share.
+const indexHtml = readFileSync(resolve(stylesDir, '../../index.html'), 'utf8');
+const indexCss = indexHtml.split('<style>')[1].split('</style>')[0];
 
 // Desktop columns in renderDesktopRow order: rank, name, rating, wl,
 // winrate, status, expand.
@@ -1018,10 +1023,13 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
 // .replay-layout holds .replay-main (the .canvas-wrapper of canvas stand-in +
 // #no-replay bar, then .mobile-replay-controls of .mobile-playback-bar +
 // scrubber, then .mobile-event-timeline) and .replay-sidebar last. Every
-// wrapper reuses the live class, so the flex row, the main column's flex:1 and
-// the 300px sidebar come from the shared components.css rules the split's
-// first child landed there — the skeleton renders *before* the live page's
-// own inline <style> block exists, so those rules must not live only in it.
+// wrapper reuses the live class, so the whole layout — the flex row, the main
+// column's flex:1, the sidebar widths, the 900px stacking, the canvas box and
+// the title margin — comes from the stylesheets (components.css + mobile.css),
+// which are also the only cascade the skeleton is ever laid out under: the
+// skeleton renders *before* the live page's own <style> blocks exist, so a
+// rule for a class it renders cannot live in them. The last guard here holds
+// the page's blocks to that.
 
 describe('skeletonReplay mirrors replayPageMarkup', () => {
   // The replay page's rules live partly in the stylesheets and partly in its
@@ -1040,6 +1048,16 @@ describe('skeletonReplay mirrors replayPageMarkup', () => {
   const sidebarRule = componentsCss.match(/\.replay-sidebar\s*\{([^}]*)\}/)?.[1] ?? '';
   const canvasRule = componentsCss.match(/\.canvas-wrapper canvas\s*\{([^}]*)\}/)?.[1] ?? '';
   const noReplayRule = replaySource.match(/\.no-replay-message\s*\{([^}]*)\}/)?.[1] ?? '';
+  // The replay-scoped boxes the page block gave up: the title margin and the
+  // canvas wrapper, both declared against .replay-page in components.css so
+  // the skeleton answers to them too, and the 900px stacking block in
+  // mobile.css — the one cascade both states of the page are laid out by.
+  const replayPageTitleRule =
+    componentsCss.match(/\.replay-page \.page-title\s*\{([^}]*)\}/)?.[1] ?? '';
+  const replayPageCanvasRule =
+    componentsCss.match(/\.replay-page \.canvas-wrapper\s*\{([^}]*)\}/)?.[1] ?? '';
+  const replayStackingBlock =
+    mobileCss.match(/@media \(max-width: 900px\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
   // Phone-block re-declarations (mobile.css, max-width: 639px): the title size
   // is scoped to .replay-page — the reason the skeleton keeps that wrapper —
   // and the .btn floor is what sets the playback controls' height.
@@ -1291,4 +1309,138 @@ describe('skeletonReplay mirrors replayPageMarkup', () => {
     expect(skeletonReplay()).not.toContain('<style');
     expect(skeletonReplay()).not.toMatch(/animation\s*:/);
   });
+
+  it('is laid out by the stylesheets alone: the page block owns nothing the skeleton renders', () => {
+    // replayPageMarkup's <style> blocks are document-global the moment the
+    // swap writes them, and the skeleton is laid out before they exist — so a
+    // rule in them for a class the skeleton renders styles a page the skeleton
+    // was never shown, and the swap moves it. That was the 640-900px defect:
+    // the block carried its own max-width: 900px stacking (and the shared
+    // layout, canvas-box and title-margin rules), which shadowed mobile.css's
+    // tablet row in the band while the skeleton stayed two-column. The rules
+    // live in components.css/mobile.css now, and this guard keeps that block
+    // page-local: every selector in it must fail to match the skeleton.
+    //
+    // Scope: this reads the one block authored here. replayPageMarkup emits
+    // four more (<style>${...}</style> of imported component constants), whose
+    // bodies are not in this file to read; none of them name a class the
+    // skeleton renders, and the swap-parity spec's pre-swap fixture is what
+    // holds them — it lays out both real cascades at three viewports, so a
+    // rule in any of the five that reached the skeleton would move the
+    // measured regions.
+    const pageBlock = replaySource.match(/<style>\n([\s\S]*?)<\/style>/)?.[1] ?? '';
+    expect(pageBlock, 'replayPageMarkup page-owned <style> block not found').not.toBe('');
+
+    // Every selector in the block, media-wrapped or not: a rule opens with a
+    // brace preceded by a brace-free run, so collecting those runs (comments
+    // stripped first, at-rule headers included and harmless — none of them
+    // name a class) walks the nested @media blocks the bottom sheets live in
+    // without parsing the whole grammar.
+    const selectors = Array.from(
+      pageBlock
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .matchAll(/(?:^|\})\s*([^{}]+?)\{/g),
+      (match) => match[1].trim()
+    ).filter(Boolean);
+    expect(selectors.length).toBeGreaterThan(0);
+
+    // Classes the skeleton renders, plus the shared page-title rule that
+    // reaches its h1. A selector matching any of these is a rule the skeleton
+    // answers to only before the swap — i.e. a rule that changes the page when
+    // the content lands.
+    const skeletonClasses = [
+      '.replay-page',
+      '.page-title',
+      '.replay-layout',
+      '.replay-main',
+      '.canvas-wrapper',
+      '.mobile-replay-controls',
+      '.mobile-playback-bar',
+      '.mobile-event-timeline',
+      '.replay-sidebar',
+    ];
+    for (const selector of selectors) {
+      for (const className of skeletonClasses) {
+        expect(
+          selectorIncludes(selector, className),
+          `replayPageMarkup's block must not reach ${className}: "${selector}"`
+        ).toBe(false);
+      }
+    }
+
+    // …and the rules the block gave up are the stylesheets', still there: the
+    // shared layout and canvas box in components.css, the 900px stack in
+    // mobile.css (written against the phone block's column, so the tablet row
+    // only starts above it).
+    expect(replayPageTitleRule, '.replay-page .page-title not found in components.css')
+      .not.toBe('');
+    expect(decl(replayPageTitleRule, 'margin-bottom')).toBe('20px');
+    expect(replayPageCanvasRule, '.replay-page .canvas-wrapper not found in components.css')
+      .not.toBe('');
+    expect(decl(replayPageCanvasRule, 'padding')).toBe('10px');
+    expect(decl(replayPageCanvasRule, 'max-height')).toBe('80vh');
+    expect(decl(layoutRule, 'display')).toBe('flex');
+    expect(replayStackingBlock, 'the 900px stacking block not found in mobile.css').not.toBe('');
+    expect(decl(replayStackingBlock.match(/\.replay-layout\s*\{([^}]*)\}/)?.[1] ?? '', 'flex-direction'))
+      .toBe('column');
+    expect(decl(replayStackingBlock.match(/\.replay-sidebar\s*\{([^}]*)\}/)?.[1] ?? '', 'width'))
+      .toBe('100%');
+  });
+  it('ships the shared layout with the values the stylesheets declare', () => {
+    // index.html's inline <style> is the only stylesheet the browser loads —
+    // nothing imports src/styles/*.css into the bundle — so the cascade the
+    // parity harness lays out under exists in production only through this
+    // copy. It is the shipped half of "one cascade": if it drifted from the
+    // stylesheets, production would lay the swap out differently than every
+    // test here says it does, and no harness would notice. index.html has no
+    // --radius-* custom properties, so its copy spells the radius as the
+    // literal the token resolves to.
+    const radiusLg = decl(rootVars, '--radius-lg');
+    expect(radiusLg, '--radius-lg not found in base.css').not.toBe('');
+
+    // Selector -> declaration body, whitespace-collapsed. \s*\{ cannot run
+    // past a descendant selector, so '.replay-page' matches only the bare rule
+    // and not '.replay-page .page-title'.
+    const shipped = (selector: string): string =>
+      indexCss
+        .match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`))
+        ?.[1]?.replace(/\s+/g, ' ').trim() ?? '';
+    const canon = (body: string): string =>
+      body.replace(/var\(--radius-lg\)/g, radiusLg).replace(/\s+/g, ' ').trim();
+
+    const pairs: ReadonlyArray<readonly [selector: string, canonicalBody: string]> = [
+      ['.replay-page', replayPageRule],
+      ['.replay-page .page-title', replayPageTitleRule],
+      ['.replay-layout', layoutRule],
+      ['.replay-main', mainRule],
+      ['.replay-sidebar', sidebarRule],
+      ['.replay-page .canvas-wrapper', replayPageCanvasRule],
+    ];
+    for (const [selector, canonicalBody] of pairs) {
+      expect(canonicalBody, `${selector} not found in the stylesheets`).not.toBe('');
+      expect(
+        shipped(selector),
+        `index.html must ship ${selector} exactly as the stylesheets declare it`
+      ).toBe(canon(canonicalBody));
+    }
+
+    // …and the 900px stacking, whose canonical home is mobile.css.
+    const shippedStacking =
+      indexCss.match(/@media \(max-width: 900px\)\s*\{([\s\S]*?)\n    \}/)?.[1] ?? '';
+    expect(shippedStacking, 'no 900px replay stacking in index.html').not.toBe('');
+    expect(canon(shippedStacking.match(/\.replay-layout\s*\{([^}]*)\}/)?.[1] ?? '')).toBe(
+      canon(replayStackingBlock.match(/\.replay-layout\s*\{([^}]*)\}/)?.[1] ?? '')
+    );
+    expect(canon(shippedStacking.match(/\.replay-sidebar\s*\{([^}]*)\}/)?.[1] ?? '')).toBe(
+      canon(replayStackingBlock.match(/\.replay-sidebar\s*\{([^}]*)\}/)?.[1] ?? '')
+    );
+  });
 });
+
+/** Whether a selector's class list contains `className` as a whole class. */
+function selectorIncludes(selector: string, className: string): boolean {
+  return selector.split('.').some((part) => {
+    const name = part.match(/^[a-zA-Z0-9_-]+/)?.[0];
+    return name !== undefined && `.${name}` === className;
+  });
+}

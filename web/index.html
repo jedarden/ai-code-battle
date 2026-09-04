@@ -865,6 +865,61 @@
       left: 0;
       color: var(--accent);
     }
+
+    /* Replay page shared layout — the rules skeletonReplay() and the live page
+       both answer to. This file is the copy the browser actually ships (no
+       src/styles/*.css reaches it); the canonical copy, which the parity
+       harness and the skeleton guards lay out under, is src/styles/components.css
+       + src/styles/mobile.css, and skeleton.test.ts holds the two to the same
+       values. Keep them identical. These must not go back into the style block
+       replay.ts emits with the page markup: that block is document-global once
+       the swap lands, so a rule there styled the skeleton too and the
+       skeleton → content swap moved the page — across 640-900px the page
+       stacked while the skeleton that stood in for it was two-column. */
+    .replay-page {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .replay-page .page-title {
+      margin-bottom: 20px;
+    }
+
+    .replay-layout {
+      display: flex;
+      gap: 20px;
+    }
+
+    .replay-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .replay-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      flex-shrink: 0;
+      width: 300px;
+    }
+
+    .replay-page .canvas-wrapper {
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 10px;
+      overflow: auto;
+      max-height: 80vh;
+    }
+
+    @media (max-width: 900px) {
+      .replay-layout {
+        flex-direction: column;
+      }
+
+      .replay-sidebar {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>

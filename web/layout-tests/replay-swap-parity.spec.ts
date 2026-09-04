@@ -8,11 +8,22 @@
  * stylesheets). The live side is replayPageMarkup() — the markup the real swap
  * writes into #app, page-owned <style> blocks included — imported rather than
  * mirrored, so it cannot drift from what the app actually renders. Those
- * blocks are document-global once the markup lands, and the skeleton reuses
- * the live classes, so both sections answer to the same full cascade; at
- * 640-900px that cascade is replayPageMarkup's own max-width: 900px block
- * (column, full-width sidebar) rather than mobile.css's 640-1023px row, on
- * both sides alike.
+ * blocks are document-global once the markup lands, so they can only style the
+ * skeleton too: replayPageMarkup's block is therefore held to rules the
+ * skeleton does not render (see skeleton.test.ts's "declares nothing the
+ * skeleton answers to"), and the layout the two sides share lives in the
+ * stylesheets alone.
+ *
+ * The second fixture exists because same-document parity cannot see a rule
+ * that both sections answer to. Before the layout moved into the stylesheets,
+ * replayPageMarkup carried its own max-width: 900px stacking block: applied
+ * document-globally it styled the skeleton section of this fixture as well, so
+ * both sides stacked at 768px and parity held here — while in the real page
+ * the skeleton had already been laid out by the stylesheets alone, two-column
+ * in the 640-900px band, and the swap dropped everything below the canvas.
+ * `pre-swap cascade vs live page` measures that real pair: the skeleton in a
+ * document holding the stylesheets alone, the live page in one holding the
+ * page's own blocks too.
  *
  * Like the other parity specs, every geometry assertion is relative — skeleton
  * vs live, each measured within its own fixture section — so a redesign that
@@ -180,8 +191,73 @@ function buildReplayFixtureHtml(): string {
 </html>`;
 }
 
-async function openReplayFixture(page: Page): Promise<void> {
-  await page.setContent(buildReplayFixtureHtml(), { waitUntil: 'load' });
+/**
+ * The two documents the real swap moves between, one section each.
+ *
+ * Pre-swap is what the route renders first: skeletonReplay() under the three
+ * stylesheets and nothing else. Post-swap is what the swap writes: the live
+ * markup, whose page-owned <style> blocks are document-global from that
+ * moment. Holding the skeleton alone in the first document is the point —
+ * in the same-document fixture above, those blocks style the skeleton section
+ * too, so a page-owned rule that reaches a class the skeleton renders is
+ * invisible here and shifts the real swap all the same.
+ */
+function buildPreSwapHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ACB replay pre-swap cascade fixture</title>
+  <style>${inlineStyles()}</style>
+</head>
+<body>
+  <section id="skeleton-fixture" aria-label="skeleton replay viewer">
+    ${skeletonReplay()}
+  </section>
+</body>
+</html>`;
+}
+
+function buildPostSwapHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ACB replay post-swap cascade fixture</title>
+  <style>${inlineStyles()}</style>
+</head>
+<body>
+  <section id="live-fixture" aria-label="live replay viewer fixture">
+    ${replayPageMarkup()}
+  </section>
+</body>
+</html>`;
+}
+
+async function openReplayFixture(page: Page, html: string): Promise<void> {
+  await page.setContent(html, { waitUntil: 'load' });
+}
+
+/** Which side of REGIONS a section measures: the stand-ins or the content. */
+type Side = 'skeleton' | 'live';
+
+/** Every compared region of one fixture section, by its label in REGIONS. */
+async function measureRegions(page: Page, side: Side): Promise<Record<string, Box>> {
+  const section = side === 'skeleton' ? 'skeleton-fixture' : 'live-fixture';
+  const boxes: Record<string, Box> = {};
+  for (const [label, skeletonSelector, liveSelector] of REGIONS) {
+    const selector = side === 'skeleton' ? skeletonSelector : liveSelector;
+    boxes[label] = await boxWithinSection(page, selector, section);
+  }
+  return boxes;
+}
+
+function compareRegions(skeleton: Record<string, Box>, live: Record<string, Box>): void {
+  for (const [label, , , fields] of REGIONS) {
+    sameBox(label, skeleton[label], live[label], fields);
+  }
 }
 
 test.describe('replay skeleton → content swap parity', () => {
@@ -195,15 +271,12 @@ test.describe('replay skeleton → content swap parity', () => {
       );
 
       await page.setViewportSize({ width, height: 900 });
-      await openReplayFixture(page);
+      await openReplayFixture(page, buildReplayFixtureHtml());
 
-      for (const [label, skeletonSelector, liveSelector, fields] of REGIONS) {
-        const [skeleton, live] = await Promise.all([
-          boxWithinSection(page, skeletonSelector, 'skeleton-fixture'),
-          boxWithinSection(page, liveSelector, 'live-fixture'),
-        ]);
-        sameBox(label, skeleton, live, fields);
-      }
+      compareRegions(
+        await measureRegions(page, 'skeleton'),
+        await measureRegions(page, 'live')
+      );
 
       // Wherever the two sides stack a content-identical main column — phone
       // (the square wrapper cannot grow) and desktop (the columns sit side by
@@ -215,6 +288,35 @@ test.describe('replay skeleton → content swap parity', () => {
           boxWithinSection(page, '.replay-sidebar', 'live-fixture'),
         ]);
         within(skeletonSidebar.top, liveSidebar.top, 'sidebar: top');
+      }
+    });
+
+    test(`the swap moves nothing between the pre- and post-swap cascades at ${width}px`, async ({ page }) => {
+      test.skip(
+        test.info().project.name === 'phone',
+        'drives its own three viewports — one pass is enough'
+      );
+
+      await page.setViewportSize({ width, height: 900 });
+
+      // Measured before the document is replaced: the skeleton under the
+      // stylesheets alone is what the route shows first, and the live page
+      // under its own blocks is what replaces it.
+      await openReplayFixture(page, buildPreSwapHtml());
+      const preSwap = await measureRegions(page, 'skeleton');
+
+      await openReplayFixture(page, buildPostSwapHtml());
+      compareRegions(preSwap, await measureRegions(page, 'live'));
+
+      // Same exception as the same-document sweep above: wherever the columns
+      // stack and the main column is content-sized, the live sidebar hangs
+      // lower — its x and width are the layout's and are compared in full.
+      if (width === 375 || width === 1280) {
+        await openReplayFixture(page, buildPreSwapHtml());
+        const preSwapSidebar = await boxWithinSection(page, '.replay-sidebar', 'skeleton-fixture');
+        await openReplayFixture(page, buildPostSwapHtml());
+        const liveSidebar = await boxWithinSection(page, '.replay-sidebar', 'live-fixture');
+        within(preSwapSidebar.top, liveSidebar.top, 'sidebar: top');
       }
     });
   }

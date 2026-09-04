@@ -445,6 +445,16 @@ code {
   margin: 0 auto;
 }
 
+/* Title margin the live page tunes off the shared .page-title rule (24px).
+   Declared here rather than in the page's own <style> block because the
+   skeleton renders the same .replay-page > h1.page-title and is laid out
+   before that block exists: from the block it beat even mobile.css's phone
+   re-declaration (same specificity, later in document order) and shifted
+   everything under the title on the swap at every width. */
+.replay-page .page-title {
+  margin-bottom: 20px;
+}
+
 /* Replay layout — the two-column wrapper the live page and its skeleton both
    render. mobile.css's media blocks are written against this base (phone:
    flex-direction column, sidebar 100%; tablet: row, sidebar 280px; desktop:
@@ -481,6 +491,23 @@ code {
   border-radius: var(--radius-lg);
   padding: var(--space-sm);
   overflow: hidden;
+}
+
+/* Replay's canvas box: scrollable and capped where the shared .canvas-wrapper
+   is a clipped panel. Replay-scoped — the embed and sandbox wrappers keep the
+   base rule — and here rather than in the page's own <style> block because
+   skeletonReplay() renders the same .canvas-wrapper before that block exists,
+   so its 8px base padding read as a 2px canvas shift across the swap. The
+   first three declarations restate the base rule's own values (--radius-lg is
+   8px) so this rule is complete and value-identical to the copy index.html
+   ships (skeleton.test.ts compares the two); mobile.css's phone block still
+   reclaims padding and max-height with !important. */
+.replay-page .canvas-wrapper {
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  overflow: auto;
+  max-height: 80vh;
 }
 
 .canvas-wrapper canvas {
