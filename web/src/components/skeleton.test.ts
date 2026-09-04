@@ -659,6 +659,20 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
   const statsGridRule = componentsCss.match(/\.stats-grid\s*\{([^}]*)\}/)?.[1] ?? '';
   const statRule = componentsCss.match(/\.stat\s*\{([^}]*)\}/)?.[1] ?? '';
   const lazyPlaceholderRule = componentsCss.match(/\.lazy-placeholder\s*\{([^}]*)\}/)?.[1] ?? '';
+  // The live rules the stand-in bars re-declare, plus the shared
+  // .skeleton-profile-* rules that re-declare them (components.css, next to
+  // .skeleton-page/.skeleton-row). The h1 stand-in cannot carry the live
+  // `.profile-header h1` rule or the heading bar the base `h1, h2, …` group,
+  // and the chip bar cannot carry .profile-status wholesale — its
+  // display:inline-block would reflow the stand-in — so each takes a skeleton
+  // class re-declaring that one quantity from the same custom property.
+  const headerH1Rule = componentsCss.match(/(?:^|\})\s*\.profile-header h1\s*\{([^}]*)\}/)?.[1] ?? '';
+  const statusRule = componentsCss.match(/(?:^|\})\s*\.profile-status\s*\{([^}]*)\}/)?.[1] ?? '';
+  // The base heading group is the only `h1, h2` selector in base.css.
+  const headingBaseRule = baseCss.match(/h1,\s*h2[^{]*\{([^}]*)\}/)?.[1] ?? '';
+  const skeletonNameRule = componentsCss.match(/\.skeleton-profile-name\s*\{([^}]*)\}/)?.[1] ?? '';
+  const skeletonHeadingRule = componentsCss.match(/\.skeleton-profile-heading\s*\{([^}]*)\}/)?.[1] ?? '';
+  const skeletonChipRule = componentsCss.match(/\.skeleton-profile-chip\s*\{([^}]*)\}/)?.[1] ?? '';
 
   function profileDoc(): Document {
     return new DOMParser().parseFromString(skeletonBotProfile(), 'text/html');
@@ -725,8 +739,20 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(parseFloat(decl(headerBars[1].getAttribute('style') ?? '', 'height'))).toBeLessThan(
       parseFloat(decl(headerBars[0].getAttribute('style') ?? '', 'height'))
     );
-    // The chip is rounded like .profile-status (border-radius: var(--radius-sm)).
-    expect(decl(headerBars[1].getAttribute('style') ?? '', 'border-radius')).toBe('var(--radius-sm)');
+    // The name bar takes its margin from the shared class, which must keep
+    // re-declaring exactly what the live `.profile-header h1` rule declares.
+    expect(skeletonNameRule, '.skeleton-profile-name rule not found in components.css').not.toBe('');
+    expect(headerBars[0].className).toBe('skeleton-bar skeleton-profile-name');
+    // The live rule declares the h1's margin as a shorthand (0 0 … 0); its
+    // bottom component is what the shared class re-declares.
+    expect(decl(skeletonNameRule, 'margin-bottom')).toBe(decl(headerH1Rule, 'margin').split(/\s+/)[2]);
+    expect(headerBars[0].getAttribute('style'), 'the h1 margin comes from the shared class').not.toContain('margin');
+    // The chip is rounded like .profile-status — the shared class re-declares
+    // the radius from the same custom property the live rule uses.
+    expect(skeletonChipRule, '.skeleton-profile-chip rule not found in components.css').not.toBe('');
+    expect(headerBars[1].className).toBe('skeleton-bar skeleton-profile-chip');
+    expect(decl(skeletonChipRule, 'border-radius')).toBe(decl(statusRule, 'border-radius'));
+    expect(headerBars[1].getAttribute('style'), 'the chip radius comes from the shared class').not.toContain('border-radius');
     // The share-card stand-in is a rectangle, rounded like .btn.
     expect(barOf(button).className).toBe('skeleton-bar');
     expect(decl(button.getAttribute('style') ?? '', 'border-radius')).toBe('var(--radius-md)');
@@ -735,6 +761,23 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(decl(btnRule, 'padding')).toBe('var(--space-sm) var(--space-md)');
     expect(decl(btnRule, 'font-size')).toBe('0.875rem');
     expect(decl(button.getAttribute('style') ?? '', 'height')).toBe('37px');
+  });
+
+  it('takes no spacing of its own: the shared .skeleton-profile-* rules own the margins', () => {
+    // The bars carry inline only the dimensions of the text they stand in
+    // for; every margin comes from a shared components.css class, and the
+    // class-based assertions above hold each of those rules against the live
+    // rule it re-declares. (The history placeholder's inline min-height
+    // mirrors the live page's own inline placeholder string — the caller
+    // passes it to lazySection — so it is not a skeleton bar, and the
+    // lazy-placeholder test pins it verbatim.)
+    const doc = profileDoc();
+    const bars = doc.querySelectorAll('.skeleton-bar, .skeleton-circle');
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of Array.from(bars)) {
+      expect(bar.getAttribute('style') ?? '', `no inline margin/gap on ${bar.className}`)
+        .not.toMatch(/(?:^|;)\s*(?:margin|gap)[a-z-]*\s*:/);
+    }
   });
 
   it('reuses the shared shimmer rules and declares none of its own', () => {
@@ -776,10 +819,16 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(decl(displayRule, 'margin-bottom')).toBe('var(--space-md)');
     const ratings = profileRoot().children[1].children[0];
 
-    // First child is the <h2>Rating</h2> stand-in, spaced like the base h2 rule.
+    // First child is the <h2>Rating</h2> stand-in: its height is the text
+    // metric it stands in for (inline), its margin the base heading rule's —
+    // through the shared class, which must keep re-declaring exactly what the
+    // base h1..h6 rule declares, since a div cannot carry that rule.
     const heading = barOf(ratings.children[0]);
     expect(decl(heading.getAttribute('style') ?? '', 'height')).toBe('30px');
-    expect(decl(heading.getAttribute('style') ?? '', 'margin-bottom')).toBe('var(--space-md)');
+    expect(skeletonHeadingRule, '.skeleton-profile-heading rule not found in components.css').not.toBe('');
+    expect(heading.className).toBe('skeleton-bar skeleton-profile-heading');
+    expect(decl(skeletonHeadingRule, 'margin-bottom')).toBe(decl(headingBaseRule, 'margin-bottom'));
+    expect(heading.getAttribute('style'), 'the h2 margin comes from the shared class').not.toContain('margin');
 
     // .rating-display main/dev bars, the main one taller (2.5rem vs 1rem text).
     const display = ratings.querySelector('.rating-display');

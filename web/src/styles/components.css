@@ -531,6 +531,26 @@ code {
   padding: var(--space-sm) 0;
 }
 
+/* Bot profile skeleton (web/src/components/skeleton.ts) — the spacing the
+   live rules give the real elements reaches them through selectors a div
+   stand-in cannot carry (.profile-header h1's margin, the bare h2's margin
+   from the base heading rule, .profile-status' radius), so each stand-in bar
+   takes one of these classes and re-declares exactly that quantity from the
+   same custom property the live rule uses. Shared declarations here, not
+   inline ones on the markup, are what keep skeleton and live page from
+   drifting. */
+.skeleton-profile-name {
+  margin-bottom: var(--space-sm); /* .profile-header h1 */
+}
+
+.skeleton-profile-heading {
+  margin-bottom: var(--space-md); /* base h1..h6 rule, base.css */
+}
+
+.skeleton-profile-chip {
+  border-radius: var(--radius-sm); /* .profile-status */
+}
+
 .skeleton-table-header {
   display: flex;
   align-items: center;

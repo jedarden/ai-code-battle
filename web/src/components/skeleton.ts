@@ -199,8 +199,15 @@ export function skeletonBotProfile(): string {
   //   toggle h2 bar      1rem × 1.25 (.section-toggle h2)         = 20px
   //   toggle icon bar    0.75rem × 1.5 (.section-toggle-icon)     = 18px
   //   stat value/label   1.5rem / 0.75rem × 1.5                   = 36px / 18px
-  // Margins that the element's own rule can't reach the bar with reuse the
-  // same custom properties the live rule declares (var(--space-*)).
+  // The margins and the chip's radius come from the shared .skeleton-profile-*
+  // rules (components.css, next to .skeleton-page/.skeleton-row), not inline
+  // styles: the live rules declare them through selectors a div stand-in
+  // cannot carry (.profile-header h1's margin-bottom, the bare h2's from the
+  // base heading rule, .profile-status' border-radius), and each skeleton
+  // class re-declares that one quantity from the same custom property the
+  // live rule uses, so skeleton and live page cannot drift. No bar here
+  // carries an inline margin — the parity guards in skeleton.test.ts hold
+  // every bar to that.
   // Shimmer comes from the shared .skeleton-bar rule (components.css) on every
   // placeholder, and from the shared .lazy-placeholder rule — the same one
   // lazySection renders below the fold — on the history block, so this file
@@ -217,15 +224,15 @@ export function skeletonBotProfile(): string {
       <div class="bot-profile-page">
         <div class="profile-header">
           <div class="profile-header-main">
-            ${Skeleton({ variant: 'bar', width: '220px', height: '40px', extra: 'margin-bottom:var(--space-sm)' })}
-            ${Skeleton({ variant: 'bar', width: '80px', height: '26px', extra: 'border-radius:var(--radius-sm)' })}
+            ${Skeleton({ variant: 'bar', width: '220px', height: '40px', className: 'skeleton-profile-name' })}
+            ${Skeleton({ variant: 'bar', width: '80px', height: '26px', className: 'skeleton-profile-chip' })}
           </div>
           ${Skeleton({ variant: 'rectangle', width: '128px', height: '37px' })}
         </div>
 
         <div class="profile-grid">
           <div class="profile-section ratings">
-            ${Skeleton({ variant: 'bar', width: '80px', height: '30px', extra: 'margin-bottom:var(--space-md)' })}
+            ${Skeleton({ variant: 'bar', width: '80px', height: '30px', className: 'skeleton-profile-heading' })}
             <div class="rating-display">
               ${Skeleton({ variant: 'bar', width: '140px', height: '60px' })}
               ${Skeleton({ variant: 'bar', width: '48px', height: '24px' })}
