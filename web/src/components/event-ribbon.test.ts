@@ -738,6 +738,34 @@ describe('EventRibbon', () => {
       expect(legend?.classList.contains('event-ribbon-legend-hidden')).toBe(false);
     });
 
+    it('should keep the legend hidden when setEvents re-renders its entries', () => {
+      const ribbon = new EventRibbon({ container });
+      ribbon.renderLegend();
+      ribbon.hideLegend();
+
+      // setEvents rebuilds the legend's entries in place; the hidden state is
+      // an instance field rather than anything in the rebuilt DOM, so the
+      // re-render must not resurrect the legend
+      ribbon.setEvents(
+        [
+          { type: 'combat', turn: 2, description: 'Skirmish' },
+          { type: 'energy', turn: 6, description: 'Milestone' },
+        ],
+        10
+      );
+
+      expect(
+        container
+          .querySelector('.event-ribbon-legend')
+          ?.classList.contains('event-ribbon-legend-hidden')
+      ).toBe(true);
+      // the chip keeps the collapsed slot: exactly one of {legend, chip} shows
+      expect(container.classList.contains('event-ribbon-legend-hidden-container')).toBe(true);
+      expect(container.querySelector('.event-legend-toggle')).toBeTruthy();
+      // the re-render really did run — the entries are there behind the shell
+      expect(container.querySelectorAll('.event-legend-item').length).toBeGreaterThan(0);
+    });
+
     it('should save legend visibility preference to localStorage', () => {
       const ribbon = new EventRibbon({ container });
       ribbon.renderLegend();
