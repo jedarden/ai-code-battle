@@ -980,8 +980,11 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
     expect(placeholder.querySelectorAll('.skeleton-bar')).toHaveLength(0);
   });
 
-  it('stays decorative: no interactive elements, no CSS of its own', () => {
+  it('stays decorative: no text, no interactive elements, no CSS of its own', () => {
     const doc = profileDoc();
+    // Nothing is readable either — every placeholder is an empty shimmer bar,
+    // so the load never flashes content that looks real but means nothing.
+    expect(doc.body.textContent?.trim() ?? '', 'the skeleton must carry no text content').toBe('');
     // No interactive elements anywhere — the share-card button and the section
     // toggles all stand in as plain divs.
     expect(doc.querySelectorAll('button, a, input, select, textarea')).toHaveLength(0);
