@@ -1460,43 +1460,6 @@ code {
   color: var(--text-muted);
 }
 
-/* ─── Event Type Legend ───────────────────────────────────────────────────────────── */
-
-.event-type-legend {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-md);
-}
-
-.event-type-legend-content {
-  display: flex;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.event-type-legend-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-}
-
-.event-type-legend-icon {
-  font-size: 16px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.event-type-legend-label {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-}
-
 /* ─── Tooltip (§16.15) ───────────────────────────────────────────────────────────── */
 
 .tooltip {

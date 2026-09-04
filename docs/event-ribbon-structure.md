@@ -19,17 +19,20 @@ The event ribbon is a horizontal timeline displaying significant game events pro
   - Client-side event extraction from replay data
   - Defines `SignificantEventType` union and event detection logic
   
-- **`web/src/components/EventTypeLegend.tsx`** (93 lines)
-  - React component for displaying event type → icon/color mapping
-  - Reusable across the application
-  
 - **`web/src/components/event-timeline.ts`** (413 lines)
   - Alternative/older timeline implementation
   - Similar functionality but different DOM structure
 
 ### Supporting Files
 - **`web/src/types.ts`** - Type definitions for Replay, GameEvent, Position, etc.
-- **`web/src/styles/components.css`** - Global styles including `.event-type-legend` (lines 1405-1440)
+- **`web/src/components/event-type-registry.ts`** - Single source of truth for each event type's icon, name and color
+
+> **Removed:** `web/src/components/EventTypeLegend.tsx` (a React legend) was
+> deleted on 2026-09-04. It was never mounted — the app is vanilla TS, and the
+> only thing importing it was its own test file — so it duplicated the ribbon's
+> `renderLegend()` and its own `.event-type-legend*` CSS block as a second,
+> drifting legend. The ribbon legend is the one legend; the registry is the one
+> source of its icons, names and colors.
 
 ## Event Type Definitions
 
@@ -217,72 +220,30 @@ ribbon.toggleLegend();
 <button class="event-legend-toggle">☰ Event Types</button>
 ```
 
-### React Legend Component (EventTypeLegend.tsx)
-
-**Reusable React component** for displaying event type mappings:
-
-```tsx
-<EventTypeLegend eventTypes={['combat', 'core_capture']} />
-```
-
-**Features:**
-- Shows all types by default, or filter with prop
-- Icon + label per type
-- CSS color application
-- Responsive flexbox layout
-
-**DOM output:**
-```html
-<div class="event-type-legend">
-  <div class="event-type-legend-content">
-    <div class="event-type-legend-item">
-      <span class="event-type-legend-icon" style="color: #ef4444">⚔️</span>
-      <span class="event-type-legend-label">Combat</span>
-    </div>
-    <!-- ... -->
-  </div>
-</div>
-```
-
 ### Global CSS Styles
 
-Located in `components.css` (lines 1405-1440):
-
-```css
-.event-type-legend {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-md);
-}
-
-.event-type-legend-content {
-  display: flex;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-  justify-content: center;
-}
-```
+The ribbon legend's styles are injected by `event-ribbon.ts` itself (the
+`.event-ribbon-legend` / `.event-legend-*` rules in its inline style block), so
+the legend ships with the component and has no separate stylesheet.
 
 ## Icon/Color Consistency
 
-**Single source of truth** in two locations (must stay synchronized):
+**Single source of truth:** `web/src/components/event-type-registry.ts`
+(`EVENT_TYPE_REGISTRY`, typed over the full `SignificantEventType` union, with
+`getEventTypeDescriptor()` as the lookup). The markers, the shared tooltip and
+the legend all read from it, so they cannot drift apart.
 
-1. **`event-ribbon.ts`** - `getEventStyle()` method (lines 425-436)
-2. **`EventTypeLegend.tsx`** - `EVENT_TYPE_STYLES` const (lines 36-44)
-
-Both define:
 ```typescript
-const STYLES: Record<SignificantEventType, { color, icon, label }> = {
-  combat: { icon: '⚔️', color: '#ef4444', label: 'Combat' },
-  core_capture: { icon: '🏰', color: '#3b82f6', label: 'Core Capture' },
+export const EVENT_TYPE_REGISTRY: Record<SignificantEventType, EventTypeDescriptor> = {
+  combat:           { icon: '⚔️', name: 'Combat',           color: '#ef4444' },
+  core_capture:     { icon: '🏰', name: 'Core Capture',     color: '#3b82f6' },
   // ... etc
 };
 ```
 
 **Used in:**
-- `event-ribbon.ts` - Marker rendering
-- `EventTypeLegend.tsx` - Legend rendering
+- `event-ribbon.ts` - Marker rendering and legend rendering
+- `event-ribbon.ts` - Shared tooltip (icon, title, color)
 - `extract-significant-events.ts` - Emoji assignment in event creation
 
 ## Current Tooltips
@@ -416,5 +377,4 @@ This document provides complete foundational knowledge for:
 **Files ready for modification:**
 - `event-ribbon.ts` - Main rendering logic
 - `extract-significant-events.ts` - Add new event detection patterns
-- `EventTypeLegend.tsx` - Reusable legend component
-- `components.css` - Global legend styles
+- `event-type-registry.ts` - Add presentation facts for a new event type
