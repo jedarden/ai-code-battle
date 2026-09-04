@@ -524,6 +524,32 @@ describe('EventRibbon', () => {
       expect(container.querySelector('.event-marker-icon.critical_moment')?.textContent?.trim()).toBe('🌟');
       expect(container.querySelector('.event-marker-icon.spawn_wave')?.textContent?.trim()).toBe('🐣');
     });
+
+    it('should pin the marker icon box at 22px, the middle of the 20-24px band', () => {
+      // The parent acceptance band is "icon sizing consistent (e.g., 20-24px)";
+      // 22px is the implemented middle of it, and this pin is what turns a
+      // future bump into a deliberate decision instead of an accident. All four
+      // values move together — the font-size sets the glyph, the width/height
+      // set the box the tooltip anchors to, and line-height: 1 keeps the glyph
+      // centred inside that box instead of riding on the font's own metrics.
+      // line-height is asserted with its semicolon so "line-height: 1.5" could
+      // not satisfy a substring match on "line-height: 1".
+      //
+      // ".event-marker-icon" heads several rules in this sheet (the generated
+      // per-type colour rules, the hover raise, the cursor/transition block), so
+      // the box rule is selected by the property only it carries rather than by
+      // position — a naive first-match on the bare selector lands on the hover
+      // rule and would pin the wrong declaration block.
+      const sizingRule = (
+        EVENT_RIBBON_STYLES.match(/(?:^|\n)\.event-marker-icon\s*\{[^}]*\}/g) ?? []
+      ).find(rule => rule.includes('font-size')) ?? '';
+
+      expect(sizingRule, 'the .event-marker-icon box rule').not.toBe('');
+      expect(sizingRule).toContain('font-size: 22px');
+      expect(sizingRule).toContain('width: 22px');
+      expect(sizingRule).toContain('height: 22px');
+      expect(sizingRule).toContain('line-height: 1;');
+    });
   });
 
   // ── Event type registry ──────────────────────────────────────────────────────────
