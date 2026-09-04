@@ -1,15 +1,15 @@
 /**
  * Unit tests for the tooltip positioning helper (§16.15)
  * Verifies adjacency, centering, non-overlap, determinism, viewport
- * overflow detection for all four placements, and the vertical flip on
- * overflow.
+ * overflow detection for all four placements, and the flip across the
+ * anchor on overflow on both axes.
  */
 
 import { describe, it, expect } from 'vitest';
 import {
   computeTooltipPosition,
   placementOverflowsViewport,
-  resolveVerticalTooltipPlacement,
+  resolveTooltipPlacement,
   TOOLTIP_OFFSET_PX,
   type TooltipAnchorRect,
   type TooltipPlacement,
@@ -253,48 +253,84 @@ describe('placementOverflowsViewport', () => {
   });
 });
 
-describe('resolveVerticalTooltipPlacement', () => {
-  // Both sit at the horizontal interior so only the vertical axis is in play.
+describe('resolveTooltipPlacement', () => {
+  // nearTop/nearBottom sit at the horizontal interior so only the vertical
+  // axis is in play; nearLeft/nearRight/midViewport sit at the vertical
+  // interior so only the horizontal axis is.
   const nearTop: TooltipAnchorRect = { x: 100, y: 30, width: 24, height: 24 };
   const nearBottom: TooltipAnchorRect = { x: 100, y: 730, width: 24, height: 24 };
+  const nearLeft: TooltipAnchorRect = { x: 100, y: 200, width: 24, height: 24 };
+  const nearRight: TooltipAnchorRect = { x: 990, y: 200, width: 24, height: 24 };
+  const midViewport: TooltipAnchorRect = { x: 500, y: 200, width: 24, height: 24 };
 
   /** The placement the resolver picked, positioned for `anchor`. */
   function placedAt(anchor: TooltipAnchorRect, preferred: TooltipPlacement) {
-    const placement = resolveVerticalTooltipPlacement(anchor, TOOLTIP, preferred, VIEWPORT);
+    const placement = resolveTooltipPlacement(anchor, TOOLTIP, preferred, VIEWPORT);
     return { placement, position: computeTooltipPosition(anchor, TOOLTIP, placement) };
   }
 
   it('should flip above to below when the tooltip crosses the viewport top', () => {
     // y = 30 - 48 - 12 = -30, past the top edge.
-    expect(resolveVerticalTooltipPlacement(nearTop, TOOLTIP, 'above', VIEWPORT)).toBe(
+    expect(resolveTooltipPlacement(nearTop, TOOLTIP, 'above', VIEWPORT)).toBe(
       'below',
     );
   });
 
   it('should flip below to above when the tooltip crosses the viewport bottom', () => {
     // y = 730 + 24 + 12 = 766, so the bottom edge lands at 814 > 768.
-    expect(
-      resolveVerticalTooltipPlacement(nearBottom, TOOLTIP, 'below', VIEWPORT),
-    ).toBe('above');
+    expect(resolveTooltipPlacement(nearBottom, TOOLTIP, 'below', VIEWPORT)).toBe(
+      'above',
+    );
+  });
+
+  it('should flip left to right when the tooltip crosses the viewport left edge', () => {
+    // x = 100 - 160 - 12 = -72, past the left edge.
+    expect(resolveTooltipPlacement(nearLeft, TOOLTIP, 'left', VIEWPORT)).toBe(
+      'right',
+    );
+  });
+
+  it('should flip right to left when the tooltip crosses the viewport right edge', () => {
+    // x = 990 + 24 + 12 = 1026, so the right edge lands at 1186 > 1024.
+    expect(resolveTooltipPlacement(nearRight, TOOLTIP, 'right', VIEWPORT)).toBe(
+      'left',
+    );
   });
 
   it('should keep the preferred placement for an interior anchor', () => {
-    // y = 200: above spans [140,188] and below [236,284], both inside 768.
-    expect(resolveVerticalTooltipPlacement(ANCHOR, TOOLTIP, 'above', VIEWPORT)).toBe(
+    // above spans [140,188] and below [236,284], both inside 768; left spans
+    // [328,488] and right [536,696], both inside 1024.
+    expect(resolveTooltipPlacement(midViewport, TOOLTIP, 'above', VIEWPORT)).toBe(
       'above',
     );
-    expect(resolveVerticalTooltipPlacement(ANCHOR, TOOLTIP, 'below', VIEWPORT)).toBe(
+    expect(resolveTooltipPlacement(midViewport, TOOLTIP, 'below', VIEWPORT)).toBe(
       'below',
+    );
+    expect(resolveTooltipPlacement(midViewport, TOOLTIP, 'left', VIEWPORT)).toBe(
+      'left',
+    );
+    expect(resolveTooltipPlacement(midViewport, TOOLTIP, 'right', VIEWPORT)).toBe(
+      'right',
     );
   });
 
   it('should keep the flipped placement TOOLTIP_OFFSET_PX adjacent to the anchor', () => {
-    const { position } = placedAt(nearTop, 'above');
-    expect(position.y).toBe(nearTop.y + nearTop.height + TOOLTIP_OFFSET_PX);
+    const flippedUp = placedAt(nearTop, 'above');
+    expect(flippedUp.position.y).toBe(nearTop.y + nearTop.height + TOOLTIP_OFFSET_PX);
 
-    const flipped = placedAt(nearBottom, 'below');
-    expect(flipped.position.y).toBe(
+    const flippedDown = placedAt(nearBottom, 'below');
+    expect(flippedDown.position.y).toBe(
       nearBottom.y - TOOLTIP.height - TOOLTIP_OFFSET_PX,
+    );
+
+    const flippedRight = placedAt(nearLeft, 'left');
+    expect(flippedRight.position.x).toBe(
+      nearLeft.x + nearLeft.width + TOOLTIP_OFFSET_PX,
+    );
+
+    const flippedLeft = placedAt(nearRight, 'right');
+    expect(flippedLeft.position.x).toBe(
+      nearRight.x - TOOLTIP.width - TOOLTIP_OFFSET_PX,
     );
   });
 
@@ -302,6 +338,8 @@ describe('resolveVerticalTooltipPlacement', () => {
     for (const [anchor, preferred] of [
       [nearTop, 'above'],
       [nearBottom, 'below'],
+      [nearLeft, 'left'],
+      [nearRight, 'right'],
     ] as const) {
       const { position } = placedAt(anchor, preferred);
       expect(overlapsAnchor(position, anchor)).toBe(false);
@@ -312,6 +350,8 @@ describe('resolveVerticalTooltipPlacement', () => {
     for (const [anchor, preferred] of [
       [nearTop, 'above'],
       [nearBottom, 'below'],
+      [nearLeft, 'left'],
+      [nearRight, 'right'],
     ] as const) {
       const { placement } = placedAt(anchor, preferred);
       expect(placementOverflowsViewport(anchor, TOOLTIP, placement, VIEWPORT)).toBe(
@@ -322,46 +362,51 @@ describe('resolveVerticalTooltipPlacement', () => {
 
   it('should not flip a placement that only overflows the cross axis', () => {
     // 'above' clears the top edge (y = 140) but its centered rect spans
-    // [932,1092], past the 1024 right edge. Moving the tooltip to the other
+    // [922,1082], past the 1024 right edge. Moving the tooltip to the other
     // side cannot repair horizontal overflow, so above is kept.
-    const nearRight: TooltipAnchorRect = { x: 1000, y: 200, width: 24, height: 24 };
     expect(placementOverflowsViewport(nearRight, TOOLTIP, 'above', VIEWPORT)).toBe(
       true,
     );
-    expect(resolveVerticalTooltipPlacement(nearRight, TOOLTIP, 'above', VIEWPORT)).toBe(
+    expect(resolveTooltipPlacement(nearRight, TOOLTIP, 'above', VIEWPORT)).toBe(
       'above',
     );
-  });
 
-  it('should pass horizontal placements through untouched', () => {
-    // Neither edge case leaves the horizontal sides any worse off, and they
-    // have no vertical side to flip.
-    expect(resolveVerticalTooltipPlacement(nearTop, TOOLTIP, 'left', VIEWPORT)).toBe(
+    // Symmetrically, 'left' clears the left edge (x = 228) but its centered
+    // rect spans [-12,36], past the 0 top edge, and moving it to the right
+    // side would not lift it back in.
+    const highAnchor: TooltipAnchorRect = { x: 400, y: 0, width: 24, height: 24 };
+    expect(placementOverflowsViewport(highAnchor, TOOLTIP, 'left', VIEWPORT)).toBe(
+      true,
+    );
+    expect(resolveTooltipPlacement(highAnchor, TOOLTIP, 'left', VIEWPORT)).toBe(
       'left',
     );
-    expect(resolveVerticalTooltipPlacement(nearTop, TOOLTIP, 'right', VIEWPORT)).toBe(
-      'right',
-    );
-    expect(
-      resolveVerticalTooltipPlacement(nearBottom, TOOLTIP, 'left', VIEWPORT),
-    ).toBe('left');
-    expect(
-      resolveVerticalTooltipPlacement(nearBottom, TOOLTIP, 'right', VIEWPORT),
-    ).toBe('right');
   });
 
   it('should not flip when the tooltip exactly touches the viewport edge', () => {
     // above y = 60 - 48 - 12 = 0, top edge on the boundary.
     const touchingTop: TooltipAnchorRect = { x: 100, y: 60, width: 24, height: 24 };
-    expect(
-      resolveVerticalTooltipPlacement(touchingTop, TOOLTIP, 'above', VIEWPORT),
-    ).toBe('above');
+    expect(resolveTooltipPlacement(touchingTop, TOOLTIP, 'above', VIEWPORT)).toBe(
+      'above',
+    );
 
     // below y = 684 + 24 + 12 = 720, bottom edge exactly on 768.
     const touchingBottom: TooltipAnchorRect = { x: 100, y: 684, width: 24, height: 24 };
-    expect(
-      resolveVerticalTooltipPlacement(touchingBottom, TOOLTIP, 'below', VIEWPORT),
-    ).toBe('below');
+    expect(resolveTooltipPlacement(touchingBottom, TOOLTIP, 'below', VIEWPORT)).toBe(
+      'below',
+    );
+
+    // left x = 172 - 160 - 12 = 0, left edge on the boundary.
+    const touchingLeft: TooltipAnchorRect = { x: 172, y: 200, width: 24, height: 24 };
+    expect(resolveTooltipPlacement(touchingLeft, TOOLTIP, 'left', VIEWPORT)).toBe(
+      'left',
+    );
+
+    // right x = 828 + 24 + 12 = 864, right edge exactly on 1024.
+    const touchingRight: TooltipAnchorRect = { x: 828, y: 200, width: 24, height: 24 };
+    expect(resolveTooltipPlacement(touchingRight, TOOLTIP, 'right', VIEWPORT)).toBe(
+      'right',
+    );
   });
 
   it('should still flip when neither side fits, taking the non-preferred side', () => {
@@ -369,11 +414,12 @@ describe('resolveVerticalTooltipPlacement', () => {
     // happens anyway because the preferred side is the one that already lost.
     const tall: TooltipSize = { width: 160, height: 400 };
     const cramped: ViewportBounds = { width: 1024, height: 200 };
-    expect(resolveVerticalTooltipPlacement(ANCHOR, tall, 'above', cramped)).toBe(
-      'below',
-    );
-    expect(resolveVerticalTooltipPlacement(ANCHOR, tall, 'below', cramped)).toBe(
-      'above',
-    );
+    expect(resolveTooltipPlacement(ANCHOR, tall, 'above', cramped)).toBe('below');
+    expect(resolveTooltipPlacement(ANCHOR, tall, 'below', cramped)).toBe('above');
+
+    // Same on the horizontal axis, with a tooltip wider than the viewport.
+    const wide: TooltipSize = { width: 1200, height: 48 };
+    expect(resolveTooltipPlacement(ANCHOR, wide, 'left', VIEWPORT)).toBe('right');
+    expect(resolveTooltipPlacement(ANCHOR, wide, 'right', VIEWPORT)).toBe('left');
   });
 });
