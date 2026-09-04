@@ -11,6 +11,14 @@ import {
   isKnownEventType,
   type EventTypeDescriptor,
 } from './event-type-registry';
+import {
+  placementCrossesFacingEdge,
+  resolveTooltipPlacement,
+  type TooltipAnchorRect,
+  type TooltipPlacement,
+  type TooltipSize,
+  type ViewportBounds,
+} from './tooltip-position';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Overlap layering (same-turn stacking)
@@ -60,9 +68,50 @@ const STACK_MAX_SPREAD_PX = 24;   // Clamp: total top-to-bottom spread
 // On body, position: fixed is genuinely viewport-relative and nothing clips
 // it. Sharing one element is also what makes repositioning across icons a
 // smooth transition rather than a fade-out/fade-in between separate nodes.
-const TOOLTIP_GAP_PX = 12;        // Gap between tooltip and hovered marker
+//
+// Where the tooltip goes is the shared pure module's job (tooltip-position.ts,
+// via resolveTooltipPlacement): adjacency to the marker, the flip across it
+// when a side does not fit, and the clamp to the viewport when neither side
+// does. This file keeps only what the module deliberately leaves to its
+// caller — the measurements and the order the sides are tried in — plus the
+// arrow rendering that turns the resolved placement into styles. The gap
+// between tooltip and marker is the module's own TOOLTIP_OFFSET_PX, so the
+// ribbon cannot drift away from the placement it asks for.
 const TOOLTIP_EDGE_PADDING_PX = 8; // Minimum padding from the viewport edges
 const TOOLTIP_ARROW_INSET_PX = 10; // Min distance from tooltip edge to arrow
+
+// Sides the tooltip is tried in, most-preferred first: vertical before
+// horizontal, because the markers sit in a 48px ribbon and the tooltip is
+// taller than the room above or below it far more often than the viewport is
+// too narrow to fit it beside them. The first side whose facing viewport edge
+// fits the whole tooltip wins; when no side fits, `above` is handed over
+// anyway and the resolver flips and clamps it — overlapping the marker beats
+// leaving the viewport.
+const PLACEMENT_PREFERENCE: readonly TooltipPlacement[] = ['above', 'below', 'right', 'left'];
+
+/** How the arrow hangs off the tooltip for a resolved placement. */
+interface TooltipArrowPlacement {
+  /** Tooltip edge the arrow is pinned to, `ARROW_OVERHANG` outside it */
+  edge: 'top' | 'bottom' | 'left' | 'right';
+  /** Rotation applied after the arrow's centering translate */
+  rotation: string;
+  /**
+   * Whether the filled edge needs the flipped class: it is a pseudo-element,
+   * which JS cannot address directly, so `below` flips it in CSS instead.
+   */
+  flipsFilledEdge: boolean;
+}
+
+// The whole placement → arrow mapping, in the module's vocabulary. `above`
+// leaves the arrow where the stylesheet draws it (bottom edge, pointing up);
+// every other placement re-pins the same triangle.
+const ARROW_BY_PLACEMENT: Record<TooltipPlacement, TooltipArrowPlacement> = {
+  above: { edge: 'bottom', rotation: 'rotate(0deg)', flipsFilledEdge: false },
+  below: { edge: 'top', rotation: 'rotate(180deg)', flipsFilledEdge: true },
+  left: { edge: 'right', rotation: 'rotate(90deg)', flipsFilledEdge: false },
+  right: { edge: 'left', rotation: 'rotate(-90deg)', flipsFilledEdge: false },
+};
+
 // Pointer leaves an icon for a moment when crossing the gap to a stacked
 // sibling; keep the tooltip up briefly so the move is a position transition
 // instead of a flicker. Cancelled by re-entering any marker.
@@ -664,90 +713,35 @@ export class EventRibbon {
   private positionTooltip(marker: HTMLElement, tooltip: HTMLElement): void {
     const markerRect = marker.getBoundingClientRect();
     const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
 
-    const GAP = TOOLTIP_GAP_PX;
-    const EDGE_PADDING = TOOLTIP_EDGE_PADDING_PX;
+    // The module positions against a viewport anchored at its top-left corner
+    // with no inset of its own, and the ribbon keeps a padding-free margin
+    // around the tooltip. Translating the anchor in and the result back out
+    // is what keeps that padding without a second clamp implementation: the
+    // module's [0, width] becomes [EDGE_PADDING, innerWidth - EDGE_PADDING].
+    const anchor: TooltipAnchorRect = {
+      x: markerRect.left - TOOLTIP_EDGE_PADDING_PX,
+      y: markerRect.top - TOOLTIP_EDGE_PADDING_PX,
+      width: markerRect.width,
+      height: markerRect.height,
+    };
+    const size: TooltipSize = { width: tooltipRect.width, height: tooltipRect.height };
+    const viewport: ViewportBounds = {
+      width: window.innerWidth - TOOLTIP_EDGE_PADDING_PX * 2,
+      height: window.innerHeight - TOOLTIP_EDGE_PADDING_PX * 2,
+    };
 
-    // Calculate available space in all four directions
-    const spaceAbove = markerRect.top - EDGE_PADDING;
-    const spaceBelow = viewportHeight - markerRect.bottom - EDGE_PADDING;
-    const spaceLeft = markerRect.left - EDGE_PADDING;
-    const spaceRight = viewportWidth - markerRect.right - EDGE_PADDING;
+    // The ribbon's policy is the side, nothing more: the first one the module
+    // reports as reaching the viewport edge it faces keeps its preferred
+    // placement, so a side whose centered cross axis spills in a narrow
+    // viewport still wins over a side with no room at all on its own axis.
+    const preferred =
+      PLACEMENT_PREFERENCE.find((p) => !placementCrossesFacingEdge(anchor, size, p, viewport)) ??
+      PLACEMENT_PREFERENCE[0];
+    const { placement, position } = resolveTooltipPlacement(anchor, size, preferred, viewport);
 
-    // Determine preferred placement based on available space
-    // Prioritize vertical placement (top/bottom) over horizontal
-    let placement: 'top' | 'bottom' | 'left' | 'right';
-    if (spaceAbove >= tooltipRect.height + GAP) {
-      placement = 'top';
-    } else if (spaceBelow >= tooltipRect.height + GAP) {
-      placement = 'bottom';
-    } else if (spaceRight >= tooltipRect.width + GAP) {
-      placement = 'right';
-    } else if (spaceLeft >= tooltipRect.width + GAP) {
-      placement = 'left';
-    } else {
-      // Fallback: choose direction with most space
-      const maxSpace = Math.max(spaceAbove, spaceBelow, spaceLeft, spaceRight);
-      if (maxSpace === spaceAbove) placement = 'top';
-      else if (maxSpace === spaceBelow) placement = 'bottom';
-      else if (maxSpace === spaceRight) placement = 'right';
-      else placement = 'left';
-    }
-
-    // Calculate position based on placement
-    let tooltipTop: number;
-    let tooltipLeft: number;
-    let arrowTop = 'auto';
-    let arrowLeft = '50%';
-    let arrowBottom = 'auto';
-    let arrowRight = 'auto';
-
-    switch (placement) {
-      case 'top':
-        tooltipTop = markerRect.top - tooltipRect.height - GAP;
-        tooltipLeft = markerRect.left + (markerRect.width / 2) - (tooltipRect.width / 2);
-        // Clamp horizontal position to prevent overflow
-        tooltipLeft = Math.max(EDGE_PADDING, Math.min(tooltipLeft, viewportWidth - tooltipRect.width - EDGE_PADDING));
-        // Arrow stays at bottom, pointing up
-        arrowBottom = '-6px';
-        break;
-
-      case 'bottom':
-        tooltipTop = markerRect.bottom + GAP;
-        tooltipLeft = markerRect.left + (markerRect.width / 2) - (tooltipRect.width / 2);
-        // Clamp horizontal position
-        tooltipLeft = Math.max(EDGE_PADDING, Math.min(tooltipLeft, viewportWidth - tooltipRect.width - EDGE_PADDING));
-        // Arrow flips to top, pointing down
-        arrowTop = '-6px';
-        arrowBottom = 'auto';
-        break;
-
-      case 'left':
-        tooltipTop = markerRect.top + (markerRect.height / 2) - (tooltipRect.height / 2);
-        tooltipLeft = markerRect.left - tooltipRect.width - GAP;
-        // Clamp vertical position
-        tooltipTop = Math.max(EDGE_PADDING, Math.min(tooltipTop, viewportHeight - tooltipRect.height - EDGE_PADDING));
-        // Clamp horizontal position (fallback when viewport is narrower than tooltip)
-        tooltipLeft = Math.max(EDGE_PADDING, Math.min(tooltipLeft, viewportWidth - tooltipRect.width - EDGE_PADDING));
-        // Arrow moves to right side, pointing left
-        arrowLeft = 'auto';
-        arrowRight = '-6px';
-        break;
-
-      case 'right':
-        tooltipTop = markerRect.top + (markerRect.height / 2) - (tooltipRect.height / 2);
-        tooltipLeft = markerRect.right + GAP;
-        // Clamp vertical position
-        tooltipTop = Math.max(EDGE_PADDING, Math.min(tooltipTop, viewportHeight - tooltipRect.height - EDGE_PADDING));
-        // Clamp horizontal position (fallback when viewport is narrower than tooltip)
-        tooltipLeft = Math.max(EDGE_PADDING, Math.min(tooltipLeft, viewportWidth - tooltipRect.width - EDGE_PADDING));
-        // Arrow moves to left side, pointing right
-        arrowLeft = '-6px';
-        arrowRight = 'auto';
-        break;
-    }
+    const tooltipLeft = position.x + TOOLTIP_EDGE_PADDING_PX;
+    const tooltipTop = position.y + TOOLTIP_EDGE_PADDING_PX;
 
     // Apply positioning. The left/top transition lives in the stylesheet
     // (.event-tooltip) — setting an inline transition here would replace the
@@ -755,50 +749,73 @@ export class EventRibbon {
     tooltip.style.left = `${tooltipLeft}px`;
     tooltip.style.top = `${tooltipTop}px`;
 
-    // Update arrow positioning and rotation based on placement
+    this.placeTooltipArrow(tooltip, markerRect, size, placement, {
+      left: tooltipLeft,
+      top: tooltipTop,
+    });
+  }
+
+  /**
+   * Turn a resolved placement into the arrow's inline styles: pin it to the
+   * tooltip edge it hangs off, slide it along that edge to keep pointing at
+   * the marker centre, and rotate it to face the marker.
+   *
+   * The offset is clamped so the arrow stays inside the tooltip — once the
+   * placement is clamped to the viewport, the marker centre it points at can
+   * sit beyond the tooltip's edge. Which edge that is per placement lives in
+   * ARROW_BY_PLACEMENT; this method only applies it.
+   */
+  private placeTooltipArrow(
+    tooltip: HTMLElement,
+    markerRect: DOMRect,
+    tooltipSize: TooltipSize,
+    placement: TooltipPlacement,
+    at: { left: number; top: number },
+  ): void {
     const arrow = tooltip.querySelector('.event-tooltip-arrow') as HTMLElement;
-    if (arrow) {
-      // Keep the arrow inside the tooltip: once the tooltip is clamped to the
-      // viewport, the marker centre it points at can sit beyond its edge
-      const clampArrowOffset = (offset: number, size: number): number =>
-        Math.max(TOOLTIP_ARROW_INSET_PX, Math.min(offset, size - TOOLTIP_ARROW_INSET_PX));
-
-      // Calculate arrow offset for horizontal positioning
-      if (placement === 'top' || placement === 'bottom') {
-        const markerCenter = markerRect.left + (markerRect.width / 2);
-        const arrowOffset = clampArrowOffset(markerCenter - tooltipLeft, tooltipRect.width);
-        arrow.style.left = `${arrowOffset}px`;
-        arrow.style.right = 'auto';
-        arrow.style.top = arrowTop;
-        arrow.style.bottom = arrowBottom;
-        arrow.style.transform = 'translateX(-50%)';
-      } else {
-        // For left/right placement
-        const markerCenter = markerRect.top + (markerRect.height / 2);
-        const arrowOffset = clampArrowOffset(markerCenter - tooltipTop, tooltipRect.height);
-        arrow.style.top = `${arrowOffset}px`;
-        arrow.style.bottom = 'auto';
-        arrow.style.left = arrowLeft;
-        arrow.style.right = arrowRight;
-        arrow.style.transform = 'translateY(-50%)';
-      }
-
-      // Update arrow rotation based on placement
-      const rotationMap: Record<typeof placement, string> = {
-        top: 'rotate(0deg)',
-        bottom: 'rotate(180deg)',
-        left: 'rotate(90deg)',
-        right: 'rotate(-90deg)',
-      };
-      arrow.style.transform += ` ${rotationMap[placement]}`;
-
-      // The arrow's filled edge is a pseudo-element, which JS can't address
-      // directly — bottom placement gets a class that flips it instead
-      arrow.className = 'event-tooltip-arrow';
-      if (placement === 'bottom') {
-        arrow.classList.add('event-tooltip-arrow-flipped');
-      }
+    if (!arrow) {
+      return;
     }
+
+    const clampArrowOffset = (offset: number, span: number): number =>
+      Math.max(TOOLTIP_ARROW_INSET_PX, Math.min(offset, span - TOOLTIP_ARROW_INSET_PX));
+
+    const { edge, rotation, flipsFilledEdge } = ARROW_BY_PLACEMENT[placement];
+    // A tooltip placed above or below hangs its arrow off a horizontal edge,
+    // so the arrow slides along x to track the marker centre; a tooltip
+    // placed beside its marker mirrors that on y
+    const slidesAlongX = edge === 'top' || edge === 'bottom';
+    const markerCenter = slidesAlongX
+      ? markerRect.left + markerRect.width / 2
+      : markerRect.top + markerRect.height / 2;
+    const arrowOffset = clampArrowOffset(
+      markerCenter - (slidesAlongX ? at.left : at.top),
+      slidesAlongX ? tooltipSize.width : tooltipSize.height,
+    );
+
+    const ARROW_OVERHANG = '-6px'; // Triangle base flush with the tooltip edge
+    if (slidesAlongX) {
+      // Tooltip sits above or below: the arrow hangs off a horizontal edge and
+      // slides along x to the marker centre
+      arrow.style.top = edge === 'top' ? ARROW_OVERHANG : 'auto';
+      arrow.style.bottom = edge === 'bottom' ? ARROW_OVERHANG : 'auto';
+      arrow.style.left = `${arrowOffset}px`;
+      arrow.style.right = 'auto';
+    } else {
+      // Tooltip sits beside its marker: the arrow hangs off a vertical edge
+      // and slides along y instead
+      arrow.style.left = edge === 'left' ? ARROW_OVERHANG : 'auto';
+      arrow.style.right = edge === 'right' ? ARROW_OVERHANG : 'auto';
+      arrow.style.top = `${arrowOffset}px`;
+      arrow.style.bottom = 'auto';
+    }
+    arrow.style.transform = `translate${slidesAlongX ? 'X' : 'Y'}(-50%) ${rotation}`;
+
+    // The arrow's filled edge is a pseudo-element, which JS can't address
+    // directly — below placement gets a class that flips it instead
+    arrow.className = flipsFilledEdge
+      ? 'event-tooltip-arrow event-tooltip-arrow-flipped'
+      : 'event-tooltip-arrow';
   }
 }
 

@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   clampTooltipPosition,
   computeTooltipPosition,
+  placementCrossesFacingEdge,
   placementOverflowsViewport,
   resolveTooltipPlacement,
   TOOLTIP_OFFSET_PX,
@@ -253,6 +254,74 @@ describe('placementOverflowsViewport', () => {
         true,
       );
     });
+  });
+});
+
+describe('placementCrossesFacingEdge', () => {
+  it('should report no crossing for every placement of an interior anchor', () => {
+    // Interior on all four axes, which the fixture ANCHOR is not — it has less
+    // room to its left than the tooltip needs, so 'left' crosses there.
+    const centered: TooltipAnchorRect = { x: 400, y: 300, width: 24, height: 24 };
+    for (const placement of PLACEMENTS) {
+      expect(placementCrossesFacingEdge(centered, TOOLTIP, placement, VIEWPORT)).toBe(
+        false,
+      );
+    }
+  });
+
+  it('should report the crossing each placement flips on', () => {
+    // Same anchors as the flip tests on resolveTooltipPlacement: each one has
+    // room on the far side of its axis and none on the side it faces.
+    const nearTop: TooltipAnchorRect = { x: 100, y: 30, width: 24, height: 24 };
+    const nearBottom: TooltipAnchorRect = { x: 100, y: 730, width: 24, height: 24 };
+    const nearLeft: TooltipAnchorRect = { x: 8, y: 200, width: 24, height: 24 };
+    const nearRight: TooltipAnchorRect = { x: 990, y: 200, width: 24, height: 24 };
+
+    expect(placementCrossesFacingEdge(nearTop, TOOLTIP, 'above', VIEWPORT)).toBe(true);
+    expect(placementCrossesFacingEdge(nearBottom, TOOLTIP, 'below', VIEWPORT)).toBe(true);
+    expect(placementCrossesFacingEdge(nearLeft, TOOLTIP, 'left', VIEWPORT)).toBe(true);
+    expect(placementCrossesFacingEdge(nearRight, TOOLTIP, 'right', VIEWPORT)).toBe(true);
+  });
+
+  it('should not count a rectangle that exactly touches the facing edge', () => {
+    // x = 828 + 24 + 12 = 864, so the right edge lands exactly on 1024 — the
+    // same boundary placementOverflowsViewport accepts.
+    const touching: TooltipAnchorRect = { x: 828, y: 200, width: 24, height: 24 };
+    expect(placementCrossesFacingEdge(touching, TOOLTIP, 'right', VIEWPORT)).toBe(false);
+  });
+
+  it('should ignore the cross axis, unlike placementOverflowsViewport', () => {
+    // The anchor that makes placementOverflowsViewport report 'above' as
+    // overflowing (centered rect [932,1092] spills past the right edge) still
+    // clears the top edge it faces — and that spill is clamping's problem, not
+    // a reason to move the tooltip, which is exactly what lets a caller pick
+    // this side in a viewport too narrow for any side to center cleanly.
+    const nearRight: TooltipAnchorRect = { x: 1000, y: 200, width: 24, height: 24 };
+    expect(placementOverflowsViewport(nearRight, TOOLTIP, 'above', VIEWPORT)).toBe(true);
+    expect(placementCrossesFacingEdge(nearRight, TOOLTIP, 'above', VIEWPORT)).toBe(false);
+  });
+
+  it('should be the exact predicate resolveTooltipPlacement flips on', () => {
+    // Whatever the predicate reports as crossing is the placement the resolver
+    // refuses to keep, for every placement and anchor — the two cannot drift.
+    const anchors: TooltipAnchorRect[] = [
+      ANCHOR,
+      { x: 0, y: 0, width: 24, height: 24 },
+      { x: 1000, y: 740, width: 24, height: 24 },
+      { x: 8, y: 30, width: 24, height: 24 },
+    ];
+    for (const anchor of anchors) {
+      for (const placement of PLACEMENTS) {
+        const crosses = placementCrossesFacingEdge(anchor, TOOLTIP, placement, VIEWPORT);
+        const { placement: resolved } = resolveTooltipPlacement(
+          anchor,
+          TOOLTIP,
+          placement,
+          VIEWPORT,
+        );
+        expect(resolved === placement).toBe(!crosses);
+      }
+    }
   });
 });
 

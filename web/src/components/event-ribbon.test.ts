@@ -1727,5 +1727,114 @@ describe('EventRibbon', () => {
         expect(tooltipTop).toBeGreaterThanOrEqual(markerBottom);
       });
     });
+
+    describe('Placement vocabulary mapped to the arrow', () => {
+      // positionTooltip resolves its placement in the shared module's
+      // vocabulary ('above' | 'below' | 'left' | 'right', tooltip-position.ts)
+      // and translates it into the arrow's inline styles. This pins the whole
+      // translation: which tooltip edge the arrow hangs off, which axis it
+      // slides along to keep pointing at the marker centre, the rotation that
+      // turns the triangle back at the marker, and the one placement whose
+      // filled edge needs the flipped class. Each entry's viewport and marker
+      // are chosen so the resolver settles on that placement, with the
+      // coordinates it must then produce.
+      const ARROW_OVERHANG = '-6px';
+
+      interface Case {
+        placement: 'above' | 'below' | 'left' | 'right';
+        viewport: [number, number];
+        marker: [number, number];
+        at: { left: number; top: number };
+        /** Tooltip edge the arrow is pinned to, overhanging by ARROW_OVERHANG */
+        pinned: { style: 'top' | 'bottom' | 'left' | 'right'; value: string };
+        /** Axis the arrow slides along to track the marker centre */
+        sliding: { style: 'left' | 'top'; value: string };
+        transform: string;
+        flipped: boolean;
+      }
+
+      const CASES: Case[] = [
+        {
+          placement: 'above',
+          viewport: [800, 600],
+          marker: [400, 300],
+          at: { left: 312, top: 228 },
+          pinned: { style: 'bottom', value: ARROW_OVERHANG },
+          sliding: { style: 'left', value: '100px' },
+          transform: 'translateX(-50%) rotate(0deg)',
+          flipped: false,
+        },
+        {
+          placement: 'below',
+          viewport: [800, 600],
+          marker: [400, 20],
+          at: { left: 312, top: 56 },
+          pinned: { style: 'top', value: ARROW_OVERHANG },
+          sliding: { style: 'left', value: '100px' },
+          transform: 'translateX(-50%) rotate(180deg)',
+          flipped: true,
+        },
+        {
+          placement: 'left',
+          viewport: [500, 100],
+          marker: [300, 50],
+          at: { left: 88, top: 32 },
+          pinned: { style: 'right', value: ARROW_OVERHANG },
+          sliding: { style: 'top', value: '30px' },
+          transform: 'translateY(-50%) rotate(90deg)',
+          flipped: false,
+        },
+        {
+          placement: 'right',
+          viewport: [500, 100],
+          marker: [200, 50],
+          at: { left: 236, top: 32 },
+          pinned: { style: 'left', value: ARROW_OVERHANG },
+          sliding: { style: 'top', value: '30px' },
+          transform: 'translateY(-50%) rotate(-90deg)',
+          flipped: false,
+        },
+      ];
+
+      for (const testCase of CASES) {
+        it(`should draw the arrow for a ${testCase.placement} placement`, () => {
+          setViewport(testCase.viewport[0], testCase.viewport[1]);
+
+          freshRibbon();
+          mockTooltipRect();
+          mockMarkerRect(testCase.marker[0], testCase.marker[1]);
+          const { tooltip } = showTooltip();
+
+          // The scenario really does resolve to this placement, and every
+          // arrow coordinate below is read off the tooltip it lands on
+          expect(parseInt(tooltip.style.left || '0')).toBe(testCase.at.left);
+          expect(parseInt(tooltip.style.top || '0')).toBe(testCase.at.top);
+
+          const arrow = getArrow();
+          const insets: Record<string, string> = {
+            top: arrow.style.top,
+            bottom: arrow.style.bottom,
+            left: arrow.style.left,
+            right: arrow.style.right,
+          };
+          // Exactly one edge carries the arrow, one axis slides along the
+          // tooltip, and the other two are cleared rather than left stale
+          for (const [style, value] of Object.entries(insets)) {
+            if (style === testCase.pinned.style) {
+              expect(value).toBe(testCase.pinned.value);
+            } else if (style === testCase.sliding.style) {
+              expect(value).toBe(testCase.sliding.value);
+            } else {
+              expect(value).toBe('auto');
+            }
+          }
+
+          expect(arrow.style.transform).toBe(testCase.transform);
+          expect(arrow.classList.contains('event-tooltip-arrow-flipped')).toBe(
+            testCase.flipped,
+          );
+        });
+      }
+    });
   });
 });

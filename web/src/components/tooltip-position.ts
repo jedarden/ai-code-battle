@@ -10,11 +10,13 @@
  * both in, and gets back deterministic coordinates for the requested
  * placement. Deciding *which* placement fits the available space is the
  * caller's policy — the helpers here only answer narrow questions about a
- * placement (`placementOverflowsViewport`) or flip the choice across the
- * anchor when it overflows (`resolveTooltipPlacement`, which answers with the
- * effective placement and the coordinates to render for it, clamped to the
- * viewport when neither side of the anchor fits); see `positionTooltip` in
- * event-ribbon.ts for a caller that measures the viewport and picks a side.
+ * placement (`placementOverflowsViewport`), narrow the question to the one
+ * edge a flip can repair (`placementCrossesFacingEdge`), or flip the choice
+ * across the anchor when it overflows (`resolveTooltipPlacement`, which
+ * answers with the effective placement and the coordinates to render for it,
+ * clamped to the viewport when neither side of the anchor fits); see
+ * `positionTooltip` in event-ribbon.ts for a caller that measures the viewport
+ * and picks a side.
  *
  * @see §16.15 Tooltips and popovers
  */
@@ -173,7 +175,7 @@ export function resolveTooltipPlacement(
   preferred: TooltipPlacement,
   viewport: ViewportBounds,
 ): ResolvedTooltipPlacement {
-  const placement = crossesFacingEdge(anchor, tooltip, preferred, viewport)
+  const placement = placementCrossesFacingEdge(anchor, tooltip, preferred, viewport)
     ? FLIPPED[preferred]
     : preferred;
   return {
@@ -193,8 +195,20 @@ export function resolveTooltipPlacement(
  * positive crossing counts, matching `placementOverflowsViewport`. The
  * coordinates come from `computeTooltipPosition`, so this predicate can never
  * disagree with the position that actually renders for the same inputs.
+ *
+ * This is `placementOverflowsViewport` narrowed to the one edge a flip can
+ * repair, which is the question a caller choosing a side wants answered: a
+ * placement's other edges (its far edge on the same axis, and the centered
+ * cross axis) are identical for the placement and its flip, so overflowing
+ * them is not a reason to move the tooltip — that needs clamping instead, and
+ * a narrow viewport where the centered cross axis spills is exactly where the
+ * placement still beats every alternative. Callers ranking sides by available
+ * space use this per side instead of dropping a side whose centering happens
+ * not to fit.
+ *
+ * Pure arithmetic; no DOM reads.
  */
-function crossesFacingEdge(
+export function placementCrossesFacingEdge(
   anchor: TooltipAnchorRect,
   tooltip: TooltipSize,
   placement: TooltipPlacement,
