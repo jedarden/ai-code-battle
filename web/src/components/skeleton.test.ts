@@ -9,7 +9,13 @@
  * skeletonBotProfile() must render the same .bot-profile-page structure as
  * renderBotProfilePage's swap (pages/bot-profile.ts): breadcrumb, header, grid
  * sections in the live order, every wrapper reusing the live class so the
- * shared rules govern it. It keeps the shared .skeleton-page root, which is
+ * shared rules govern it. skeletonReplay() must render the same .replay-page
+ * structure as initReplayViewerWithClass's markup template (pages/replay.ts):
+ * the shared .skeleton-page root around the live .replay-page, the
+ * h1.page-title, then .replay-layout of .replay-main (the canvas stand-in plus
+ * the two mobile chrome blocks) and .replay-sidebar last, every wrapper
+ * reusing the live class so the shared rules govern it. It keeps the shared
+ * .skeleton-page root, which is
  * layout-transparent here (max-width + auto margins, no padding), so the
  * wrapped 900px column sits where the live page puts it and the swap shifts
  * nothing. The breadcrumb is mirrored as a bar because the swap renders it:
@@ -23,7 +29,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { skeletonLeaderboard, skeletonBotProfile, Skeleton } from './skeleton';
+import { skeletonLeaderboard, skeletonBotProfile, skeletonReplay, Skeleton } from './skeleton';
 import { renderDesktopRow } from '../pages/leaderboard';
 import type { LeaderboardEntry } from '../api-types';
 
@@ -1003,5 +1009,286 @@ describe('skeletonBotProfile mirrors renderProfile', () => {
       const style = wrapper.getAttribute('style');
       expect(style === null || style === 'min-height:80px', `no inline layout on ${wrapper.className}`).toBe(true);
     }
+  });
+});
+
+// ─── skeletonReplay ─────────────────────────────────────────────────────────────
+// initReplayViewerWithClass's markup template (web/src/pages/replay.ts) is the
+// shape being mirrored: .replay-page opens with the h1.page-title, then
+// .replay-layout holds .replay-main (the .canvas-wrapper of canvas stand-in +
+// #no-replay bar, then .mobile-replay-controls of .mobile-playback-bar +
+// scrubber, then .mobile-event-timeline) and .replay-sidebar last. Every
+// wrapper reuses the live class, so the flex row, the main column's flex:1 and
+// the 300px sidebar come from the shared components.css rules the split's
+// first child landed there — the skeleton renders *before* the live page's
+// own inline <style> block exists, so those rules must not live only in it.
+
+describe('skeletonReplay mirrors replayPageMarkup', () => {
+  // The replay page's rules live partly in the stylesheets and partly in its
+  // own inline <style> block, so both are read off disk: replay.ts is the
+  // source of truth for the template's markup and for the rules declared only
+  // there (.no-replay-message, the scrubber input's inline margin, the
+  // timeline placeholder span's inline style).
+  const replaySource = readFileSync(
+    resolve(stylesDir, '../pages/replay.ts'), 'utf8'
+  );
+
+  const skeletonPageRule = componentsCss.match(/\.skeleton-page\s*\{([^}]*)\}/)?.[1] ?? '';
+  const replayPageRule = componentsCss.match(/\.replay-page\s*\{([^}]*)\}/)?.[1] ?? '';
+  const layoutRule = componentsCss.match(/\.replay-layout\s*\{([^}]*)\}/)?.[1] ?? '';
+  const mainRule = componentsCss.match(/\.replay-main\s*\{([^}]*)\}/)?.[1] ?? '';
+  const sidebarRule = componentsCss.match(/\.replay-sidebar\s*\{([^}]*)\}/)?.[1] ?? '';
+  const canvasRule = componentsCss.match(/\.canvas-wrapper canvas\s*\{([^}]*)\}/)?.[1] ?? '';
+  const noReplayRule = replaySource.match(/\.no-replay-message\s*\{([^}]*)\}/)?.[1] ?? '';
+  // Phone-block re-declarations (mobile.css, max-width: 639px): the title size
+  // is scoped to .replay-page — the reason the skeleton keeps that wrapper —
+  // and the .btn floor is what sets the playback controls' height.
+  const phoneTitleRule = mobileCss.match(/\.replay-page \.page-title\s*\{([^}]*)\}/)?.[1] ?? '';
+  const playbackBtnRule = mobileCss.match(/\.mobile-playback-bar \.btn\s*\{([^}]*)\}/)?.[1] ?? '';
+  const speedDisplayRule = mobileCss.match(/\.mobile-speed-display\s*\{([^}]*)\}/)?.[1] ?? '';
+  const htmlRule = baseCss.match(/(?:^|\})\s*html\s*\{([^}]*)\}/)?.[1] ?? '';
+  const bodyRule = baseCss.match(/(?:^|\})\s*body\s*\{([^}]*)\}/)?.[1] ?? '';
+  const rootVars = baseCss.match(/:root\s*\{([^}]*)\}/)?.[1] ?? '';
+  // The base tap-target group is the only `button, a` selector in base.css.
+  const tapTargetRule = baseCss.match(/button,\s*a[^{]*\{([^}]*)\}/)?.[1] ?? '';
+  const shimmerRule = componentsCss.match(/\.skeleton-bar,\s*\.skeleton-circle,\s*\.skeleton-canvas\s*\{([^}]*)\}/)?.[1] ?? '';
+
+  const rootPx = parseFloat(decl(htmlRule, 'font-size'));
+  const textLineHeight = parseFloat(decl(bodyRule, 'line-height'));
+  const spaceXs = parseFloat(decl(rootVars, '--space-xs'));
+
+  // The live timeline placeholder's inline style string, straight out of the
+  // template — it is the only thing sizing that span.
+  const timelineSpanStyle =
+    replaySource.match(/mobile-event-timeline[^>]*>\s*<span style="([^"]*)"/)?.[1] ?? '';
+
+  function one(selector: string, message: string): HTMLElement {
+    const el = new DOMParser().parseFromString(skeletonReplay(), 'text/html').querySelector(selector);
+    expect(el, message).toBeTruthy();
+    return el as HTMLElement;
+  }
+
+  it('keeps the .skeleton-page root around the live .replay-page', () => {
+    const doc = new DOMParser().parseFromString(skeletonReplay(), 'text/html');
+    const root = doc.body.children[0];
+    expect(root.className).toBe('skeleton-page');
+    expect(root.getAttribute('style')).toBeNull();
+
+    // Layout-transparent as on every page skeleton — no padding, nothing the
+    // swap would shift: the live page replaces it with a bare .replay-page,
+    // and both wrappers cap at the same shared 1200px, so the nesting cannot
+    // narrow the column the live page lands in.
+    expect(skeletonPageRule, '.skeleton-page rule not found in components.css').not.toBe('');
+    expect(skeletonPageRule).not.toContain('padding');
+    expect(skeletonPageRule).not.toContain('border');
+    expect(replayPageRule, '.replay-page rule not found in components.css').not.toBe('');
+    expect(decl(replayPageRule, 'max-width')).toBe(decl(skeletonPageRule, 'max-width'));
+
+    const page = root.children[0];
+    expect(page.className).toBe('replay-page');
+    expect(page.getAttribute('style')).toBeNull();
+    expect(root.children).toHaveLength(1);
+  });
+
+  it('renders the live title inside .replay-page, where its phone rule can reach it', () => {
+    // The phone block re-declares the title size against .replay-page
+    // .page-title — a bare .page-title keeps the base size on phone, so the
+    // nested wrapper the live template renders is the only thing that carries
+    // the swap-neutral title through the breakpoint.
+    expect(phoneTitleRule, '.replay-page .page-title must be re-declared in mobile.css').not.toBe('');
+    expect(decl(phoneTitleRule, 'font-size')).toBe('1.25rem');
+    expect(decl(phoneTitleRule, 'margin-bottom')).toBe('12px');
+
+    const page = one('.skeleton-page > .replay-page', 'skeleton must wrap the live .replay-page');
+    const h1 = page.children[0];
+    expect(h1.tagName).toBe('H1');
+    expect(h1.className).toBe('page-title');
+    expect(h1.textContent).toBe('Replay Viewer');
+    expect(h1.getAttribute('style')).toBeNull();
+  });
+
+  it('nests .replay-layout of .replay-main and .replay-sidebar, in that order', () => {
+    expect(layoutRule, '.replay-layout rule not found in components.css').not.toBe('');
+    expect(decl(layoutRule, 'display')).toBe('flex');
+    expect(decl(layoutRule, 'gap')).toBe('20px');
+    expect(mainRule, '.replay-main rule not found in components.css').not.toBe('');
+    expect(decl(mainRule, 'flex')).toBe('1');
+    expect(decl(mainRule, 'min-width')).toBe('0');
+    expect(sidebarRule, '.replay-sidebar rule not found in components.css').not.toBe('');
+    expect(decl(sidebarRule, 'width')).toBe('300px');
+    expect(decl(sidebarRule, 'flex-shrink')).toBe('0');
+
+    // Live template order: main first, sidebar last — the columns mobile.css
+    // re-orders on phone and re-widths per breakpoint, all through these
+    // classes.
+    const page = one('.skeleton-page > .replay-page', 'skeleton must wrap the live .replay-page');
+    const layout = page.children[1];
+    expect(layout.className).toBe('replay-layout');
+    const [main, sidebar] = Array.from(layout.children);
+    expect(main.className).toBe('replay-main');
+    expect(sidebar.className).toBe('replay-sidebar');
+    expect(layout.children).toHaveLength(2);
+  });
+
+  it('reuses the live class on every wrapper and declares no inline layout', () => {
+    const doc = new DOMParser().parseFromString(skeletonReplay(), 'text/html');
+    const wrappers = doc.querySelectorAll(
+      '.skeleton-page, .replay-page, .replay-layout, .replay-main, .canvas-wrapper, ' +
+      '.mobile-replay-controls, .mobile-playback-bar, .mobile-event-timeline, .replay-sidebar'
+    );
+    // One of each — the wrappers are the live template's, so every breakpoint
+    // rule reaches the skeleton through the same selectors and nothing here
+    // can override a media query with an inline declaration. The live
+    // .canvas-wrapper does carry style="position:relative", but only to anchor
+    // the overlays the skeleton does not render (theater button, follow
+    // indicator, minimap), and it is box-neutral without an offset.
+    expect(wrappers).toHaveLength(9);
+    for (const wrapper of Array.from(wrappers)) {
+      expect(wrapper.getAttribute('style'), `no inline layout on .${wrapper.className}`).toBeNull();
+    }
+  });
+
+  it('stands in for the canvas with an aspect-ratio bar, not a fixed height', () => {
+    // The live canvas has no width/height attributes until a replay loads, so
+    // it lays out at its intrinsic 300×150 ratio under the shared
+    // `.canvas-wrapper canvas` rule — an aspect-ratio bar tracks that height
+    // at every viewport, where a fixed pixel height could not.
+    expect(canvasRule, '.canvas-wrapper canvas rule not found in components.css').not.toBe('');
+    expect(decl(canvasRule, 'width')).toBe('100%');
+    expect(decl(canvasRule, 'height')).toBe('auto');
+
+    const wrapper = one('.canvas-wrapper', 'skeleton must render the live .canvas-wrapper');
+    const [canvasBar, noReplayBar] = Array.from(wrapper.children);
+    expect(canvasBar.classList.contains('skeleton-bar')).toBe(true);
+    const style = canvasBar.getAttribute('style') ?? '';
+    expect(decl(style, 'width')).toBe('100%');
+    expect(decl(style, 'aspect-ratio')).toBe('2/1');
+    expect(style, 'the canvas bar must not fix a height').not.toMatch(/(?:^|;)\s*height\s*:/);
+    // The no-replay bar follows it, as #no-replay follows the canvas.
+    expect(noReplayBar.classList.contains('skeleton-bar')).toBe(true);
+  });
+
+  it('sizes the no-replay bar to the body-text line it stands in for', () => {
+    // The live #no-replay div is .no-replay-message: body-sized text (the rule
+    // declares colour, alignment and padding, no font-size), so its line box
+    // is the body metric — the derivation the leaderboard header bars use.
+    expect(noReplayRule, '.no-replay-message rule not found in replay.ts').not.toBe('');
+    expect(noReplayRule).not.toMatch(/font-size/);
+
+    const noReplayBar = one('.canvas-wrapper', 'skeleton must render the live .canvas-wrapper').children[1];
+    expect(parseFloat(decl(noReplayBar.getAttribute('style') ?? '', 'height')))
+      .toBeCloseTo(rootPx * textLineHeight, 6);
+  });
+
+  it('mirrors the playback bar: button-height controls around a text-sized readout', () => {
+    // The live bar holds four .btn.small controls, the .mobile-speed-display
+    // readout and the speed button, in that order. .btn.small alone floors at
+    // 32px — it is the phone block's .mobile-playback-bar .btn rule that
+    // restores the 44px tap-target floor, and that is the only viewport the
+    // bar shows at (mobile.css hides it at >=640px). The readout is its own
+    // 0.75rem text line plus var(--space-xs) padding on both sides.
+    expect(playbackBtnRule, '.mobile-playback-bar .btn rule not found in mobile.css').not.toBe('');
+    expect(decl(playbackBtnRule, 'min-height')).toBe('44px');
+    expect(speedDisplayRule, '.mobile-speed-display rule not found in mobile.css').not.toBe('');
+    expect(decl(speedDisplayRule, 'font-size')).toBe('0.75rem');
+    expect(decl(speedDisplayRule, 'padding')).toBe('var(--space-xs)');
+    const readoutPx = 0.75 * rootPx * textLineHeight + 2 * spaceXs;
+
+    const controls = one('.mobile-replay-controls', 'skeleton must render the live .mobile-replay-controls');
+    const playbackBar = controls.children[0];
+    expect(playbackBar.className).toBe('mobile-playback-bar');
+    const bars = Array.from(playbackBar.children);
+    expect(bars, 'one stand-in per live control and readout').toHaveLength(6);
+    bars.forEach((bar, i) => {
+      const height = parseFloat(decl(bar.getAttribute('style') ?? '', 'height'));
+      if (i === 4) expect(height, 'the readout stand-in is text-sized').toBeCloseTo(readoutPx, 6);
+      else expect(height, `control stand-in ${i} takes the phone .btn floor`).toBe(44);
+    });
+  });
+
+  it("mirrors the scrubber: a tap-target bar with the live input's own margin", () => {
+    // The live scrubber is a bare <input type="range" style="width:100%;
+    // margin-top:4px"> after .mobile-playback-bar — an input, so base.css's
+    // tap-target group floors its box at 44px, and the margin comes from the
+    // input's inline declaration alone (no rule declares it), so the stand-in
+    // carries it inline too.
+    expect(tapTargetRule, 'tap-target rule not found in base.css').not.toBe('');
+    expect(decl(tapTargetRule, 'min-height')).toBe('44px');
+    expect(replaySource, 'the live input must still declare its width and margin inline')
+      .toMatch(/<input type="range" id="mobile-turn-slider"[^>]*style="width:100%;margin-top:4px"/);
+
+    const controls = one('.mobile-replay-controls', 'skeleton must render the live .mobile-replay-controls');
+    const [playbackBar, scrubber] = Array.from(controls.children);
+    expect(playbackBar.className).toBe('mobile-playback-bar');
+    expect(scrubber.classList.contains('skeleton-bar')).toBe(true);
+    const style = scrubber.getAttribute('style') ?? '';
+    expect(decl(style, 'width')).toBe('100%');
+    expect(decl(style, 'height')).toBe(decl(tapTargetRule, 'min-height'));
+    expect(decl(style, 'margin-top')).toBe('4px');
+  });
+
+  it('sizes the timeline bar to the live placeholder span it stands in for', () => {
+    // The live .mobile-event-timeline opens with a placeholder span whose
+    // inline style is the only declaration sizing it — read out of the
+    // template above rather than restated here.
+    expect(timelineSpanStyle, 'placeholder span not found in the replay template').not.toBe('');
+    expect(decl(timelineSpanStyle, 'font-size')).toBe('0.75rem');
+    const padding = decl(timelineSpanStyle, 'padding').split(/\s+/);
+    expect(padding).toHaveLength(2);
+    const expected = 0.75 * rootPx * textLineHeight + 2 * parseFloat(padding[0]);
+
+    const timeline = one('.mobile-event-timeline', 'skeleton must render the live .mobile-event-timeline');
+    const bars = Array.from(timeline.children);
+    expect(bars, 'the placeholder span gets one stand-in').toHaveLength(1);
+    expect(bars[0].classList.contains('skeleton-bar')).toBe(true);
+    expect(parseFloat(decl(bars[0].getAttribute('style') ?? '', 'height'))).toBeCloseTo(expected, 6);
+  });
+
+  it('fills the sidebar with fixed-height rectangles', () => {
+    // The sidebar's panels are content-sized on the live page, so their
+    // stand-ins fix their own heights; the column's x and width are what the
+    // rendered parity spec holds, through the shared .replay-sidebar rule
+    // pinned above.
+    const sidebar = one('.replay-sidebar', 'skeleton must render the live .replay-sidebar');
+    const panels = Array.from(sidebar.children);
+    expect(panels.length).toBeGreaterThan(0);
+    for (const panel of panels) {
+      expect(panel.classList.contains('skeleton-bar')).toBe(true);
+      const style = panel.getAttribute('style') ?? '';
+      expect(decl(style, 'width')).toBe('100%');
+      expect(decl(style, 'height'), 'a content-sized panel needs a fixed stand-in height')
+        .toMatch(/^[\d.]+px$/);
+    }
+  });
+
+  it('lets no stand-in override the shared shimmer background', () => {
+    // A `background` shorthand resets the shared .skeleton-bar gradient and
+    // kills the shimmer — the canvas stand-in especially, whose aspect-ratio
+    // extra would tempt one.
+    const bars = new DOMParser().parseFromString(skeletonReplay(), 'text/html')
+      .querySelectorAll('.skeleton-bar, .skeleton-circle');
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of Array.from(bars)) {
+      expect(bar.getAttribute('style') ?? '', `no inline background on ${bar.className}`)
+        .not.toMatch(/(?:^|;)\s*background/);
+    }
+    // …which is why the shimmer must reach every bar from the shared rule.
+    expect(shimmerRule, 'shared skeleton shimmer rule not found in components.css').not.toBe('');
+    expect(shimmerRule).toContain('skeleton-shimmer 1.5s');
+  });
+
+  it('stays decorative: only the title speaks, nothing is interactive, no CSS of its own', () => {
+    const doc = new DOMParser().parseFromString(skeletonReplay(), 'text/html');
+    // The title is the only text — every placeholder is an empty shimmer bar,
+    // so the load never flashes content that looks real but means nothing.
+    expect(doc.body.textContent?.trim() ?? '').toBe('Replay Viewer');
+    // The live page is controls and inputs end to end; the skeleton stands in
+    // with plain divs, and carries none of the live page's ids or aria hooks
+    // (the live template's #mobile-controls / #mobile-timeline / labels have
+    // nothing to wire to here).
+    expect(doc.querySelectorAll('button, a, input, select, textarea')).toHaveLength(0);
+    expect(doc.querySelectorAll('[id], [role], [aria-label], [aria-expanded]')).toHaveLength(0);
+    expect(skeletonReplay()).not.toContain('<style');
+    expect(skeletonReplay()).not.toMatch(/animation\s*:/);
   });
 });
