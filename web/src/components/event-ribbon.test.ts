@@ -550,6 +550,41 @@ describe('EventRibbon', () => {
       expect(sizingRule).toContain('height: 22px');
       expect(sizingRule).toContain('line-height: 1;');
     });
+
+    it('should pin the marker icon tap target at 44x44px', () => {
+      // A 22px glyph is half the 44x44px minimum a touch surface needs, so the
+      // rest of the target is padding, not box: with box-sizing: content-box
+      // the 11px padding sits *outside* the 22x22px width/height pinned above,
+      // giving 22 + 11 + 11 = 44px of tappable area per axis while the glyph
+      // itself is untouched.
+      //
+      // The margin is negative on purpose — it is not a typo and must not be
+      // "cleaned up". Padding alone would grow every marker's layout box by
+      // 22px and push its neighbours apart down the ribbon; margin: -11px
+      // reclaims exactly that footprint, so markers keep their pinned
+      // positions and only the invisible tap surface overlaps the empty ribbon
+      // around each one. Removing the margin does not merely change spacing —
+      // it relocates every marker on the ribbon — and this gate is what turns
+      // that into a deliberate decision rather than a drive-by tidy. Dropping
+      // the padding instead would silently shrink the target back to the 22px
+      // glyph, which is why all three declarations are asserted together.
+      //
+      // Every declaration is matched with its trailing semicolon, so a
+      // two-value shorthand ("padding: 11px 5px") cannot satisfy a substring
+      // match on the four-side one.
+      //
+      // Same selection rule as the sizing pin: the box rule is the one carrying
+      // font-size (the later cursor/transition block and the generated per-type
+      // colour rules do not), not the first .event-marker-icon block.
+      const tapTargetRule = (
+        EVENT_RIBBON_STYLES.match(/(?:^|\n)\.event-marker-icon\s*\{[^}]*\}/g) ?? []
+      ).find(rule => rule.includes('font-size')) ?? '';
+
+      expect(tapTargetRule, 'the .event-marker-icon box rule').not.toBe('');
+      expect(tapTargetRule).toContain('padding: 11px;');
+      expect(tapTargetRule).toContain('margin: -11px;');
+      expect(tapTargetRule).toContain('box-sizing: content-box;');
+    });
   });
 
   // ── Event type registry ──────────────────────────────────────────────────────────
