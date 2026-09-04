@@ -72,11 +72,17 @@ export function renderReplayPage(params: Record<string, string>): void {
   });
 }
 
-function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string): void {
-  const app = document.getElementById('app');
-  if (!app) return;
-
-  app.innerHTML = `
+/**
+ * The replay page's markup, verbatim as the app renders it — including the
+ * page's own <style> blocks, which arrive with the markup and are document
+ * -global once it lands. Exported so the rendered-layout harness
+ * (web/layout-tests/replay-swap-parity.spec.ts) lays out this exact markup
+ * next to skeletonReplay() rather than a hand-mirrored copy that could drift,
+ * and so the jsdom guard's "skeletonReplay mirrors replayPageMarkup" name
+ * points at a real symbol.
+ */
+export function replayPageMarkup(initialUrl?: string): string {
+  return `
     <div class="replay-page">
       <h1 class="page-title">Replay Viewer</h1>
 
@@ -549,6 +555,13 @@ function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string):
     <style>${EVENT_RIBBON_STYLES}</style>
     <style>${THEATER_STYLES}</style>
   `;
+}
+
+function initReplayViewerWithClass(ReplayViewerClass: any, initialUrl?: string): void {
+  const app = document.getElementById('app');
+  if (!app) return;
+
+  app.innerHTML = replayPageMarkup(initialUrl);
 
   initReplayViewer(ReplayViewerClass, initialUrl);
 }
