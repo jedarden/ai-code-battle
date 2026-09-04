@@ -1166,6 +1166,41 @@ describe('EventRibbon', () => {
       expect(geometry(withLegendHost)).toEqual(geometry(withoutLegendHost));
     });
 
+    it('should restore the exact placement after a hide/show cycle', () => {
+      const ribbon = new EventRibbon({ container, events: SAMPLE, totalTurns: 100 });
+      ribbon.renderLegend();
+
+      // Everything "no layout drift" can mean in jsdom, captured as data: the
+      // stack root's child order, the legend sitting directly below the ribbon,
+      // the ribbon's own markup (marker left/top/z-index included), and which
+      // of the collapsed-state classes is set. Hiding only ever adds two
+      // classes — the nodes never move — so the cycle must come back to here
+      const shape = (): Record<string, unknown> => {
+        const root = container.querySelector('.event-ribbon-root') as HTMLElement;
+        const ribbonEl = container.querySelector('.event-ribbon') as HTMLElement;
+        const legend = container.querySelector('.event-ribbon-legend') as HTMLElement;
+        return {
+          order: Array.from(root.children, (el) => el.className),
+          ribbonBeforeLegend: ribbonEl.nextElementSibling === legend,
+          ribbonMarkup: ribbonEl.outerHTML,
+          containerCollapsed: container.classList.contains('event-ribbon-legend-hidden-container'),
+        };
+      };
+      const before = shape();
+
+      // Dismiss through the legend's own close button, restore through the chip
+      (container.querySelector('.event-legend-close') as HTMLElement).click();
+      expect(
+        container
+          .querySelector('.event-ribbon-legend')
+          ?.classList.contains('event-ribbon-legend-hidden')
+      ).toBe(true);
+
+      (container.querySelector('.event-legend-toggle') as HTMLElement).click();
+
+      expect(shape()).toEqual(before);
+    });
+
     it('should keep the ribbon and legend in normal flow, never overlapping neighbours', () => {
       const rootRule = rule('\\.event-ribbon-root');
       const legendRule = rule('\\.event-ribbon-legend');
