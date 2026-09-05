@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/aicodebattle/acb/internal/seriesgate"
 	_ "github.com/lib/pq"
 )
 
@@ -84,6 +85,7 @@ type DBParticipant struct {
 // DBBotInfo contains bot endpoint and secret information.
 type DBBotInfo struct {
 	ID          string
+	Name        string
 	EndpointURL string
 	Secret      string
 }
@@ -108,11 +110,16 @@ type JobClaimData struct {
 }
 
 // GetNextJob fetches the next pending job from the database.
+//
+// Every game of a series is created as a pending job at once (§14.7), so the
+// ordering gate is what keeps them executing in sequence: a series game is only
+// handed out once every earlier game in its series has a result.
 func (c *DBClient) GetNextJob(ctx context.Context) (*DBJob, error) {
 	query := `
 		SELECT job_id, match_id, status, worker_id, claimed_at, heartbeat_at, created_at
 		FROM jobs
 		WHERE status = 'pending'
+		  AND NOT EXISTS (` + seriesgate.Blocking("jobs.match_id") + `)
 		ORDER BY created_at ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
@@ -124,7 +131,7 @@ func (c *DBClient) GetNextJob(ctx context.Context) (*DBJob, error) {
 		&job.ClaimedAt, &job.HeartbeatAt, &job.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
-		return nil, nil // No pending jobs
+		return nil, nil // No runnable jobs
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get next job: %w", err)
@@ -693,6 +700,31 @@ func updateSeriesResult(ctx context.Context, tx *sql.Tx, matchID string, winnerB
 		`, seriesWinnerID, seriesID)
 		if err != nil {
 			return fmt.Errorf("mark series completed: %w", err)
+		}
+
+		// Retire the games that no longer need playing. Every game was created
+		// up front as a pending job, and the ordering gate stops holding them
+		// back the moment the series stops being active — so without this they
+		// would run as if the series were still live.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE jobs SET status = 'cancelled', completed_at = NOW()
+			WHERE status = 'pending'
+			  AND match_id IN (
+			    SELECT sg.match_id FROM series_games sg
+			    WHERE sg.series_id = $1 AND sg.winner_id IS NULL
+			  )
+		`, seriesID); err != nil {
+			return fmt.Errorf("cancel remaining series games: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE matches SET status = 'cancelled'
+			WHERE status = 'pending'
+			  AND match_id IN (
+			    SELECT sg.match_id FROM series_games sg
+			    WHERE sg.series_id = $1 AND sg.winner_id IS NULL
+			  )
+		`, seriesID); err != nil {
+			return fmt.Errorf("cancel remaining series matches: %w", err)
 		}
 
 		log.Printf("series: completed series %d — winner=%s (+10 mu bonus)", seriesID, seriesWinnerID)

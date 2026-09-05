@@ -720,7 +720,7 @@ type MatchSummaryParticipant struct {
 // LiveTailFeed represents the live-tail.json structure.
 type LiveTailFeed struct {
 	Matches []LiveTailMatch `json:"matches"`
-	Updated string           `json:"updated_at"`
+	Updated string          `json:"updated_at"`
 }
 
 // updateLiveTail updates matches/live-tail.json in R2 with the latest completed match.
@@ -851,18 +851,18 @@ func (w *Worker) updateLiveDelta(ctx context.Context, claimData *JobClaimData, r
 			matchesPlayed, matchesWon = 0, 0
 		}
 
-		// Increment matches played for this match (the update represents the new state)
+		// Increment matches played for this match (the update represents the new state),
+		// counting the win here too — a map value's fields are not addressable in Go.
+		won := 0
+		if result.WinnerID == botID {
+			won = 1
+		}
 		botStats[botID] = struct {
 			matchesPlayed int
 			matchesWon    int
 		}{
 			matchesPlayed: matchesPlayed + 1,
-			matchesWon:    matchesWon,
-		}
-
-		// Increment wins if this bot won
-		if result.WinnerID == botID {
-			botStats[botID].matchesWon++
+			matchesWon:    matchesWon + won,
 		}
 	}
 
@@ -875,7 +875,7 @@ func (w *Worker) updateLiveDelta(ctx context.Context, claimData *JobClaimData, r
 
 		// Calculate new rating state
 		newRating := update.DisplayRating
-		newRatingDeviation := update.RatingPhi
+		newRatingDeviation := update.Phi
 		newMatchesPlayed := stats.matchesPlayed
 		newMatchesWon := stats.matchesWon
 		newWinRate := 0.0

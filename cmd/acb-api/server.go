@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aicodebattle/acb/internal/seriesgate"
 	"github.com/aicodebattle/acb/metrics"
 	"github.com/aicodebattle/acb/ratelimit"
 	"github.com/redis/go-redis/v9"
@@ -1344,7 +1345,9 @@ func (s *Server) handleOpenPredictions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Get pending matches with their participants
+	// Get pending matches with their participants. Series games that are still
+	// waiting on an earlier game are excluded — they cannot run yet, so they
+	// are not open to predictions (§14.7).
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.match_id, m.created_at,
 		       COALESCE(json_agg(json_build_object('bot_id', mp.bot_id, 'name', b.name, 'rating', b.rating_mu - 2*b.rating_phi)) FILTER (WHERE mp.bot_id IS NOT NULL), '[]')
@@ -1352,6 +1355,7 @@ func (s *Server) handleOpenPredictions(w http.ResponseWriter, r *http.Request) {
 		JOIN match_participants mp ON m.match_id = mp.match_id
 		JOIN bots b ON mp.bot_id = b.bot_id
 		WHERE m.status = 'pending'
+		  AND NOT EXISTS (`+seriesgate.Blocking("m.match_id")+`)
 		GROUP BY m.match_id, m.created_at
 		ORDER BY m.created_at ASC
 		LIMIT 20

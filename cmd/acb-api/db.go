@@ -141,10 +141,18 @@ CREATE TABLE IF NOT EXISTS series_games (
     series_id BIGINT NOT NULL REFERENCES series(id),
     match_id  VARCHAR(32) REFERENCES matches(match_id),
     game_num  INTEGER NOT NULL,
+    map_id    VARCHAR(64),
     winner_id VARCHAR(16),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_series_games_series ON series_games(series_id);
+
+-- Add map_id to series_games if it doesn't exist (idempotent migration, §14.7)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'series_games' AND column_name = 'map_id') THEN
+        ALTER TABLE series_games ADD COLUMN map_id VARCHAR(64);
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS seasons (
     id            BIGSERIAL PRIMARY KEY,

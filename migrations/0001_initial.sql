@@ -130,6 +130,7 @@ CREATE TABLE series_games (
     series_id BIGINT NOT NULL REFERENCES series(id),
     match_id  VARCHAR(32) REFERENCES matches(match_id),
     game_num  INTEGER NOT NULL,
+    map_id    VARCHAR(64),
     winner_id VARCHAR(16),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
