@@ -251,7 +251,6 @@ export class TheaterMode {
   private lastTouchDist = 0;
   private lastTouchCellSize = 10;
   private pointerCount = 0;
-  private twoFingerTapTimer: ReturnType<typeof setTimeout> | null = null;
 
   private opts: TheaterOptions;
 
