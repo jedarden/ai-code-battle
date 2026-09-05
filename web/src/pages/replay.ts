@@ -1700,6 +1700,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     viewer.refreshWinProbSparkline();
     updateAnnotationOverlay();
     updateTranscript();
+    // The ribbon's turn cursor tracks the viewer, so a scrub from any source —
+    // marker click, track click, slider, keyboard — moves it, not just the
+    // annotation loads that syncAnnotationsToViewer serves
+    eventRibbon?.updateTurnHighlight();
 
     // Haptic feedback at critical moments (§16.18)
     if (!isHapticEnabled()) return;

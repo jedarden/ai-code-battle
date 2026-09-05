@@ -407,6 +407,295 @@ describe('EventRibbon', () => {
         track.getBoundingClientRect = originalGetBoundingClientRect;
       }
     });
+
+    /**
+     * Mock the track's rect for the seek tests. jsdom has no layout engine, so
+     * without this every rect is zero-sized and turnFromPointer would bail on
+     * its zero-width guard rather than compute a turn.
+     */
+    function mockTrackRect(left: number, width: number): void {
+      const track = container.querySelector('.event-ribbon-track') as HTMLElement;
+      track.getBoundingClientRect = () => ({
+        left,
+        top: 0,
+        width,
+        height: 48,
+        right: left + width,
+        bottom: 48,
+        x: left,
+        y: 0,
+        toJSON: () => ({}),
+      });
+    }
+
+    it('should seek to the first turn when the track is clicked at its left edge', () => {
+      const clickedTurns: number[] = [];
+      new EventRibbon({ container, events: [], totalTurns: 100, onTurnClick: (t) => clickedTurns.push(t) });
+
+      mockTrackRect(0, 400);
+      (container.querySelector('.event-ribbon-track') as HTMLElement)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 0 }));
+
+      expect(clickedTurns).toEqual([0]);
+    });
+
+    it('should clamp a track click past the right edge to the final turn, not one past it', () => {
+      // calculatePosition maps the final turn (totalTurns - 1) to just short of
+      // the track's right end, so a click on the last pixel computes
+      // totalTurns — the same value viewer.setTurn would clamp back. The ribbon
+      // clamps first so its callback reports the turn that will actually show.
+      const clickedTurns: number[] = [];
+      new EventRibbon({ container, events: [], totalTurns: 100, onTurnClick: (t) => clickedTurns.push(t) });
+
+      mockTrackRect(0, 400);
+      (container.querySelector('.event-ribbon-track') as HTMLElement)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 450 }));
+
+      expect(clickedTurns).toEqual([99]);
+    });
+
+    it('should land a track click at a marker position on that marker\'s turn', () => {
+      // Round trip through calculatePosition: a marker for turn 60 sits at 60%
+      // of the track, so clicking exactly there must seek back to 60
+      const clickedTurns: number[] = [];
+      new EventRibbon({
+        container,
+        events: [{ type: 'combat', turn: 60, description: 'Skirmish', emoji: '⚔️' }],
+        totalTurns: 100,
+        onTurnClick: (t) => clickedTurns.push(t),
+      });
+
+      mockTrackRect(0, 400);
+      (container.querySelector('.event-ribbon-track') as HTMLElement)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 240 }));
+
+      expect(clickedTurns).toEqual([60]);
+    });
+
+    it('should not double-fire the seek when a marker click bubbles', () => {
+      // A marker click must produce exactly one seek, carrying the marker's
+      // turn. The seek listener rides the sibling track, which a marker click
+      // cannot reach today; this pins that, so moving the listener up to the
+      // ribbon without the marker's stopPropagation holding the line fails
+      // here as [42, 0] (marker turn, then the coordinate-derived turn)
+      const clickedTurns: number[] = [];
+      new EventRibbon({
+        container,
+        events: [{ type: 'combat', turn: 42, description: 'Test combat', emoji: '⚔️' }],
+        totalTurns: 100,
+        onTurnClick: (t) => clickedTurns.push(t),
+      });
+
+      mockTrackRect(0, 400);
+      (container.querySelector('.event-marker') as HTMLElement)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 0 }));
+
+      expect(clickedTurns).toEqual([42]);
+    });
+
+    it('should not seek from a secondary button click on the track', () => {
+      const clickedTurns: number[] = [];
+      new EventRibbon({ container, events: [], totalTurns: 100, onTurnClick: (t) => clickedTurns.push(t) });
+
+      mockTrackRect(0, 400);
+      (container.querySelector('.event-ribbon-track') as HTMLElement)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100, button: 2 }));
+
+      expect(clickedTurns).toEqual([]);
+    });
+
+    it('should leave the track inert when there is no turn handler', () => {
+      // Without onTurnClick the track cannot scrub, so it must not advertise
+      // itself as clickable either — and must not fire the one handler it does
+      // have, which scrubs to an event, not to a bare turn
+      let eventClicks = 0;
+      new EventRibbon({ container, events: [], totalTurns: 100, onEventClick: () => { eventClicks++; } });
+
+      const track = container.querySelector('.event-ribbon-track') as HTMLElement;
+      expect(track.style.cursor).toBe('');
+
+      mockTrackRect(0, 400);
+      track.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+
+      expect(eventClicks).toBe(0);
+    });
+
+    it('should not seek when there are no turns to seek to', () => {
+      // turnFromPointer guards the degenerate cases instead of computing a
+      // turn from them; totalTurns 0 would otherwise yield round(NaN-free but
+      // meaningless) 0 and fire the handler for a ribbon with no timeline
+      const clickedTurns: number[] = [];
+      new EventRibbon({ container, events: [], totalTurns: 0, onTurnClick: (t) => clickedTurns.push(t) });
+
+      mockTrackRect(0, 400);
+      (container.querySelector('.event-ribbon-track') as HTMLElement)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+
+      expect(clickedTurns).toEqual([]);
+    });
+
+    it('should not seek when the track has no measurable width', () => {
+      // A zero-width rect — the ribbon not yet laid out, or detached — would
+      // divide by zero and produce a NaN turn; the guard must swallow it
+      const clickedTurns: number[] = [];
+      new EventRibbon({ container, events: [], totalTurns: 50, onTurnClick: (t) => clickedTurns.push(t) });
+
+      mockTrackRect(0, 0);
+      (container.querySelector('.event-ribbon-track') as HTMLElement)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+
+      expect(clickedTurns).toEqual([]);
+    });
+
+    it('should size the track as the full-height hit area with the line drawn by ::before', () => {
+      // jsdom cannot measure the strip, so the seek target's geometry is held
+      // against the stylesheet: the track fills the ribbon's height (the whole
+      // strip is tappable, not the 2px of visible line) and carries no
+      // background of its own — the line moved to ::when the hit area did
+      const trackRule = EVENT_RIBBON_STYLES.match(/\.event-ribbon-track\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(trackRule).toContain('height: 100%');
+      expect(trackRule).not.toContain('background');
+
+      const lineRule = EVENT_RIBBON_STYLES.match(/\.event-ribbon-track::before\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(lineRule, 'the ::before line rule').not.toBe('');
+      expect(lineRule).toContain('height: 2px');
+      expect(lineRule).toContain('background');
+    });
+  });
+
+  // ── Keyboard accessibility ──────────────────────────────────────────────────────
+  // A clickable marker is a button as far as assistive tech is concerned, so it
+  // gets the button contract: a tab stop, the role, a label naming what it
+  // scrubs to, and Enter/Space activation. Focus mirrors hover — the tooltip is
+  // how a keyboard user reads the event — and activation must not leak to the
+  // replay page's document-level Space (play/pause) and arrow-key (step turn)
+  // handlers.
+
+  describe('Keyboard accessibility (clickable markers)', () => {
+    const EVENTS: SignificantEvent[] = [
+      { type: 'combat', turn: 25, description: 'Ambush at the ridge', emoji: '⚔️' },
+      { type: 'combat', turn: 26, description: 'Follow-up strike', emoji: '⚔️' },
+    ];
+
+    const marker = (): HTMLElement =>
+      container.querySelector('.event-marker') as HTMLElement;
+
+    it('should give clickable markers a button role, tab stop and label', () => {
+      new EventRibbon({ container, events: EVENTS, totalTurns: 100, onTurnClick: () => {} });
+
+      const el = marker();
+      expect(el.getAttribute('role')).toBe('button');
+      expect(el.getAttribute('tabindex')).toBe('0');
+      // The label carries everything the tooltip would have told the user
+      expect(el.getAttribute('aria-label')).toBe('Combat at turn 25: Ambush at the ridge');
+    });
+
+    it('should not make markers focusable when there is no click handler', () => {
+      // A tab stop that activates nothing is a dead control; focusability
+      // follows the same condition as the pointer cursor
+      new EventRibbon({ container, events: EVENTS, totalTurns: 100 });
+
+      const el = marker();
+      expect(el.getAttribute('role')).toBeNull();
+      expect(el.getAttribute('tabindex')).toBeNull();
+    });
+
+    it('should activate on Enter', () => {
+      let clickedTurn: number | undefined;
+      let eventClicks = 0;
+      new EventRibbon({
+        container,
+        events: EVENTS,
+        totalTurns: 100,
+        onEventClick: () => { eventClicks++; },
+        onTurnClick: (t) => { clickedTurn = t; },
+      });
+
+      marker().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+      expect(clickedTurn).toBe(25);
+      expect(eventClicks).toBe(1);
+    });
+
+    it('should activate on Space', () => {
+      let clickedTurn: number | undefined;
+      new EventRibbon({ container, events: EVENTS, totalTurns: 100, onTurnClick: (t) => { clickedTurn = t; } });
+
+      marker().dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+
+      expect(clickedTurn).toBe(25);
+    });
+
+    it('should stop Space and Enter from reaching the document handlers', () => {
+      // The replay page binds Space to play/pause and the arrows to stepping
+      // turns on document; a bubbled activation keypress would scrub to the
+      // event AND toggle playback in one press
+      const bubbled: KeyboardEvent[] = [];
+      document.addEventListener('keydown', (e) => { bubbled.push(e); }, { once: true });
+
+      new EventRibbon({ container, events: EVENTS, totalTurns: 100, onTurnClick: () => {} });
+      marker().dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+
+      expect(bubbled).toEqual([]);
+    });
+
+    it('should ignore keys that are not activation keys', () => {
+      let clickedTurn: number | undefined;
+      new EventRibbon({ container, events: EVENTS, totalTurns: 100, onTurnClick: (t) => { clickedTurn = t; } });
+
+      marker().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      expect(clickedTurn).toBeUndefined();
+
+      // ...and must not swallow the arrow either: the page steps turns with it
+      const arrow = new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true });
+      marker().dispatchEvent(arrow);
+      expect(arrow.defaultPrevented).toBe(false);
+    });
+
+    it('should show the tooltip while focused and hide it after the grace period on blur', () => {
+      vi.useFakeTimers();
+      new EventRibbon({ container, events: EVENTS, totalTurns: 100, onTurnClick: () => {} });
+      const tooltip = document.querySelector('.event-tooltip') as HTMLElement;
+
+      marker().focus();
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true);
+      expect(tooltip.querySelector('.event-tooltip-description')?.textContent).toBe('Ambush at the ridge');
+
+      marker().blur();
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(true); // grace period
+
+      vi.advanceTimersByTime(150);
+      expect(tooltip.classList.contains('event-tooltip-visible')).toBe(false);
+    });
+
+    it('should raise a focused marker above stacked siblings and restore it on blur', () => {
+      const zIndexOf = (m: Element): number =>
+        parseInt(m.getAttribute('style')?.match(/z-index: (\d+)/)?.[1] || '0');
+
+      new EventRibbon({ container, events: EVENTS, totalTurns: 100, onTurnClick: () => {} });
+      const markers = container.querySelectorAll('.event-marker');
+
+      expect(zIndexOf(markers[0])).toBe(10);
+      (markers[0] as HTMLElement).focus();
+      expect(zIndexOf(markers[0])).toBe(100);
+      (markers[0] as HTMLElement).blur();
+      expect(zIndexOf(markers[0])).toBe(10);
+    });
+
+    it('should mirror the hover focus ring on keyboard focus in the stylesheet', () => {
+      // jsdom does not match :focus-visible, so the rule is pinned against the
+      // shipped CSS: the raise-and-glow the pointer gets is what the keyboard
+      // gets, plus an outline on the marker box itself
+      const markerRule = EVENT_RIBBON_STYLES.match(
+        /\.event-marker-clickable:focus-visible\s*\{[^}]*\}/
+      )?.[0] ?? '';
+      expect(markerRule).toContain('outline');
+
+      const iconRule = EVENT_RIBBON_STYLES.match(
+        /\.event-marker-clickable:focus-visible \.event-marker-icon\s*\{[^}]*\}/
+      )?.[0] ?? '';
+      expect(iconRule).toContain('transform: scale(1.3)');
+    });
   });
 
   describe('UI rendering', () => {

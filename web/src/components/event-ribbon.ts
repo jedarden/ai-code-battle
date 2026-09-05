@@ -134,6 +134,7 @@ export class EventRibbon {
   private container: HTMLElement;
   private rootEl!: HTMLDivElement;
   private ribbonEl!: HTMLDivElement;
+  private trackEl!: HTMLDivElement;
   private markersContainer!: HTMLDivElement;
   private onEventClick?: (event: SignificantEvent) => void;
   private onTurnClick?: (turn: number) => void;
@@ -445,6 +446,7 @@ export class EventRibbon {
     // Create child elements programmatically to ensure they're properly constructed
     const track = document.createElement('div');
     track.className = 'event-ribbon-track';
+    this.trackEl = track;
 
     this.markersContainer = document.createElement('div');
     this.markersContainer.className = 'event-ribbon-markers';
@@ -458,6 +460,17 @@ export class EventRibbon {
 
     this.rootEl.appendChild(this.ribbonEl);
     this.container.appendChild(this.rootEl);
+
+    // Click-to-scrub: with no marker under the pointer, a click anywhere on the
+    // ribbon lands on the track, which spans the full ribbon height (see its
+    // stylesheet rule) and seeks to the turn at the click's x position. Markers
+    // sit above it and stopPropagation, so an icon click never double-fires.
+    if (this.onTurnClick) {
+      track.addEventListener('click', (e) => this.seekFromPointer(e));
+      // The affordance follows the capability: without a handler the track is
+      // inert decoration and must not advertise itself as clickable
+      track.style.cursor = 'pointer';
+    }
   }
 
   private renderMarkers(): void {
@@ -560,16 +573,59 @@ export class EventRibbon {
 
     // Optional click handler — a marker click is both "jump to this event" and
     // "jump to this turn", so both callbacks fire from the same listener.
-    // stopPropagation keeps the click off the track's seek handler below, which
-    // would otherwise compute the turn from the click coordinates a second time.
+    // stopPropagation keeps the click away from any scrub handling above the
+    // marker in the tree: the track's own seek listener sits on a sibling, so
+    // it cannot see this event today, and the guard is what keeps that true if
+    // that listener ever moves up onto the ribbon itself.
     if (this.onEventClick || this.onTurnClick) {
-      marker.addEventListener('click', (e) => {
-        e.stopPropagation();
+      const activate = (): void => {
         this.onEventClick?.(event);
         this.onTurnClick?.(event.turn);
+      };
+
+      marker.addEventListener('click', (e) => {
+        e.stopPropagation();
+        activate();
       });
       marker.style.cursor = 'pointer';
       marker.classList.add('event-marker-clickable');
+
+      // A clickable marker is a button as far as the keyboard is concerned, so
+      // it gets one too: a tab stop, the button role and a label naming the
+      // event it scrubs to. Activation mirrors the click path exactly — the
+      // tooltip's content is what the label spells out, so a keyboard user
+      // reading the tooltip and pressing Enter gets what they were told.
+      marker.setAttribute('role', 'button');
+      marker.setAttribute('tabindex', '0');
+      marker.setAttribute(
+        'aria-label',
+        `${eventStyle.name} at turn ${event.turn}: ${event.description}`
+      );
+
+      marker.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        // Both keys must be swallowed here, not just activated on: the replay
+        // page binds Space to play/pause and the arrow keys to stepping turns
+        // on document, and a focus event that bubbles up there would scrub and
+        // toggle playback in one keypress.
+        e.preventDefault();
+        e.stopPropagation();
+        activate();
+      });
+
+      // Focus mirrors hover: the tooltip is how a keyboard user reads the
+      // event, and the raise keeps it — and the focused icon — above any
+      // stacked sibling. Blur collapses the marker and reuses the same hide
+      // grace period, so tabbing between adjacent icons glides the tooltip
+      // instead of flickering it.
+      marker.addEventListener('focus', () => {
+        marker.style.zIndex = `${Z_INDEX_HOVER}`;
+        this.showTooltip(marker, event);
+      });
+      marker.addEventListener('blur', () => {
+        marker.style.zIndex = layeredZIndex;
+        this.scheduleTooltipHide();
+      });
     }
 
     return marker;
@@ -607,6 +663,37 @@ export class EventRibbon {
     // Clamp to 0-100 range to handle edge cases like turn 0 or turn > totalTurns
     const rawPosition = (turn / this.totalTurns) * 100;
     return Math.max(0, Math.min(100, rawPosition));
+  }
+
+  /**
+   * Seek to the turn at a click's x position along the track — the inverse of
+   * calculatePosition, so a click at the fraction of the track a marker sits at
+   * lands on that marker's turn.
+   *
+   * Guards the degenerate cases rather than computing a turn from them: no
+   * turns means nothing to seek to, and a zero-width rect (the ribbon not yet
+   * laid out, or detached) would divide by zero. The result is clamped into
+   * [0, totalTurns - 1] — the same range the replay viewer accepts — so a
+   * click on the last pixel seeks to the final turn rather than one past it.
+   * Returns null when there is nothing to seek to.
+   */
+  private turnFromPointer(e: MouseEvent): number | null {
+    if (this.totalTurns <= 0) return null;
+
+    const rect = this.trackEl.getBoundingClientRect();
+    if (rect.width <= 0) return null;
+
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const turn = Math.round(ratio * this.totalTurns);
+    return Math.max(0, Math.min(this.totalTurns - 1, turn));
+  }
+
+  private seekFromPointer(e: MouseEvent): void {
+    // Secondary buttons (right-click / auxiliary click) never scrub
+    if (e.button !== 0) return;
+    const turn = this.turnFromPointer(e);
+    if (turn === null) return;
+    this.onTurnClick?.(turn);
   }
 
   private updateCursorPosition(currentTurn: number): void {
@@ -858,7 +945,21 @@ export const EVENT_RIBBON_STYLES = `
   align-items: center;
 }
 
+/* The track is the click-to-scrub target as well as the line: it fills the
+   ribbon's height so the whole strip is a pointer target, not just the 2px of
+   visible line, and the line itself is drawn by ::before so the hit area
+   carries no paint of its own. */
 .event-ribbon-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 100%;
+  transform: translateY(-50%);
+}
+
+.event-ribbon-track::before {
+  content: '';
   position: absolute;
   top: 50%;
   left: 0;
@@ -919,6 +1020,19 @@ export const EVENT_RIBBON_STYLES = `
 }
 
 .event-marker-clickable:hover .event-marker-icon {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+}
+
+/* Keyboard focus mirrors hover (:focus-visible keeps the ring off pointer
+   clicks): the same raise-and-glow, plus a visible outline on the marker box
+   itself, since the icon's scale alone is not a focus indicator. */
+.event-marker-clickable:focus-visible {
+  outline: 2px solid var(--border-active, #334155);
+  outline-offset: 2px;
+}
+
+.event-marker-clickable:focus-visible .event-marker-icon {
+  transform: scale(1.3);
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
 }
 
