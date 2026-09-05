@@ -1500,6 +1500,7 @@ func generateLLMChronicle(ctx context.Context, arc StoryArc, data *IndexData, ll
 		BotRank:       getBotRank(arc.BotID, data),
 		CommunityHint: arc.CommunityHint,
 		HeadToHead:    buildHeadToHeadFromArc(arc, data),
+		TopBots:       arc.TopBots,
 	}
 
 	if arc.Type == ArcRivalry {
