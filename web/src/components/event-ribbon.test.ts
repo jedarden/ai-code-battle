@@ -698,6 +698,141 @@ describe('EventRibbon', () => {
     });
   });
 
+  // ── Bot attribution ──────────────────────────────────────────────────────────────
+  // Events carry their bot as a player index; naming it needs the replay's
+  // roster, so the ribbon takes a resolver. An event without a player — or a
+  // ribbon built without the resolver — omits the line and the label clause
+  // rather than inventing a name.
+  describe('Bot attribution (tooltip line + accessible name)', () => {
+    const RAVEN = { type: 'combat', turn: 25, description: 'Ambush at the ridge', emoji: '⚔️', playerId: 1 } as SignificantEvent;
+    const ANON = { type: 'combat', turn: 26, description: 'Unattributed clash', emoji: '⚔️' } as SignificantEvent;
+
+    const tooltip = (): HTMLElement =>
+      document.querySelector('.event-tooltip') as HTMLElement;
+
+    const hoverFirstIcon = (): void => {
+      const icon = container.querySelector('.event-marker-icon') as HTMLElement;
+      icon.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    };
+
+    const playerLine = (): HTMLElement =>
+      tooltip().querySelector('.event-tooltip-player') as HTMLElement;
+
+    const resolveRaven = (playerId: number): string =>
+      playerId === 1 ? 'Raven' : `Player ${playerId}`;
+
+    it('should show the bot name when the event carries a player and the ribbon can resolve it', () => {
+      new EventRibbon({
+        container,
+        events: [RAVEN],
+        totalTurns: 100,
+        resolvePlayerName: resolveRaven,
+      });
+
+      hoverFirstIcon();
+
+      expect(playerLine().textContent).toBe('Raven');
+      expect(playerLine().hidden).toBe(false);
+    });
+
+    it('should pass the event playerId to the resolver', () => {
+      const seen: number[] = [];
+      new EventRibbon({
+        container,
+        events: [RAVEN],
+        totalTurns: 100,
+        resolvePlayerName: (id) => {
+          seen.push(id);
+          return 'Raven';
+        },
+      });
+
+      hoverFirstIcon();
+
+      expect(seen).toEqual([1]);
+    });
+
+    it('should hide the bot line for an event without a player, even with a resolver', () => {
+      new EventRibbon({
+        container,
+        events: [ANON],
+        totalTurns: 100,
+        resolvePlayerName: resolveRaven,
+      });
+
+      hoverFirstIcon();
+
+      expect(playerLine().hidden).toBe(true);
+      expect(playerLine().textContent).toBe('');
+    });
+
+    it('should hide the bot line when the ribbon has no resolver', () => {
+      new EventRibbon({ container, events: [RAVEN], totalTurns: 100 });
+
+      hoverFirstIcon();
+
+      expect(playerLine().hidden).toBe(true);
+      expect(playerLine().textContent).toBe('');
+    });
+
+    it('should not leak the previous event bot onto a player-less event', () => {
+      // One shared tooltip is rewritten on every show; the player line's
+      // hidden state is part of that rewrite
+      new EventRibbon({
+        container,
+        events: [RAVEN, ANON],
+        totalTurns: 100,
+        resolvePlayerName: resolveRaven,
+      });
+
+      const icons = () => container.querySelectorAll('.event-marker-icon');
+      (icons()[0] as HTMLElement).dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      expect(playerLine().textContent).toBe('Raven');
+
+      (icons()[1] as HTMLElement).dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      expect(playerLine().hidden).toBe(true);
+      expect(playerLine().textContent).toBe('');
+    });
+
+    it('should name the bot in the accessible label so keyboard users get the same facts', () => {
+      new EventRibbon({
+        container,
+        events: [RAVEN],
+        totalTurns: 100,
+        onTurnClick: () => {},
+        resolvePlayerName: resolveRaven,
+      });
+
+      const el = container.querySelector('.event-marker') as HTMLElement;
+      expect(el.getAttribute('aria-label')).toBe(
+        'Combat — Raven at turn 25: Ambush at the ridge'
+      );
+    });
+
+    it('should leave the accessible label unchanged for a player-less event', () => {
+      new EventRibbon({
+        container,
+        events: [ANON],
+        totalTurns: 100,
+        onTurnClick: () => {},
+        resolvePlayerName: resolveRaven,
+      });
+
+      const el = container.querySelector('.event-marker') as HTMLElement;
+      expect(el.getAttribute('aria-label')).toBe(
+        'Combat at turn 26: Unattributed clash'
+      );
+    });
+
+    it('should keep the bot line hidden by stylesheet, not by an empty string', () => {
+      // The class rule's display context would beat the UA stylesheet's
+      // [hidden] rule, so the hidden state is restated in the component styles
+      const rule =
+        EVENT_RIBBON_STYLES.match(/\.event-tooltip-player\[hidden\]\s*\{[^}]*\}/)?.[0] ?? '';
+      expect(rule).toContain('display: none');
+    });
+  });
+
   describe('UI rendering', () => {
     it('should render turn label with current and total turns', () => {
       const events: SignificantEvent[] = [];

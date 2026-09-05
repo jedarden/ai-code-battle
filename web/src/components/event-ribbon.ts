@@ -128,6 +128,11 @@ export interface EventRibbonOptions {
   onEventClick?: (event: SignificantEvent) => void;  // Optional click handler
   onTurnClick?: (turn: number) => void;  // Optional turn click handler
   getTurn?: () => number;  // Optional: get current turn for highlighting
+  // Optional: name the bot a player-attributed event belongs to, for its
+  // tooltip. Events carry the attribution as an index (see
+  // SignificantEvent.playerId); naming it needs the replay's roster, which the
+  // ribbon does not hold — the page that has the replay passes this in.
+  resolvePlayerName?: (playerId: number) => string;
 }
 
 export class EventRibbon {
@@ -139,6 +144,7 @@ export class EventRibbon {
   private onEventClick?: (event: SignificantEvent) => void;
   private onTurnClick?: (turn: number) => void;
   private getTurn?: () => number;
+  private resolvePlayerName?: (playerId: number) => string;
   private events: SignificantEvent[] = [];
   private totalTurns: number = 0;
   private legendVisible: boolean = true;
@@ -155,6 +161,7 @@ export class EventRibbon {
     this.onEventClick = options.onEventClick;
     this.onTurnClick = options.onTurnClick;
     this.getTurn = options.getTurn;
+    this.resolvePlayerName = options.resolvePlayerName;
 
     // Load saved legend visibility preference
     this.legendVisible = this.loadLegendPreference();
@@ -597,10 +604,7 @@ export class EventRibbon {
       // reading the tooltip and pressing Enter gets what they were told.
       marker.setAttribute('role', 'button');
       marker.setAttribute('tabindex', '0');
-      marker.setAttribute(
-        'aria-label',
-        `${eventStyle.name} at turn ${event.turn}: ${event.description}`
-      );
+      marker.setAttribute('aria-label', this.describeEvent(event));
 
       marker.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -728,6 +732,7 @@ export class EventRibbon {
       </div>
       <div class="event-tooltip-body">
         <div class="event-tooltip-description"></div>
+        <div class="event-tooltip-player" hidden></div>
         <div class="event-tooltip-turn"></div>
       </div>
       <div class="event-tooltip-arrow"></div>
@@ -796,12 +801,44 @@ export class EventRibbon {
     const icon = this.tooltipEl.querySelector('.event-tooltip-icon') as HTMLElement;
     const type = this.tooltipEl.querySelector('.event-tooltip-type') as HTMLElement;
     const description = this.tooltipEl.querySelector('.event-tooltip-description') as HTMLElement;
+    const player = this.tooltipEl.querySelector('.event-tooltip-player') as HTMLElement;
     const turn = this.tooltipEl.querySelector('.event-tooltip-turn') as HTMLElement;
 
+    // One shared tooltip serves every marker, so each field is written on
+    // every show — including the player line's hidden state, which would
+    // otherwise leak from a bot-attributed event to the next one shown
+    const playerName = this.playerNameFor(event);
     icon.innerHTML = this.escapeHtml(event.emoji || style.icon);
     type.textContent = style.name;
     description.innerHTML = this.escapeHtml(event.description);
+    player.textContent = playerName ?? '';
+    player.hidden = playerName === null;
     turn.textContent = `Turn ${event.turn}`;
+  }
+
+  /**
+   * The bot an event is attributed to, when the ribbon can name it. An event
+   * without a player, or a ribbon built without resolvePlayerName, yields
+   * null — the tooltip then omits the line rather than inventing a name, and
+   * the accessible label simply omits the clause.
+   */
+  private playerNameFor(event: SignificantEvent): string | null {
+    if (!this.resolvePlayerName) return null;
+    if (event.playerId === undefined || event.playerId < 0) return null;
+    return this.resolvePlayerName(event.playerId);
+  }
+
+  /**
+   * The one-line summary a screen reader gets for a clickable marker. Drawn
+   * from the same facts the tooltip renders — type, bot, turn, description —
+   * so a keyboard user who reads the tooltip and presses Enter is told the
+   * same thing through both channels.
+   */
+  private describeEvent(event: SignificantEvent): string {
+    const name = getEventTypeDescriptor(event.type).name;
+    const playerName = this.playerNameFor(event);
+    const attribution = playerName ? `${name} — ${playerName}` : name;
+    return `${attribution} at turn ${event.turn}: ${event.description}`;
   }
 
   private positionTooltip(marker: HTMLElement, tooltip: HTMLElement): void {
@@ -1286,6 +1323,24 @@ ${EVENT_TYPE_MARKER_CSS}
   color: var(--text-secondary, #94a3b8);
   word-wrap: break-word;
   overflow-wrap: break-word;
+}
+
+/* The bot the event is attributed to — a fact line, so brighter than the
+   prose above it and styled like the turn stamp below it rather than as part
+   of the description sentence */
+.event-tooltip-player {
+  color: var(--text-primary, #e2e8f0);
+  font-size: 12px;
+  font-weight: 600;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Per-event visibility: one shared tooltip is rewritten on every show, and
+   the class's own display context would beat the UA stylesheet's [hidden]
+   rule, so the hidden state is restated here */
+.event-tooltip-player[hidden] {
+  display: none;
 }
 
 .event-tooltip-turn {

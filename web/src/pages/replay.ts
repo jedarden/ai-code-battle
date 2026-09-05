@@ -1124,7 +1124,18 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
           updateEventLog();
         },
         getTurn: () => viewer.getTurn(),
+        // Bot names for the tooltips come from the roster this page already
+        // holds; the fallback matches extractSignificantEvents' own
+        resolvePlayerName: (playerId: number) =>
+          replay.players[playerId]?.name ?? `Player ${playerId}`,
       });
+      // No loading state is wired into either scrub handler: the replay is
+      // already fully in memory, so viewer.setTurn returns synchronously and
+      // the ribbon cursor's CSS transition is the whole perceived delay. If a
+      // scrub ever becomes async (remote turn data, on-demand decode), add the
+      // busy indication at these two call sites — the ribbon takes callbacks,
+      // not promises, so it has nothing to await.
+
 
       // Extract and populate significant events
       const significantEvents = extractSignificantEvents(replay);
