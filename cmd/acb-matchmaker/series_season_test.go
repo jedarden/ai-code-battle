@@ -315,7 +315,7 @@ func TestMapSelectionOrderByGame(t *testing.T) {
 		{1, "engagement DESC"},
 		{2, "wall_density DESC"},
 		{3, "wall_density ASC"},
-		{4, "RANDOM()"},
+		{4, "created_at DESC"},
 		{5, "RANDOM()"},
 		{6, "RANDOM()"},
 		{7, "RANDOM()"},
@@ -330,6 +330,9 @@ func TestMapSelectionOrderByGame(t *testing.T) {
 			orderBy = "wall_density DESC NULLS LAST"
 		case tc.gameNum == 3:
 			orderBy = "wall_density ASC NULLS LAST"
+		case tc.gameNum == 4:
+			// Most recently evolved map (§14.7: untested terrain)
+			orderBy = "created_at DESC"
 		default:
 			orderBy = "RANDOM()"
 		}
@@ -478,19 +481,20 @@ func TestSeriesSchedulerOrder(t *testing.T) {
 	// Verify the ordering of steps in tickSeriesScheduler:
 	// 0. updateSeriesGameResults (propagate match results)
 	// 1. finalizeCompletedSeries (mark series complete)
-	// 2. scheduleNextSeriesGames (schedule next game)
+	// 2. cancelDecidedSeriesGames (retire leftover games, abandon wedged series)
 	// 3. autoCreateSeries (create new series)
 	// 4. advanceChampionshipBracket (advance bracket)
 	//
 	// This ordering is important because:
 	// - Results must be propagated BEFORE finalization checks
-	// - Finalization must happen BEFORE scheduling (to avoid scheduling
-	//   games in already-decided series)
-	// - New series creation comes after scheduling existing ones
+	// - Finalization must happen BEFORE the cancel pass: a decided series has
+	//   already left 'active' by then, and the cancel pass deliberately keys
+	//   off the series status rather than the win threshold
+	// - New series creation comes after the existing ones are settled
 	steps := []string{
 		"updateSeriesGameResults",
 		"finalizeCompletedSeries",
-		"scheduleNextSeriesGames",
+		"cancelDecidedSeriesGames",
 		"autoCreateSeries",
 		"advanceChampionshipBracket",
 	}

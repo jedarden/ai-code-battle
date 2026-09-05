@@ -12,10 +12,11 @@ import (
 	"time"
 )
 
-// tickSeriesScheduler schedules remaining games for active series.
-// For each active series with unplayed games, it schedules the next game
-// in round-robin order, feeding the match into the job queue.
-// It also marks series as completed when a bot reaches the winning threshold.
+// tickSeriesScheduler maintains the series pipeline. Every game of a series is
+// created up front as a pending job (§14.7) — createSeriesGames does that at
+// series creation — so this tick's job is bookkeeping: propagate match results
+// into the series tables, finalise series that are decided, retire the games
+// left over on series that are over or wedged, and create new series.
 func (m *Matchmaker) tickSeriesScheduler(ctx context.Context) {
 	// 0. Propagate match results to series tables (winner_id, a_wins/b_wins)
 	if err := m.updateSeriesGameResults(ctx); err != nil {
@@ -27,9 +28,10 @@ func (m *Matchmaker) tickSeriesScheduler(ctx context.Context) {
 		log.Printf("series-scheduler: finalize error: %v", err)
 	}
 
-	// 2. Schedule next game for active series that need one
-	if err := m.scheduleNextSeriesGames(ctx); err != nil {
-		log.Printf("series-scheduler: schedule error: %v", err)
+	// 2. Cancel the games left over on series that are over, and finalize any
+	// series a permanently failed game has wedged.
+	if err := m.cancelDecidedSeriesGames(ctx); err != nil {
+		log.Printf("series-scheduler: cancel error: %v", err)
 	}
 
 	// 3. Auto-create series for top bots (one per bot per day, best-of-5)
@@ -48,14 +50,22 @@ func (m *Matchmaker) tickSeriesScheduler(ctx context.Context) {
 // a_wins or b_wins on the series table. Drawn games (m.winner IS NULL) are
 // marked so the series can continue to the next game.
 func (m *Matchmaker) updateSeriesGameResults(ctx context.Context) error {
+	// Both passes below are scoped to series that are still active. The
+	// ordering gate opens a series' remaining games the moment its status
+	// leaves 'active', so a result arriving for a finished series can only
+	// come from a game that should have been cancelled — recording it would
+	// rewrite a tally that has already been finalised.
+	//
 	// First, handle draws: completed matches with no winner
 	_, err := m.db.ExecContext(ctx, `
 		UPDATE series_games SET winner_id = 'draw'
 		FROM matches m
+		JOIN series s ON s.id = series_games.series_id
 		WHERE series_games.match_id = m.match_id
 		  AND series_games.winner_id IS NULL
 		  AND m.status = 'completed'
 		  AND m.winner IS NULL
+		  AND s.status = 'active'
 	`)
 	if err != nil {
 		log.Printf("series-scheduler: failed to process drawn games: %v", err)
@@ -66,9 +76,11 @@ func (m *Matchmaker) updateSeriesGameResults(ctx context.Context) error {
 		SELECT sg.series_id, sg.game_num, sg.match_id, m.winner
 		FROM series_games sg
 		JOIN matches m ON sg.match_id = m.match_id
+		JOIN series s ON s.id = sg.series_id
 		WHERE sg.winner_id IS NULL
 		  AND m.status = 'completed'
 		  AND m.winner IS NOT NULL
+		  AND s.status = 'active'
 	`)
 	if err != nil {
 		return fmt.Errorf("query completed series games: %w", err)
@@ -119,11 +131,13 @@ func (m *Matchmaker) updateSeriesGameResults(ctx context.Context) error {
 
 		if winnerBotID == botAID {
 			_, err = m.db.ExecContext(ctx, `
-				UPDATE series SET a_wins = a_wins + 1, updated_at = NOW() WHERE id = $1
+				UPDATE series SET a_wins = a_wins + 1, updated_at = NOW()
+				WHERE id = $1 AND status = 'active'
 			`, u.SeriesID)
 		} else {
 			_, err = m.db.ExecContext(ctx, `
-				UPDATE series SET b_wins = b_wins + 1, updated_at = NOW() WHERE id = $1
+				UPDATE series SET b_wins = b_wins + 1, updated_at = NOW()
+				WHERE id = $1 AND status = 'active'
 			`, u.SeriesID)
 		}
 		if err != nil {
@@ -239,109 +253,14 @@ func (m *Matchmaker) finalizeCompletedSeries(ctx context.Context) error {
 	return nil
 }
 
-// scheduleNextSeriesGames finds active series with unplayed games and schedules the next one.
-func (m *Matchmaker) scheduleNextSeriesGames(ctx context.Context) error {
-	// Find active series where the next sequential game has no match_id yet
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT s.id, s.bot_a_id, s.bot_b_id, s.format, s.a_wins, s.b_wins,
-		       COALESCE(MAX(sg.game_num), 0) AS last_game_num
-		FROM series s
-		LEFT JOIN series_games sg ON s.id = sg.series_id AND sg.match_id IS NOT NULL
-		WHERE s.status = 'active'
-		GROUP BY s.id, s.bot_a_id, s.bot_b_id, s.format, s.a_wins, s.b_wins
-		HAVING COUNT(sg.id) < s.format
-	`)
-	if err != nil {
-		return fmt.Errorf("query pending series: %w", err)
-	}
-	defer rows.Close()
-
-	type pendingSeries struct {
-		ID          int64
-		BotAID      string
-		BotBID      string
-		Format      int
-		AWins       int
-		BWins       int
-		LastGameNum int
-	}
-	var pending []pendingSeries
-
-	for rows.Next() {
-		var s pendingSeries
-		if err := rows.Scan(&s.ID, &s.BotAID, &s.BotBID, &s.Format, &s.AWins, &s.BWins, &s.LastGameNum); err != nil {
-			return fmt.Errorf("scan pending series: %w", err)
-		}
-
-		// Skip if series is already decided
-		winsNeeded := (s.Format + 1) / 2
-		if s.AWins >= winsNeeded || s.BWins >= winsNeeded {
-			continue
-		}
-
-		// Check that both bots are active and not on crash cooldown (§4.5, §6.1)
-		var aActive, bActive bool
-		err := m.db.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM bots WHERE bot_id = $1 AND status = 'active'
-			 AND (cooldown_until IS NULL OR cooldown_until < NOW()))`, s.BotAID).Scan(&aActive)
-		if err != nil {
-			continue
-		}
-		err = m.db.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM bots WHERE bot_id = $1 AND status = 'active'
-			 AND (cooldown_until IS NULL OR cooldown_until < NOW()))`, s.BotBID).Scan(&bActive)
-		if err != nil {
-			continue
-		}
-		if !aActive || !bActive {
-			continue
-		}
-
-		pending = append(pending, s)
-	}
-
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	for _, s := range pending {
-		nextGameNum := s.LastGameNum + 1
-
-		// Check if this game already has a pending match (not yet completed)
-		var existingMatch int
-		err := m.db.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM series_games
-			WHERE series_id = $1 AND game_num = $2 AND match_id IS NOT NULL
-		`, s.ID, nextGameNum).Scan(&existingMatch)
-		if err != nil || existingMatch > 0 {
-			continue // already scheduled or played
-		}
-
-		// Check if there's already a pending/running job for this series
-		var pendingJobs int
-		err = m.db.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM series_games sg
-			JOIN matches m ON sg.match_id = m.match_id
-			JOIN jobs j ON j.match_id = m.match_id
-			WHERE sg.series_id = $1 AND j.status IN ('pending', 'running')
-		`, s.ID).Scan(&pendingJobs)
-		if err != nil || pendingJobs > 0 {
-			continue // a game is already in progress for this series
-		}
-
-		if err := m.scheduleSeriesGame(ctx, s.ID, s.BotAID, s.BotBID, nextGameNum, rng); err != nil {
-			log.Printf("series-scheduler: failed to schedule game %d for series %d: %v", nextGameNum, s.ID, err)
-			continue
-		}
-		log.Printf("series-scheduler: scheduled game %d for series %d (%s vs %s)", nextGameNum, s.ID, s.BotAID, s.BotBID)
-	}
-
-	return nil
-}
-
-// scheduleSeriesGame creates a match and job for one game in a series.
-// It selects maps with varied characteristics per game number (§14.7) and
-// alternates player slots for fairness.
-func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, botAID, botBID string, gameNum int, rng *rand.Rand) error {
-	// Fetch bot endpoints and secrets
+// createSeriesGames creates every game of a series up front, as §14.7
+// describes: each game gets a pending match, a pending job and a series_games
+// row carrying the map chosen for its game number. Workers then run them in
+// order — a game is only claimable once every earlier game in the same series
+// has a result (see GetNextJob's ordering gate), and the games left over once
+// a bot reaches the winning threshold are cancelled by cancelDecidedSeriesGames.
+func (m *Matchmaker) createSeriesGames(ctx context.Context, seriesID int64, botAID, botBID string, format int) error {
+	// Fetch bot endpoints and secrets once; every game uses the same pair.
 	var endpointA, secretA, endpointB, secretB string
 	err := m.db.QueryRowContext(ctx,
 		`SELECT endpoint_url, shared_secret FROM bots WHERE bot_id = $1`, botAID).Scan(&endpointA, &secretA)
@@ -364,24 +283,6 @@ func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, bot
 		}
 	}
 
-	matchID, err := generateID("m_", 8)
-	if err != nil {
-		return err
-	}
-	jobID, err := generateID("j_", 8)
-	if err != nil {
-		return err
-	}
-
-	// Select a map with varied characteristics per game number (§14.7)
-	mapID, rows, cols, mapSeed := m.selectSeriesMap(ctx, gameNum, rng)
-
-	// Alternate player slots per game for round-robin fairness
-	slotA, slotB := 0, 1
-	if gameNum%2 == 0 {
-		slotA, slotB = 1, 0
-	}
-
 	type botConfig struct {
 		BotID    string `json:"bot_id"`
 		Endpoint string `json:"endpoint"`
@@ -399,64 +300,213 @@ func (m *Matchmaker) scheduleSeriesGame(ctx context.Context, seriesID int64, bot
 		Bots     []botConfig `json:"bots"`
 	}
 
-	config := jobConfig{
-		MatchID:  matchID,
-		SeriesID: seriesID,
-		GameNum:  gameNum,
-		MapSeed:  mapSeed,
-		MaxTurns: 500,
-		Rows:     rows,
-		Cols:     cols,
-		Bots: []botConfig{
-			{BotID: botAID, Endpoint: endpointA, Secret: secretA, Slot: slotA},
-			{BotID: botBID, Endpoint: endpointB, Secret: secretB, Slot: slotB},
-		},
-	}
-	configJSON, _ := json.Marshal(config)
-
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO matches (match_id, map_id, map_seed, status) VALUES ($1, $2, $3, 'pending')`,
-		matchID, mapID, mapSeed)
-	if err != nil {
-		return fmt.Errorf("insert match: %w", err)
-	}
+	for gameNum := 1; gameNum <= format; gameNum++ {
+		matchID, err := generateID("m_", 8)
+		if err != nil {
+			return err
+		}
+		jobID, err := generateID("j_", 8)
+		if err != nil {
+			return err
+		}
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO match_participants (match_id, bot_id, player_slot) VALUES ($1, $2, $3), ($1, $4, $5)`,
-		matchID, botAID, slotA, botBID, slotB)
-	if err != nil {
-		return fmt.Errorf("insert participants: %w", err)
-	}
+		// Select a map with varied characteristics per game number (§14.7)
+		mapID, rows, cols, mapSeed := m.selectSeriesMap(ctx, gameNum, rng)
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO jobs (job_id, match_id, status, config_json) VALUES ($1, $2, 'pending', $3)`,
-		jobID, matchID, configJSON)
-	if err != nil {
-		return fmt.Errorf("insert job: %w", err)
-	}
+		// Alternate player slots per game for round-robin fairness
+		slotA, slotB := 0, 1
+		if gameNum%2 == 0 {
+			slotA, slotB = 1, 0
+		}
 
-	// Create the series_games row
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO series_games (series_id, match_id, game_num, winner_id)
-		VALUES ($1, $2, $3, NULL)
-	`, seriesID, matchID, gameNum)
-	if err != nil {
-		return fmt.Errorf("insert series_game: %w", err)
+		config := jobConfig{
+			MatchID:  matchID,
+			SeriesID: seriesID,
+			GameNum:  gameNum,
+			MapSeed:  mapSeed,
+			MaxTurns: 500,
+			Rows:     rows,
+			Cols:     cols,
+			Bots: []botConfig{
+				{BotID: botAID, Endpoint: endpointA, Secret: secretA, Slot: slotA},
+				{BotID: botBID, Endpoint: endpointB, Secret: secretB, Slot: slotB},
+			},
+		}
+		configJSON, _ := json.Marshal(config)
+
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO matches (match_id, map_id, map_seed, status) VALUES ($1, $2, $3, 'pending')`,
+			matchID, mapID, mapSeed); err != nil {
+			return fmt.Errorf("insert match: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO match_participants (match_id, bot_id, player_slot) VALUES ($1, $2, $3), ($1, $4, $5)`,
+			matchID, botAID, slotA, botBID, slotB); err != nil {
+			return fmt.Errorf("insert participants: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO jobs (job_id, match_id, status, config_json) VALUES ($1, $2, 'pending', $3)`,
+			jobID, matchID, configJSON); err != nil {
+			return fmt.Errorf("insert job: %w", err)
+		}
+
+		// Create the series_games row, recording the map picked for this game
+		// so the series page can name it before the game is played.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO series_games (series_id, match_id, game_num, map_id, winner_id)
+			VALUES ($1, $2, $3, $4, NULL)
+		`, seriesID, matchID, gameNum, mapID); err != nil {
+			return fmt.Errorf("insert series_game: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 
-	// Enqueue in Valkey
-	if err := m.rdb.LPush(ctx, valkeyJobQueue, jobID).Err(); err != nil {
-		return fmt.Errorf("valkey push: %w", err)
+	// Wake workers up to game 1. Games 2..N are visible in the jobs table but
+	// stay unclaimable until their predecessors resolve, so pushing them here
+	// would only invite workers to bounce off the ordering gate.
+	var firstJob string
+	if err := m.db.QueryRowContext(ctx, `
+		SELECT j.job_id FROM jobs j
+		JOIN series_games sg ON sg.match_id = j.match_id
+		WHERE sg.series_id = $1 AND sg.game_num = 1
+	`, seriesID).Scan(&firstJob); err == nil {
+		if err := m.rdb.LPush(ctx, valkeyJobQueue, firstJob).Err(); err != nil {
+			return fmt.Errorf("valkey push: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// cancelDecidedSeriesGames is the maintenance pass for the up-front game
+// model. Any series that is no longer active has its remaining pending games
+// cancelled, and a series stuck behind a permanently failed game is abandoned
+// so it cannot block the queue forever.
+func (m *Matchmaker) cancelDecidedSeriesGames(ctx context.Context) error {
+	// 1. Cancel the not-yet-run games of series that are already over. The
+	// ordering gate only holds games back while their series is active, so a
+	// pending game on a finished series is a zombie waiting to run — and its
+	// result would then be recorded into a series that is already decided.
+	// Both the job and its match are retired, so the game disappears from the
+	// queue and from the open-match feed. This deliberately keys off the
+	// series status rather than the win threshold: finalizeCompletedSeries has
+	// already flipped decided series to 'completed' by the time this runs, so
+	// a threshold test here would never fire.
+	decided := `
+		JOIN series_games sg ON sg.match_id = matches.match_id
+		JOIN series s ON s.id = sg.series_id
+		WHERE s.status <> 'active'
+	`
+	res, err := m.db.ExecContext(ctx, `
+		UPDATE jobs SET status = 'cancelled', completed_at = NOW()
+		FROM matches
+		WHERE jobs.match_id = matches.match_id
+		  AND jobs.status = 'pending'
+		  AND EXISTS (`+decided+`)
+	`)
+	if err != nil {
+		return fmt.Errorf("cancel decided series games: %w", err)
+	}
+	if _, err := m.db.ExecContext(ctx, `
+		UPDATE matches SET status = 'cancelled'
+		WHERE matches.status = 'pending'
+		  AND EXISTS (`+decided+`)
+	`); err != nil {
+		return fmt.Errorf("cancel decided series matches: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("series-scheduler: cancelled %d leftover game(s) on decided series", n)
+	}
+
+	// 2. Abandon series a permanently dead game has wedged. A game whose job
+	// failed or was cancelled never records a winner, and every later game in
+	// the series waits on that winner — so the series can make no further
+	// progress and the games behind the dead one would sit pending forever.
+	// Only one game per active series is ever live (the gate keeps the rest
+	// pending), so there is nothing still in flight to wait for.
+	stuck, err := m.db.QueryContext(ctx, `
+		SELECT s.id, s.bot_a_id, s.bot_b_id FROM series s
+		WHERE s.status = 'active'
+		  AND EXISTS (
+		    SELECT 1 FROM series_games sg
+		    JOIN jobs j ON j.match_id = sg.match_id
+		    WHERE sg.series_id = s.id
+		      AND sg.winner_id IS NULL
+		      AND j.status IN ('failed', 'cancelled')
+		  )
+	`)
+	if err != nil {
+		return fmt.Errorf("query stuck series: %w", err)
+	}
+	defer stuck.Close()
+
+	type stuckSeries struct {
+		ID   int64
+		BotA string
+		BotB string
+	}
+	var stuckList []stuckSeries
+	for stuck.Next() {
+		var s stuckSeries
+		if err := stuck.Scan(&s.ID, &s.BotA, &s.BotB); err != nil {
+			continue
+		}
+		stuckList = append(stuckList, s)
+	}
+	stuck.Close()
+
+	for _, s := range stuckList {
+		var aWins, bWins int
+		if err := m.db.QueryRowContext(ctx,
+			`SELECT a_wins, b_wins FROM series WHERE id = $1`, s.ID).Scan(&aWins, &bWins); err != nil {
+			continue
+		}
+		var winnerID *string
+		switch {
+		case aWins > bWins:
+			winnerID = &s.BotA
+		case bWins > aWins:
+			winnerID = &s.BotB
+		}
+		if _, err := m.db.ExecContext(ctx, `
+			UPDATE series SET status = 'completed', winner_id = $1, updated_at = NOW()
+			WHERE id = $2 AND status = 'active'
+		`, winnerID, s.ID); err != nil {
+			log.Printf("series-scheduler: failed to finalize stuck series %d: %v", s.ID, err)
+			continue
+		}
+
+		// Retire the games the abandoned series never played, in the same
+		// breath: the moment the status flips, the ordering gate stops holding
+		// them back, so leaving them pending would let them run as zombies.
+		if _, err := m.db.ExecContext(ctx, `
+			UPDATE jobs SET status = 'cancelled', completed_at = NOW()
+			WHERE status = 'pending'
+			  AND match_id IN (SELECT sg.match_id FROM series_games sg WHERE sg.series_id = $1)
+		`, s.ID); err != nil {
+			log.Printf("series-scheduler: failed to cancel stuck series %d games: %v", s.ID, err)
+		}
+		if _, err := m.db.ExecContext(ctx, `
+			UPDATE matches SET status = 'cancelled'
+			WHERE status = 'pending'
+			  AND match_id IN (SELECT sg.match_id FROM series_games sg WHERE sg.series_id = $1)
+		`, s.ID); err != nil {
+			log.Printf("series-scheduler: failed to cancel stuck series %d matches: %v", s.ID, err)
+		}
+
+		log.Printf("series-scheduler: finalized stuck series %d (%d-%d)", s.ID, aWins, bWins)
 	}
 
 	return nil
@@ -627,15 +677,22 @@ func (m *Matchmaker) autoCreateSeries(ctx context.Context) error {
 		m.db.QueryRowContext(ctx,
 			`SELECT id FROM seasons WHERE status = 'active' ORDER BY starts_at DESC LIMIT 1`).Scan(&seasonID)
 
-		_, err = m.db.ExecContext(ctx, `
+		var seriesID int64
+		err = m.db.QueryRowContext(ctx, `
 			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, updated_at)
 			VALUES ($1, $2, $3, 'active', 0, 0, $4, NOW())
-		`, botAID, botBID, format, seasonID)
+			RETURNING id
+		`, botAID, botBID, format, seasonID).Scan(&seriesID)
 		if err != nil {
 			log.Printf("series-scheduler: failed to create series (%s vs %s): %v", botAID, botBID, err)
 			continue
 		}
-		log.Printf("series-scheduler: created best-of-%d series: %s vs %s", format, botAID, botBID)
+
+		if err := m.createSeriesGames(ctx, seriesID, botAID, botBID, format); err != nil {
+			log.Printf("series-scheduler: failed to create games for series %d: %v", seriesID, err)
+			continue
+		}
+		log.Printf("series-scheduler: created best-of-%d series %d: %s vs %s", format, seriesID, botAID, botBID)
 	}
 
 	return nil
@@ -915,15 +972,21 @@ func (m *Matchmaker) advanceChampionshipBracket(ctx context.Context) error {
 		if len(pair.winners) < 2 {
 			continue
 		}
-		_, err := m.db.ExecContext(ctx, `
+		var sfID int64
+		err := m.db.QueryRowContext(ctx, `
 			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, bracket_round, bracket_position, updated_at)
 			VALUES ($1, $2, 7, 'active', 0, 0, $3, 'semifinal', $4, NOW())
-		`, pair.winners[0], pair.winners[1], pair.seasonID, pair.position)
+			RETURNING id
+		`, pair.winners[0], pair.winners[1], pair.seasonID, pair.position).Scan(&sfID)
 		if err != nil {
 			log.Printf("series-scheduler: failed to create semifinal (%s vs %s): %v", pair.winners[0], pair.winners[1], err)
 			continue
 		}
-		log.Printf("series-scheduler: created championship semifinal: %s vs %s", pair.winners[0], pair.winners[1])
+		if err := m.createSeriesGames(ctx, sfID, pair.winners[0], pair.winners[1], 7); err != nil {
+			log.Printf("series-scheduler: failed to create games for semifinal %d: %v", sfID, err)
+			continue
+		}
+		log.Printf("series-scheduler: created championship semifinal %d: %s vs %s", sfID, pair.winners[0], pair.winners[1])
 	}
 
 	// Check for completed semifinals → create final
@@ -961,14 +1024,18 @@ func (m *Matchmaker) advanceChampionshipBracket(ctx context.Context) error {
 	}
 
 	if len(sfWinners) >= 2 && sfWinners[0].SeasonID == sfWinners[1].SeasonID {
-		_, err := m.db.ExecContext(ctx, `
+		var finalID int64
+		err := m.db.QueryRowContext(ctx, `
 			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, bracket_round, bracket_position, updated_at)
 			VALUES ($1, $2, 7, 'active', 0, 0, $3, 'final', 0, NOW())
-		`, sfWinners[0].WinnerID, sfWinners[1].WinnerID, sfWinners[0].SeasonID)
+			RETURNING id
+		`, sfWinners[0].WinnerID, sfWinners[1].WinnerID, sfWinners[0].SeasonID).Scan(&finalID)
 		if err != nil {
 			log.Printf("series-scheduler: failed to create championship final: %v", err)
+		} else if err := m.createSeriesGames(ctx, finalID, sfWinners[0].WinnerID, sfWinners[1].WinnerID, 7); err != nil {
+			log.Printf("series-scheduler: failed to create games for final %d: %v", finalID, err)
 		} else {
-			log.Printf("series-scheduler: created championship final: %s vs %s", sfWinners[0].WinnerID, sfWinners[1].WinnerID)
+			log.Printf("series-scheduler: created championship final %d: %s vs %s", finalID, sfWinners[0].WinnerID, sfWinners[1].WinnerID)
 		}
 	}
 
@@ -1028,17 +1095,23 @@ func (m *Matchmaker) createChampionshipBracket(ctx context.Context, seasonID int
 	}
 
 	for _, matchup := range bracket {
-		_, err := m.db.ExecContext(ctx, `
+		var qfID int64
+		err := m.db.QueryRowContext(ctx, `
 			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, bracket_round, bracket_position, updated_at)
 			VALUES ($1, $2, 7, 'active', 0, 0, $3, 'quarterfinal', $4, NOW())
-		`, matchup.a, matchup.b, seasonID, matchup.position)
+			RETURNING id
+		`, matchup.a, matchup.b, seasonID, matchup.position).Scan(&qfID)
 		if err != nil {
 			log.Printf("season-reset: failed to create championship quarterfinal series (%s vs %s): %v",
 				matchup.a, matchup.b, err)
 			continue
 		}
-		log.Printf("season-reset: created championship quarterfinal series: %s vs %s (bo7)",
-			matchup.a, matchup.b)
+		if err := m.createSeriesGames(ctx, qfID, matchup.a, matchup.b, 7); err != nil {
+			log.Printf("season-reset: failed to create games for quarterfinal %d: %v", qfID, err)
+			continue
+		}
+		log.Printf("season-reset: created championship quarterfinal series %d: %s vs %s (bo7)",
+			qfID, matchup.a, matchup.b)
 	}
 
 	return nil
@@ -1189,12 +1262,18 @@ func (m *Matchmaker) tickFeaturedSeries(ctx context.Context) {
 			botAID, botBID = pair.B, pair.A
 		}
 
-		_, err := m.db.ExecContext(ctx, `
+		var featID int64
+		err := m.db.QueryRowContext(ctx, `
 			INSERT INTO series (bot_a_id, bot_b_id, format, status, a_wins, b_wins, season_id, featured, updated_at)
 			VALUES ($1, $2, 5, 'active', 0, 0, $3, TRUE, NOW())
-		`, botAID, botBID, seasonID)
+			RETURNING id
+		`, botAID, botBID, seasonID).Scan(&featID)
 		if err != nil {
 			log.Printf("featured-series: failed to create series %d (%s vs %s): %v", i+1, botAID, botBID, err)
+			continue
+		}
+		if err := m.createSeriesGames(ctx, featID, botAID, botBID, 5); err != nil {
+			log.Printf("featured-series: failed to create games for series %d: %v", featID, err)
 			continue
 		}
 		log.Printf("featured-series: created weekly featured bo5 series %d: %s vs %s", i+1, botAID, botBID)

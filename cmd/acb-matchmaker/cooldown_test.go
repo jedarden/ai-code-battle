@@ -228,7 +228,8 @@ func TestMatchmakerQuery_SeriesEligibility(t *testing.T) {
 	insertMMTestBot(t, db, cooldownBot, "active", 3, &future)
 	insertMMTestBot(t, db, okBot, "active", 0, nil)
 
-	// This is the same query used in scheduleNextSeriesGames
+	// This is the same query used in scheduleNextSeriesGames's successor,
+	// createSeriesGames (§14.7)
 	var eligible bool
 	err := db.QueryRowContext(ctx, `
 		SELECT EXISTS(SELECT 1 FROM bots WHERE bot_id = $1 AND status = 'active'
