@@ -30,6 +30,14 @@
  * moves both sides together stays green, and only a swap that actually shifts
  * content bites.
  *
+ * The swap's fade is measured here rather than held as text because the two
+ * half-fades are behaviour: the skeleton must go out through a real 150ms
+ * transition and the content in through the shared 150ms animation, animating
+ * opacity alone. An animated property that lays out a box moves the page
+ * mid-fade — which the geometry assertions cannot see, since they measure
+ * after the swap has settled (skeleton.test.ts's "ships the fade the swap
+ * runs" holds the shipped CSS text this run depends on).
+ *
  * Two comparisons are deliberately narrower than "the whole box":
  *  - the .canvas-wrapper's height: the live wrapper gains #no-replay, whose
  *    .no-replay-message rule pads 60px around the same body-text line the
@@ -320,4 +328,82 @@ test.describe('replay skeleton → content swap parity', () => {
       }
     });
   }
+});
+
+test.describe('replay skeleton → content swap fade', () => {
+  // §16.14: the swap is a 150ms cross-fade, not a cut. The skeleton side goes
+  // out through .skeleton-page's opacity transition — the transition
+  // renderReplayPage drives by setting the inline opacity and waiting it out —
+  // and the content side comes in on .fade-in, the shared animation the
+  // leaderboard and bot-profile swaps carry, which starts on insertion.
+  test('the skeleton fades out through 150ms and the content fades in on opacity alone', async ({ page }) => {
+    test.skip(
+      test.info().project.name === 'phone',
+      'the fade is viewport-independent — one pass is enough'
+    );
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openReplayFixture(page, buildPreSwapHtml());
+
+    // First half, exactly as replay.ts drives it: set the inline opacity, and
+    // a transition — not a snap — must start on it.
+    const fadeOut = await page.evaluate(() => {
+      const skeleton = document.querySelector<HTMLElement>('.skeleton-page');
+      if (!skeleton) throw new Error('no .skeleton-page in the pre-swap fixture');
+      skeleton.style.opacity = '0';
+      // Flushing style is what starts the transition: until the browser
+      // recalculates, the before/after values are not both known and there is
+      // nothing for getAnimations() to report.
+      void getComputedStyle(skeleton).opacity;
+      const transition = skeleton
+        .getAnimations()
+        .find(
+          (a): a is CSSTransition =>
+            a instanceof CSSTransition && a.transitionProperty === 'opacity'
+        );
+      if (!transition) {
+        throw new Error('setting the skeleton opacity started no opacity transition');
+      }
+      return transition.effect!.getTiming().duration;
+    });
+    expect(fadeOut, 'the skeleton must fade out over the same 150ms the content fades in').toBe(150);
+
+    // Second half: the swap itself. The live markup is what the route writes
+    // into #app, page-owned <style> blocks included, and .fade-in must already
+    // be running on it — no rAF handshake, the way the swap no longer does it.
+    const fadeIn = await page.evaluate((LIVE) => {
+      const section = document.getElementById('skeleton-fixture');
+      if (!section) throw new Error('no #skeleton-fixture in the pre-swap fixture');
+      section.innerHTML = LIVE;
+      const live = document.querySelector<HTMLElement>('.replay-page');
+      if (!live) throw new Error('the swapped-in markup carries no .replay-page');
+      const fade = live
+        .getAnimations()
+        .find((a): a is CSSAnimation => a instanceof CSSAnimation && a.animationName === 'fade-in');
+      if (!fade) throw new Error('the fade-in animation is not running on the swapped-in page');
+      const timing = fade.effect!.getTiming();
+      const frames = (fade.effect as KeyframeEffect).getKeyframes();
+      // getKeyframes() also reports computed bookkeeping fields alongside the
+      // properties the keyframes actually animate.
+      const bookkeeping = new Set(['offset', 'computedOffset', 'composite', 'easing']);
+      return {
+        duration: timing.duration,
+        iterations: timing.iterations,
+        frames: frames.map((frame) => ({
+          opacity: frame.opacity === undefined ? null : String(frame.opacity),
+          animatedProps: Object.keys(frame).filter((prop) => !bookkeeping.has(prop)),
+        })),
+      };
+    }, replayPageMarkup());
+
+    expect(fadeIn.duration, '§16.14: the fade-in runs over 150ms').toBe(150);
+    expect(fadeIn.iterations).toBe(1);
+    expect(fadeIn.frames.map((frame) => frame.opacity)).toEqual(['0', '1']);
+    for (const frame of fadeIn.frames) {
+      expect(
+        frame.animatedProps,
+        'the fade may animate opacity only — anything else shifts layout'
+      ).toEqual(['opacity']);
+    }
+  });
 });

@@ -920,6 +920,57 @@
         width: 100%;
       }
     }
+
+    /* Skeleton screens — the fade (§16.14) and the placeholder bars it fades.
+       As with the replay layout above, this file is the copy the browser
+       actually ships (no src/styles/*.css reaches it); the canonical copy is
+       src/styles/components.css, and skeleton.test.ts holds the two to the
+       same values. Keep them identical. Only the rules the skeleton markup
+       answers to are here: .skeleton-page's 150ms opacity transition is the
+       fade-out the swap drives, .fade-in is the 150ms fade-in the swapped-in
+       content carries, and the .skeleton-bar gradient is what makes a
+       placeholder visible — without it the swap fades a blank page. The bar
+       rules carry no geometry, so they cannot move the page; .skeleton-page's
+       box is inert inside #app, which already caps the column at 1200px. */
+    @keyframes skeleton-shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .fade-in {
+      animation: fade-in 150ms ease forwards;
+    }
+
+    .skeleton-bar,
+    .skeleton-circle,
+    .skeleton-canvas {
+      background: linear-gradient(
+        90deg,
+        var(--bg-tertiary) 25%,
+        var(--border) 37%,
+        var(--bg-tertiary) 63%
+      );
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s ease-in-out infinite;
+      border-radius: 4px;
+    }
+
+    .skeleton-circle {
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .skeleton-page {
+      max-width: 1200px;
+      margin: 0 auto;
+      opacity: 1;
+      transition: opacity 150ms ease;
+    }
   </style>
 </head>
 <body>

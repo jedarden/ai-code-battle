@@ -507,6 +507,27 @@ function parseCssRules(css: string): CssRule[] {
   return rules;
 }
 
+/** The body of the block whose header is `header`, braces balanced — the body
+ *  a `[^}]*` capture cannot read off an at-rule like `@keyframes`, whose
+ *  frames are blocks of their own and each end in a `}` of their own. A comma
+ *  in `header` matches across a line break, the way a selector list is written
+ *  one-per-line in the shipped copy. Returns '' when `header` opens no block
+ *  in `css`. */
+function cssBlockBody(css: string, header: string): string {
+  const pattern = header
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/,/g, ',\\s*');
+  const headerAt = css.match(new RegExp(`${pattern}\\s*\\{`))?.index;
+  if (headerAt === undefined) return '';
+  const bodyStart = css.indexOf('{', headerAt) + 1;
+  let depth = 1;
+  for (let i = bodyStart; i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) return css.slice(bodyStart, i);
+  }
+  return '';
+}
+
 /** Does a media condition hold at this viewport width? Width features decide;
  *  any other feature (prefers-*, hover, …) makes the block a no-op here, which
  *  matches a width-only evaluation. */
@@ -1434,6 +1455,77 @@ describe('skeletonReplay mirrors replayPageMarkup', () => {
     expect(canon(shippedStacking.match(/\.replay-sidebar\s*\{([^}]*)\}/)?.[1] ?? '')).toBe(
       canon(replayStackingBlock.match(/\.replay-sidebar\s*\{([^}]*)\}/)?.[1] ?? '')
     );
+  });
+
+  it('ships the fade the swap runs, with the values the stylesheets declare', () => {
+    // The fade is CSS, so it is only as real as the shipped copy of its rules:
+    // .skeleton-page's 150ms opacity transition is the fade-out renderReplayPage
+    // drives, .fade-in is the 150ms fade-in the swapped-in content carries, and
+    // the .skeleton-bar gradient is what makes a placeholder visible at all.
+    // None of those reached the browser before they were copied into
+    // index.html — the stylesheets declare them, but nothing imports the
+    // stylesheets — so the swap snapped: the skeleton vanished the instant its
+    // opacity was set, sat blank for the 150ms wait, and the content popped in.
+    // This holds the shipped copy to the canonical text, the way the layout
+    // test above does, so the fade cannot silently exist only in src/styles.
+    // Read out through cssBlockBody: the bar gradient's selector list is
+    // written one rule per line here, and the shimmer keyframes hold blocks
+    // of their own, and a `[^}]*` capture survives neither.
+    const shipped = (selector: string): string =>
+      cssBlockBody(indexCss, selector).replace(/\s+/g, ' ').trim();
+
+    // index.html declares no --radius-sm, so its copy spells the radius as the
+    // literal the token resolves to — the same substitution the layout test
+    // above makes for --radius-lg.
+    const radiusSm = decl(rootVars, '--radius-sm');
+    expect(radiusSm, '--radius-sm not found in base.css').not.toBe('');
+    const canonBar = (body: string): string =>
+      body.replace(/var\(--radius-sm\)/g, radiusSm).replace(/\s+/g, ' ').trim();
+
+    const barRule =
+      componentsCss.match(/\.skeleton-bar,\s*\.skeleton-circle,\s*\.skeleton-canvas\s*\{([^}]*)\}/)?.[1] ?? '';
+    const fadeRule = componentsCss.match(/\.fade-in\s*\{([^}]*)\}/)?.[1] ?? '';
+    const skeletonPageRule = componentsCss.match(/\.skeleton-page\s*\{([^}]*)\}/)?.[1] ?? '';
+    // The keyframes are read out balanced (cssBlockBody), not with a `[^}]*`
+    // capture: each frame inside them ends in a `}` of its own, which would
+    // truncate the body at the first frame.
+    const shimmerKeyframes = cssBlockBody(componentsCss, '@keyframes skeleton-shimmer');
+    const fadeInKeyframes = cssBlockBody(componentsCss, '@keyframes fade-in');
+
+    for (const [name, body] of [
+      ['@keyframes skeleton-shimmer', shimmerKeyframes],
+      ['@keyframes fade-in', fadeInKeyframes],
+    ] as const) {
+      expect(body, `${name} not found in components.css`).not.toBe('');
+      // index.html reindents the keyframe bodies one level deeper; compare the
+      // declarations, not the leading whitespace.
+      expect(
+        cssBlockBody(indexCss, name).replace(/\s+/g, ''),
+        `index.html must ship ${name}`
+      ).toBe(body.replace(/\s+/g, ''));
+    }
+
+    expect(
+      shipped('.skeleton-bar,.skeleton-circle,.skeleton-canvas'),
+      'index.html must ship the placeholder-bar gradient exactly as components.css declares it'
+    ).toBe(canonBar(barRule));
+    expect(shipped('.fade-in'), 'index.html must ship .fade-in exactly as components.css declares it').toBe(
+      fadeRule.replace(/\s+/g, ' ').trim()
+    );
+    expect(
+      shipped('.skeleton-page'),
+      'index.html must ship .skeleton-page exactly as components.css declares it'
+    ).toBe(skeletonPageRule.replace(/\s+/g, ' ').trim());
+
+    // And the two halves of the swap must agree on the duration: the
+    // transition .skeleton-page fades out through and the animation .fade-in
+    // fades in with are the same 150ms, so the swap reads as one cross-fade.
+    expect(decl(skeletonPageRule, 'transition')).toBe('opacity 150ms ease');
+    expect(fadeRule).toContain('fade-in 150ms');
+    // The class is pinned as the markup writes it — the way leaderboard.ts
+    // writes `class="leaderboard-page fade-in"` — not as a CSS compound
+    // selector, which the markup never spells with a dot.
+    expect(replaySource).toMatch(/class="replay-page fade-in"/);
   });
 });
 

@@ -50,21 +50,21 @@ export function renderReplayPage(params: Record<string, string>): void {
     // If params.url is not set but params.id is, construct the URL from the match ID
     const replayUrl = params.url || (params.id ? `/data/replays/${params.id}.json.gz` : undefined);
 
-    // Fade out skeleton, then load real content with fade in
+    // Fade the skeleton out over its 150ms transition, then swap in the real
+    // content — which fades itself in through the shared .fade-in class on
+    // .replay-page (replayPageMarkup), the same animation the leaderboard and
+    // bot-profile swaps carry. A CSS animation starts when the node is
+    // inserted, so the fade does not depend on the browser having computed a
+    // style for the new node before a rAF callback runs, the way a
+    // JS-managed transition would. The fade only runs because the rules it
+    // needs are shipped in index.html's <style> — skeleton.test.ts holds that
+    // copy to the stylesheets, and replay-swap-parity.spec.ts measures both
+    // halves of the swap running over 150ms of opacity alone.
     const skeletonPage = app.querySelector('.skeleton-page') as HTMLElement;
     if (skeletonPage) {
       skeletonPage.style.opacity = '0';
       setTimeout(() => {
         initReplayViewerWithClass(ReplayViewer, replayUrl);
-        // Fade in the real content
-        const replayPage = app.querySelector('.replay-page') as HTMLElement;
-        if (replayPage) {
-          replayPage.style.opacity = '0';
-          requestAnimationFrame(() => {
-            replayPage.style.transition = 'opacity 150ms ease';
-            replayPage.style.opacity = '1';
-          });
-        }
       }, 150); // Wait for fade out to complete
     } else {
       initReplayViewerWithClass(ReplayViewer, replayUrl);
@@ -93,7 +93,7 @@ export function renderReplayPage(params: Record<string, string>): void {
  */
 export function replayPageMarkup(initialUrl?: string): string {
   return `
-    <div class="replay-page">
+    <div class="replay-page fade-in">
       <h1 class="page-title">Replay Viewer</h1>
 
       <div class="replay-layout">
