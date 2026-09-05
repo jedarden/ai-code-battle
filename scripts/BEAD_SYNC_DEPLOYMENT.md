@@ -126,6 +126,35 @@ This indicates deeper issues. Run the diagnostic script:
 ./scripts/bead-starvation-diagnose
 ```
 
+### What the diagnostic script reports
+
+`bead-starvation-diagnose` re-runs the ready-frontier (pluck) query two
+independent ways — `bead list --ready` and `bead analyze-exclusion --show-sql`
+— states a reason for every open bead, and cross-checks the two queries
+against each other. Its verdict says which is true:
+
+- `NO_STARVATION` — the frontier is workable; the triggering alert was a false positive
+- `GENUINE_STARVATION` — the frontier is empty in both queries and every open bead is excluded for a documented reason
+- `QUERY_BUG` — the queries disagree with each other or with the open enumeration
+
+Reports land in `.beads/diagnostics/starvation-<timestamp>.txt` (plus `.json`
+for machines). Exit codes are distinct so a monitor can tell "nothing to
+claim" from "the query is lying": `0` no starvation, `1` genuine starvation,
+`2` query bug.
+
+Verify changes to the analysis logic without touching a bead store:
+```bash
+./scripts/bead-starvation-diagnose --self-test
+```
+
+Counting note: `bead list --json` emits compact JSONL (one object per line)
+and prints a bare `[]` when the result is empty. Count it with
+`jq -s 'length'` (slurp), as the sync script does — never bare
+`jq 'length'`, which runs once per input line and prints each object's key
+count, so 5 beads of 15 fields report "15" five times. Every count in the
+`starvation-2026-09-01T*.txt` reports generated before 2026-09-05 was wrong
+for exactly that reason.
+
 ## Files Created
 
 - `scripts/bead-starvation-sync` - Main sync script

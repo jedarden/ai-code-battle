@@ -1,0 +1,507 @@
+#!/usr/bin/env bash
+# bead-starvation-diagnose - Automated bead starvation diagnostic script
+#
+# Runs when starvation is suspected ('bead list --ready' is empty despite open
+# beads existing, or a starvation alert fired). Performs automated root-cause
+# analysis: it enumerates every open bead, re-runs the ready-frontier (pluck)
+# query two independent ways, and states per bead why it is or is not a
+# candidate. It then either names the specific filtering condition causing the
+# mismatch, or proves the beads are genuinely not workable.
+#
+# Exit codes:
+#   0  no starvation (frontier is non-empty, or there are no open beads)
+#   1  genuine starvation (frontier empty in both queries; every open bead is
+#      excluded for a documented reason)
+#   2  query/analysis bug (an invariant between the two queries failed - this
+#      is a bug in the query, not a healthy frontier)
+#
+# Usage: bead-starvation-diagnose [options]
+#   --attach <bead_id>   Also attach the exclusion analysis to the bead
+#   --json               Print the machine-readable JSON report to stdout
+#   --create-bead        File a diagnostic bead (deduplicated per UTC day via
+#                        --unique-ref, so re-runs never strand duplicates)
+#   --self-test          Run synthetic fixtures through the analysis block and
+#                        assert all three verdicts; needs no bead store
+#   --help               Show this help message
+#
+# Requires: bead (bead-rs), python3. jq is NOT required.
+#
+# Counting note: 'bead list --json' emits compact JSONL (one object per line)
+# and prints a bare '[]' when the result is empty. Never pipe that output to
+# "jq 'length'" - jq runs the filter once per input object and prints each
+# object's KEY COUNT, so 5 beads of 15 fields report "15\n15\n15\n15\n15".
+# Every count in the pre-2026-09-05 reports was wrong for exactly that reason.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BEAD_DB="${WORKSPACE_ROOT}/.beads/beads.db"
+CHECKPOINT_FILE="${WORKSPACE_ROOT}/.beads/checkpoint/current.json"
+OUTPUT_DIR="${WORKSPACE_ROOT}/.beads/diagnostics"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+STAMP=$(date -u +"%Y%m%dT%H%M%SZ")
+TEXT_REPORT="${OUTPUT_DIR}/starvation-${STAMP}.txt"
+JSON_REPORT="${OUTPUT_DIR}/starvation-${STAMP}.json"
+
+ATTACH_BEAD=""
+CREATE_BEAD=false
+JSON_FLAG=false
+SELF_TEST=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --attach)
+            [[ $# -ge 2 ]] || { echo "--attach requires a bead id" >&2; exit 64; }
+            ATTACH_BEAD="$2"; shift 2 ;;
+        --json)     JSON_FLAG=true; shift ;;
+        --create-bead) CREATE_BEAD=true; shift ;;
+        --self-test) SELF_TEST=true; shift ;;
+        --help|-h)
+            sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *) echo "Unknown option: $1" >&2; exit 64 ;;
+    esac
+done
+
+log()  { echo "[INFO] $*" >&2; }
+warn() { echo "[WARN]  $*" >&2; }
+die()  { echo "[ERROR] $*" >&2; exit 1; }
+
+# Fixture helpers for --self-test. Bead ids are synthetic; nothing here touches
+# a bead store.
+fixture_bead() { # <id> <title> <priority>
+    printf '{"id":"%s","title":"%s","priority":%s,"status":"open","effective_status":"open","assignee":null,"manual_blocked":false,"dependencies":[],"created_at":"2026-09-01T00:00:00Z","updated_at":"2026-09-01T00:00:00Z"}\n' "$1" "$2" "$3"
+}
+
+ax_bead() { # <id> <title> <priority> <is_ready> [reason]
+    local reasons="[]"
+    [[ -n "$5" ]] && reasons="[\"$5\"]"
+    printf '{"id":"%s","title":"%s","priority":%s,"assignee":null,"manual_blocked":false,"is_ready":%s,"exclusion_reasons":%s,"created_at":"2026-09-01T00:00:00Z"}' "$1" "$2" "$3" "$4" "$reasons"
+}
+
+ax_doc() { # <total> <ready_count> <excluded_count> <ready_json> <excluded_json> [summary]
+    local summary='{"has blocking dependencies": 1}'
+    [[ $# -ge 6 ]] && summary="$6"
+    printf '{"total_open": %s, "ready_count": %s, "excluded_count": %s, "exclusion_summary": %s, "ready_beads": [%s], "excluded_beads": [%s], "open_but_invisible": [%s], "sql_query": null}\n' \
+        "$1" "$2" "$3" "$summary" "$4" "$5" "$5"
+}
+
+self_test() {
+    local lib run_dir failures=0
+    lib=$(mktemp)
+    run_dir=$(mktemp -d)
+    TMPDIR_RUN="$run_dir"
+    # Pull the embedded analysis block out of this file so the fixtures exercise
+    # exactly the code the live run uses. Anchored marker comments, because a
+    # pattern written to find a heredoc would otherwise find its own source line.
+    awk '/^# ANALYSIS-BLOCK-START$/{f=1;next} /^# ANALYSIS-BLOCK-END$/{f=0} f' "$0" \
+        | sed '1d;$d' > "$lib"
+    [[ -s "$lib" ]] || { echo "[ERROR] could not extract the analysis block" >&2; return 1; }
+
+    scenario() { # <name> <expected_verdict>
+        local name="$1" expected="$2" got
+        local dir="$run_dir/$name"
+        mkdir -p "$dir"
+        (
+            cd "$dir"
+            DIAG_WORKSPACE="self-test" DIAG_TIMESTAMP="self-test" \
+            DIAG_BEAD_VERSION="self-test" DIAG_CKPT_AGE="0" DIAG_CKPT_SKEW="0" \
+            DIAG_DOCTOR="(skipped in self-test)" \
+            python3 "$lib" "$dir" "$dir/report.txt" "$dir/report.json"
+        ) >"$dir/stdout" 2>"$dir/stderr" || true
+        got=$(cat "$dir/verdict" 2>/dev/null || echo MISSING)
+        if [[ "$got" == "$expected" ]] && python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$dir/report.json" 2>/dev/null; then
+            echo "  PASS  $name -> $got"
+        else
+            failures=$((failures + 1))
+            echo "  FAIL  $name: expected $expected, got $got"
+            sed 's/^/        /' "$dir/stderr" | head -8
+        fi
+    }
+
+    echo "self-test: three verdict paths through the analysis block"
+
+    # A. healthy frontier: 2 open, 1 ready
+    D="$run_dir/no_starvation"; mkdir -p "$D"
+    fixture_bead "aicodeba-aaaa1111" "Fake ready bead" 2   > "$D/open.ndjson"
+    fixture_bead "aicodeba-bbbb2222" "Fake blocked bead" 2 >> "$D/open.ndjson"
+    fixture_bead "aicodeba-aaaa1111" "Fake ready bead" 2   > "$D/ready.ndjson"
+    : > "$D/inprog.ndjson"
+    ax_bead "aicodeba-aaaa1111" "Fake ready bead" 2 true ""       > "$D/r.json"
+    ax_bead "aicodeba-bbbb2222" "Fake blocked bead" 2 false "blocked by 1 unclosed issue(s): aicodeba-cccc3333" > "$D/x.json"
+    ax_doc 2 1 1 "$(cat "$D/r.json")" "$(cat "$D/x.json")" > "$D/analysis.json"
+    scenario no_starvation NO_STARVATION
+
+    # B. genuine starvation: 2 open, both excluded with reasons, frontier empty
+    D="$run_dir/genuine"; mkdir -p "$D"
+    fixture_bead "aicodeba-bbbb2222" "Fake blocked bead" 2   > "$D/open.ndjson"
+    fixture_bead "aicodeba-dddd4444" "Fake manual blocked" 2 >> "$D/open.ndjson"
+    : > "$D/ready.ndjson"
+    : > "$D/inprog.ndjson"
+    ax_bead "aicodeba-bbbb2222" "Fake blocked bead" 2 false "blocked by 1 unclosed issue(s): aicodeba-cccc3333" > "$D/x1.json"
+    ax_bead "aicodeba-dddd4444" "Fake manual blocked" 2 false "manually blocked" > "$D/x2.json"
+    ax_doc 2 0 2 "" "$(cat "$D/x1.json"), $(cat "$D/x2.json")" > "$D/analysis.json"
+    scenario genuine GENUINE_STARVATION
+
+    # C. query bug: analyze-exclusion claims a bead is ready that
+    #    'bead list --ready' does not return, and under-reports total_open
+    #    (the --limit-truncation signature).
+    D="$run_dir/query_bug"; mkdir -p "$D"
+    fixture_bead "aicodeba-aaaa1111" "Fake ready bead" 2   > "$D/open.ndjson"
+    fixture_bead "aicodeba-bbbb2222" "Fake blocked bead" 2 >> "$D/open.ndjson"
+    fixture_bead "aicodeba-eeee5555" "Fake dropped bead" 3 >> "$D/open.ndjson"
+    : > "$D/ready.ndjson"
+    : > "$D/inprog.ndjson"
+    ax_bead "aicodeba-aaaa1111" "Fake ready bead" 2 true "" > "$D/r.json"
+    ax_doc 2 1 0 "$(cat "$D/r.json")" "" > "$D/analysis.json"
+    scenario query_bug QUERY_BUG
+
+    rm -rf "$lib" "$run_dir"
+    if [[ $failures -eq 0 ]]; then
+        echo "self-test: all scenarios passed"
+        return 0
+    fi
+    echo "self-test: $failures scenario(s) failed" >&2
+    return 1
+}
+
+TMPDIR_RUN=""
+trap 'rm -rf "$TMPDIR_RUN"' EXIT
+
+if [[ "$SELF_TEST" == true ]]; then
+    self_test
+    exit $?
+fi
+
+log "Step 1/6: preflight"
+[[ -f "$BEAD_DB" ]] || die "bead database not found at $BEAD_DB"
+[[ -f "${WORKSPACE_ROOT}/.beads/config.json" ]] || die "not a bead-rs workspace (missing .beads/config.json)"
+command -v bead >/dev/null    || die "bead CLI not found in PATH"
+command -v python3 >/dev/null || die "python3 not found in PATH"
+BEAD_VERSION=$(bead --version 2>&1 | head -1)
+
+mkdir -p "$OUTPUT_DIR"
+TMPDIR_RUN=$(mktemp -d)
+
+# Every enumeration uses an explicit ceiling -- 'bead list' and
+# 'analyze-exclusion' both default to --limit 100, and analyze-exclusion's
+# reported total_open is capped by that same limit.
+collect() { # <outfile> <args...>
+    local out="$1"; shift
+    if ! bead "$@" > "$out" 2>"$TMPDIR_RUN/err"; then
+        warn "command failed: bead $* -- $(head -c 200 "$TMPDIR_RUN/err")"
+        : > "$out"
+    fi
+}
+
+log "Step 2/6: enumerating open / ready / in_progress beads"
+collect "$TMPDIR_RUN/open.ndjson"    list --status open        --json --limit 999999
+collect "$TMPDIR_RUN/ready.ndjson"   list --ready              --json --limit 999999
+collect "$TMPDIR_RUN/inprog.ndjson"  list --status in_progress --json --limit 999999
+
+log "Step 3/6: re-running the pluck query with verbose logging (analyze-exclusion)"
+collect "$TMPDIR_RUN/analysis.json"  analyze-exclusion --json --show-sql --limit 999999
+
+log "Step 4/6: health checks"
+DOCTOR_OUT=$(bead doctor --starvation-check 2>&1 || true)
+DOCTOR_CODE="ok"
+[[ -z "$DOCTOR_OUT" ]] && DOCTOR_OUT="(no output)"
+
+DB_MTIME=$(stat -c %Y "$BEAD_DB" 2>/dev/null || echo 0)
+CKPT_MTIME=$(stat -c %Y "$CHECKPOINT_FILE" 2>/dev/null || echo 0)
+CKPT_AGE_MIN=$(( ( $(date +%s) - CKPT_MTIME ) / 60 ))
+CKPT_SKEW=$(( CKPT_MTIME - DB_MTIME ))
+
+log "Step 5/6: cross-checking the two queries and writing the report"
+export DIAG_WORKSPACE="$WORKSPACE_ROOT" DIAG_TIMESTAMP="$TIMESTAMP" \
+       DIAG_BEAD_VERSION="$BEAD_VERSION" DIAG_CKPT_AGE="$CKPT_AGE_MIN" \
+       DIAG_CKPT_SKEW="$CKPT_SKEW" DIAG_DOCTOR="$DOCTOR_OUT"
+# ANALYSIS-BLOCK-START
+python3 - "$TMPDIR_RUN" "$TEXT_REPORT" "$JSON_REPORT" <<'PY'
+import json, os, sys
+
+tmp, text_path, json_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def load_ndjson(name):
+    path = os.path.join(tmp, name)
+    out = []
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if line.startswith('{'):
+                out.append(json.loads(line))
+    return out
+
+open_beads   = load_ndjson('open.ndjson')
+ready_beads  = load_ndjson('ready.ndjson')
+inprog       = load_ndjson('inprog.ndjson')
+
+with open(os.path.join(tmp, 'analysis.json')) as fh:
+    raw = fh.read().strip()
+try:
+    ax = json.loads(raw) if raw else {}
+except json.JSONDecodeError as exc:
+    ax = {"_parse_error": f"{exc}: output was {len(raw)} bytes, expected one JSON object"}
+
+READY_RULES = [
+    "status filter: must be 'open'",
+    "assignee filter: must be unassigned",
+    "manual block: must not be manually blocked",
+    "dependencies: must have no unclosed blocking dependencies",
+    "resource locks: must have no conflicts with held locks",
+]
+
+open_ids = [b["id"] for b in open_beads]
+cli_ready_ids = [b["id"] for b in ready_beads]
+ax_ready = ax.get("ready_beads") or []
+ax_excluded = ax.get("excluded_beads") or []
+ax_ready_ids = [b["id"] for b in ax_ready]
+ax_total = ax.get("total_open")
+ax_ready_count = ax.get("ready_count")
+ax_excluded_count = ax.get("excluded_count")
+summary = ax.get("exclusion_summary") or {}
+sql = ax.get("sql_query")
+
+by_id = {b["id"]: b for b in ax_ready + ax_excluded}
+
+# --- invariants: each failure names a concrete bug in the query/analysis -----
+invariants = []
+
+def check(name, ok, detail):
+    invariants.append({"invariant": name, "ok": bool(ok), "detail": detail})
+
+check("analysis produced one JSON object",
+      "_parse_error" not in ax,
+      ax.get("_parse_error", "parsed cleanly"))
+
+check("analyze-exclusion total_open matches the open enumeration",
+      ax_total == len(open_beads),
+      f"analyze-exclusion total_open={ax_total}, 'bead list --status open' count={len(open_beads)}")
+
+symmetric = sorted(set(ax_ready_ids) ^ set(cli_ready_ids))
+check("ready sets agree between 'bead list --ready' and analyze-exclusion",
+      not symmetric,
+      "identical" if not symmetric else f"only in one query: {symmetric}")
+
+covered = set(by_id)
+check("ready + excluded covers every open bead",
+      covered == set(open_ids),
+      "complete" if covered == set(open_ids) else
+      f"missing from analysis: {sorted(set(open_ids) - covered)}, "
+      f"not open: {sorted(covered - set(open_ids))}")
+
+check("ready_count + excluded_count == total_open",
+      ax_ready_count is not None and ax_excluded_count is not None
+      and ax_ready_count + ax_excluded_count == ax_total,
+      f"{ax_ready_count} + {ax_excluded_count} != {ax_total}")
+
+unexplained = [b["id"] for b in ax_excluded if not (b.get("exclusion_reasons") or [])]
+check("every excluded bead carries at least one exclusion reason",
+      not unexplained,
+      "all explained" if not unexplained else f"no reason given: {unexplained}")
+
+# --- per-bead verdicts ------------------------------------------------------
+per_bead = []
+for b in sorted(open_beads, key=lambda x: (x.get("priority", 9), x["id"])):
+    entry = by_id.get(b["id"])
+    reasons = (entry or {}).get("exclusion_reasons") or []
+    if entry is None:
+        state, why = "NOT_ANALYZED", "absent from analyze-exclusion output (coverage/limit bug)"
+    elif reasons:
+        state, why = "EXCLUDED", "; ".join(reasons)
+    else:
+        state, why = "READY", "candidate: passes all five ready-frontier rules"
+    per_bead.append({
+        "id": b["id"],
+        "title": b.get("title", ""),
+        "priority": b.get("priority"),
+        "assignee": b.get("assignee"),
+        "manual_blocked": b.get("manual_blocked"),
+        "state": state,
+        "why": why,
+    })
+
+# --- verdict ----------------------------------------------------------------
+failed = [i for i in invariants if not i["ok"]]
+frontier_empty = not cli_ready_ids and not ax_ready_ids
+if failed:
+    verdict = "QUERY_BUG"
+    verdict_note = ("the ready-frontier queries disagree with each other or with the "
+                    "open enumeration -- this is a query/analysis bug, not a healthy frontier")
+elif not open_beads:
+    verdict = "NO_OPEN_BEADS"
+    verdict_note = "nothing is open; an alert claiming otherwise is a false positive"
+elif frontier_empty:
+    verdict = "GENUINE_STARVATION"
+    verdict_note = ("frontier is empty in both queries and every open bead carries an "
+                    "exclusion reason -- beads are genuinely not workable right now")
+else:
+    verdict = "NO_STARVATION"
+    verdict_note = ("the ready frontier is non-empty, so a 'pluck found no candidates' "
+                    "alert does not describe this store state (false positive)")
+
+# --- assemble ---------------------------------------------------------------
+lines = []
+lines.append("=" * 80)
+lines.append("                    BEAD STARVATION DIAGNOSTIC REPORT")
+lines.append("=" * 80)
+lines.append(f"Workspace: {os.environ.get('DIAG_WORKSPACE', '')}")
+lines.append(f"Timestamp: {os.environ.get('DIAG_TIMESTAMP', '')}")
+lines.append(f"bead CLI:  {os.environ.get('DIAG_BEAD_VERSION', '')}")
+lines.append("Premise under test: open beads exist but the pluck query returned no candidates")
+lines.append("")
+lines.append(f"VERDICT: {verdict}")
+lines.append(f"  {verdict_note}")
+lines.append("")
+lines.append("COUNTS")
+lines.append(f"  open beads (authoritative 'bead list --status open'): {len(open_beads)}")
+lines.append(f"  ready frontier ('bead list --ready'):                 {len(cli_ready_ids)}")
+lines.append(f"  ready frontier (analyze-exclusion):                   {len(ax_ready_ids)}")
+lines.append(f"  excluded open beads (analyze-exclusion):              {len(ax_excluded)}")
+assigned_open = [b for b in open_beads if b.get("assignee")]
+lines.append(f"  open but assigned (excluded by rule 2):               {len(assigned_open)}")
+lines.append(f"  in_progress beads (hidden by bare 'bead list'):       {len(inprog)}")
+lines.append("")
+lines.append("CROSS-CHECK INVARIANTS (a failure names the bug)")
+for i, inv in enumerate(invariants, 1):
+    mark = "ok " if inv["ok"] else "BUG"
+    lines.append(f"  [{mark}] {inv['invariant']}")
+    if not inv["ok"]:
+        lines.append(f"         -> {inv['detail']}")
+lines.append("")
+lines.append("PER-BEAD EXCLUSION ANALYSIS (ready-frontier rules, in evaluation order)")
+for i, rule in enumerate(READY_RULES, 1):
+    lines.append(f"  {i}. {rule}")
+lines.append("")
+for b in per_bead:
+    asg = f", assignee={b['assignee']}" if b["assignee"] else ""
+    lines.append(f"  {b['id']}  P{b['priority']}{asg}")
+    lines.append(f"      {b['state']}: {b['why']}")
+lines.append("")
+lines.append("EXCLUSION RULE TOTALS (analyze-exclusion)")
+if summary:
+    for key in sorted(summary, key=lambda k: -summary[k]):
+        lines.append(f"  {key}: {summary[key]}")
+else:
+    lines.append("  (none reported)")
+lines.append("")
+if sql:
+    lines.append("READY-FRONTIER QUERY (analyze-exclusion --show-sql)")
+    for chunk in sql.strip().splitlines():
+        lines.append(f"  {chunk}")
+    lines.append("")
+lines.append("HEALTH")
+lines.append(f"  checkpoint age: {os.environ.get('DIAG_CKPT_AGE', '?')} min "
+             f"(stale > 60 min suggests 'bead sync flush-only')")
+skew = os.environ.get("DIAG_CKPT_SKEW", "?")
+lines.append(f"  checkpoint vs beads.db mtime skew: {skew}s "
+             "(a checkpoint NEWER than beads.db is normal post-mutation auto-flush, "
+             "not starvation -- do not alert on it)")
+lines.append("  bead doctor --starvation-check:")
+for chunk in os.environ.get("DIAG_DOCTOR", "(no output)").splitlines():
+    lines.append(f"    {chunk}")
+lines.append("")
+lines.append("RECOMMENDED ACTIONS")
+if verdict == "QUERY_BUG":
+    for inv in failed:
+        lines.append(f"  - fix: {inv['invariant']} ({inv['detail']})")
+    lines.append("  - re-run after fixing; compare against this report")
+elif verdict == "GENUINE_STARVATION":
+    if assigned_open:
+        lines.append("  - assigned-but-open beads are invisible to workers; "
+                     "clear stale claims: bead update <id> --clear-assignee")
+    blocked = [b for b in per_bead if b["state"] == "EXCLUDED" and "blocked by" in b["why"]]
+    if blocked:
+        lines.append(f"  - {len(blocked)} bead(s) wait on unclosed blockers; "
+                     "closing a blocker moves its dependents to the frontier")
+    manual = [b for b in per_bead if b["manual_blocked"]]
+    if manual:
+        lines.append(f"  - {len(manual)} bead(s) are manually blocked; unblock deliberately "
+                     "or close them")
+    lines.append("  - if none of the above apply, this is a scheduling gap, not a query bug")
+else:
+    lines.append("  - none: the frontier is workable. Treat the triggering alert as a false "
+                 "positive and close it with this report as evidence.")
+lines.append("")
+lines.append(f"Report saved to: {text_path}")
+lines.append("=" * 80)
+
+with open(text_path, "w") as fh:
+    fh.write("\n".join(lines) + "\n")
+
+report = {
+    "timestamp": os.environ.get("DIAG_TIMESTAMP", ""),
+    "workspace": os.environ.get("DIAG_WORKSPACE", ""),
+    "bead_cli": os.environ.get("DIAG_BEAD_VERSION", ""),
+    "verdict": verdict,
+    "verdict_note": verdict_note,
+    "counts": {
+        "open_beads": len(open_beads),
+        "ready_beads": len(cli_ready_ids),
+        "ready_beads_analyze_exclusion": len(ax_ready_ids),
+        "excluded_beads": len(ax_excluded),
+        "assigned_but_open": len(assigned_open),
+        "in_progress": len(inprog),
+    },
+    "ready_ids": cli_ready_ids,
+    "invariants": invariants,
+    "exclusion_summary": summary,
+    "per_bead": per_bead,
+    "sql_query": sql,
+    "report_files": {"text": text_path, "json": json_path},
+}
+with open(json_path, "w") as fh:
+    json.dump(report, fh, indent=2)
+    fh.write("\n")
+
+with open(os.path.join(tmp, "verdict"), "w") as fh:
+    fh.write(verdict)
+PY
+# ANALYSIS-BLOCK-END
+
+VERDICT=$(cat "$TMPDIR_RUN/verdict")
+
+log "Step 6/6: done -- verdict $VERDICT"
+
+if [[ "$JSON_FLAG" == true ]]; then
+    cat "$JSON_REPORT"
+else
+    cat "$TEXT_REPORT"
+fi
+
+if [[ -n "$ATTACH_BEAD" ]]; then
+    log "Attaching exclusion analysis to $ATTACH_BEAD"
+    if bead analyze-exclusion --attach "$ATTACH_BEAD" >/dev/null 2>&1; then
+        log "attached; full report at $TEXT_REPORT"
+    else
+        warn "could not attach analysis to $ATTACH_BEAD"
+    fi
+fi
+
+if [[ "$CREATE_BEAD" == true ]]; then
+    # --unique-ref makes this idempotent: a re-run the same UTC day returns
+    # EXISTING instead of filing another duplicate diagnostic bead.
+    UNIQUE_REF="diagnostic:starvation-$(date -u +%Y-%m-%d)"
+    log "Filing a diagnostic bead ($UNIQUE_REF)"
+    NEW_ID=$(bead create \
+        --title "Starvation diagnostic $VERDICT: $(grep -c '^{' "$TMPDIR_RUN/open.ndjson" || true) open / $(grep -c '^{' "$TMPDIR_RUN/ready.ndjson" || true) ready" \
+        --priority 2 --issue-type task \
+        --label diagnostic --label "starvation:$VERDICT" \
+        --unique-ref "$UNIQUE_REF" 2>/dev/null \
+        | grep -oE '[A-Za-z0-9]+-[0-9a-f]{8}' | head -1 || true)
+    if [[ -n "$NEW_ID" ]]; then
+        # 'bead comment' does not exist in this build -- notes is the channel.
+        bead update "$NEW_ID" --notes "Automated starvation diagnostic ($VERDICT) at $TIMESTAMP. Text report: $TEXT_REPORT ; JSON: $JSON_REPORT" >/dev/null 2>&1 \
+            || warn "could not annotate $NEW_ID"
+        log "diagnostic bead: $NEW_ID"
+    else
+        warn "could not create the diagnostic bead"
+    fi
+fi
+
+case "$VERDICT" in
+    QUERY_BUG)          exit 2 ;;
+    GENUINE_STARVATION) exit 1 ;;
+    *)                  exit 0 ;;
+esac
