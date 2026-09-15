@@ -36,6 +36,10 @@ function handleSubmit(markdown: string, annotations: Annotation[]): void {
 }
 
 export function initAgentation(): void {
+  // Idempotent: the app shell mounts the toolbar on every page at startup
+  // (app.ts DOMContentLoaded), and the feedback page loader calls this too.
+  if (document.getElementById('agentation-root')) return
+
   const container = document.createElement('div')
   container.id = 'agentation-root'
   document.body.appendChild(container)

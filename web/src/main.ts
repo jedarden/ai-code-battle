@@ -1,5 +1,6 @@
 import { ReplayViewer } from './replay-viewer';
 import type { Replay, TranscriptEntry } from './types';
+import { initAgentation } from './agentation-overlay';
 
 // DOM elements
 const canvas = document.getElementById('replay-canvas') as HTMLCanvasElement;
@@ -378,3 +379,9 @@ console.log('AI Code Battle Replay Viewer initialized');
     // silently fail - user can load manually
   }
 })();
+
+// Agentation feedback toolbar (workspace standard: every page gets it).
+// This standalone viewer is its own vite entry (replay.html), so it mounts
+// its own toolbar — react+agentation stay in the separate 'agentation' chunk
+// via manualChunks. initAgentation is idempotent.
+initAgentation();

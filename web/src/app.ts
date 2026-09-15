@@ -85,13 +85,7 @@ const loadSeasonsPage = () => import('./pages/seasons').then(m => m.renderSeason
 const loadSeasonDetailPage = () => import('./pages/season-detail').then(m => m.renderSeasonDetailPage);
 
 // Feedback & docs (separate chunk - includes replay viewer for feedback page)
-// Feedback page lazy-loads with agentation (loaded on /#/feedback or explicit enable)
-// Agentation is NOT imported here — only loaded when feedback page is visited
-const loadFeedbackPage = () => import('./pages/feedback').then(async m => {
-  const { initAgentation } = await import('./agentation-overlay');
-  initAgentation();
-  return m.renderFeedbackPage;
-});
+const loadFeedbackPage = () => import('./pages/feedback').then(m => m.renderFeedbackPage);
 // Docs API page (separate chunk from compete docs)
 const loadDocsApiPage = () => import('./pages/docs-api').then(m => m.renderDocsApiPage);
 // Rivalries page (pre-computed from index builder §13.5)
@@ -307,6 +301,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // §16.18: ambient activity awareness (favicon badges, tab title, seasonal theme)
   initAmbient();
   applyCurrentSeasonTheme();
+  // Agentation feedback toolbar on EVERY page (workspace standard): mount once
+  // at startup — the toolbar is a fixed overlay on <body>, so a single mount
+  // covers every hash route. Async import keeps react+agentation out of the
+  // entry chunk (vite manualChunks 'agentation'); fire-and-forget, idempotent.
+  import('./agentation-overlay')
+    .then(m => m.initAgentation())
+    .catch(() => {
+      /* toolbar is best-effort feedback tooling — never block the app */
+    });
 });
 
 window.addEventListener('load', () => {

@@ -26,7 +26,8 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) return;
 
-          // Agentation: React + agentation library (lazy-loaded only on /feedback)
+          // Agentation: React + agentation library (mounted on every page,
+          // kept in its own async chunk so the entry bundle stays small)
           if (id.includes('react') || id.includes('agentation')) {
             return 'agentation';
           }
