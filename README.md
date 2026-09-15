@@ -354,6 +354,17 @@ Match flow:
 
 **Rating system**: Glicko-2 — accounts for rating reliability (RD) and rating volatility, converges faster than Elo, same algorithm used by chess.com.
 
+*Rating parameters* (Glicko-2 paper defaults, implemented in `cmd/acb-worker/glicko2.go`, unit-tested in `glicko2_test.go` against the paper's worked example):
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| Initial rating (μ) | 1500 | Every new bot starts at the center of the scale |
+| Initial rating deviation (RD) | 350 | Maximal uncertainty — early matches move ratings quickly |
+| System constant (τ) | 0.5 | Caps how fast volatility may change between rating periods (paper suggests 0.3–1.2) |
+| Initial volatility (σ) | 0.06 | Paper's worked-example value |
+
+The leaderboard and bot profiles display μ with the RD shown as ±RD; the matchmaker's top-N selection and the evolver's culling order by the conservative estimate μ − 2φ. Ratings are updated by the match worker after every match (`computeRatingUpdates` in `cmd/acb-worker/main.go`), persisted to PostgreSQL, and can be rebuilt from scratch by replaying all matches (`recalcRatings`).
+
 ---
 
 ## Testing

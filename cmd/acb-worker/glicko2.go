@@ -1,5 +1,19 @@
 // Glicko-2 Rating System Implementation for acb-worker
 // Based on: http://www.glicko.net/glicko/glicko2.pdf
+//
+// Chosen parameters (all paper defaults — see README.md "Rating system"):
+//   - Scale factor 173.7178 converts between Glicko-1 (displayed) and
+//     Glicko-2 (internal) units.
+//   - System constant tau = 0.5 constrains how fast volatility (sigma) may
+//     change between rating periods; lower = more conservative. The paper
+//     suggests 0.3–1.2; 0.5 keeps bot ratings stable against flukes.
+//   - Initial rating 1500 and initial RD 350: every new bot starts at the
+//     center with maximal uncertainty, so early matches move ratings fast
+//     and confidence builds as matches accumulate.
+//   - Initial volatility sigma = 0.06, the paper's worked-example value.
+//
+// The math is unit-tested in glicko2_test.go against the paper's own worked
+// example.
 package main
 
 import "math"
