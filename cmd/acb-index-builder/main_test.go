@@ -1057,8 +1057,9 @@ func TestGenerateAllBotCards(t *testing.T) {
 		t.Fatalf("generateAllBotCards failed: %v", err)
 	}
 
-	// Verify cards directory was created
-	cardsDir := filepath.Join(tmpDir, "cards")
+	// Verify cards directory was created (cards live under data/cards,
+	// matching the /data/cards paths the site serves for OG tags)
+	cardsDir := filepath.Join(tmpDir, "data", "cards")
 	if _, err := os.Stat(cardsDir); os.IsNotExist(err) {
 		t.Error("Cards directory was not created")
 	}
