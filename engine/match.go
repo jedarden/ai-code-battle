@@ -81,13 +81,15 @@ func WithMap(preGen PreGeneratedMap) MatchOption {
 // NewMatchRunner creates a new match runner.
 func NewMatchRunner(config Config, options ...MatchOption) *MatchRunner {
 	mr := &MatchRunner{
-		config:  config,
-		bots:    make([]BotInterface, 0),
-		names:   make([]string, 0),
-		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
-		verbose: false,
-		logger:  log.Default(),
-		timeout: 3 * time.Second,
+		config:        config,
+		bots:          make([]BotInterface, 0),
+		names:         make([]string, 0),
+		rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
+		verbose:       false,
+		logger:        log.Default(),
+		timeout:       3 * time.Second,
+		failureStreak: make(map[int]int),
+		inactive:      make(map[int]bool),
 	}
 
 	for _, opt := range options {
@@ -254,40 +256,121 @@ func (mr *MatchRunner) getMovesFromBots(gs *GameState) map[int][]Move {
 			// Get visible state for this player
 			visibleState := gs.GetVisibleState(pid)
 
-			// Get moves with timeout
-			moveChan := make(chan []Move, 1)
-			errChan := make(chan error, 1)
-
+			// Get moves with timeout. The buffered channel lets a late bot
+			// response finish without blocking this turn's goroutine.
+			responseChan := make(chan botTurnOutcome, 1)
 			go func() {
 				m, err := b.GetMoves(visibleState)
-				if err != nil {
-					errChan <- err
-					return
-				}
-				moveChan <- m
+				responseChan <- botTurnOutcome{playerID: pid, moves: m, err: err}
 			}()
 
+			timer := time.NewTimer(mr.timeout)
+			defer timer.Stop()
 			select {
-			case m := <-moveChan:
-				mu.Lock()
-				moves[pid] = m
-				mu.Unlock()
-			case <-errChan:
-				// Bot returned error, no moves
-				if mr.verbose {
-					mr.logger.Printf("Bot %d returned error", pid)
-				}
-			case <-time.After(mr.timeout):
-				// Timeout, no moves
+			case outcome := <-responseChan:
+				outcomes <- outcome
+			case <-timer.C:
 				if mr.verbose {
 					mr.logger.Printf("Bot %d timed out", pid)
 				}
+				outcomes <- botTurnOutcome{playerID: pid, timedOut: true}
 			}
 		}(playerID, bot)
 	}
 
 	wg.Wait()
+	close(outcomes)
+
+	moves := make(map[int][]Move)
+	for outcome := range outcomes {
+		if outcome.timedOut || outcome.err != nil {
+			if outcome.err != nil && mr.verbose {
+				mr.logger.Printf("Bot %d returned error: %v", outcome.playerID, outcome.err)
+			}
+			mr.recordFailedTurn(gs, outcome.playerID, outcome.timedOut || isTimeoutError(outcome.err))
+			continue
+		}
+
+		// A bot that was independently marked crashed (the legacy HTTPBot
+		// guard) is inactive from the engine's perspective as well.
+		if mr.botIsCrashed(outcome.playerID) {
+			mr.markInactive(gs, outcome.playerID, false)
+			continue
+		}
+
+		// Any response received before the deadline, including an empty but
+		// schema-valid move list, is a successful turn and resets the streak.
+		mr.failureStreak[outcome.playerID] = 0
+		moves[outcome.playerID] = outcome.moves
+	}
+
 	return moves
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// recordFailedTurn advances the consecutive-failure policy for one player.
+// The event is attached to the turn being resolved, which is gs.Turn + 1
+// because the request is made against the pre-turn state.
+func (mr *MatchRunner) recordFailedTurn(gs *GameState, playerID int, timedOut bool) {
+	mr.failureStreak[playerID]++
+	if mr.failureStreak[playerID] < BotInactiveAfterFailures {
+		return
+	}
+	mr.markInactive(gs, playerID, timedOut)
+}
+
+// markInactive removes a bot from future turn polling while leaving its
+// living units in the game. The match continues and the transition is
+// recorded in the replay event stream.
+func (mr *MatchRunner) markInactive(gs *GameState, playerID int, timedOut bool) {
+	if mr.inactive[playerID] {
+		return
+	}
+	if mr.failureStreak[playerID] < BotInactiveAfterFailures {
+		// This path covers an HTTPBot that was marked independently by its
+		// transport guard before the runner observed the failed turns.
+		mr.failureStreak[playerID] = BotInactiveAfterFailures
+	}
+	mr.inactive[playerID] = true
+	if playerID >= 0 && playerID < len(mr.bots) {
+		if bot, ok := mr.bots[playerID].(*HTTPBot); ok {
+			bot.markInactive()
+		}
+	}
+
+	reason := "error"
+	if timedOut {
+		reason = "timeout"
+	}
+	gs.Events = append(gs.Events, Event{
+		Type: EventBotInactive,
+		Turn: gs.Turn + 1,
+		Details: map[string]interface{}{
+			"player":               playerID,
+			"consecutive_failures": mr.failureStreak[playerID],
+			"reason":               reason,
+		},
+	})
+}
+
+func (mr *MatchRunner) botIsCrashed(playerID int) bool {
+	if playerID < 0 || playerID >= len(mr.bots) {
+		return false
+	}
+	if bot, ok := mr.bots[playerID].(*HTTPBot); ok {
+		return bot.IsCrashed()
+	}
+	return false
 }
 
 // findBotAtPosition finds a bot at a position owned by a player.
