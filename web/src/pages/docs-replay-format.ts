@@ -13,18 +13,29 @@ export function renderDocsReplayFormatPage(): void {
         <section>
           <h2>Overview</h2>
           <p>AI Code Battle replays are JSON files containing the complete state of a match. Each replay includes the initial configuration, map data, and turn-by-turn events that allow the game to be reconstructed and visualized.</p>
-          <p><strong>Version:</strong> v1 (additive changes only - see <a href="#changelog">Changelog</a> below)</p>
+          <p><strong>Version:</strong> 2.1 (additive changes only - see <a href="#changelog">Changelog</a> below)</p>
         </section>
 
         <section>
           <h2>Fetching Replays</h2>
-          <p>Replays are served from Backblaze B2 (warm cache) with R2 (cold archive) fallback:</p>
-          <pre><code># Try warm cache first
-curl https://ai-code-battle.pages.dev/replays/\${match_id}.json.gz
-
-# Fallback to cold archive
-curl https://ai-code-battle.pages.dev/replays/\${match_id}.json.gz</code></pre>
-          <p>Replays are gzip-compressed. The browser handles decompression automatically when you fetch with <code>Accept-Encoding: gzip</code>.</p>
+          <p>Every replay is stored gzip-compressed under a stable <code>.json.gz</code> key and served as a same-origin static asset bundled into the Pages deploy:</p>
+          <pre><code>curl -s https://ai-code-battle.pages.dev/data/replays/\${match_id}.json.gz | gunzip</code></pre>
+          <p>
+            Compression runs once at upload (compact JSON, maximum gzip), so the stored bytes are the wire
+            bytes end to end. Pages serves the <code>.json.gz</code> asset verbatim and does not set
+            <code>Content-Encoding</code>, so HTTP <code>Accept-Encoding</code> negotiation does not come into
+            play — pipe the response through <code>gunzip</code> (or your language's gzip reader) before
+            parsing. The site's own replay loader (<code>fetchReplayFromUrl</code> in
+            <code>web/src/lib/replay-data.ts</code>) does this automatically via
+            <code>DecompressionStream</code>.
+          </p>
+          <p>
+            Replays are small: recent production matches measure 2–6 KB on the wire (10–30x below their plain
+            JSON size), and even a full-length 713-turn production replay is ~98 KB gzipped against 6.5 MB of
+            compact JSON. Replays outside the bundled warm set are archived in B2 (cold) and R2 (hot cache);
+            the <code>/r2/&lt;key&gt;</code> function serves direct object lookups and decompresses
+            <code>.gz</code> keys server-side.
+          </p>
         </section>
 
         <section>
@@ -128,7 +139,8 @@ ajv validate -s replay-schema-v1.json -d replay.json</code></pre>
       "0": [[20,25]]
     },
     "energy_spawned": [[35,15]],   // New energy appeared
-    "scores": [3, 1],              // Scores after turn
+    "scores": [3, 1],              // Scores after turn (delta-encoded, see below)
+    "energy_held": [12, 8],        // Energy held per player (delta-encoded)
     "events": [                     // Detailed events
       {
         "type": "combat_death",
@@ -145,6 +157,10 @@ ajv validate -s replay-schema-v1.json -d replay.json</code></pre>
     ]
   }
 ]</code></pre>
+          <p><strong>Delta encoding (v2.1+):</strong> <code>scores</code> and <code>energy_held</code> are omitted
+          from a turn whenever they are unchanged since the previous turn; the first turn always carries explicit
+          values. Consumers fill the last seen values forward to reconstruct full per-turn state — the site's
+          replay loader does this automatically, so anything built on it always sees complete data.</p>
         </section>
 
         <section>
@@ -186,7 +202,12 @@ ajv validate -s replay-schema-v1.json -d replay.json</code></pre>
 
         <section id="changelog">
           <h2>Changelog</h2>
-          <h3>Version 1 (Current)</h3>
+          <h3>Version 2.1 (Current)</h3>
+          <ul>
+            <li>Delta-encoded <code>scores</code> and <code>energy_held</code>: omitted from a turn when unchanged since the previous turn (fill the previous turn's values forward; the first turn always carries explicit values)</li>
+            <li>Replays stored and served gzip-compressed end to end (<code>.json.gz</code> everywhere: object storage, the Pages static bundle, and the client loader)</li>
+          </ul>
+          <h3>Version 2.0 and earlier</h3>
           <ul>
             <li>Initial release</li>
             <li>All core event types supported</li>

@@ -16,17 +16,36 @@ export function replayUrl(matchId: string): string {
 }
 
 /**
- * Fetch and parse a replay from a URL, transparently gunzipping .gz responses.
+ * Fetch and decode a replay from a URL: transparent gunzip, JSON parse, and
+ * v2.1 delta reconstruction (fill-forward of omitted scores/energy_held).
+ * This is the decode half of the storage pipeline — the worker stores the
+ * compact delta-encoded form, so every consumer of this loader sees the same
+ * per-turn values the engine recorded. Raw-JSON consumers (curl, third-party
+ * scripts) must run the equivalent fill-forward themselves.
+ *
  * Throws `Error("HTTP <status>")` on a non-OK response so callers can branch on 404.
+ *
+ * Pages serves .json.gz bytes verbatim (no Content-Encoding header), so a .gz
+ * URL still needs gunzipping here. If a server ever does set Content-Encoding:
+ * gzip, fetch() has already decompressed the body and decompressing again
+ * would corrupt it — so the header suppresses the second pass.
  */
 export async function fetchReplayFromUrl(url: string): Promise<Replay> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  if (url.endsWith('.gz') && resp.body && typeof DecompressionStream !== 'undefined') {
+  // Only encodings fetch() transparently decodes should suppress the manual
+  // gunzip. `identity` (or an unknown token) means the body is still the raw
+  // stored .gz bytes, so the DecompressionStream pass is still required.
+  const enc = (resp.headers.get('content-encoding') || '').toLowerCase();
+  const transportDecoded = ['gzip', 'x-gzip', 'deflate', 'br', 'zstd'].includes(enc);
+  let replay: Replay;
+  if (url.endsWith('.gz') && !transportDecoded && resp.body && typeof DecompressionStream !== 'undefined') {
     const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
-    return JSON.parse(await new Response(stream).text()) as Replay;
+    replay = JSON.parse(await new Response(stream).text()) as Replay;
+  } else {
+    replay = (await resp.json()) as Replay;
   }
-  return (await resp.json()) as Replay;
+  return reconstructReplay(replay);
 }
 
 /** Fetch a replay by match ID from the bundled Pages assets. */
