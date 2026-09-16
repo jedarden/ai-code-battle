@@ -63,3 +63,21 @@ wasm/bots/*/build/
 
 # Worker execution traces can contain raw tool output (credentials) — never commit (see 2026-07-25 GH_TOKEN leak, 2026-08-22 CF token leak)
 .beads/traces/
+
+# Local NEEDLE and bead runtime state
+.needle-predispatch-sha
+.beads/events.jsonl
+.beads/heartbeats.jsonl
+.beads/diagnostics/
+.beads/logs/
+.beads/traces/
+.beads/receipts/
+.beads/*.db
+.beads/*.db-shm
+.beads/*.db-wal
+.beads/*.db.backup.*
+.beads/*.lock
+.beads/*.tmp
+.beads/*.temp
+.beads/*.journal
+.br_recovery/
