@@ -1,11 +1,14 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
 	"math/rand"
+	"net"
 	"sync"
 	"time"
 )
@@ -20,7 +23,15 @@ type MatchRunner struct {
 	logger          *log.Logger
 	timeout         time.Duration    // per-turn timeout
 	preGeneratedMap *PreGeneratedMap // pre-generated map from map library (optional)
+	failureStreak   map[int]int      // consecutive failed turn attempts by player
+	inactive        map[int]bool     // players no longer queried for this match
 }
+
+// BotInactiveAfterFailures is the exact number of consecutive failed turn
+// attempts after which the engine marks a bot inactive for the match. A
+// failed attempt is a timeout or an error returned by the bot; any successful
+// response resets the streak.
+const BotInactiveAfterFailures = 10
 
 // PreGeneratedMap contains map data loaded from the map library.
 type PreGeneratedMap struct {
@@ -103,6 +114,11 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 		return nil, nil, fmt.Errorf("need at least 2 bots, got %d", len(mr.bots))
 	}
 
+	// A MatchRunner is normally used once, but reset policy state so a reused
+	// runner does not carry failures from an earlier match into this one.
+	mr.failureStreak = make(map[int]int, len(mr.bots))
+	mr.inactive = make(map[int]bool, len(mr.bots))
+
 	// Initialize game state
 	gs := NewGameState(mr.config, mr.rng)
 
@@ -147,11 +163,13 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 			gs.setInitialZoneRadius()
 		}
 
-		// Get moves from all bots concurrently
+		gs.ClearTurnState()
+
+		// Get moves from all active bots concurrently. getMovesFromBots records
+		// any newly inactive bot in this turn's event list before simulation.
 		moves := mr.getMovesFromBots(gs)
 
 		// Submit moves to game state
-		gs.ClearTurnState()
 		for playerID, playerMoves := range moves {
 			for _, move := range playerMoves {
 				// Validate bot ownership
@@ -200,8 +218,9 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 	// Populate crash status per player
 	result.Crashed = make([]bool, len(mr.bots))
 	for i, bot := range mr.bots {
+		result.Crashed[i] = mr.inactive[i]
 		if hb, ok := bot.(*HTTPBot); ok {
-			result.Crashed[i] = hb.IsCrashed()
+			result.Crashed[i] = result.Crashed[i] || hb.IsCrashed()
 		}
 	}
 
@@ -213,11 +232,21 @@ func (mr *MatchRunner) Run() (*MatchResult, *Replay, error) {
 
 // getMovesFromBots gets moves from all bots concurrently.
 func (mr *MatchRunner) getMovesFromBots(gs *GameState) map[int][]Move {
-	moves := make(map[int][]Move)
-	var mu sync.Mutex
+	type botTurnOutcome struct {
+		playerID int
+		moves    []Move
+		err      error
+		timedOut bool
+	}
+
+	outcomes := make(chan botTurnOutcome, len(mr.bots))
 	var wg sync.WaitGroup
 
 	for playerID, bot := range mr.bots {
+		if mr.inactive[playerID] {
+			continue
+		}
+
 		wg.Add(1)
 		go func(pid int, b BotInterface) {
 			defer wg.Done()

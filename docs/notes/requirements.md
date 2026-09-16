@@ -58,7 +58,7 @@ This is a critical security boundary:
 - The game engine never executes, evaluates, or interprets arbitrary data from bots
 - Only structured, validated move commands are accepted
 
-### Response Timeout: 3 seconds
+### Response Timeout and Inactivity: 3 seconds
 
 Each bot has **3 seconds** to respond to a game state request. This is generous
 compared to the original aichallenge (1 second per turn with local execution):
@@ -67,10 +67,13 @@ compared to the original aichallenge (1 second per turn with local execution):
 - Bots hosted in different regions can still compete
 - Still fast enough that games don't drag (a 500-turn game completes in ~25 minutes worst case)
 - If a bot does not respond within 3 seconds, the response is **ignored** — the bot's units hold position for that turn
-- Bots are NOT killed or disconnected on timeout — they continue receiving future turns
-- Repeated timeouts (e.g., 10 consecutive) may result in the bot being marked as crashed/inactive for that match
+- Bots are NOT killed on a single timeout — their units remain alive and hold position, and the bot continues receiving future turns
+- A failed turn attempt is either a timeout or a transport/protocol error returned by the bot. Any successfully processed response received before the deadline resets the consecutive-failure count, including a schema-valid response with zero usable moves
+- After **10 consecutive failed turn attempts**, the engine marks that bot inactive for the rest of the match. It sends no further requests to that bot; its living units remain in the game and hold position
+- Marking one bot inactive does **not** short-circuit the match or remove its units. Other bots continue to receive turns and the normal game win conditions still apply
+- The replay records a `bot_inactive` event on the threshold turn with the player, failure count, and cause (`timeout` or `error`), and the final `result.crashed` array records the bot as `true`
 
-### Open question: should the timeout be configurable per tournament tier?
+The 3-second response budget can be configured by the match runner for different tournament tiers, but the 10-failure inactivity threshold is fixed:
 
 - Casual/beginner tier: 5 seconds (more forgiving)
 - Competitive tier: 3 seconds (standard)

@@ -72,6 +72,13 @@ func (b *HTTPBot) IsCrashed() bool {
 	return b.crashed
 }
 
+// markInactive is called by MatchRunner when the match-level failure policy
+// is reached. Inactive bots remain alive in the game but no longer receive
+// turn requests.
+func (b *HTTPBot) markInactive() {
+	b.crashed = true
+}
+
 // MoveResponse represents the JSON response from a bot.
 type MoveResponse struct {
 	Moves []Move     `json:"moves"`
@@ -243,10 +250,12 @@ func (b *HTTPBot) validateMoves(moves []Move, state *VisibleState) []Move {
 	return validMoves
 }
 
-// recordFailure tracks consecutive failures and marks bot as crashed after 10.
+// recordFailure tracks consecutive failures and marks the bot as crashed at
+// the match policy threshold. MatchRunner also tracks this boundary so bots
+// implementing BotInterface without HTTPBot receive the same treatment.
 func (b *HTTPBot) recordFailure() {
 	b.failCount++
-	if b.failCount >= 10 {
+	if b.failCount >= BotInactiveAfterFailures {
 		b.crashed = true
 	}
 }

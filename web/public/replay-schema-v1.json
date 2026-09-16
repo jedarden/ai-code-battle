@@ -373,6 +373,7 @@
           "description": "Event type.",
           "enum": [
             "bot_spawned",
+            "bot_inactive",
             "bot_died",
             "energy_collected",
             "core_captured",
@@ -397,6 +398,16 @@
                 "position": { "$ref": "#/$defs/Position" }
               },
               "required": ["bot_id", "owner", "position"]
+            },
+            {
+              "type": "object",
+              "description": "Details for bot_inactive event.",
+              "properties": {
+                "player": { "type": "integer" },
+                "consecutive_failures": { "type": "integer", "minimum": 1 },
+                "reason": { "type": "string", "enum": ["timeout", "error"] }
+              },
+              "required": ["player", "consecutive_failures", "reason"]
             },
             {
               "type": "object",

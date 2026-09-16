@@ -48,6 +48,7 @@ type Event struct {
 // Event types
 const (
 	EventBotSpawned      = "bot_spawned"
+	EventBotInactive     = "bot_inactive"
 	EventBotDied         = "bot_died"
 	EventEnergyCollected = "energy_collected"
 	EventCoreCaptured    = "core_captured"

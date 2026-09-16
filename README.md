@@ -123,6 +123,21 @@ The engine sends the current game state; your bot responds with move orders.
 
 > Only tiles and units visible to your bots are included (fog of war).
 
+### Response Timeout and Inactivity
+
+Each `/turn` request has a 3-second response budget. A timeout or transport/protocol
+error is treated as a no-op for that turn, so the bot's living units hold position.
+A single failure does not kill or disconnect the bot; it continues receiving future
+turns. Any successfully processed response received before the deadline, including
+a schema-valid response with no usable moves, resets the consecutive-failure count.
+
+After **10 consecutive failed turn attempts**, the engine marks the bot inactive for
+the rest of that match. It sends no further requests to that bot, leaves its living
+units in the game holding position, and continues the match for the other bots under
+the normal win conditions. The replay contains a `bot_inactive` event on the
+threshold turn, and `result.crashed` is `true` for that player. The inactive bot is
+not treated as eliminated merely because it stopped responding.
+
 **Response body** (JSON move orders):
 
 ```json
