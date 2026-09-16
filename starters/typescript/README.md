@@ -26,6 +26,10 @@ export function computeMoves(state: VisibleState): Move[] {
 }
 ```
 
+## Game Protocol
+
+- **Spawning:** engine-automatic — the engine spawns a bot at each of your active, unoccupied cores while your energy covers `spawn_cost` (core idle longest spawns first). There is no spawn order in the `/turn` response; your bot only sends `moves`.
+
 ## Deployment
 
 Build Docker image and push to registry, then register at https://ai-code-battle.pages.dev/#/register

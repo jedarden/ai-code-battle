@@ -49,14 +49,14 @@ Each turn resolves in this order:
 3. **Zone** — A shrinking storm closes in from the edges, dealing damage to units caught in it
 4. **Capture** — Enemy units on undefended Core tiles raze them
 5. **Collect** — Units on Energy tiles collect energy for their player
-6. **Spawn** — Players spend energy to spawn new units at Core tiles
+6. **Spawn** — The engine spawns units **automatically**: each of your active, unoccupied Cores produces one unit per turn while your energy covers the `spawn_cost` (default 3, deducted per unit). When energy allows only some cores to spawn, the core that spawned longest ago goes first (ties broken by lowest core ID). **Bots cannot request spawns** — there is no spawn order in the `/turn` response
 7. **Energy Tick** — Passive energy regeneration
 8. **Endgame Check** — Victory condition evaluated
 
 ### Key Rules
 
 - **Self-collision**: If two or more of your own units move to the same tile, they **all die**
-- **Energy economy**: Spawning units costs energy; energy is collected from `*` tiles and regenerated passively
+- **Energy economy**: Spawning units costs energy and happens automatically at your Cores (see the Spawn phase above); energy is collected from `*` tiles and regenerated passively. You influence spawning indirectly — by keeping cores unoccupied and by collecting energy
 - **Visibility**: Bots only see tiles and units within their units' sight radius (fog of war)
 
 ---
@@ -136,6 +136,12 @@ The engine sends the current game state; your bot responds with move orders.
 ```
 
 Valid directions: `N`, `E`, `S`, `W`, `stay`
+
+> **The response schema is moves-only** (plus the optional `debug` object). There is
+> **no spawn order field** — spawning is resolved by the engine's automatic Spawn
+> phase (see *Turn Phases* above), so spend your effort on movement and energy
+> collection, not on spawn requests. Unknown extra fields in the response are
+> ignored; only `moves` and `debug` have any effect.
 
 **Response header:**
 

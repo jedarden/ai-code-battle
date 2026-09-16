@@ -609,3 +609,51 @@ func TestSpawnPriority_LastSpawnedTurnUpdatesOnSpawn(t *testing.T) {
 		t.Errorf("core1 LastSpawnedTurn = %d, want 10", core1.LastSpawnedTurn)
 	}
 }
+
+// TestExecuteSpawnInsufficientEnergy pins the energy gate of the automatic
+// Spawn phase: with less energy than SpawnCost, no bot is produced and no
+// energy is spent. Spawning is engine-automatic — bots cannot request it —
+// so this gate is the only thing limiting spawn rate (see README "Spawn").
+func TestExecuteSpawnInsufficientEnergy(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+	gs.AddCore(p0.ID, Position{10, 10})
+
+	// One short of the cost
+	gs.Players[p0.ID].Energy = gs.Config.SpawnCost - 1
+
+	gs.executeSpawns()
+
+	if bots := gs.GetPlayerBots(p0.ID); len(bots) != 0 {
+		t.Errorf("player should have 0 bots below spawn cost, got %d", len(bots))
+	}
+	if gs.Players[p0.ID].Energy != gs.Config.SpawnCost-1 {
+		t.Errorf("energy = %d, want %d (unchanged)", gs.Players[p0.ID].Energy, gs.Config.SpawnCost-1)
+	}
+}
+
+// TestExecuteSpawnSkipsEnemyAndInactiveCores pins that the automatic Spawn
+// phase only ever produces bots on the player's own active cores: enemy
+// cores and razed/inactive cores are never spawn sites, and energy is
+// preserved when no eligible core exists.
+func TestExecuteSpawnSkipsEnemyAndInactiveCores(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+	p1 := gs.AddPlayer()
+
+	gs.AddCore(p1.ID, Position{5, 5})               // enemy-owned core
+	deadCore := gs.AddCore(p0.ID, Position{15, 15}) // own but inactive
+	deadCore.Active = false
+
+	gs.Players[p0.ID].Energy = gs.Config.SpawnCost * 3
+
+	gs.executeSpawns()
+
+	if bots := gs.GetPlayerBots(p0.ID); len(bots) != 0 {
+		t.Errorf("no bot should spawn on an enemy or inactive core, got %d", len(bots))
+	}
+	if gs.Players[p0.ID].Energy != gs.Config.SpawnCost*3 {
+		t.Errorf("energy = %d, want %d (no eligible core, nothing spent)",
+			gs.Players[p0.ID].Energy, gs.Config.SpawnCost*3)
+	}
+}

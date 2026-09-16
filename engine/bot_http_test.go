@@ -386,3 +386,78 @@ func TestHTTPBot_Health(t *testing.T) {
 		t.Errorf("Health check failed: %v", err)
 	}
 }
+
+// TestHTTPBot_SpawnOrdersNotInSchema pins the wire contract documented in the
+// README: the /turn response schema is moves-only (+ optional debug). A bot
+// that emits a "spawns" array — there is no spawn order field; the Spawn
+// phase is engine-automatic — gets it silently dropped as an unknown field,
+// and its moves still apply. Adding a spawns field to MoveResponse would be a
+// deliberate schema change, not something this test lets happen by accident.
+func TestHTTPBot_SpawnOrdersNotInSchema(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var state VisibleState
+		if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Bot tries to request spawns AND move — only the moves are schema-valid.
+		body := []byte(`{
+			"moves": [{"position": {"row": 5, "col": 5}, "direction": "N"}],
+			"spawns": [{"row": 10, "col": 10}],
+			"spawn": {"row": 11, "col": 11}
+		}`)
+
+		sig := SignResponse("test-secret", state.MatchID, state.Turn, body)
+		w.Header().Set("X-ACB-Signature", sig)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body)
+	}))
+	defer server.Close()
+
+	auth := AuthConfig{
+		BotID:   "b_test",
+		Secret:  "test-secret",
+		MatchID: "m_test",
+	}
+	bot := NewHTTPBot(server.URL, auth)
+
+	state := &VisibleState{
+		MatchID: "m_test",
+		Turn:    1,
+		Config:  DefaultConfig(),
+		You: struct {
+			ID     int `json:"id"`
+			Energy int `json:"energy"`
+			Score  int `json:"score"`
+		}{ID: 0, Energy: 9, Score: 1},
+		Bots: []VisibleBot{
+			{Position: Position{Row: 5, Col: 5}, Owner: 0},
+		},
+	}
+
+	moves, err := bot.GetMoves(state)
+	if err != nil {
+		t.Fatalf("GetMoves failed: %v", err)
+	}
+
+	// The moves survive untouched; the spawn requests vanish at parse time.
+	if len(moves) != 1 {
+		t.Fatalf("got %d moves, want 1 (spawn fields must not disturb moves)", len(moves))
+	}
+	if moves[0].Direction != DirN {
+		t.Errorf("direction = %v, want DirN", moves[0].Direction)
+	}
+
+	// The parsed schema itself carries no spawn representation.
+	out, _ := json.Marshal(MoveResponse{Moves: moves})
+	var shaped map[string]json.RawMessage
+	if err := json.Unmarshal(out, &shaped); err != nil {
+		t.Fatalf("re-marshaled response is not valid JSON: %v", err)
+	}
+	for _, key := range []string{"spawns", "spawn"} {
+		if _, ok := shaped[key]; ok {
+			t.Errorf("MoveResponse JSON has %q key; schema is moves-only + debug", key)
+		}
+	}
+}

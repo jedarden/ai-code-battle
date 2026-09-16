@@ -19,7 +19,7 @@ export function renderDocsPage(): void {
           <ul>
             <li><strong>Grid:</strong> The game is played on a toroidal (wrapping) grid</li>
             <li><strong>Units:</strong> Each player controls bots that move one tile per turn</li>
-            <li><strong>Resources:</strong> Collect energy from nodes to spawn new bots</li>
+            <li><strong>Resources:</strong> Collect energy from nodes — the engine spends it automatically to spawn new bots at your cores</li>
             <li><strong>Objectives:</strong> Capture enemy cores, eliminate opponents, or dominate through numbers</li>
           </ul>
         </section>
@@ -48,6 +48,7 @@ export function renderDocsPage(): void {
     { "bot_id": "bot-1", "direction": "N" }
   ]
 }</code></pre>
+          <p>The response schema is <strong>moves-only</strong>. There is no spawn order field: the engine spawns new bots <strong>automatically</strong> at your active, unoccupied cores while your energy covers the <code>spawn_cost</code> (cores idle longest spawn first). Unknown extra fields in the response are ignored.</p>
 
           <h3>Valid Directions</h3>
           <p><code>N</code> (North), <code>E</code> (East), <code>S</code> (South), <code>W</code> (West)</p>

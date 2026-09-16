@@ -72,3 +72,4 @@ Return an array of moves, each with `position` (your bot's current position) and
 - **Health:** `GET /health` — must return 200
 - **Timeout:** 3 seconds per turn
 - **Auth:** HMAC-SHA256 via `X-ACB-Signature` header
+- **Spawning:** engine-automatic — the engine spawns a bot at each of your active, unoccupied cores while your energy covers `spawn_cost` (core idle longest spawns first). There is no spawn order in the response; your bot only sends `moves`

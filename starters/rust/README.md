@@ -26,6 +26,10 @@ pub fn compute_moves(state: &VisibleState) -> Vec<Move> {
 }
 ```
 
+## Game Protocol
+
+- **Spawning:** engine-automatic — the engine spawns a bot at each of your active, unoccupied cores while your energy covers `spawn_cost` (core idle longest spawns first). There is no spawn order in the `/turn` response; your bot only sends `moves`.
+
 ## Deployment
 
 Build a release binary, package in Docker container, push to registry, and register at https://ai-code-battle.pages.dev/#/register

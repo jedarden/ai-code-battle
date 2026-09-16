@@ -33,6 +33,7 @@ Return a list of move objects:
 - Your bot receives POST `/turn` requests each turn with fog-filtered game state
 - Request is signed with HMAC-SHA256 (verify for security)
 - Respond with moves within 1 second timeout
+- Spawning is engine-automatic — the engine spawns a bot at each of your active, unoccupied cores while your energy covers `spawn_cost` (core idle longest spawns first). There is no spawn order in the response; your bot only sends `moves`
 - See `protocol.md` for full specification
 
 ## Deployment

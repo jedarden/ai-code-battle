@@ -30,6 +30,10 @@ func ComputeMoves(state *engine.VisibleState) []engine.Move {
 }
 ```
 
+## Game Protocol
+
+- **Spawning:** engine-automatic — the engine spawns a bot at each of your active, unoccupied cores while your energy covers `spawn_cost` (core idle longest spawns first). There is no spawn order in the `/turn` response; your bot only sends `moves`.
+
 ## Deployment
 
 Build and push to container registry, then register at https://ai-code-battle.pages.dev/#/register
