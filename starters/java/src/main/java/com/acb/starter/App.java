@@ -49,7 +49,6 @@ public class App {
         String signature = ctx.header("X-ACB-Signature");
         String matchId = ctx.header("X-ACB-Match-Id");
         String turnStr = ctx.header("X-ACB-Turn");
-        String timestamp = ctx.header("X-ACB-Timestamp");
 
         if (signature == null || signature.isEmpty()) {
             ctx.status(401).result("Missing signature");
@@ -58,7 +57,8 @@ public class App {
 
         String body = ctx.body();
 
-        if (!verifySignature(matchId, turnStr, timestamp, body, signature)) {
+        // Signing string excludes the timestamp (X-ACB-Timestamp is not signed)
+        if (!verifySignature(matchId, turnStr, body, signature)) {
             ctx.status(401).result("Invalid signature");
             return;
         }
@@ -131,11 +131,11 @@ public class App {
 
     // --- HMAC helpers ---
 
-    static boolean verifySignature(String matchId, String turn, String timestamp,
+    static boolean verifySignature(String matchId, String turn,
                                     String body, String signature) {
         try {
             String bodyHash = sha256Hex(body.getBytes(StandardCharsets.UTF_8));
-            String signingString = matchId + "." + turn + "." + timestamp + "." + bodyHash;
+            String signingString = matchId + "." + turn + "." + bodyHash;
             String expected = hmacSha256(secret, signingString);
             return MessageDigest.isEqual(
                     expected.getBytes(StandardCharsets.UTF_8),
@@ -148,6 +148,7 @@ public class App {
 
     static String signResponse(String matchId, int turn, String body) {
         try {
+            // Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
             String bodyHash = sha256Hex(body.getBytes(StandardCharsets.UTF_8));
             String signingString = matchId + "." + turn + "." + bodyHash;
             return hmacSha256(secret, signingString);

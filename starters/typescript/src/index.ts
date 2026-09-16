@@ -74,10 +74,11 @@ app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
   const headers = request.headers as Record<string, string>;
   const { matchId, turn, timestamp, signature } = getAuthHeaders(headers);
 
-  // Verify HMAC signature
+  // Verify HMAC signature (signing string excludes the timestamp; the
+  // timestamp is checked separately for clock skew below)
   if (
     !signature ||
-    !verifySignature(bodyBuffer, matchId, turn, timestamp, signature, SECRET)
+    !verifySignature(bodyBuffer, matchId, turn, signature, SECRET)
   ) {
     reply.type("text/plain").code(401);
     return "Invalid signature";
@@ -109,7 +110,8 @@ app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
   const responseBody: TurnResponse = { moves };
   const responseJson = JSON.stringify(responseBody);
 
-  // Sign response
+  // Sign response — same signing string as the request:
+  // {match_id}.{turn}.{sha256_hex(body)}
   const responseSig = signResponse(
     responseJson,
     matchId,

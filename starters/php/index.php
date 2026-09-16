@@ -95,7 +95,8 @@ function handle_turn($conn, string $secret, array $headers, string $body): void 
     }
 
     // Verify signature
-    if (!verify_signature($secret, $matchId, $turnStr, $timestamp, $body, $signature)) {
+    // Signing string excludes the timestamp (X-ACB-Timestamp is not signed)
+    if (!verify_signature($secret, $matchId, $turnStr, $body, $signature)) {
         send_response($conn, 401, 'text/plain', 'Invalid signature');
         return;
     }
@@ -138,9 +139,9 @@ function handle_turn($conn, string $secret, array $headers, string $body): void 
 /**
  * Verify HMAC signature
  */
-function verify_signature(string $secret, string $matchId, string $turn, string $timestamp, string $body, string $signature): bool {
+function verify_signature(string $secret, string $matchId, string $turn, string $body, string $signature): bool {
     $bodyHash = hash('sha256', $body);
-    $signingString = "$matchId.$turn.$timestamp.$bodyHash";
+    $signingString = "$matchId.$turn.$bodyHash";
     $expected = hash_hmac('sha256', $signingString, $secret);
     return hash_equals($expected, $signature);
 }
@@ -149,6 +150,7 @@ function verify_signature(string $secret, string $matchId, string $turn, string 
  * Sign response body
  */
 function sign_response(string $secret, string $matchId, int $turn, string $body): string {
+    // Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
     $bodyHash = hash('sha256', $body);
     $signingString = "$matchId.$turn.$bodyHash";
     return hash_hmac('sha256', $signingString, $secret);

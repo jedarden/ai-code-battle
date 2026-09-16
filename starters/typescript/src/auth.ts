@@ -12,7 +12,6 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
  * @param body - Raw request body as Buffer
  * @param matchId - Match ID from header
  * @param turn - Turn number from header
- * @param timestamp - Timestamp from header
  * @param signature - X-ACB-Signature header value
  * @param secret - Your bot's shared secret
  * @returns true if signature is valid
@@ -21,12 +20,11 @@ export function verifySignature(
   body: Buffer,
   matchId: string,
   turn: string,
-  timestamp: string,
   signature: string,
   secret: string
 ): boolean {
   const bodyHash = createHash("sha256").update(body).digest("hex");
-  const signingString = `${matchId}.${turn}.${timestamp}.${bodyHash}`;
+  const signingString = `${matchId}.${turn}.${bodyHash}`;
   const expected = createHmac("sha256", secret)
     .update(signingString)
     .digest("hex");
@@ -57,6 +55,7 @@ export function signResponse(
   turn: number,
   secret: string
 ): string {
+  // Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
   const bodyStr = typeof body === "string" ? body : body.toString();
   const bodyHash = createHash("sha256").update(bodyStr).digest("hex");
   const signingString = `${matchId}.${turn}.${bodyHash}`;

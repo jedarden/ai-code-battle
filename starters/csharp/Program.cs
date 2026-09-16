@@ -33,7 +33,6 @@ app.MapPost("/turn", (HttpContext ctx) =>
     var signature = ctx.Request.Headers["X-ACB-Signature"].FirstOrDefault() ?? "";
     var matchId = ctx.Request.Headers["X-ACB-Match-Id"].FirstOrDefault() ?? "";
     var turnStr = ctx.Request.Headers["X-ACB-Turn"].FirstOrDefault() ?? "0";
-    var timestamp = ctx.Request.Headers["X-ACB-Timestamp"].FirstOrDefault() ?? "";
 
     if (string.IsNullOrEmpty(signature))
         return Results.Unauthorized();
@@ -41,7 +40,7 @@ app.MapPost("/turn", (HttpContext ctx) =>
     using var reader = new StreamReader(ctx.Request.Body);
     var body = reader.ReadToEndAsync().GetAwaiter().GetResult();
 
-    if (!VerifySignature(secret, matchId, turnStr, timestamp, body, signature))
+    if (!VerifySignature(secret, matchId, turnStr, body, signature))
         return Results.Unauthorized();
 
     GameState? state;
@@ -137,10 +136,11 @@ List<Move> ComputeMoves(GameState state)
 // --- HMAC helpers ---
 
 static bool VerifySignature(string secret, string matchId, string turn,
-    string timestamp, string body, string signature)
+    string body, string signature)
 {
+    // Signing string excludes the timestamp (X-ACB-Timestamp is not signed)
     var bodyHash = Sha256Hex(Encoding.UTF8.GetBytes(body));
-    var signingString = $"{matchId}.{turn}.{timestamp}.{bodyHash}";
+    var signingString = $"{matchId}.{turn}.{bodyHash}";
     var expected = HmacSha256(secret, signingString);
     return CryptographicOperations.FixedTimeEquals(
         Convert.FromHexString(signature),
@@ -150,6 +150,7 @@ static bool VerifySignature(string secret, string matchId, string turn,
 
 static string SignResponse(string secret, string matchId, int turn, string body)
 {
+    // Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
     var bodyHash = Sha256Hex(Encoding.UTF8.GetBytes(body));
     var signingString = $"{matchId}.{turn}.{bodyHash}";
     return HmacSha256(secret, signingString);

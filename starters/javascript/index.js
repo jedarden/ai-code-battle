@@ -20,9 +20,9 @@ const DIRECTIONS = ["N", "E", "S", "W"];
 
 // --- HMAC helpers ---
 
-function verifySignature(body, matchId, turn, timestamp, signature) {
+function verifySignature(body, matchId, turn, signature) {
   const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
-  const signingString = `${matchId}.${turn}.${timestamp}.${bodyHash}`;
+  const signingString = `${matchId}.${turn}.${bodyHash}`;
   const expected = crypto
     .createHmac("sha256", SECRET)
     .update(signingString)
@@ -34,6 +34,7 @@ function verifySignature(body, matchId, turn, timestamp, signature) {
 }
 
 function signResponse(body, matchId, turn) {
+  // Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
   const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
   const signingString = `${matchId}.${turn}.${bodyHash}`;
   return crypto
@@ -113,13 +114,10 @@ const server = http.createServer((req, res) => {
 
       const matchId = req.headers["x-acb-match-id"] || "";
       const turn = req.headers["x-acb-turn"] || "0";
-      const timestamp = req.headers["x-acb-timestamp"] || "";
       const signature = req.headers["x-acb-signature"] || "";
 
-      if (
-        !signature ||
-        !verifySignature(body, matchId, turn, timestamp, signature)
-      ) {
+      // Signing string excludes the timestamp (X-ACB-Timestamp is not signed)
+      if (!signature || !verifySignature(body, matchId, turn, signature)) {
         res.writeHead(401, { "Content-Type": "text/plain" });
         res.end("Invalid signature");
         return;

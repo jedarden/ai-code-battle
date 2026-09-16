@@ -80,13 +80,13 @@ func TestVerifyTimestamp(t *testing.T) {
 	}
 }
 
-// Helper function to generate a request signature for testing
-func signRequest(secret, matchID, turn, timestamp string, body []byte) string {
+// Helper function to generate a request signature for testing.
+// The signing string excludes the timestamp (X-ACB-Timestamp is never signed).
+func signRequest(secret, matchID, turn string, body []byte) string {
 	bodyHash := sha256.Sum256(body)
-	signingString := fmt.Sprintf("%s.%s.%s.%s",
+	signingString := fmt.Sprintf("%s.%s.%s",
 		matchID,
 		turn,
-		timestamp,
 		hex.EncodeToString(bodyHash[:]))
 
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -110,7 +110,7 @@ func TestVerifyRequest(t *testing.T) {
 				MatchID:   "m_test123",
 				Turn:      "42",
 				Timestamp: now.Format(time.RFC3339),
-				Signature: signRequest(secret, "m_test123", "42", now.Format(time.RFC3339), body),
+				Signature: signRequest(secret, "m_test123", "42", body),
 			},
 			want: true,
 		},
@@ -130,7 +130,7 @@ func TestVerifyRequest(t *testing.T) {
 				MatchID:   "m_test123",
 				Turn:      "42",
 				Timestamp: now.Add(-60 * time.Second).Format(time.RFC3339),
-				Signature: signRequest(secret, "m_test123", "42", now.Add(-60*time.Second).Format(time.RFC3339), body),
+				Signature: signRequest(secret, "m_test123", "42", body),
 			},
 			want: false,
 		},
@@ -140,7 +140,7 @@ func TestVerifyRequest(t *testing.T) {
 				MatchID:   "m_test123",
 				Turn:      "42",
 				Timestamp: now.Format(time.RFC3339),
-				Signature: signRequest(secret, "m_test123", "42", now.Format(time.RFC3339), []byte("wrong")),
+				Signature: signRequest(secret, "m_test123", "42", []byte("wrong")),
 			},
 			want: false,
 		},
