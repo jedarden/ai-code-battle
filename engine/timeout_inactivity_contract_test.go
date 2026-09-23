@@ -72,16 +72,13 @@ func timeoutInactivityEventCount(replay *Replay) int {
 }
 
 func TestTimeoutInactivity_DefaultResponseBudgetIsThreeSeconds(t *testing.T) {
-	if DefaultTurnTimeout != 3*time.Second {
-		t.Fatalf("DefaultTurnTimeout = %v, want 3s", DefaultTurnTimeout)
-	}
 	runner := NewMatchRunner(DefaultConfig())
-	if runner.timeout != DefaultTurnTimeout {
-		t.Fatalf("runner timeout = %v, want %v", runner.timeout, DefaultTurnTimeout)
+	if runner.timeout != 3*time.Second {
+		t.Fatalf("runner timeout = %v, want 3s", runner.timeout)
 	}
 	bot := NewHTTPBot("http://127.0.0.1:1", AuthConfig{})
-	if bot.client.Timeout != DefaultTurnTimeout {
-		t.Fatalf("HTTP client timeout = %v, want %v", bot.client.Timeout, DefaultTurnTimeout)
+	if bot.client.Timeout != 3*time.Second {
+		t.Fatalf("HTTP client timeout = %v, want 3s", bot.client.Timeout)
 	}
 }
 
