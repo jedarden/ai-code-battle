@@ -54,10 +54,10 @@ func TestRatingPipelineEndToEnd(t *testing.T) {
 		VALUES ('rating-map', 2, 10, 10, '{"walls":[],"spawns":[],"cores":[]}'::jsonb);
 		INSERT INTO matches (match_id, map_id, status)
 		VALUES ('rating-match', 'rating-map', 'pending');
-		INSERT INTO match_participants (match_id, bot_id, player_slot)
+		INSERT INTO match_participants (match_id, bot_id, player_slot, score)
 		VALUES
-			('rating-match', 'rating_winner', 0),
-			('rating-match', 'rating_loser', 1);
+			('rating-match', 'rating_winner', 0, 0),
+			('rating-match', 'rating_loser', 1, 0);
 		INSERT INTO jobs (job_id, match_id, status, config_json)
 		VALUES ('rating-job', 'rating-match', 'pending', '{}'::jsonb);
 	`); err != nil {
