@@ -552,6 +552,7 @@ func (gs *GameState) createResult(winner int, reason string) *MatchResult {
 	scores := make([]int, len(gs.Players))
 	energy := make([]int, len(gs.Players))
 	botsAlive := make([]int, len(gs.Players))
+	crashed := make([]bool, len(gs.Players))
 
 	for i, p := range gs.Players {
 		scores[i] = p.Score
@@ -566,6 +567,7 @@ func (gs *GameState) createResult(winner int, reason string) *MatchResult {
 		Scores:       scores,
 		Energy:       energy,
 		BotsAlive:    botsAlive,
+		Crashed:      crashed,
 		CombatDeaths: gs.CombatDeaths,
 	}
 }
