@@ -655,3 +655,188 @@ func TestExecuteSpawnSkipsEnemyAndInactiveCores(t *testing.T) {
 			gs.Players[p0.ID].Energy, gs.Config.SpawnCost*3)
 	}
 }
+
+func TestAutomaticSpawns_ActiveUnoccupiedCoresAndEnergyAccounting(t *testing.T) {
+	gs := newTestGameState()
+	gs.Config.SpawnCost = 5
+	gs.Turn = 4
+
+	p0 := gs.AddPlayer()
+	p1 := gs.AddPlayer()
+	p2 := gs.AddPlayer()
+
+	eligible0 := gs.AddCore(p0.ID, Position{2, 2})
+	eligible1 := gs.AddCore(p0.ID, Position{4, 4})
+	occupied := gs.AddCore(p0.ID, Position{6, 6})
+	inactive := gs.AddCore(p0.ID, Position{8, 8})
+	inactive.Active = false
+	freed := gs.AddCore(p0.ID, Position{10, 10})
+	enemy := gs.AddCore(p2.ID, Position{12, 12})
+	p1Core := gs.AddCore(p1.ID, Position{14, 14})
+
+	gs.SpawnBot(p0.ID, occupied.Position)
+	deadOccupant := gs.SpawnBot(p0.ID, freed.Position)
+	gs.KillBot(deadOccupant, "test")
+
+	gs.Players[p0.ID].Energy = 16
+	gs.Players[p1.ID].Energy = 10
+	gs.executeSpawns()
+
+	p0Bots := gs.GetPlayerBots(p0.ID)
+	if len(p0Bots) != 4 {
+		t.Fatalf("player 0 bot count = %d, want 4", len(p0Bots))
+	}
+	if gs.Players[p0.ID].Energy != 1 {
+		t.Errorf("player 0 energy = %d, want 1", gs.Players[p0.ID].Energy)
+	}
+	p1Bots := gs.GetPlayerBots(p1.ID)
+	if len(p1Bots) != 1 {
+		t.Fatalf("player 1 bot count = %d, want 1", len(p1Bots))
+	}
+	if p1Bots[0].Position != p1Core.Position {
+		t.Errorf("player 1 spawned at %v, want %v", p1Bots[0].Position, p1Core.Position)
+	}
+	if gs.Players[p1.ID].Energy != 5 {
+		t.Errorf("player 1 energy = %d, want 5", gs.Players[p1.ID].Energy)
+	}
+
+	counts := make(map[Position]int)
+	for _, bot := range p0Bots {
+		counts[bot.Position]++
+	}
+	for _, pos := range []Position{eligible0.Position, eligible1.Position, occupied.Position, freed.Position} {
+		if counts[pos] != 1 {
+			t.Errorf("player 0 bot count at %v = %d, want 1", pos, counts[pos])
+		}
+	}
+	for _, pos := range []Position{inactive.Position, enemy.Position, p1Core.Position} {
+		if counts[pos] != 0 {
+			t.Errorf("player 0 bot count at ineligible %v = %d, want 0", pos, counts[pos])
+		}
+	}
+
+	for _, core := range []*Core{eligible0, eligible1, freed, p1Core} {
+		if core.LastSpawnedTurn != gs.Turn {
+			t.Errorf("core %d LastSpawnedTurn = %d, want %d", core.ID, core.LastSpawnedTurn, gs.Turn)
+		}
+	}
+	if inactive.LastSpawnedTurn != 0 || enemy.LastSpawnedTurn != 0 {
+		t.Errorf("ineligible cores changed spawn state: inactive=%d enemy=%d", inactive.LastSpawnedTurn, enemy.LastSpawnedTurn)
+	}
+}
+
+func TestAutomaticSpawns_EnergyLimit(t *testing.T) {
+	tests := []struct {
+		name       string
+		energy     int
+		wantBots   int
+		wantEnergy int
+	}{
+		{name: "zero energy", energy: 0, wantBots: 0, wantEnergy: 0},
+		{name: "below cost", energy: 4, wantBots: 0, wantEnergy: 4},
+		{name: "exact cost", energy: 5, wantBots: 1, wantEnergy: 0},
+		{name: "cost plus remainder", energy: 7, wantBots: 1, wantEnergy: 2},
+		{name: "two costs plus remainder", energy: 12, wantBots: 2, wantEnergy: 2},
+		{name: "more energy than cores", energy: 100, wantBots: 2, wantEnergy: 90},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gs := newTestGameState()
+			gs.Config.SpawnCost = 5
+			p0 := gs.AddPlayer()
+			gs.AddCore(p0.ID, Position{2, 2})
+			gs.AddCore(p0.ID, Position{4, 4})
+			gs.Players[p0.ID].Energy = test.energy
+
+			gs.executeSpawns()
+
+			if got := len(gs.GetPlayerBots(p0.ID)); got != test.wantBots {
+				t.Errorf("bot count = %d, want %d", got, test.wantBots)
+			}
+			if got := gs.Players[p0.ID].Energy; got != test.wantEnergy {
+				t.Errorf("energy = %d, want %d", got, test.wantEnergy)
+			}
+		})
+	}
+}
+
+func TestAutomaticSpawns_CorePriorityAndTieBreak(t *testing.T) {
+	t.Run("oldest spawns first", func(t *testing.T) {
+		gs := newTestGameState()
+		gs.Turn = 12
+		p0 := gs.AddPlayer()
+		core0 := gs.AddCore(p0.ID, Position{2, 2})
+		core1 := gs.AddCore(p0.ID, Position{4, 4})
+		core2 := gs.AddCore(p0.ID, Position{6, 6})
+		core0.LastSpawnedTurn = 9
+		core1.LastSpawnedTurn = 2
+		core2.LastSpawnedTurn = 5
+		gs.Cores[0], gs.Cores[1], gs.Cores[2] = core2, core0, core1
+		gs.Players[p0.ID].Energy = gs.Config.SpawnCost * 3
+
+		gs.executeSpawns()
+
+		bots := gs.GetPlayerBots(p0.ID)
+		want := []Position{core1.Position, core2.Position, core0.Position}
+		if len(bots) != len(want) {
+			t.Fatalf("bot count = %d, want %d", len(bots), len(want))
+		}
+		for i, bot := range bots {
+			if bot.Position != want[i] {
+				t.Errorf("spawn %d at %v, want %v", i, bot.Position, want[i])
+			}
+		}
+	})
+
+	t.Run("lowest ID breaks equal age", func(t *testing.T) {
+		gs := newTestGameState()
+		gs.Turn = 13
+		p0 := gs.AddPlayer()
+		core0 := gs.AddCore(p0.ID, Position{2, 2})
+		core1 := gs.AddCore(p0.ID, Position{4, 4})
+		core2 := gs.AddCore(p0.ID, Position{6, 6})
+		gs.Cores[0], gs.Cores[1], gs.Cores[2] = core2, core1, core0
+		gs.Players[p0.ID].Energy = gs.Config.SpawnCost * 3
+
+		gs.executeSpawns()
+
+		bots := gs.GetPlayerBots(p0.ID)
+		want := []Position{core0.Position, core1.Position, core2.Position}
+		if len(bots) != len(want) {
+			t.Fatalf("bot count = %d, want %d", len(bots), len(want))
+		}
+		for i, bot := range bots {
+			if bot.Position != want[i] {
+				t.Errorf("spawn %d at %v, want %v", i, bot.Position, want[i])
+			}
+		}
+	})
+}
+
+func TestExecuteTurn_RunsAutomaticSpawnPhase(t *testing.T) {
+	gs := newTestGameState()
+	gs.Config.ZoneEnabled = false
+	p0 := gs.AddPlayer()
+	p1 := gs.AddPlayer()
+	core0 := gs.AddCore(p0.ID, Position{2, 2})
+	core1 := gs.AddCore(p0.ID, Position{4, 4})
+	gs.SpawnBot(p1.ID, Position{18, 18})
+	gs.Players[p0.ID].Energy = gs.Config.SpawnCost * 2
+
+	gs.ExecuteTurn()
+
+	if gs.Turn != 1 {
+		t.Fatalf("turn = %d, want 1", gs.Turn)
+	}
+	bots := gs.GetPlayerBots(p0.ID)
+	if len(bots) != 2 {
+		t.Fatalf("player 0 bot count = %d, want 2", len(bots))
+	}
+	if bots[0].Position != core0.Position || bots[1].Position != core1.Position {
+		t.Errorf("spawn positions = %v, %v, want %v, %v", bots[0].Position, bots[1].Position, core0.Position, core1.Position)
+	}
+	if gs.Players[p0.ID].Energy != 0 {
+		t.Errorf("player 0 energy = %d, want 0", gs.Players[p0.ID].Energy)
+	}
+}
