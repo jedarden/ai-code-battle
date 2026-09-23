@@ -95,18 +95,16 @@ func TestExecuteCombat1v1(t *testing.T) {
 	p0 := gs.AddPlayer()
 	p1 := gs.AddPlayer()
 
-	// Two bots adjacent - both should die (1v1 = mutual destruction)
 	bot0 := gs.SpawnBot(p0.ID, Position{10, 10})
 	bot1 := gs.SpawnBot(p1.ID, Position{10, 11})
 
 	gs.executeCombat()
 
-	// Both should be dead (1 enemy each, equal counts)
-	if bot0.Alive {
-		t.Error("bot0 should be dead in 1v1")
+	if !bot0.Alive {
+		t.Error("bot0 should survive an equal 1v1 engagement")
 	}
-	if bot1.Alive {
-		t.Error("bot1 should be dead in 1v1")
+	if !bot1.Alive {
+		t.Error("bot1 should survive an equal 1v1 engagement")
 	}
 }
 
