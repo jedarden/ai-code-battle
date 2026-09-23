@@ -10,16 +10,39 @@ if (!SECRET) {
   process.exit(1);
 }
 
+function getHeader(req, name) {
+  const value = req.headers[name];
+  return typeof value === "string" ? value : "";
+}
+
+function parseTurn(turn) {
+  if (!/^(0|[1-9]\d*)$/.test(turn)) return null;
+  const value = Number(turn);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
 function verifySignature(body, matchId, turn, timestamp, signature) {
+  if (!/^[0-9a-fA-F]{64}$/.test(signature)) return false;
   const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
   const signingString = `${matchId}.${turn}.${timestamp}.${bodyHash}`;
   const expected = crypto
     .createHmac("sha256", SECRET)
     .update(signingString)
     .digest("hex");
-  return crypto.timingSafeEqual(
-    Buffer.from(signature, "hex"),
-    Buffer.from(expected, "hex")
+  const provided = Buffer.from(signature, "hex");
+  const expectedBytes = Buffer.from(expected, "hex");
+  return (
+    provided.length === expectedBytes.length &&
+    crypto.timingSafeEqual(provided, expectedBytes)
+  );
+}
+
+function verifyTimestamp(timestamp) {
+  const seconds = Number(timestamp);
+  return (
+    /^(0|[1-9]\d*)$/.test(timestamp) &&
+    Number.isSafeInteger(seconds) &&
+    Math.abs(Date.now() / 1000 - seconds) <= 30
   );
 }
 
@@ -45,36 +68,60 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       const body = Buffer.concat(chunks);
 
-      const matchId = req.headers["x-acb-match-id"] || "";
-      const turn = req.headers["x-acb-turn"] || "0";
-      const timestamp = req.headers["x-acb-timestamp"] || "";
-      const signature = req.headers["x-acb-signature"] || "";
+      const matchId = getHeader(req, "x-acb-match-id");
+      const turn = getHeader(req, "x-acb-turn");
+      const timestamp = getHeader(req, "x-acb-timestamp");
+      const botId = getHeader(req, "x-acb-bot-id");
+      const signature = getHeader(req, "x-acb-signature");
+      const turnNumber = parseTurn(turn);
 
       if (
-        !signature ||
-        !verifySignature(body, matchId, turn, timestamp, signature)
+        !matchId ||
+        turnNumber === null ||
+        !timestamp ||
+        !botId ||
+        !signature
       ) {
+        res.writeHead(401, { "Content-Type": "text/plain" });
+        res.end("Missing auth headers");
+        return;
+      }
+
+      if (!verifySignature(body, matchId, turn, timestamp, signature)) {
         res.writeHead(401, { "Content-Type": "text/plain" });
         res.end("Invalid signature");
         return;
       }
 
+      if (!verifyTimestamp(timestamp)) {
+        res.writeHead(401, { "Content-Type": "text/plain" });
+        res.end("Invalid timestamp");
+        return;
+      }
+
       let state;
       try {
-        state = JSON.parse(body.toString());
+        state = JSON.parse(body.toString("utf8"));
       } catch {
         res.writeHead(400, { "Content-Type": "text/plain" });
         res.end("Invalid JSON");
         return;
       }
 
+      if (
+        state === null ||
+        typeof state !== "object" ||
+        state.match_id !== matchId ||
+        state.turn !== turnNumber
+      ) {
+        res.writeHead(401, { "Content-Type": "text/plain" });
+        res.end("Invalid request identity");
+        return;
+      }
+
       const moves = computeMoves(state);
-      const responseBody = JSON.stringify({ moves });
-      const responseSig = signResponse(
-        Buffer.from(responseBody),
-        matchId,
-        parseInt(turn, 10)
-      );
+      const responseBody = Buffer.from(JSON.stringify({ moves }));
+      const responseSig = signResponse(responseBody, matchId, turnNumber);
 
       console.log(`Turn ${state.turn}: ${moves.length} moves`);
 

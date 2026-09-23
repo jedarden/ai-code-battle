@@ -12,6 +12,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
  * @param body - Raw request body as Buffer
  * @param matchId - Match ID from header
  * @param turn - Turn number from header
+ * @param timestamp - Timestamp from header
  * @param signature - X-ACB-Signature header value
  * @param secret - Your bot's shared secret
  * @returns true if signature is valid
@@ -20,11 +21,13 @@ export function verifySignature(
   body: Buffer,
   matchId: string,
   turn: string,
+  timestamp: string,
   signature: string,
   secret: string
 ): boolean {
+  if (!/^[0-9a-fA-F]{64}$/.test(signature)) return false;
   const bodyHash = createHash("sha256").update(body).digest("hex");
-  const signingString = `${matchId}.${turn}.${bodyHash}`;
+  const signingString = `${matchId}.${turn}.${timestamp}.${bodyHash}`;
   const expected = createHmac("sha256", secret)
     .update(signingString)
     .digest("hex");
@@ -55,9 +58,8 @@ export function signResponse(
   turn: number,
   secret: string
 ): string {
-  // Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
-  const bodyStr = typeof body === "string" ? body : body.toString();
-  const bodyHash = createHash("sha256").update(bodyStr).digest("hex");
+  // Response signing string: {match_id}.{turn}.{sha256_hex(body)}
+  const bodyHash = createHash("sha256").update(body).digest("hex");
   const signingString = `${matchId}.${turn}.${bodyHash}`;
   return createHmac("sha256", secret).update(signingString).digest("hex");
 }
@@ -66,7 +68,7 @@ export function signResponse(
  * Verify that a timestamp is within the allowed window.
  * Prevents replay attacks.
  *
- * @param timestamp - Unix timestamp or ISO 8601 string
+ * @param timestamp - Unix timestamp in seconds
  * @param windowSeconds - Allowed window (default: 30)
  * @returns true if timestamp is valid
  */
@@ -74,30 +76,20 @@ export function verifyTimestamp(
   timestamp: string,
   windowSeconds: number = 30
 ): boolean {
-  let ts: Date;
-
-  // Try ISO 8601 first
-  const parsed = new Date(timestamp);
-  if (!isNaN(parsed.getTime())) {
-    ts = parsed;
-  } else {
-    // Try Unix timestamp (seconds since epoch)
-    const seconds = parseInt(timestamp, 10);
-    if (isNaN(seconds)) {
-      return false;
-    }
-    ts = new Date(seconds * 1000);
-  }
-
-  const now = new Date();
-  const diff = (now.getTime() - ts.getTime()) / 1000;
-  return diff >= -windowSeconds && diff <= windowSeconds;
+  const seconds = Number(timestamp);
+  return (
+    /^(0|[1-9]\d*)$/.test(timestamp) &&
+    Number.isSafeInteger(seconds) &&
+    Math.abs(Date.now() / 1000 - seconds) <= windowSeconds
+  );
 }
 
 /**
  * Extract auth headers from a Fastify request.
  */
-export function getAuthHeaders(headers: Record<string, string>): {
+export function getAuthHeaders(
+  headers: Record<string, string | string[] | undefined>
+): {
   matchId: string;
   turn: string;
   timestamp: string;
@@ -105,10 +97,18 @@ export function getAuthHeaders(headers: Record<string, string>): {
   signature: string;
 } {
   return {
-    matchId: headers["x-acb-match-id"] || "",
-    turn: headers["x-acb-turn"] || "0",
-    timestamp: headers["x-acb-timestamp"] || "",
-    botId: headers["x-acb-bot-id"] || "",
-    signature: headers["x-acb-signature"] || "",
+    matchId: getHeaderValue(headers, "x-acb-match-id"),
+    turn: getHeaderValue(headers, "x-acb-turn"),
+    timestamp: getHeaderValue(headers, "x-acb-timestamp"),
+    botId: getHeaderValue(headers, "x-acb-bot-id"),
+    signature: getHeaderValue(headers, "x-acb-signature"),
   };
+}
+
+function getHeaderValue(
+  headers: Record<string, string | string[] | undefined>,
+  name: string
+): string {
+  const value = headers[name];
+  return typeof value === "string" ? value : "";
 }

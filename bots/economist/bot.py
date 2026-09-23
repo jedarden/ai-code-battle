@@ -16,12 +16,18 @@ import json
 import os
 import random
 import math
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import List, Dict, Optional, Tuple, Set
 
 
 # Position tuple (row, col)
 Position = Tuple[int, int]
+
+
+def _normalize_position(position: dict) -> Position:
+    return (int(position["row"]), int(position["col"]))
+
 
 # Game constants
 ADJACENT_RADIUS2 = 2  # sqrt(2)^2 = 2
@@ -40,10 +46,13 @@ class GameState:
         self.you_score = data["you"]["score"]
 
         # Bots only have position and owner (no ID!)
-        self.bots = data["bots"]
-        self.energy = [tuple(int(v) for v in e) for e in data.get("energy", [])]
+        self.bots = [
+            {**bot, "position": _normalize_position(bot["position"])}
+            for bot in data["bots"]
+        ]
+        self.energy = [_normalize_position(e) for e in data.get("energy", [])]
         self.cores = data.get("cores", [])
-        self.walls = [tuple(int(v) for v in w) for w in data.get("walls", [])]
+        self.walls = [_normalize_position(w) for w in data.get("walls", [])]
         self.dead = data.get("dead", [])
 
     @property
@@ -119,7 +128,7 @@ class EconomistStrategy:
                         move = self._move_toward(bot_pos, contest_pos, state, enemy_positions, avoid_enemies=False)
                         if move:
                             moves.append({
-                                "position": list(bot_pos),
+                                "position": {"row": bot_pos[0], "col": bot_pos[1]},
                                 "direction": move
                             })
                     continue
@@ -192,7 +201,7 @@ class EconomistStrategy:
                     move = self._move_toward(bot_pos, energy_pos, state, enemy_positions, avoid_enemies=False)
                     if move:
                         moves.append({
-                            "position": list(bot_pos),
+                            "position": {"row": bot_pos[0], "col": bot_pos[1]},
                             "direction": move
                         })
                 # If already adjacent, stay put to contest (no move added)
@@ -206,7 +215,7 @@ class EconomistStrategy:
                 move = self._move_toward(bot_pos, center, state, enemy_positions, avoid_enemies=False)
                 if move:
                     moves.append({
-                        "position": list(bot_pos),
+                        "position": {"row": bot_pos[0], "col": bot_pos[1]},
                         "direction": move
                     })
 
@@ -379,14 +388,31 @@ class EconomistBotHandler(BaseHTTPRequestHandler):
     def verify_signature(self, body: bytes, match_id: str, turn: str,
                          timestamp: str, signature: str) -> bool:
         """Verify HMAC signature of incoming request."""
+        if not all(value and value.strip() for value in
+                   (match_id, turn, timestamp, signature)):
+            return False
+        if not self.secret:
+            return False
+        try:
+            turn_number = int(turn)
+            request_time = int(timestamp)
+        except (TypeError, ValueError):
+            return False
+        if turn_number < 0:
+            return False
+        try:
+            if abs(time.time() - request_time) > 30:
+                return False
+        except OverflowError:
+            return False
         body_hash = hashlib.sha256(body).hexdigest()
-        signing_string = f"{match_id}.{turn}.{body_hash}"
+        signing_string = f"{match_id}.{turn}.{timestamp}.{body_hash}"
         expected_sig = hmac.new(
             self.secret.encode("utf-8"),
             signing_string.encode("utf-8"),
             hashlib.sha256
         ).hexdigest()
-        return hmac.compare_digest(signature, expected_sig)
+        return hmac.compare_digest(signature.encode("utf-8"), expected_sig.encode("ascii"))
 
     def do_GET(self):
         """Handle GET requests (health check)."""
@@ -410,30 +436,45 @@ class EconomistBotHandler(BaseHTTPRequestHandler):
 
         # Get auth headers
         match_id = self.headers.get("X-ACB-Match-Id", "")
-        turn_str = self.headers.get("X-ACB-Turn", "0")
+        turn_str = self.headers.get("X-ACB-Turn", "")
         timestamp = self.headers.get("X-ACB-Timestamp", "")
+        bot_id = self.headers.get("X-ACB-Bot-Id", "")
         signature = self.headers.get("X-ACB-Signature", "")
 
-        if not signature:
-            self.send_error(401, "Missing signature")
+        if (not all(value and value.strip() for value in
+                    (match_id, turn_str, timestamp, bot_id, signature))
+                or not self.verify_signature(body, match_id, turn_str, timestamp, signature)):
+            self.send_error(401, "Invalid authentication")
             return
 
-        # Verify signature
-        if not self.verify_signature(body, match_id, turn_str, timestamp, signature):
-            self.send_error(401, "Invalid signature")
+        try:
+            turn = int(turn_str)
+        except (TypeError, ValueError):
+            self.send_error(401, "Invalid authentication")
             return
 
         # Parse game state
         try:
             data = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            self.send_error(400, f"Invalid game state: {e}")
+            return
+
+        if (not isinstance(data, dict)
+                or data.get("match_id") != match_id
+                or type(data.get("turn")) is not int
+                or data.get("turn") != turn):
+            self.send_error(401, "Request identity mismatch")
+            return
+
+        try:
             state = GameState(data)
-        except (json.JSONDecodeError, KeyError) as e:
+        except (KeyError, TypeError) as e:
             self.send_error(400, f"Invalid game state: {e}")
             return
 
         # Compute moves
         moves = self.strategy.compute_moves(state)
-        turn = int(turn_str)
 
         # Send response
         self.send_json_response(200, {"moves": moves}, match_id, turn)

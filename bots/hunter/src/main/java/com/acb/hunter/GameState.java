@@ -17,7 +17,7 @@ public class GameState {
     @JsonProperty("match_id")
     private String matchId;
 
-    private int turn;
+    private Integer turn;
     private GameConfig config;
     private PlayerInfo you;
 
@@ -29,7 +29,7 @@ public class GameState {
 
     // Getters
     public String getMatchId() { return matchId; }
-    public int getTurn() { return turn; }
+    public Integer getTurn() { return turn; }
     public GameConfig getConfig() { return config; }
     public PlayerInfo getYou() { return you; }
     public List<VisibleBot> getBots() { return bots; }

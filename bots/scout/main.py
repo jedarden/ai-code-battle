@@ -17,6 +17,7 @@ import hmac
 import json
 import math
 import os
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 DIRECTIONS = [("N", -1, 0), ("E", 0, 1), ("S", 1, 0), ("W", 0, -1)]
@@ -329,14 +330,31 @@ class ScoutBotHandler(BaseHTTPRequestHandler):
 
     def verify_signature(self, body: bytes, match_id: str, turn: str,
                          timestamp: str, signature: str) -> bool:
+        if not all(value and value.strip() for value in
+                   (match_id, turn, timestamp, signature)):
+            return False
+        if not self.secret:
+            return False
+        try:
+            turn_number = int(turn)
+            request_time = int(timestamp)
+        except (TypeError, ValueError):
+            return False
+        if turn_number < 0:
+            return False
+        try:
+            if abs(time.time() - request_time) > 30:
+                return False
+        except OverflowError:
+            return False
         body_hash = hashlib.sha256(body).hexdigest()
-        signing_string = f"{match_id}.{turn}.{body_hash}"
+        signing_string = f"{match_id}.{turn}.{timestamp}.{body_hash}"
         expected = hmac.new(
             self.secret.encode("utf-8"),
             signing_string.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
-        return hmac.compare_digest(signature, expected)
+        return hmac.compare_digest(signature.encode("utf-8"), expected.encode("ascii"))
 
     def do_GET(self):
         if self.path == "/health":
@@ -356,24 +374,45 @@ class ScoutBotHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(content_length)
 
         match_id = self.headers.get("X-ACB-Match-Id", "")
-        turn_str = self.headers.get("X-ACB-Turn", "0")
+        turn_str = self.headers.get("X-ACB-Turn", "")
         timestamp = self.headers.get("X-ACB-Timestamp", "")
+        bot_id = self.headers.get("X-ACB-Bot-Id", "")
         signature = self.headers.get("X-ACB-Signature", "")
 
-        if not signature or not self.verify_signature(
-            body, match_id, turn_str, timestamp, signature
-        ):
-            self.send_error(401, "Invalid signature")
+        if (not all(value and value.strip() for value in
+                    (match_id, turn_str, timestamp, bot_id, signature))
+                or not self.verify_signature(
+                    body, match_id, turn_str, timestamp, signature
+                )):
+            self.send_error(401, "Invalid authentication")
             return
 
         try:
-            state = GameState(json.loads(body))
-        except (json.JSONDecodeError, KeyError) as e:
+            turn = int(turn_str)
+        except (TypeError, ValueError):
+            self.send_error(401, "Invalid authentication")
+            return
+
+        try:
+            data = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            self.send_error(400, f"Invalid game state: {e}")
+            return
+
+        if (not isinstance(data, dict)
+                or data.get("match_id") != match_id
+                or type(data.get("turn")) is not int
+                or data.get("turn") != turn):
+            self.send_error(401, "Request identity mismatch")
+            return
+
+        try:
+            state = GameState(data)
+        except (KeyError, TypeError) as e:
             self.send_error(400, f"Invalid game state: {e}")
             return
 
         moves = compute_moves(state)
-        turn = int(turn_str)
 
         response_body = json.dumps({"moves": moves}).encode("utf-8")
         response_sig = self.sign_response(response_body, match_id, turn)

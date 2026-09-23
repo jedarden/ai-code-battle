@@ -3,9 +3,6 @@ package validator
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +13,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/aicodebattle/acb/engine"
 )
 
 const (
@@ -23,6 +22,9 @@ const (
 	smokeMatchID = "smoke-test-match"
 	smokeSecret  = "smoke-test-secret-for-validation"
 	smokeBotID   = "b_smoketest"
+
+	maxSmokeResponseBytes = 64 * 1024
+	maxDebugJSONBytes     = 10 * 1024
 
 	// healthPollInterval is how often we ping /health while waiting for startup.
 	healthPollInterval = 200 * time.Millisecond
@@ -60,9 +62,12 @@ func RunSmokeTest(ctx context.Context, code, language string, cfg Config) error 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	// Compose the bot's environment.
+	portValue := strconv.Itoa(port)
 	env := append(os.Environ(),
-		fmt.Sprintf("BOT_PORT=%d", port),
+		"BOT_PORT="+portValue,
 		"BOT_SECRET="+smokeSecret,
+		"SHARED_SECRET="+smokeSecret,
+		"PORT="+portValue,
 	)
 
 	// Construct the run command, optionally wrapped in nsjail.
@@ -89,6 +94,9 @@ func RunSmokeTest(ctx context.Context, code, language string, cfg Config) error 
 
 	// Fire cfg.SmokeRequests test requests.
 	client := &http.Client{Timeout: 5 * time.Second}
+	if err := verifyTurnRequestAuthRejections(ctx, client, addr); err != nil {
+		return fmt.Errorf("smoke authentication rejection check failed: %w", err)
+	}
 	for i := 1; i <= cfg.SmokeRequests; i++ {
 		if err := sendTurnRequest(ctx, client, addr, i); err != nil {
 			return fmt.Errorf("smoke request %d/%d failed: %w", i, cfg.SmokeRequests, err)
@@ -281,25 +289,10 @@ func waitForHealth(ctx context.Context, addr string, timeout time.Duration) erro
 // sendTurnRequest sends one POST /turn request to the bot and validates the
 // JSON response.
 func sendTurnRequest(ctx context.Context, client *http.Client, addr string, turn int) error {
-	state := makeTestState(turn)
-	body, err := json.Marshal(state)
+	req, err := newSignedTurnRequest(ctx, addr, makeTestState(turn), turn, time.Now().Unix())
 	if err != nil {
-		return fmt.Errorf("marshal state: %w", err)
+		return err
 	}
-
-	sig := signSmokeRequest(smokeSecret, smokeMatchID, turn, body)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+addr+"/turn", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-ACB-Match-Id", smokeMatchID)
-	req.Header.Set("X-ACB-Turn", strconv.Itoa(turn))
-	req.Header.Set("X-ACB-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
-	req.Header.Set("X-ACB-Bot-Id", smokeBotID)
-	req.Header.Set("X-ACB-Signature", sig)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -311,26 +304,110 @@ func sendTurnRequest(ctx context.Context, client *http.Client, addr string, turn
 		return fmt.Errorf("bot returned HTTP %d", resp.StatusCode)
 	}
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxSmokeResponseBytes+1))
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
+	}
+	if len(respBody) > maxSmokeResponseBytes {
+		return fmt.Errorf("response body exceeds %d-byte limit", maxSmokeResponseBytes)
+	}
+	responseSignature := resp.Header.Get("X-ACB-Signature")
+	if responseSignature == "" {
+		return fmt.Errorf("missing response X-ACB-Signature")
+	}
+	if err := engine.VerifyResponse(smokeSecret, smokeMatchID, turn, responseSignature, respBody); err != nil {
+		return fmt.Errorf("invalid response X-ACB-Signature: %w", err)
 	}
 	return validateMoveResponse(respBody)
 }
 
-// signSmokeRequest computes the HMAC-SHA256 signature used by reference bot
-// implementations.  The signing string matches the format in bots/*/main.go:
-//
-//	"{match_id}.{turn}.{sha256hex(body)}"
-//
-// Note: this format does NOT include a timestamp, matching the reference bots
-// (bots/gatherer, bots/rusher, etc.) that LLM candidates are shown as templates.
-func signSmokeRequest(secret, matchID string, turn int, body []byte) string {
-	bodyHash := sha256.Sum256(body)
-	msg := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(msg))
-	return hex.EncodeToString(mac.Sum(nil))
+func newSignedTurnRequest(ctx context.Context, addr string, state smokeState, turn int, timestamp int64) (*http.Request, error) {
+	body, err := json.Marshal(state)
+	if err != nil {
+		return nil, fmt.Errorf("marshal state: %w", err)
+	}
+	timestampHeader := strconv.FormatInt(timestamp, 10)
+	turnHeader := strconv.Itoa(turn)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"http://"+addr+"/turn", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-ACB-Match-Id", smokeMatchID)
+	req.Header.Set("X-ACB-Turn", turnHeader)
+	req.Header.Set("X-ACB-Timestamp", timestampHeader)
+	req.Header.Set("X-ACB-Bot-Id", smokeBotID)
+	req.Header.Set("X-ACB-Signature", engine.SignRequest(smokeSecret, smokeMatchID, turn, timestamp, body))
+	return req, nil
+}
+
+func verifyTurnRequestAuthRejections(ctx context.Context, client *http.Client, addr string) error {
+	sendProbe := func(name string, state smokeState, turn int, timestamp int64, omitHeader string, tamperSignature bool) error {
+		req, err := newSignedTurnRequest(ctx, addr, state, turn, timestamp)
+		if err != nil {
+			return fmt.Errorf("%s request: %w", name, err)
+		}
+		if omitHeader != "" {
+			req.Header.Del(omitHeader)
+		}
+		if tamperSignature {
+			req.Header.Set("X-ACB-Signature", "0000000000000000000000000000000000000000000000000000000000000000")
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("%s request: %w", name, err)
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4*1024))
+		if resp.StatusCode != http.StatusUnauthorized {
+			return fmt.Errorf("%s request: expected HTTP 401, got %d", name, resp.StatusCode)
+		}
+		return nil
+	}
+
+	now := time.Now().Unix()
+	validState := makeTestState(1)
+	if err := sendProbe("tampered signature", validState, 1, now, "", true); err != nil {
+		return err
+	}
+	for _, header := range []string{
+		"X-ACB-Match-Id",
+		"X-ACB-Turn",
+		"X-ACB-Timestamp",
+		"X-ACB-Bot-Id",
+		"X-ACB-Signature",
+	} {
+		if err := sendProbe("missing "+header, validState, 1, now, header, false); err != nil {
+			return err
+		}
+	}
+
+	staleTimestamp := now - int64(engine.TimestampTolerance/time.Second) - 1
+	if err := sendProbe("stale timestamp", validState, 1, staleTimestamp, "", false); err != nil {
+		return err
+	}
+
+	futureTimestamp := now + int64(engine.TimestampTolerance/time.Second) + 1
+	if err := sendProbe("future timestamp", validState, 1, futureTimestamp, "", false); err != nil {
+		return err
+	}
+
+	mismatchedMatchState := makeTestState(1)
+	mismatchedMatchState.MatchID = "mismatched-" + smokeMatchID
+	if err := sendProbe("body/header match ID mismatch", mismatchedMatchState, 1, now, "", false); err != nil {
+		return err
+	}
+
+	mismatchedTurnState := makeTestState(1)
+	mismatchedTurnState.Turn = 2
+	if err := sendProbe("body/header turn mismatch", mismatchedTurnState, 1, now, "", false); err != nil {
+		return err
+	}
+
+	return sendProbe("negative turn", makeTestState(-1), -1, now, "", false)
 }
 
 // ── Test state types ──────────────────────────────────────────────────────
@@ -407,17 +484,61 @@ func makeTestState(turn int) smokeState {
 	}
 }
 
-// moveResponse is the expected JSON structure of a /turn response.
 type moveResponse struct {
 	Moves []json.RawMessage `json:"moves"`
+	Debug *engine.DebugInfo `json:"debug"`
 }
 
-// validateMoveResponse checks the bot returned valid JSON with a "moves" array.
-// An empty moves array is accepted (the bot may legally choose to idle).
+type moveResponseMove struct {
+	Position  *moveResponsePosition `json:"position"`
+	Direction *string               `json:"direction"`
+}
+
+type moveResponsePosition struct {
+	Row *int `json:"row"`
+	Col *int `json:"col"`
+}
+
+// validateMoveResponse checks the bot returned a valid moves response.
+// An empty moves array is accepted because the bot may legally choose to idle.
 func validateMoveResponse(body []byte) error {
-	var resp moveResponse
+	var resp *moveResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return fmt.Errorf("invalid JSON in /turn response: %w (body: %.200s)", err, body)
+	}
+	if resp == nil {
+		return fmt.Errorf("invalid /turn response: expected a JSON object (body: %.200s)", body)
+	}
+	if resp.Moves == nil {
+		return fmt.Errorf("invalid /turn response: moves must be an array, not null or missing (body: %.200s)", body)
+	}
+
+	for i, rawMove := range resp.Moves {
+		var move moveResponseMove
+		if err := json.Unmarshal(rawMove, &move); err != nil {
+			return fmt.Errorf("invalid /turn response: move %d must be an object: %w", i, err)
+		}
+		if move.Position == nil || move.Position.Row == nil || move.Position.Col == nil {
+			return fmt.Errorf("invalid /turn response: move %d must include position.row and position.col", i)
+		}
+		if *move.Position.Row < 0 || *move.Position.Col < 0 {
+			return fmt.Errorf("invalid /turn response: move %d position must be non-negative", i)
+		}
+		if move.Direction == nil {
+			return fmt.Errorf("invalid /turn response: move %d must include direction", i)
+		}
+		if engine.ParseDirection(*move.Direction) == engine.DirNone && *move.Direction != "stay" {
+			return fmt.Errorf("invalid /turn response: move %d has invalid direction %q", i, *move.Direction)
+		}
+	}
+	if resp.Debug != nil {
+		debugJSON, err := json.Marshal(resp.Debug)
+		if err != nil {
+			return fmt.Errorf("invalid /turn response debug: %w", err)
+		}
+		if len(debugJSON) > maxDebugJSONBytes {
+			return fmt.Errorf("invalid /turn response: normalized debug JSON exceeds %d-byte limit", maxDebugJSONBytes)
+		}
 	}
 	return nil
 }

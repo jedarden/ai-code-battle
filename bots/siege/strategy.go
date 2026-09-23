@@ -17,7 +17,7 @@ func NewSiegeStrategy() *SiegeStrategy {
 // ComputeMoves calculates the best moves for the current turn.
 func (s *SiegeStrategy) ComputeMoves(state *GameState) []Move {
 	if len(state.Bots) == 0 {
-		return nil
+		return []Move{}
 	}
 
 	myID := state.You.ID
@@ -184,9 +184,9 @@ func (s *SiegeStrategy) assignLockoutBots(
 ) map[Position]Position {
 	// For each enemy core, build its lockout ring (all 8 neighbors)
 	type LockoutSlot struct {
-		core      VisibleCore
-		position  Position
-		occupied  bool
+		core     VisibleCore
+		position Position
+		occupied bool
 		distance int // distance from nearest bot
 	}
 
@@ -201,10 +201,10 @@ func (s *SiegeStrategy) assignLockoutBots(
 			}
 
 			allSlots = append(allSlots, LockoutSlot{
-				core:      core,
-				position:  neighbor,
-				occupied:  occupiedPositions[neighbor],
-				distance:  -1, // Will be computed
+				core:     core,
+				position: neighbor,
+				occupied: occupiedPositions[neighbor],
+				distance: -1, // Will be computed
 			})
 		}
 	}
@@ -495,4 +495,3 @@ func simulateMove(pos Position, dir Direction, config GameConfig) Position {
 
 	return Position{Row: newRow, Col: newCol}
 }
-

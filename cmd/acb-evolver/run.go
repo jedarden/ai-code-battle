@@ -824,7 +824,7 @@ func buildRetryPrompt(report *validator.Report, lang string) string {
 Please fix this issue and generate an improved bot in %s. The bot must:
 1. Have valid syntax that compiles without errors
 2. Expose GET /health and POST /turn HTTP endpoints
-3. Return JSON in the format {"moves": [{"bot_id": "x", "move": "up|down|left|right|attack"}]}
+3. Return HTTP 200 with JSON in the format {"moves": [{"position": {"row": 10, "col": 15}, "direction": "N"}]} and sign the exact raw response body in X-ACB-Signature
 
 Focus on fixing the specific error above while maintaining all required functionality.`, failedStage, errorMsg, lang)
 }

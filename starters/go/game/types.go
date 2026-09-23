@@ -89,6 +89,7 @@ type AuthHeaders struct {
 	MatchID   string
 	Turn      string
 	Timestamp string
+	BotID     string
 	Signature string
 }
 

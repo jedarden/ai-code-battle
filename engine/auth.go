@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -30,67 +31,122 @@ type RequestAuth struct {
 	Signature string
 }
 
-// SignRequest generates the HMAC signature for an outgoing request.
-// signing_string = "{match_id}.{turn}.{sha256(request_body)}"
-// signature = HMAC-SHA256(shared_secret, signing_string)
-// Note: timestamp is sent as a header (X-ACB-Timestamp) for clock-skew checks but is NOT
-// included in the signing string, matching the bot-side verifySignature implementation.
-func SignRequest(secret, matchID string, turn int, timestamp int64, requestBody []byte) string {
+// CanonicalRequestPayload returns the exact bytes covered by an engine request signature.
+func CanonicalRequestPayload(matchID string, turn int, timestamp int64, requestBody []byte) string {
 	bodyHash := sha256.Sum256(requestBody)
-	signingString := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
+	return fmt.Sprintf("%s.%d.%d.%s", matchID, turn, timestamp, hex.EncodeToString(bodyHash[:]))
+}
 
+// CanonicalResponsePayload returns the exact bytes covered by a bot response signature.
+func CanonicalResponsePayload(matchID string, turn int, responseBody []byte) string {
+	bodyHash := sha256.Sum256(responseBody)
+	return fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
+}
+
+func signPayload(secret, payload string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(signingString))
+	mac.Write([]byte(payload))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func decodeSignature(signature string) ([]byte, error) {
+	decoded, err := hex.DecodeString(signature)
+	if err != nil {
+		return nil, fmt.Errorf("signature must be hex encoded: %w", err)
+	}
+	if len(decoded) != sha256.Size {
+		return nil, fmt.Errorf("signature must be %d bytes, got %d", sha256.Size, len(decoded))
+	}
+	return decoded, nil
+}
+
+func verifySignature(secret, payload, signature string) bool {
+	provided, err := decodeSignature(signature)
+	if err != nil {
+		return false
+	}
+	expected, err := decodeSignature(signPayload(secret, payload))
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(provided, expected)
+}
+
+func validateRequestPayload(auth RequestAuth, requestBody []byte) error {
+	var payload struct {
+		MatchID *string `json:"match_id"`
+		Turn    *int    `json:"turn"`
+	}
+	if err := json.Unmarshal(requestBody, &payload); err != nil {
+		return fmt.Errorf("invalid request body: %w", err)
+	}
+	if payload.MatchID == nil || payload.Turn == nil {
+		return fmt.Errorf("request body must include match_id and turn")
+	}
+	if *payload.MatchID != auth.MatchID {
+		return fmt.Errorf("request match_id does not match X-ACB-Match-Id")
+	}
+	if *payload.Turn != auth.Turn {
+		return fmt.Errorf("request turn does not match X-ACB-Turn")
+	}
+	return nil
+}
+
+// SignRequest generates the HMAC signature for an outgoing request.
+func SignRequest(secret, matchID string, turn int, timestamp int64, requestBody []byte) string {
+	return signPayload(secret, CanonicalRequestPayload(matchID, turn, timestamp, requestBody))
 }
 
 // SignResponse generates the HMAC signature for a bot response.
-// signing_string = "{match_id}.{turn}.{sha256(response_body)}"
-// signature = HMAC-SHA256(shared_secret, signing_string)
 func SignResponse(secret, matchID string, turn int, responseBody []byte) string {
-	bodyHash := sha256.Sum256(responseBody)
-	signingString := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
-
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(signingString))
-	return hex.EncodeToString(mac.Sum(nil))
+	return signPayload(secret, CanonicalResponsePayload(matchID, turn, responseBody))
 }
 
-// VerifyRequest verifies an incoming request's signature.
-// Returns an error if verification fails.
-// Timestamp is validated separately for clock-skew; it is not included in the signing string.
+// VerifyRequest verifies an incoming request's identity, freshness, and signature.
 func VerifyRequest(secret string, auth RequestAuth, requestBody []byte) error {
-	// Check timestamp is within tolerance
-	now := time.Now().Unix()
-	requestTime := auth.Timestamp
-	diff := now - requestTime
-	if diff < 0 {
-		diff = -diff
+	if secret == "" {
+		return fmt.Errorf("shared secret is empty")
 	}
-	if time.Duration(diff)*time.Second > TimestampTolerance {
-		return fmt.Errorf("timestamp expired: request was %v ago (tolerance: %v)",
-			time.Duration(diff)*time.Second, TimestampTolerance)
+	if auth.MatchID == "" {
+		return fmt.Errorf("request match ID is empty")
 	}
-
-	// Compute expected signature
-	expectedSig := SignRequest(secret, auth.MatchID, auth.Turn, auth.Timestamp, requestBody)
-
-	// Constant-time comparison
-	if !hmac.Equal([]byte(auth.Signature), []byte(expectedSig)) {
-		return fmt.Errorf("invalid signature")
+	if auth.BotID == "" {
+		return fmt.Errorf("request bot ID is empty")
+	}
+	if auth.Turn < 0 {
+		return fmt.Errorf("request turn must be non-negative")
 	}
 
+	now := time.Now()
+	requestTime := time.Unix(auth.Timestamp, 0)
+	if requestTime.Before(now.Add(-TimestampTolerance)) || requestTime.After(now.Add(TimestampTolerance)) {
+		return fmt.Errorf("timestamp expired: request timestamp %d is outside tolerance %v", auth.Timestamp, TimestampTolerance)
+	}
+
+	payload := CanonicalRequestPayload(auth.MatchID, auth.Turn, auth.Timestamp, requestBody)
+	if !verifySignature(secret, payload, auth.Signature) {
+		return fmt.Errorf("invalid request signature")
+	}
+	if err := validateRequestPayload(auth, requestBody); err != nil {
+		return err
+	}
 	return nil
 }
 
 // VerifyResponse verifies a bot response's signature.
 func VerifyResponse(secret, matchID string, turn int, signature string, responseBody []byte) error {
-	expectedSig := SignResponse(secret, matchID, turn, responseBody)
-
-	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
+	if secret == "" {
+		return fmt.Errorf("shared secret is empty")
+	}
+	if matchID == "" {
+		return fmt.Errorf("response match ID is empty")
+	}
+	if turn < 0 {
+		return fmt.Errorf("response turn must be non-negative")
+	}
+	if !verifySignature(secret, CanonicalResponsePayload(matchID, turn, responseBody), signature) {
 		return fmt.Errorf("invalid response signature")
 	}
-
 	return nil
 }
 
@@ -131,6 +187,9 @@ func ParseAuthHeaders(headers map[string]string) (RequestAuth, error) {
 	auth.Signature = headers["X-ACB-Signature"]
 	if auth.Signature == "" {
 		return auth, fmt.Errorf("missing X-ACB-Signature header")
+	}
+	if _, err := decodeSignature(auth.Signature); err != nil {
+		return auth, fmt.Errorf("invalid X-ACB-Signature header: %w", err)
 	}
 
 	return auth, nil

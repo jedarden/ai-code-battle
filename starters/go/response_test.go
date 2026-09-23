@@ -57,4 +57,11 @@ func TestResponseIsMovesOnly(t *testing.T) {
 	if len(moves[0]) != 2 {
 		t.Errorf("move should have exactly position and direction, got %d keys", len(moves[0]))
 	}
+	var direction string
+	if err := json.Unmarshal(moves[0]["direction"], &direction); err != nil {
+		t.Fatalf("direction is not a string: %v", err)
+	}
+	if direction != "stay" {
+		t.Errorf("direction = %q, want stay", direction)
+	}
 }

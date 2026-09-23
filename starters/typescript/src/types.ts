@@ -3,7 +3,7 @@ export interface Position {
   col: number;
 }
 
-export type Direction = "N" | "E" | "S" | "W" | "";
+export type Direction = "N" | "E" | "S" | "W" | "stay";
 
 export interface VisibleBot {
   position: Position;

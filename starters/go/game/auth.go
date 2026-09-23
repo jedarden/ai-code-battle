@@ -5,23 +5,38 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // VerifyRequest verifies the HMAC signature of an incoming request.
 func VerifyRequest(secret string, headers AuthHeaders, body []byte) bool {
-	// Verify timestamp is within allowed window
-	if headers.Timestamp != "" && !VerifyTimestamp(headers.Timestamp) {
+	if secret == "" || headers.MatchID == "" || headers.Turn == "" || headers.Timestamp == "" || headers.BotID == "" || headers.Signature == "" {
 		return false
 	}
 
-	// Compute expected signature. The signing string excludes the timestamp
-	// (X-ACB-Timestamp is validated above for clock skew, never signed).
+	turn, err := strconv.Atoi(headers.Turn)
+	if err != nil || turn < 0 || strconv.Itoa(turn) != headers.Turn {
+		return false
+	}
+
+	timestampUnix, err := strconv.ParseInt(headers.Timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	age := time.Since(time.Unix(timestampUnix, 0))
+	if age < -30*time.Second || age > 30*time.Second {
+		return false
+	}
+
+	// Compute expected signature over the timestamp and exact request bytes.
 	bodyHash := sha256.Sum256(body)
-	signingString := fmt.Sprintf("%s.%s.%s",
+	signingString := fmt.Sprintf("%s.%s.%s.%s",
 		headers.MatchID,
 		headers.Turn,
+		headers.Timestamp,
 		hex.EncodeToString(bodyHash[:]))
 
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -29,15 +44,32 @@ func VerifyRequest(secret string, headers AuthHeaders, body []byte) bool {
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
 
 	// Constant-time comparison to prevent timing attacks
-	return hmac.Equal([]byte(headers.Signature), []byte(expectedSig))
+	if !hmac.Equal([]byte(headers.Signature), []byte(expectedSig)) {
+		return false
+	}
+
+	var identity struct {
+		MatchID *string `json:"match_id"`
+		Turn    *int    `json:"turn"`
+	}
+	if err := json.Unmarshal(body, &identity); err != nil {
+		return false
+	}
+	return identity.MatchID != nil && identity.Turn != nil && *identity.MatchID == headers.MatchID && *identity.Turn == turn
 }
 
 // SignResponse generates the HMAC signature for a response.
-// Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
+// signing_string = "{match_id}.{turn}.{sha256_hex(body)}"
 func SignResponse(secret, matchID, turnStr string, body []byte) string {
-	bodyHash := sha256.Sum256(body)
-	turn, _ := strconv.Atoi(turnStr)
+	if secret == "" || matchID == "" || turnStr == "" {
+		return ""
+	}
+	turn, err := strconv.Atoi(turnStr)
+	if err != nil {
+		return ""
+	}
 
+	bodyHash := sha256.Sum256(body)
 	signingString := fmt.Sprintf("%s.%d.%s",
 		matchID,
 		turn,

@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 )
 
 var sharedSecret string
@@ -40,22 +42,60 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleTurn(w http.ResponseWriter, r *http.Request) {
-	// Read body
-	var state VisibleState
-	if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Get auth headers
 	matchID := r.Header.Get("X-ACB-Match-Id")
 	turnStr := r.Header.Get("X-ACB-Turn")
+	timestamp := r.Header.Get("X-ACB-Timestamp")
+	botID := r.Header.Get("X-ACB-Bot-Id")
 	signature := r.Header.Get("X-ACB-Signature")
 
-	// Verify signature (optional but recommended)
-	body, _ := json.Marshal(state)
-	if !verifySignature(body, matchID, turnStr, signature) {
-		http.Error(w, "Invalid signature", http.StatusUnauthorized)
+	if matchID == "" || turnStr == "" || timestamp == "" || botID == "" || signature == "" {
+		http.Error(w, "Invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
+	// Read raw body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Verify signature
+	if !verifySignature(body, matchID, turnStr, timestamp, signature) {
+		http.Error(w, "Invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
+	turn, err := strconv.Atoi(turnStr)
+	if err != nil || turn < 0 {
+		http.Error(w, "Invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse game state
+	var identity struct {
+		MatchID *string `json:"match_id"`
+		Turn    *int    `json:"turn"`
+	}
+	if err := json.Unmarshal(body, &identity); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if identity.MatchID == nil || identity.Turn == nil || *identity.MatchID != matchID || *identity.Turn != turn {
+		http.Error(w, "Invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
+	var state VisibleState
+	if err := json.Unmarshal(body, &state); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
@@ -65,7 +105,6 @@ func handleTurn(w http.ResponseWriter, r *http.Request) {
 	// Send response
 	response := map[string]any{"moves": moves}
 	responseBody, _ := json.Marshal(response)
-	turn, _ := strconv.Atoi(turnStr)
 	sig := signResponse(responseBody, matchID, turn)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -74,13 +113,22 @@ func handleTurn(w http.ResponseWriter, r *http.Request) {
 	w.Write(responseBody)
 }
 
-func verifySignature(body []byte, matchID, turnStr, signature string) bool {
-	if signature == "" {
-		return true // Skip verification if not provided
+func verifySignature(body []byte, matchID, turnStr, timestamp, signature string) bool {
+	if sharedSecret == "" || matchID == "" || turnStr == "" || timestamp == "" || signature == "" {
+		return false
+	}
+
+	timestampUnix, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	age := time.Since(time.Unix(timestampUnix, 0))
+	if age < -30*time.Second || age > 30*time.Second {
+		return false
 	}
 
 	bodyHash := sha256.Sum256(body)
-	signingString := fmt.Sprintf("%s.%s.%s", matchID, turnStr, hex.EncodeToString(bodyHash[:]))
+	signingString := fmt.Sprintf("%s.%s.%s.%s", matchID, turnStr, timestamp, hex.EncodeToString(bodyHash[:]))
 	mac := hmac.New(sha256.New, []byte(sharedSecret))
 	mac.Write([]byte(signingString))
 	expectedSig := hex.EncodeToString(mac.Sum(nil))

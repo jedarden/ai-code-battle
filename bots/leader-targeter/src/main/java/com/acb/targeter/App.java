@@ -7,6 +7,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.HexFormat;
 
 /**
@@ -23,6 +24,7 @@ import java.util.HexFormat;
  */
 public class App {
     private static final int DEFAULT_PORT = 8085;
+    private static final long TIMESTAMP_TOLERANCE_SECONDS = 30;
     private static String SECRET;
     private static final LeaderTargeterStrategy STRATEGY = new LeaderTargeterStrategy();
 
@@ -51,14 +53,19 @@ public class App {
         String matchId = ctx.header("X-ACB-Match-Id");
         String turnStr = ctx.header("X-ACB-Turn");
         String timestamp = ctx.header("X-ACB-Timestamp");
+        String botId = ctx.header("X-ACB-Bot-Id");
         String signature = ctx.header("X-ACB-Signature");
 
-        if (matchId == null || turnStr == null || timestamp == null || signature == null) {
+        if (matchId == null || matchId.isEmpty()
+                || turnStr == null || turnStr.isEmpty()
+                || timestamp == null || timestamp.isEmpty()
+                || botId == null || botId.isEmpty()
+                || signature == null || signature.isEmpty()) {
             ctx.status(401).result("Missing auth headers");
             return;
         }
 
-        String body = ctx.body();
+        byte[] body = ctx.bodyAsBytes();
 
         // Verify signature
         if (!verifySignature(SECRET, matchId, turnStr, timestamp, body, signature)) {
@@ -69,23 +76,35 @@ public class App {
         // Parse game state
         GameState state;
         try {
-            state = GameState.fromJson(body);
+            state = GameState.fromJson(new String(body, StandardCharsets.UTF_8));
         } catch (Exception e) {
             ctx.status(400).result("Invalid JSON: " + e.getMessage());
             return;
         }
 
+        int turn;
+        try {
+            turn = Integer.parseInt(turnStr);
+        } catch (NumberFormatException e) {
+            ctx.status(401).result("Invalid request identity");
+            return;
+        }
+        if (turn < 0 || !Integer.toString(turn).equals(turnStr) || state.getTurn() == null
+                || !matchId.equals(state.getMatchId()) || state.getTurn() != turn) {
+            ctx.status(401).result("Invalid request identity");
+            return;
+        }
+
         // Compute moves
         var moves = STRATEGY.computeMoves(state);
-        int turn = Integer.parseInt(turnStr);
 
         System.out.println("Turn " + turn + ": " + moves.size() + " moves computed");
 
         // Build response
-        String responseBody = MoveResponse.toJson(moves);
+        byte[] responseBody = MoveResponse.toJson(moves).getBytes(StandardCharsets.UTF_8);
 
         // Sign response
-        String responseSig = signResponse(SECRET, matchId, turn, responseBody);
+        String responseSig = signResponse(SECRET, matchId, turnStr, responseBody);
 
         ctx.header("X-ACB-Signature", responseSig);
         ctx.contentType("application/json");
@@ -93,10 +112,17 @@ public class App {
     }
 
     private static boolean verifySignature(String secret, String matchId, String turn,
-                                           String timestamp, String body, String signature) {
+                                           String timestamp, byte[] body, String signature) {
         try {
+            long timestampSeconds = Long.parseLong(timestamp);
+            long now = Instant.now().getEpochSecond();
+            if (timestampSeconds < now - TIMESTAMP_TOLERANCE_SECONDS
+                    || timestampSeconds > now + TIMESTAMP_TOLERANCE_SECONDS) {
+                return false;
+            }
+
             String bodyHash = sha256Hex(body);
-            String signingString = matchId + "." + turn + "." + bodyHash;
+            String signingString = matchId + "." + turn + "." + timestamp + "." + bodyHash;
 
             Mac mac = Mac.getInstance("HmacSHA256");
             SecretKeySpec keySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
@@ -112,7 +138,7 @@ public class App {
         }
     }
 
-    private static String signResponse(String secret, String matchId, int turn, String body) {
+    private static String signResponse(String secret, String matchId, String turn, byte[] body) {
         try {
             String bodyHash = sha256Hex(body);
             String signingString = matchId + "." + turn + "." + bodyHash;
@@ -126,10 +152,10 @@ public class App {
         }
     }
 
-    private static String sha256Hex(String input) {
+    private static String sha256Hex(byte[] input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(input.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of().formatHex(digest.digest(input));
         } catch (Exception e) {
             throw new RuntimeException("Failed to hash", e);
         }

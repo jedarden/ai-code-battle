@@ -103,7 +103,15 @@ func TestBuildTranslationPrompt_containsBothLanguages(t *testing.T) {
 
 func TestBuildTranslationPrompt_containsHTTPSpec(t *testing.T) {
 	got := buildTranslationPrompt("code", "python", "rust")
-	for _, want := range []string{"port 8080", "GET /health", "POST /turn", "HMAC"} {
+	for _, want := range []string{
+		"port 8080",
+		"GET /health",
+		"POST /turn",
+		"HMAC",
+		"{match_id}.{turn}.{timestamp}.{sha256_hex(raw_body)}",
+		`"position":{"row":N,"col":N}`,
+		"X-ACB-Timestamp",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected %q in translation prompt", want)
 		}

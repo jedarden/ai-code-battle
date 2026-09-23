@@ -21,7 +21,7 @@ export function computeMoves(state: VisibleState): Move[] {
         .filter(bot => bot.owner === state.you.id)
         .map(bot => ({
             position: bot.position,
-            direction: "" // Hold position
+            direction: "stay" // Hold position
         }));
 }
 ```

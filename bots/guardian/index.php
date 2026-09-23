@@ -42,33 +42,61 @@ while ($conn = stream_socket_accept($server)) {
  * Handle an incoming HTTP request
  */
 function handle_request($conn, string $secret, GuardianStrategy $strategy): void {
-    // Read request
-    $request = fread($conn, 65536);
+    $request = '';
+    while (($headerEnd = strpos($request, "\r\n\r\n")) === false) {
+        $byte = fread($conn, 1);
+        if ($byte === false || $byte === '') {
+            send_response($conn, 400, 'text/plain', 'Invalid request');
+            return;
+        }
+        $request .= $byte;
+        if (strlen($request) > 65536) {
+            send_response($conn, 400, 'text/plain', 'Invalid request');
+            return;
+        }
+    }
 
-    // Parse request line
-    $lines = explode("\r\n", $request);
+    $lines = explode("\r\n", substr($request, 0, $headerEnd));
     $requestLine = explode(' ', $lines[0] ?? '');
     $method = $requestLine[0] ?? '';
     $path = $requestLine[1] ?? '/';
 
-    // Parse headers
     $headers = [];
-    $bodyStart = 0;
     for ($i = 1; $i < count($lines); $i++) {
-        if ($lines[$i] === '') {
-            $bodyStart = $i + 1;
-            break;
-        }
-        $parts = explode(': ', $lines[$i], 2);
+        $parts = explode(':', $lines[$i], 2);
         if (count($parts) === 2) {
-            $headers[$parts[0]] = $parts[1];
+            $name = strtolower(trim($parts[0]));
+            $headers[$name] = array_key_exists($name, $headers) ? null : trim($parts[1]);
         }
     }
 
-    // Extract body
-    $body = implode("\r\n", array_slice($lines, $bodyStart));
+    $contentLengthHeader = get_header($headers, 'Content-Length');
+    $contentLength = 0;
+    if ($contentLengthHeader !== '') {
+        if (!ctype_digit($contentLengthHeader)) {
+            send_response($conn, 400, 'text/plain', 'Invalid Content-Length');
+            return;
+        }
+        $contentLength = filter_var($contentLengthHeader, FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 0],
+        ]);
+        if ($contentLength === false) {
+            send_response($conn, 400, 'text/plain', 'Invalid Content-Length');
+            return;
+        }
+    }
 
-    // Route request
+    $body = '';
+    while (strlen($body) < $contentLength) {
+        $remaining = $contentLength - strlen($body);
+        $chunk = fread($conn, min(8192, $remaining));
+        if ($chunk === false || $chunk === '') {
+            send_response($conn, 400, 'text/plain', 'Invalid request body');
+            return;
+        }
+        $body .= $chunk;
+    }
+
     if ($method === 'GET' && $path === '/health') {
         send_response($conn, 200, 'text/plain', 'OK');
         return;
@@ -82,17 +110,30 @@ function handle_request($conn, string $secret, GuardianStrategy $strategy): void
     send_response($conn, 404, 'text/plain', 'Not Found');
 }
 
+function get_header(array $headers, string $name): string {
+    foreach ($headers as $headerName => $value) {
+        if (strcasecmp($headerName, $name) === 0) {
+            return is_string($value) ? $value : '';
+        }
+    }
+    return '';
+}
+
 /**
  * Handle turn request
  */
 function handle_turn($conn, string $secret, GuardianStrategy $strategy, array $headers, string $body): void {
     // Extract auth headers
-    $matchId = $headers['X-ACB-Match-Id'] ?? '';
-    $turnStr = $headers['X-ACB-Turn'] ?? '';
-    $timestamp = $headers['X-ACB-Timestamp'] ?? '';
-    $signature = $headers['X-ACB-Signature'] ?? '';
+    $matchId = get_header($headers, 'X-ACB-Match-Id');
+    $turnStr = get_header($headers, 'X-ACB-Turn');
+    $timestamp = get_header($headers, 'X-ACB-Timestamp');
+    $botId = get_header($headers, 'X-ACB-Bot-Id');
+    $signature = get_header($headers, 'X-ACB-Signature');
+    $turn = ctype_digit($turnStr)
+        ? filter_var($turnStr, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]])
+        : false;
 
-    if (!$matchId || !$turnStr || !$timestamp || !$signature) {
+    if ($matchId === '' || $turn === false || $timestamp === '' || $botId === '' || $signature === '') {
         send_response($conn, 401, 'text/plain', 'Missing auth headers');
         return;
     }
@@ -103,10 +144,27 @@ function handle_turn($conn, string $secret, GuardianStrategy $strategy, array $h
         return;
     }
 
+    if (!verify_timestamp($timestamp)) {
+        send_response($conn, 401, 'text/plain', 'Invalid timestamp');
+        return;
+    }
+
     // Parse game state
     $state = json_decode($body, true);
-    if (!$state) {
+    if (json_last_error() !== JSON_ERROR_NONE) {
         send_response($conn, 400, 'text/plain', 'Invalid JSON');
+        return;
+    }
+
+    if (!is_array($state) ||
+        !array_key_exists('match_id', $state) ||
+        !is_string($state['match_id']) ||
+        !array_key_exists('turn', $state) ||
+        !is_int($state['turn']) ||
+        $state['match_id'] !== $matchId ||
+        $state['turn'] !== $turn
+    ) {
+        send_response($conn, 401, 'text/plain', 'Invalid request identity');
         return;
     }
 
@@ -120,7 +178,6 @@ function handle_turn($conn, string $secret, GuardianStrategy $strategy, array $h
     $responseBody = json_encode($response);
 
     // Sign response
-    $turn = (int)$turnStr;
     $responseSig = sign_response($secret, $matchId, $turn, $responseBody);
 
     $headers = [
@@ -135,10 +192,23 @@ function handle_turn($conn, string $secret, GuardianStrategy $strategy, array $h
  * Verify HMAC signature
  */
 function verify_signature(string $secret, string $matchId, string $turn, string $timestamp, string $body, string $signature): bool {
+    if (!preg_match('/\A[0-9a-fA-F]{64}\z/', $signature)) {
+        return false;
+    }
     $bodyHash = hash('sha256', $body);
-    $signingString = "$matchId.$turn.$bodyHash";
+    $signingString = "$matchId.$turn.$timestamp.$bodyHash";
     $expected = hash_hmac('sha256', $signingString, $secret);
     return hash_equals($expected, $signature);
+}
+
+function verify_timestamp(string $timestamp): bool {
+    if (!ctype_digit($timestamp)) {
+        return false;
+    }
+    $seconds = filter_var($timestamp, FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 0],
+    ]);
+    return $seconds !== false && abs(time() - $seconds) <= 30;
 }
 
 /**

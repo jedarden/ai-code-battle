@@ -7,12 +7,16 @@ pub struct Position {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum Direction {
+    #[serde(rename = "stay")]
     None,
+    #[serde(rename = "N")]
     N,
+    #[serde(rename = "E")]
     E,
+    #[serde(rename = "S")]
     S,
+    #[serde(rename = "W")]
     W,
 }
 

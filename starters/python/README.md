@@ -24,7 +24,7 @@ Return a list of move objects:
 ```python
 {
     "position": {"row": 5, "col": 10},  # Current position of bot to move
-    "direction": "N"                    # One of: "N", "E", "S", "W", or "" for no move
+    "direction": "N"                    # One of: "N", "E", "S", "W", or "stay"
 }
 ```
 

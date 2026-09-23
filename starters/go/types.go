@@ -37,6 +37,9 @@ func (d Direction) String() string {
 
 // MarshalJSON serializes Direction as a string.
 func (d Direction) MarshalJSON() ([]byte, error) {
+	if d == DirNone {
+		return json.Marshal("stay")
+	}
 	return json.Marshal(d.String())
 }
 

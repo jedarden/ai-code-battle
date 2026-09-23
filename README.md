@@ -88,36 +88,46 @@ The engine sends the current game state; your bot responds with move orders.
 | `Content-Type` | `application/json` |
 | `X-ACB-Match-Id` | Match identifier string |
 | `X-ACB-Turn` | Current turn number (integer as string) |
+| `X-ACB-Timestamp` | Unix timestamp in seconds; requests older/newer than 30 seconds are rejected |
+| `X-ACB-Bot-Id` | Bot identifier string |
 | `X-ACB-Signature` | HMAC-SHA256 signature of this request |
 
 **Request body** (JSON game state):
 
 ```json
 {
+  "match_id": "m_7f3a9b2c",
   "turn": 42,
-  "player_id": "player-1",
+  "config": {
+    "rows": 40,
+    "cols": 40,
+    "max_turns": 500,
+    "vision_radius2": 49,
+    "attack_radius2": 25,
+    "spawn_cost": 3,
+    "energy_interval": 10,
+    "cores_per_player": 2,
+    "zone_enabled": true,
+    "zone_start_turn": 10,
+    "zone_shrink_interval": 1,
+    "zone_shrink_step": 1,
+    "zone_min_radius": 2,
+    "kill_score": 1
+  },
+  "you": { "id": 0, "energy": 7, "score": 3 },
   "bots": [
-    {
-      "id": 1,
-      "x": 5,
-      "y": 3,
-      "health": 100,
-      "owner": "player-1"
-    }
+    { "position": { "row": 10, "col": 15 }, "owner": 0 }
   ],
-  "tiles": [
-    { "x": 4, "y": 3, "type": "open" },
-    { "x": 5, "y": 3, "type": "energy" }
+  "energy": [
+    { "row": 20, "col": 25 }
   ],
-  "energy_locations": [{ "x": 5, "y": 3 }],
-  "core_locations": [
-    { "x": 0, "y": 0, "owner": "player-1" },
-    { "x": 9, "y": 9, "owner": "player-2" }
+  "cores": [
+    { "position": { "row": 5, "col": 5 }, "owner": 0, "active": true }
   ],
-  "scores": {
-    "player-1": { "energy": 150, "cores": 2 },
-    "player-2": { "energy": 80, "cores": 1 }
-  }
+  "walls": [
+    { "row": 10, "col": 10 }
+  ],
+  "dead": []
 }
 ```
 
@@ -143,9 +153,9 @@ not treated as eliminated merely because it stopped responding.
 ```json
 {
   "moves": [
-    { "bot_id": 1, "direction": "N" },
-    { "bot_id": 2, "direction": "E" },
-    { "bot_id": 3, "direction": "stay" }
+    { "position": { "row": 5, "col": 5 }, "direction": "N" },
+    { "position": { "row": 7, "col": 8 }, "direction": "E" },
+    { "position": { "row": 9, "col": 2 }, "direction": "stay" }
   ]
 }
 ```
@@ -155,7 +165,10 @@ Valid directions: `N`, `E`, `S`, `W`, `stay`
 > **The response schema is moves-only** (plus the optional `debug` object). There is
 > **no spawn order field** — spawning is resolved by the engine's automatic Spawn
 > phase (see *Turn Phases* above), so spend your effort on movement and energy
-> collection, not on spawn requests. Unknown extra fields in the response are
+> collection, not on spawn requests. `moves` is required and must be an array;
+> every move must include integer `position.row`, integer `position.col`, and a
+> direction from the list above. Malformed known fields invalidate the whole
+> response, so the bot's units hold position. Unknown additive fields are
 > ignored; only `moves` and `debug` have any effect.
 
 **Response header:**
@@ -166,34 +179,41 @@ Valid directions: `N`, `E`, `S`, `W`, `stay`
 
 ### HMAC Authentication
 
-Every request and response is signed. The signing key is your `SHARED_SECRET` environment variable.
+Every request and response is signed with HMAC-SHA256. The key is the UTF-8 bytes
+of your `SHARED_SECRET` environment variable. Hash the exact bytes received or
+sent; do not parse and re-serialize JSON before hashing.
 
-**Signing string format:**
-
-```
-{match_id}.{turn}.{sha256_hex(body)}
-```
-
-**Signature:**
+**Canonical request payload:**
 
 ```
-HMAC-SHA256(key=SHARED_SECRET, message=signing_string)  →  hex-encoded
+{match_id}.{turn}.{timestamp}.{sha256_hex(raw_body)}
 ```
+
+**Canonical response payload:**
+
+```
+{match_id}.{turn}.{sha256_hex(raw_response_body)}
+```
+
+Each signature is `HMAC-SHA256(key, canonical_payload)`, encoded as 64 lowercase
+hex characters.
 
 **To verify an incoming request:**
 
-1. Read `X-ACB-Match-Id`, `X-ACB-Turn`, and the raw request body
-2. Compute `sha256(body)` as hex
-3. Build the signing string: `"{match_id}.{turn}.{body_sha256}"`
-4. Compute `HMAC-SHA256(SHARED_SECRET, signing_string)` as hex
-5. Compare with `X-ACB-Signature` (constant-time comparison)
+1. Require `X-ACB-Match-Id`, `X-ACB-Turn`, `X-ACB-Timestamp`, `X-ACB-Bot-Id`, and `X-ACB-Signature`
+2. Reject a timestamp more than 30 seconds before or after the current time
+3. Compute `sha256(raw_body)` as lowercase hex
+4. Build `"{match_id}.{turn}.{timestamp}.{body_sha256}"`
+5. Compute `HMAC-SHA256(SHARED_SECRET, payload)` as 32 bytes
+6. Decode the supplied 64-hex signature and compare the bytes in constant time
+7. Parse the authenticated body and require its `match_id` and `turn` to equal the headers
 
 **To sign your response:**
 
-1. Compute `sha256(response_body)` as hex
-2. Build the same signing string with the same `match_id` and `turn`
-3. Compute `HMAC-SHA256(SHARED_SECRET, signing_string)` as hex
-4. Set `X-ACB-Signature` response header to that value
+1. Compute `sha256(raw_response_body)` as lowercase hex
+2. Build `"{match_id}.{turn}.{body_sha256}"` using the authenticated request values
+3. Compute `HMAC-SHA256(SHARED_SECRET, payload)` and encode it as lowercase hex
+4. Set `X-ACB-Signature` to that value before writing the exact response bytes
 
 ### Environment Variables
 

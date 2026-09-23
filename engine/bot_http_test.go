@@ -33,6 +33,9 @@ func TestHTTPBot_GetMoves(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if got := r.Header.Get("X-ACB-Match-Id"); got != state.MatchID {
+			t.Errorf("request match ID = %q, want body match ID %q", got, state.MatchID)
+		}
 
 		// Return moves for owned bots
 		moves := make([]Move, 0)
@@ -60,7 +63,7 @@ func TestHTTPBot_GetMoves(t *testing.T) {
 	auth := AuthConfig{
 		BotID:   "b_test",
 		Secret:  "test-secret",
-		MatchID: "m_test",
+		MatchID: "m_configured",
 	}
 	bot := NewHTTPBot(server.URL, auth)
 
@@ -184,15 +187,13 @@ func TestHTTPBot_ValidateMoves(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&state)
 
 		// Return moves with:
-		// 1. Invalid direction
-		// 2. Position without owned bot
+		// 1. Position without owned bot
+		// 2. Valid move
 		// 3. Duplicate position
-		// 4. Valid move
 		moves := []Move{
-			{Position: Position{Row: 0, Col: 0}, Direction: DirNone}, // Invalid direction
-			{Position: Position{Row: 99, Col: 99}, Direction: DirN},  // No bot there
-			{Position: Position{Row: 5, Col: 5}, Direction: DirN},    // Valid
-			{Position: Position{Row: 5, Col: 5}, Direction: DirS},    // Duplicate
+			{Position: Position{Row: 99, Col: 99}, Direction: DirN},
+			{Position: Position{Row: 5, Col: 5}, Direction: DirN},
+			{Position: Position{Row: 5, Col: 5}, Direction: DirS},
 		}
 
 		resp := MoveResponse{Moves: moves}
@@ -230,7 +231,7 @@ func TestHTTPBot_ValidateMoves(t *testing.T) {
 		t.Fatalf("GetMoves failed: %v", err)
 	}
 
-	// Should only have 1 valid move (duplicate filtered, invalid direction filtered, non-owned filtered)
+	// Should only have 1 valid move (duplicate and non-owned positions filtered)
 	if len(moves) != 1 {
 		t.Errorf("got %d moves, want 1 (invalid filtered out)", len(moves))
 	}

@@ -95,7 +95,7 @@ type DebugInfo struct {
 
 // DebugTarget represents a debug target marker.
 type DebugTarget struct {
-	Position Position  `json:"position"`
+	Position Position `json:"position"`
 	Label    string   `json:"label"`
 	Color    string   `json:"color,omitempty"`
 	Priority float64  `json:"priority"`
@@ -107,15 +107,86 @@ type DebugHeatmap struct {
 	Data [][]float64 `json:"data"` // 2D array of values (row-major)
 }
 
+type moveResponseEnvelope struct {
+	Moves json.RawMessage `json:"moves"`
+	Debug *DebugInfo      `json:"debug"`
+}
+
+type moveResponseMove struct {
+	Position  *moveResponsePosition `json:"position"`
+	Direction *string               `json:"direction"`
+}
+
+type moveResponsePosition struct {
+	Row *int `json:"row"`
+	Col *int `json:"col"`
+}
+
+func decodeMoveResponse(responseBody []byte) (MoveResponse, error) {
+	var envelope moveResponseEnvelope
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return MoveResponse{}, fmt.Errorf("invalid move response: %w", err)
+	}
+	if len(envelope.Moves) == 0 {
+		return MoveResponse{}, fmt.Errorf("move response must include moves")
+	}
+
+	var wireMoves []moveResponseMove
+	if err := json.Unmarshal(envelope.Moves, &wireMoves); err != nil {
+		return MoveResponse{}, fmt.Errorf("moves must be an array: %w", err)
+	}
+	if wireMoves == nil {
+		return MoveResponse{}, fmt.Errorf("moves must be an array, not null")
+	}
+
+	response := MoveResponse{
+		Moves: make([]Move, 0, len(wireMoves)),
+		Debug: envelope.Debug,
+	}
+	for i, wireMove := range wireMoves {
+		if wireMove.Position == nil || wireMove.Position.Row == nil || wireMove.Position.Col == nil {
+			return MoveResponse{}, fmt.Errorf("move %d must include position.row and position.col", i)
+		}
+		if *wireMove.Position.Row < 0 || *wireMove.Position.Col < 0 {
+			return MoveResponse{}, fmt.Errorf("move %d position must be non-negative", i)
+		}
+		if wireMove.Direction == nil {
+			return MoveResponse{}, fmt.Errorf("move %d must include direction", i)
+		}
+
+		direction := ParseDirection(*wireMove.Direction)
+		if direction == DirNone && *wireMove.Direction != "stay" {
+			return MoveResponse{}, fmt.Errorf("move %d has invalid direction %q", i, *wireMove.Direction)
+		}
+		response.Moves = append(response.Moves, Move{
+			Position: Position{
+				Row: *wireMove.Position.Row,
+				Col: *wireMove.Position.Col,
+			},
+			Direction: direction,
+		})
+	}
+	return response, nil
+}
+
 // GetMoves sends the game state to the bot and returns its moves.
 // Implements BotInterface.
 func (b *HTTPBot) GetMoves(state *VisibleState) ([]Move, error) {
+	b.lastDebug = nil
+
 	// If crashed, return no moves (bots hold position)
 	if b.crashed {
 		return []Move{}, nil
 	}
 
-	// Update turn counter
+	if state == nil || state.MatchID == "" {
+		b.recordFailure()
+		return nil, fmt.Errorf("visible state must include match_id")
+	}
+
+	// Update request identity from the exact state that will be signed and sent.
+	b.matchID = state.MatchID
+	b.auth.MatchID = state.MatchID
 	b.turn = state.Turn
 
 	// Serialize state
@@ -176,11 +247,10 @@ func (b *HTTPBot) GetMoves(state *VisibleState) ([]Move, error) {
 		return nil, fmt.Errorf("response signature verification failed: %w", err)
 	}
 
-	// Parse response
-	var moveResp MoveResponse
-	if err := json.Unmarshal(responseBody, &moveResp); err != nil {
+	moveResp, err := decodeMoveResponse(responseBody)
+	if err != nil {
 		b.recordFailure()
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to validate response: %w", err)
 	}
 
 	// Validate debug size (max 10 KB per turn per §14.1)

@@ -24,6 +24,12 @@ import { computeMoves } from "./strategy.js";
 const PORT = parseInt(process.env.BOT_PORT || "8080", 10);
 const SECRET = process.env.BOT_SECRET || "";
 
+function parseTurn(turn: string): number | null {
+  if (!/^(0|[1-9]\d*)$/.test(turn)) return null;
+  const value = Number(turn);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
 if (!SECRET) {
   console.error("ERROR: BOT_SECRET environment variable is required");
   process.exit(1);
@@ -34,18 +40,17 @@ const app = Fastify({
   logger: false, // Set to true for HTTP request logging
 });
 
-// Add a custom parser to store raw body string for signature verification
+// Add a custom parser to store raw body bytes for signature verification
 app.addContentTypeParser(
   "application/json",
-  { parseAs: "string" },
+  { parseAs: "buffer" },
   async (
     request: FastifyRequest,
-    body: string
+    body: Buffer
   ) => {
     // Store raw body for signature verification
     (request as any).rawBody = body;
-    // Also return parsed JSON for normal use
-    return JSON.parse(body);
+    return body;
   }
 );
 
@@ -62,23 +67,33 @@ app.get("/health", async (_request: FastifyRequest, reply: FastifyReply) => {
  * Receives game state JSON, computes moves, returns moves JSON.
  */
 app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
-  // Get raw body as string for signature verification
+  // Get raw body as bytes for signature verification
   const rawBody = (request as any).rawBody;
-  if (typeof rawBody !== "string") {
+  if (!Buffer.isBuffer(rawBody)) {
     reply.type("text/plain").code(400);
     return "Invalid request body";
   }
-  const bodyBuffer = Buffer.from(rawBody, "utf-8");
 
   // Extract auth headers
-  const headers = request.headers as Record<string, string>;
-  const { matchId, turn, timestamp, signature } = getAuthHeaders(headers);
+  const { matchId, turn, timestamp, botId, signature } = getAuthHeaders(
+    request.headers
+  );
+  const turnNumber = parseTurn(turn);
 
-  // Verify HMAC signature (signing string excludes the timestamp; the
-  // timestamp is checked separately for clock skew below)
   if (
-    !signature ||
-    !verifySignature(bodyBuffer, matchId, turn, signature, SECRET)
+    !matchId ||
+    turnNumber === null ||
+    !timestamp ||
+    !botId ||
+    !signature
+  ) {
+    reply.type("text/plain").code(401);
+    return "Missing auth headers";
+  }
+
+  // Verify HMAC signature over the exact request bytes
+  if (
+    !verifySignature(rawBody, matchId, turn, timestamp, signature, SECRET)
   ) {
     reply.type("text/plain").code(401);
     return "Invalid signature";
@@ -90,8 +105,24 @@ app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
     return "Invalid timestamp";
   }
 
-  // Parse game state JSON (already parsed by our custom parser)
-  const state: VisibleState = request.body as VisibleState;
+  // Parse game state JSON after authentication
+  let state: VisibleState;
+  try {
+    state = JSON.parse(rawBody.toString("utf-8"));
+  } catch {
+    reply.type("text/plain").code(400);
+    return "Invalid JSON";
+  }
+
+  if (
+    state === null ||
+    typeof state !== "object" ||
+    state.match_id !== matchId ||
+    state.turn !== turnNumber
+  ) {
+    reply.type("text/plain").code(401);
+    return "Invalid request identity";
+  }
 
   // Log match start (turn 0)
   if (state.turn === 0) {
@@ -108,14 +139,13 @@ app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
 
   // Build response
   const responseBody: TurnResponse = { moves };
-  const responseJson = JSON.stringify(responseBody);
+  const responseBuffer = Buffer.from(JSON.stringify(responseBody));
 
-  // Sign response — same signing string as the request:
-  // {match_id}.{turn}.{sha256_hex(body)}
+  // Sign the exact serialized response body without a timestamp
   const responseSig = signResponse(
-    responseJson,
+    responseBuffer,
     matchId,
-    parseInt(turn, 10),
+    turnNumber,
     SECRET
   );
 
@@ -124,7 +154,7 @@ app.post("/turn", async (request: FastifyRequest, reply: FastifyReply) => {
     .code(200)
     .header("Content-Type", "application/json")
     .header("X-ACB-Signature", responseSig);
-  return responseJson;
+  return responseBuffer;
 });
 
 /**

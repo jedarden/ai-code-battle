@@ -39,22 +39,25 @@ const server = http.createServer((req, res) => {
 
 async function handleTurn(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   // Extract auth headers
-  const matchId = req.headers['x-acb-match-id'] as string;
-  const turnStr = req.headers['x-acb-turn'] as string;
-  const timestamp = req.headers['x-acb-timestamp'] as string;
-  const signature = req.headers['x-acb-signature'] as string;
+  const matchId = getHeader(req, 'x-acb-match-id');
+  const turnStr = getHeader(req, 'x-acb-turn');
+  const timestamp = getHeader(req, 'x-acb-timestamp');
+  const botId = getHeader(req, 'x-acb-bot-id');
+  const signature = getHeader(req, 'x-acb-signature');
+  const turn = parseTurn(turnStr);
 
-  if (!matchId || !turnStr || !timestamp || !signature) {
+  if (!matchId || turn === null || !timestamp || !botId || !signature) {
     res.writeHead(401, { 'Content-Type': 'text/plain' });
     res.end('Missing auth headers');
     return;
   }
 
   // Read body
-  let body = '';
+  const chunks: Buffer[] = [];
   for await (const chunk of req) {
-    body += chunk;
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
+  const body = Buffer.concat(chunks);
 
   // Verify signature
   if (!verifySignature(SECRET, matchId, turnStr, timestamp, body, signature)) {
@@ -63,19 +66,35 @@ async function handleTurn(req: http.IncomingMessage, res: http.ServerResponse): 
     return;
   }
 
+  if (!verifyTimestamp(timestamp)) {
+    res.writeHead(401, { 'Content-Type': 'text/plain' });
+    res.end('Invalid timestamp');
+    return;
+  }
+
   // Parse game state
   let state: GameState;
   try {
-    state = JSON.parse(body);
+    state = JSON.parse(body.toString('utf8'));
   } catch (e) {
     res.writeHead(400, { 'Content-Type': 'text/plain' });
     res.end('Invalid JSON');
     return;
   }
 
+  if (
+    state === null ||
+    typeof state !== 'object' ||
+    state.match_id !== matchId ||
+    state.turn !== turn
+  ) {
+    res.writeHead(401, { 'Content-Type': 'text/plain' });
+    res.end('Invalid request identity');
+    return;
+  }
+
   // Compute moves
   const moves = strategy.computeMoves(state);
-  const turn = parseInt(turnStr, 10);
 
   console.log(`Turn ${turn}: ${moves.length} moves computed`);
 
@@ -93,6 +112,17 @@ async function handleTurn(req: http.IncomingMessage, res: http.ServerResponse): 
   res.end(responseBody);
 }
 
+function getHeader(req: http.IncomingMessage, name: string): string {
+  const value = req.headers[name];
+  return typeof value === 'string' ? value : '';
+}
+
+function parseTurn(turn: string): number | null {
+  if (!/^(0|[1-9]\d*)$/.test(turn)) return null;
+  const value = Number(turn);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
 /**
  * Verify HMAC signature of incoming request
  */
@@ -101,13 +131,25 @@ function verifySignature(
   matchId: string,
   turn: string,
   timestamp: string,
-  body: string,
+  body: Buffer,
   signature: string
 ): boolean {
+  if (!/^[0-9a-fA-F]{64}$/.test(signature)) return false;
   const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
-  const signingString = `${matchId}.${turn}.${bodyHash}`;
+  const signingString = `${matchId}.${turn}.${timestamp}.${bodyHash}`;
   const expected = crypto.createHmac('sha256', secret).update(signingString).digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  const provided = Buffer.from(signature, 'hex');
+  const expectedBytes = Buffer.from(expected, 'hex');
+  return provided.length === expectedBytes.length && crypto.timingSafeEqual(provided, expectedBytes);
+}
+
+function verifyTimestamp(timestamp: string): boolean {
+  const seconds = Number(timestamp);
+  return (
+    /^(0|[1-9]\d*)$/.test(timestamp) &&
+    Number.isSafeInteger(seconds) &&
+    Math.abs(Date.now() / 1000 - seconds) <= 30
+  );
 }
 
 /**

@@ -160,8 +160,13 @@ func writeSystemContext(sb *strings.Builder, targetLang string) {
 	sb.WriteString("## HTTP Protocol\n")
 	sb.WriteString("- Your bot is an HTTP server listening on port 8080.\n")
 	sb.WriteString("- Engine POSTs game state (JSON) to /turn each turn. You have 3 seconds to respond.\n")
-	sb.WriteString("- Response: {\"moves\": [{\"row\":10,\"col\":15,\"direction\":\"N\"}], \"debug\": {...}}\n")
-	sb.WriteString("- Headers include HMAC-SHA256 signature: X-ACB-Signature, X-ACB-Match-Id, X-ACB-Turn.\n")
+	sb.WriteString("- All five authentication headers are required: X-ACB-Match-Id, X-ACB-Turn, X-ACB-Timestamp, X-ACB-Bot-Id, and X-ACB-Signature.\n")
+	sb.WriteString("- X-ACB-Match-Id and X-ACB-Turn must exactly match the body's match_id and turn; reject negative turns. Return HTTP 401 for missing, stale, mismatched, or otherwise invalid authentication.\n")
+	sb.WriteString("- X-ACB-Timestamp is Unix seconds; reject requests when it is missing or outside a ±30-second freshness window.\n")
+	sb.WriteString("- Compute the expected request HMAC-SHA256 with the shared secret using exactly this signing input: `{match_id}.{turn}.{timestamp}.{sha256hex(raw_body)}`. Hash the exact raw request bytes and compare the hex HMAC in constant time.\n")
+	sb.WriteString("- Response example: {\"moves\":[{\"position\":{\"row\":10,\"col\":15},\"direction\":\"N\"}],\"debug\":{}}. Every move requires integer position.row and position.col plus direction string \"N\", \"E\", \"S\", \"W\", or \"stay\".\n")
+	sb.WriteString("- Optional debug must use the engine DebugInfo JSON shape with optional reasoning, targets, values, and heatmap fields; its normalized JSON must be at most 10 KiB.\n")
+	sb.WriteString("- Every 200 response must include X-ACB-Signature. Its HMAC-SHA256 with the shared secret uses exactly `{match_id}.{turn}.{sha256hex(raw_response_body)}`, using the exact response bytes sent.\n")
 	sb.WriteString("- 10 consecutive failures → bot marked crashed (units hold position for rest of match).\n\n")
 }
 

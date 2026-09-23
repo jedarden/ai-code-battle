@@ -12,9 +12,17 @@ func TestSignRequest(t *testing.T) {
 	matchID := "m_7f3a9b2c"
 	turn := 42
 	timestamp := int64(1711200000)
-	body := []byte(`{"match_id":"m_7f3a9b2c"}`)
+	body := []byte(`{"match_id":"m_7f3a9b2c","turn":42}`)
 
 	sig := SignRequest(secret, matchID, turn, timestamp, body)
+
+	wantPayload := "m_7f3a9b2c.42.1711200000.467d8abda5a8473a8a1a4e41bf1dd4e0d8df2297767dff9184777678c1c1bfbb"
+	if got := CanonicalRequestPayload(matchID, turn, timestamp, body); got != wantPayload {
+		t.Errorf("CanonicalRequestPayload() = %q, want %q", got, wantPayload)
+	}
+	if sig != "41875634fc1c5adf152da8997026ba8f1948029c68f54279bc976e04548db8c4" {
+		t.Errorf("SignRequest() = %q, want fixed HMAC test vector", sig)
+	}
 
 	// Signature should be 64 hex characters (256 bits)
 	if len(sig) != 64 {
@@ -48,6 +56,14 @@ func TestSignResponse(t *testing.T) {
 
 	sig := SignResponse(secret, matchID, turn, body)
 
+	wantPayload := "m_7f3a9b2c.42.4cba52032dfb0839b8138eb84ebcb5bd281253019dfc6efb447d211ac4333f8e"
+	if got := CanonicalResponsePayload(matchID, turn, body); got != wantPayload {
+		t.Errorf("CanonicalResponsePayload() = %q, want %q", got, wantPayload)
+	}
+	if sig != "142b87dffcad9eae1ec2cc2a26ee430ac9f67e89a1f87f4ae9ce0167f9ba420c" {
+		t.Errorf("SignResponse() = %q, want fixed HMAC test vector", sig)
+	}
+
 	// Signature should be 64 hex characters
 	if len(sig) != 64 {
 		t.Errorf("signature length = %d, want 64", len(sig))
@@ -65,7 +81,7 @@ func TestVerifyRequest(t *testing.T) {
 	matchID := "m_7f3a9b2c"
 	turn := 42
 	timestamp := time.Now().Unix()
-	body := []byte(`{"match_id":"m_7f3a9b2c"}`)
+	body := []byte(`{"match_id":"m_7f3a9b2c","turn":42}`)
 
 	sig := SignRequest(secret, matchID, turn, timestamp, body)
 
@@ -96,16 +112,51 @@ func TestVerifyRequest(t *testing.T) {
 
 	// Expired timestamp should fail
 	auth3 := auth
-	auth3.Timestamp = time.Now().Unix() - 60 // 60 seconds ago
+	auth3.Timestamp = time.Now().Unix() - 60
+	auth3.Signature = SignRequest(secret, matchID, turn, auth3.Timestamp, body)
 	if err := VerifyRequest(secret, auth3, body); err == nil {
 		t.Error("expired timestamp should fail verification")
 	}
 
 	// Future timestamp should fail
 	auth4 := auth
-	auth4.Timestamp = time.Now().Unix() + 60 // 60 seconds in future
+	auth4.Timestamp = time.Now().Unix() + 60
+	auth4.Signature = SignRequest(secret, matchID, turn, auth4.Timestamp, body)
 	if err := VerifyRequest(secret, auth4, body); err == nil {
 		t.Error("future timestamp should fail verification")
+	}
+
+	authExtreme := auth
+	authExtreme.Timestamp = int64(^uint64(0) >> 1)
+	authExtreme.Signature = SignRequest(secret, matchID, turn, authExtreme.Timestamp, body)
+	if err := VerifyRequest(secret, authExtreme, body); err == nil {
+		t.Error("extreme future timestamp should fail verification")
+	}
+
+	auth5 := auth
+	auth5.Timestamp++
+	if err := VerifyRequest(secret, auth5, body); err == nil {
+		t.Error("tampered timestamp should fail verification")
+	}
+
+	auth6 := auth
+	auth6.Signature = "not-hex"
+	if err := VerifyRequest(secret, auth6, body); err == nil {
+		t.Error("malformed signature should fail verification")
+	}
+
+	malformedBody := []byte(`{"match_id":`)
+	malformedAuth := auth
+	malformedAuth.Signature = SignRequest(secret, matchID, turn, timestamp, malformedBody)
+	if err := VerifyRequest(secret, malformedAuth, malformedBody); err == nil {
+		t.Error("authenticated malformed request should fail schema verification")
+	}
+
+	mismatchedBody := []byte(`{"match_id":"m_other","turn":42}`)
+	mismatchedAuth := auth
+	mismatchedAuth.Signature = SignRequest(secret, matchID, turn, timestamp, mismatchedBody)
+	if err := VerifyRequest(secret, mismatchedAuth, mismatchedBody); err == nil {
+		t.Error("request body identity should match signed headers")
 	}
 }
 
@@ -136,6 +187,10 @@ func TestVerifyResponse(t *testing.T) {
 	if err := VerifyResponse(secret, matchID, turn, sig, []byte(`{}`)); err == nil {
 		t.Error("wrong body should fail verification")
 	}
+
+	if err := VerifyResponse(secret, matchID, turn, "not-hex", body); err == nil {
+		t.Error("malformed response signature should fail verification")
+	}
 }
 
 func TestParseAuthHeaders(t *testing.T) {
@@ -151,7 +206,7 @@ func TestParseAuthHeaders(t *testing.T) {
 				"X-ACB-Turn":      "42",
 				"X-ACB-Timestamp": "1711200000",
 				"X-ACB-Bot-Id":    "b_4e8c1d2f",
-				"X-ACB-Signature": "abc123",
+				"X-ACB-Signature": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 			},
 			wantErr: false,
 		},
@@ -167,6 +222,17 @@ func TestParseAuthHeaders(t *testing.T) {
 				"X-ACB-Turn":      "42",
 				"X-ACB-Timestamp": "1711200000",
 				"X-ACB-Bot-Id":    "b_4e8c1d2f",
+			},
+			wantErr: true,
+		},
+		{
+			name: "malformed signature",
+			headers: map[string]string{
+				"X-ACB-Match-Id":  "m_7f3a9b2c",
+				"X-ACB-Turn":      "42",
+				"X-ACB-Timestamp": "1711200000",
+				"X-ACB-Bot-Id":    "b_4e8c1d2f",
+				"X-ACB-Signature": "not-hex",
 			},
 			wantErr: true,
 		},

@@ -23,7 +23,7 @@ def compute_moves(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         List of move objects, one per bot:
         {
             "position": {"row": int, "col": int},
-            "direction": "N" | "E" | "S" | "W" | ""
+            "direction": "N" | "E" | "S" | "W" | "stay"
         }
 
     Example:
@@ -34,7 +34,7 @@ def compute_moves(state: Dict[str, Any]) -> List[Dict[str, Any]]:
                 # TODO: Implement your strategy here
                 moves.append({
                     "position": bot["position"],
-                    "direction": ""  # Hold position
+                    "direction": "stay"
                 })
         return moves
     """
@@ -46,7 +46,7 @@ def compute_moves(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         if bot.get("owner") == state["you"]["id"]:
             moves.append({
                 "position": bot["position"],
-                "direction": ""  # Empty string = no move
+                "direction": "stay"
             })
 
     return moves

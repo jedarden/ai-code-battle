@@ -13,6 +13,7 @@ import json
 import math
 import os
 import random
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from grid import toroidal_manhattan, bfs
@@ -409,12 +410,30 @@ class NomadHandler(BaseHTTPRequestHandler):
         match_id = self.headers.get("X-ACB-Match-Id", "")
         turn = self.headers.get("X-ACB-Turn", "")
         ts = self.headers.get("X-ACB-Timestamp", "")
+        bot_id = self.headers.get("X-ACB-Bot-Id", "")
+        if not all(value and value.strip() for value in
+                   (match_id, turn, ts, bot_id, sig)):
+            return False
+        if not SECRET:
+            return False
+        try:
+            turn_number = int(turn)
+            request_time = int(ts)
+        except (TypeError, ValueError):
+            return False
+        if turn_number < 0:
+            return False
+        try:
+            if abs(time.time() - request_time) > 30:
+                return False
+        except OverflowError:
+            return False
         body_hash = hashlib.sha256(body).hexdigest()
         signing = f"{match_id}.{turn}.{ts}.{body_hash}"
         expected = hmac.new(SECRET.encode(), signing.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(sig, expected)
+        return hmac.compare_digest(sig.encode("utf-8"), expected.encode("ascii"))
 
-    def _sign_response(self, match_id: str, turn: str, body: bytes) -> str:
+    def _sign_response(self, match_id: str, turn: int, body: bytes) -> str:
         body_hash = hashlib.sha256(body).hexdigest()
         signing = f"{match_id}.{turn}.{body_hash}"
         return hmac.new(SECRET.encode(), signing.encode(), hashlib.sha256).hexdigest()
@@ -437,21 +456,52 @@ class NomadHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
 
-        if not self._verify_signature(body):
+        match_id = self.headers.get("X-ACB-Match-Id", "")
+        turn_str = self.headers.get("X-ACB-Turn", "")
+        timestamp = self.headers.get("X-ACB-Timestamp", "")
+        bot_id = self.headers.get("X-ACB-Bot-Id", "")
+        signature = self.headers.get("X-ACB-Signature", "")
+
+        if (not all(value and value.strip() for value in
+                    (match_id, turn_str, timestamp, bot_id, signature))
+                or not self._verify_signature(body)):
             self.send_response(401)
             self.end_headers()
             return
 
-        raw = json.loads(body)
-        state = GameState(raw)
+        try:
+            turn = int(turn_str)
+        except (TypeError, ValueError):
+            self.send_response(401)
+            self.end_headers()
+            return
+
+        try:
+            raw = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_response(400)
+            self.end_headers()
+            return
+
+        if (not isinstance(raw, dict)
+                or raw.get("match_id") != match_id
+                or type(raw.get("turn")) is not int
+                or raw.get("turn") != turn):
+            self.send_response(401)
+            self.end_headers()
+            return
+
+        try:
+            state = GameState(raw)
+        except (KeyError, TypeError):
+            self.send_response(400)
+            self.end_headers()
+            return
+
         moves = compute_moves(state)
 
         resp = json.dumps({"moves": moves}).encode()
-        sig = self._sign_response(
-            self.headers.get("X-ACB-Match-Id", ""),
-            self.headers.get("X-ACB-Turn", ""),
-            resp,
-        )
+        sig = self._sign_response(match_id, turn, resp)
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

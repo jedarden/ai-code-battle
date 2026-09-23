@@ -9,6 +9,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -20,6 +21,7 @@ import java.util.*;
 public class App {
 
     private static final String[] DIRECTIONS = {"N", "E", "S", "W"};
+    private static final long TIMESTAMP_TOLERANCE_SECONDS = 30;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -49,22 +51,39 @@ public class App {
         String signature = ctx.header("X-ACB-Signature");
         String matchId = ctx.header("X-ACB-Match-Id");
         String turnStr = ctx.header("X-ACB-Turn");
+        String timestamp = ctx.header("X-ACB-Timestamp");
+        String botId = ctx.header("X-ACB-Bot-Id");
 
-        if (signature == null || signature.isEmpty()) {
-            ctx.status(401).result("Missing signature");
+        if (matchId == null || matchId.isEmpty()
+                || turnStr == null || turnStr.isEmpty()
+                || timestamp == null || timestamp.isEmpty()
+                || botId == null || botId.isEmpty()
+                || signature == null || signature.isEmpty()) {
+            ctx.status(401).result("Missing auth headers");
             return;
         }
 
-        String body = ctx.body();
+        byte[] body = ctx.bodyAsBytes();
 
-        // Signing string excludes the timestamp (X-ACB-Timestamp is not signed)
-        if (!verifySignature(matchId, turnStr, body, signature)) {
+        if (!verifySignature(matchId, turnStr, timestamp, body, signature)) {
             ctx.status(401).result("Invalid signature");
             return;
         }
 
         try {
             GameState state = MAPPER.readValue(body, GameState.class);
+            final int turn;
+            try {
+                turn = Integer.parseInt(turnStr);
+            } catch (NumberFormatException e) {
+                ctx.status(401).result("Invalid request identity");
+                return;
+            }
+            if (turn < 0 || !Integer.toString(turn).equals(turnStr) || state.turn == null
+                    || !matchId.equals(state.match_id) || state.turn != turn) {
+                ctx.status(401).result("Invalid request identity");
+                return;
+            }
 
             if (state.turn == 0) {
                 String seasonId = state.config.season_id != null ? state.config.season_id : "";
@@ -75,9 +94,8 @@ public class App {
 
             List<Move> moves = computeMoves(state);
 
-            String responseBody = MAPPER.writeValueAsString(new MoveResponse(moves));
-            int turn = Integer.parseInt(turnStr != null ? turnStr : "0");
-            String responseSig = signResponse(matchId, turn, responseBody);
+            byte[] responseBody = MAPPER.writeValueAsBytes(new MoveResponse(moves));
+            String responseSig = signResponse(matchId, Integer.toString(turn), responseBody);
 
             ctx.status(200);
             ctx.header("Content-Type", "application/json");
@@ -104,8 +122,8 @@ public class App {
                 int bestDist = Integer.MAX_VALUE;
                 String bestDir = null;
                 for (int i = 0; i < cardinal.length; i++) {
-                    int nr = Math.floorMod(bot.row + cardinal[i][0], rows);
-                    int nc = Math.floorMod(bot.col + cardinal[i][1], cols);
+                    int nr = Math.floorMod(bot.position.row + cardinal[i][0], rows);
+                    int nc = Math.floorMod(bot.position.col + cardinal[i][1], cols);
                     for (Position e : state.energy) {
                         int d = Grid.toroidalManhattan(nr, nc, e.row, e.col, rows, cols);
                         if (d < bestDist) {
@@ -115,14 +133,14 @@ public class App {
                     }
                 }
                 if (bestDir != null) {
-                    moves.add(new Move(bot.row, bot.col, bestDir));
+                    moves.add(new Move(new Position(bot.position.row, bot.position.col), bestDir));
                     continue;
                 }
             }
 
             if (RANDOM.nextDouble() < 0.5) {
                 String dir = DIRECTIONS[RANDOM.nextInt(DIRECTIONS.length)];
-                moves.add(new Move(bot.row, bot.col, dir));
+                moves.add(new Move(new Position(bot.position.row, bot.position.col), dir));
             }
         }
 
@@ -131,11 +149,18 @@ public class App {
 
     // --- HMAC helpers ---
 
-    static boolean verifySignature(String matchId, String turn,
-                                    String body, String signature) {
+    static boolean verifySignature(String matchId, String turn, String timestamp,
+                                    byte[] body, String signature) {
         try {
-            String bodyHash = sha256Hex(body.getBytes(StandardCharsets.UTF_8));
-            String signingString = matchId + "." + turn + "." + bodyHash;
+            long timestampSeconds = Long.parseLong(timestamp);
+            long now = Instant.now().getEpochSecond();
+            if (timestampSeconds < now - TIMESTAMP_TOLERANCE_SECONDS
+                    || timestampSeconds > now + TIMESTAMP_TOLERANCE_SECONDS) {
+                return false;
+            }
+
+            String bodyHash = sha256Hex(body);
+            String signingString = matchId + "." + turn + "." + timestamp + "." + bodyHash;
             String expected = hmacSha256(secret, signingString);
             return MessageDigest.isEqual(
                     expected.getBytes(StandardCharsets.UTF_8),
@@ -146,10 +171,10 @@ public class App {
         }
     }
 
-    static String signResponse(String matchId, int turn, String body) {
+    static String signResponse(String matchId, String turn, byte[] body) {
         try {
-            // Same signing string as the request: {match_id}.{turn}.{sha256_hex(body)}
-            String bodyHash = sha256Hex(body.getBytes(StandardCharsets.UTF_8));
+            // Response signing string: {match_id}.{turn}.{sha256_hex(body)}
+            String bodyHash = sha256Hex(body);
             String signingString = matchId + "." + turn + "." + bodyHash;
             return hmacSha256(secret, signingString);
         } catch (Exception e) {
@@ -185,18 +210,18 @@ public class App {
 
     public record You(int id, int energy, int score) {}
 
-    public record VisibleBot(int row, int col, int owner) {}
+    public record VisibleBot(Position position, int owner) {}
 
-    public record VisibleCore(int row, int col, int owner, boolean active) {}
+    public record VisibleCore(Position position, int owner, boolean active) {}
 
     public record Position(int row, int col) {}
 
-    public record GameState(String match_id, int turn, GameConfig config, You you,
+    public record GameState(String match_id, Integer turn, GameConfig config, You you,
                             List<VisibleBot> bots, List<Position> energy,
                             List<VisibleCore> cores, List<Position> walls,
                             List<VisibleBot> dead) {}
 
-    public record Move(int row, int col, String direction) {}
+    public record Move(Position position, String direction) {}
 
     public record MoveResponse(List<Move> moves) {}
 }

@@ -17,7 +17,7 @@ func NewGathererStrategy() *GathererStrategy {
 // ComputeMoves calculates the best moves for the current turn.
 func (s *GathererStrategy) ComputeMoves(state *GameState) []Move {
 	if len(state.Bots) == 0 {
-		return nil
+		return []Move{}
 	}
 
 	myID := state.You.ID

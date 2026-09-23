@@ -197,11 +197,15 @@ func (c *Checker) translate(ctx context.Context, code, fromLang, toLang string) 
 func buildTranslationPrompt(code, fromLang, toLang string) string {
 	return fmt.Sprintf(`You are translating a competitive bot for AI Code Battle from %s to %s.
 The bot is an HTTP server that:
-- Listens on port 8080
+- Listens on port 8080 by default; BOT_PORT overrides it
 - Handles GET /health (returns 200)
-- Handles POST /turn with HMAC-SHA256 request verification
-- Returns JSON: {"moves": [{"row": N, "col": N, "direction": "N"|"E"|"S"|"W"}]}
-- May include optional "debug" field in response
+- Requires X-ACB-Match-Id, X-ACB-Turn, X-ACB-Timestamp, X-ACB-Bot-Id, and X-ACB-Signature on POST /turn
+- Verifies the timestamp is within 30 seconds and hashes the exact raw request bytes before JSON parsing
+- Verifies request HMAC-SHA256 over {match_id}.{turn}.{timestamp}.{sha256_hex(raw_body)} using constant-time byte comparison
+- Requires authenticated body match_id and turn to equal the headers
+- Signs the exact response bytes with HMAC-SHA256 over {match_id}.{turn}.{sha256_hex(raw_response_body)}
+- Returns {"moves":[{"position":{"row":N,"col":N},"direction":"N"|"E"|"S"|"W"|"stay"}]}
+- May include an optional "debug" object in the response
 
 Translate the following bot preserving the EXACT same strategy and behavior.
 Use idiomatic %s patterns and standard library only.

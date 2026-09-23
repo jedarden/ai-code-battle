@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 )
 
 var directions = []string{"N", "E", "S", "W"}
@@ -94,6 +95,17 @@ func handleTurn(w http.ResponseWriter, r *http.Request, secret string, strategy 
 		return
 	}
 
+	matchID := r.Header.Get("X-ACB-Match-Id")
+	turnStr := r.Header.Get("X-ACB-Turn")
+	timestamp := r.Header.Get("X-ACB-Timestamp")
+	botID := r.Header.Get("X-ACB-Bot-Id")
+	signature := r.Header.Get("X-ACB-Signature")
+
+	if matchID == "" || turnStr == "" || timestamp == "" || botID == "" || signature == "" {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
@@ -101,13 +113,27 @@ func handleTurn(w http.ResponseWriter, r *http.Request, secret string, strategy 
 	}
 	defer r.Body.Close()
 
-	sig := r.Header.Get("X-ACB-Signature")
-	matchID := r.Header.Get("X-ACB-Match-Id")
-	turnStr := r.Header.Get("X-ACB-Turn")
-	timestamp := r.Header.Get("X-ACB-Timestamp")
+	if !verifySignature(secret, matchID, turnStr, timestamp, body, signature) {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
+		return
+	}
 
-	if sig == "" || !verifySignature(secret, matchID, turnStr, timestamp, body, sig) {
-		http.Error(w, "invalid signature", http.StatusUnauthorized)
+	turn, err := strconv.Atoi(turnStr)
+	if err != nil || turn < 0 {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
+	var identity struct {
+		MatchID *string `json:"match_id"`
+		Turn    *int    `json:"turn"`
+	}
+	if err := json.Unmarshal(body, &identity); err != nil {
+		http.Error(w, "invalid game state", http.StatusBadRequest)
+		return
+	}
+	if identity.MatchID == nil || identity.Turn == nil || *identity.MatchID != matchID || *identity.Turn != turn {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
 		return
 	}
 
@@ -120,8 +146,6 @@ func handleTurn(w http.ResponseWriter, r *http.Request, secret string, strategy 
 	moves := strategy.ComputeMoves(&state)
 	response := MoveResponse{Moves: moves}
 	responseBody, _ := json.Marshal(response)
-
-	turn, _ := strconv.Atoi(turnStr)
 	responseSig := signResponse(secret, matchID, turn, responseBody)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -135,8 +159,21 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func verifySignature(secret, matchID, turnStr, timestamp string, body []byte, signature string) bool {
+	if secret == "" || matchID == "" || turnStr == "" || timestamp == "" || signature == "" {
+		return false
+	}
+
+	timestampUnix, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	age := time.Since(time.Unix(timestampUnix, 0))
+	if age < -30*time.Second || age > 30*time.Second {
+		return false
+	}
+
 	bodyHash := sha256.Sum256(body)
-	signingString := fmt.Sprintf("%s.%s.%s", matchID, turnStr, hex.EncodeToString(bodyHash[:]))
+	signingString := fmt.Sprintf("%s.%s.%s.%s", matchID, turnStr, timestamp, hex.EncodeToString(bodyHash[:]))
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(signingString))
 	expected := hex.EncodeToString(mac.Sum(nil))

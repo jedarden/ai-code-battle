@@ -3,6 +3,7 @@
 // Core-defense archetype. Bots stay within N cells of their own core,
 // intercepting any enemy unit that enters the perimeter.
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -25,40 +26,66 @@ var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok("OK"));
 
+var jsonOptions = new JsonSerializerOptions
+{
+    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+};
+
 app.MapPost("/turn", (HttpContext ctx) =>
 {
     var signature = ctx.Request.Headers["X-ACB-Signature"].FirstOrDefault() ?? "";
     var matchId = ctx.Request.Headers["X-ACB-Match-Id"].FirstOrDefault() ?? "";
-    var turnStr = ctx.Request.Headers["X-ACB-Turn"].FirstOrDefault() ?? "0";
+    var turnStr = ctx.Request.Headers["X-ACB-Turn"].FirstOrDefault() ?? "";
     var timestamp = ctx.Request.Headers["X-ACB-Timestamp"].FirstOrDefault() ?? "";
+    var botId = ctx.Request.Headers["X-ACB-Bot-Id"].FirstOrDefault() ?? "";
 
-    if (string.IsNullOrEmpty(signature))
+    if (string.IsNullOrEmpty(matchId) || string.IsNullOrEmpty(turnStr) ||
+        string.IsNullOrEmpty(timestamp) || string.IsNullOrEmpty(botId) ||
+        string.IsNullOrEmpty(signature))
         return Results.Unauthorized();
 
-    using var reader = new StreamReader(ctx.Request.Body);
-    var body = reader.ReadToEndAsync().GetAwaiter().GetResult();
+    if (!int.TryParse(turnStr, NumberStyles.None, CultureInfo.InvariantCulture,
+            out var turn) || turn < 0)
+        return Results.Unauthorized();
+
+    using var bodyStream = new MemoryStream();
+    ctx.Request.Body.CopyToAsync(bodyStream).GetAwaiter().GetResult();
+    var body = bodyStream.ToArray();
 
     if (!VerifySignature(secret, matchId, turnStr, timestamp, body, signature))
+        return Results.Unauthorized();
+
+    if (!VerifyTimestamp(timestamp))
         return Results.Unauthorized();
 
     GameState? state;
     try
     {
-        state = JsonSerializer.Deserialize<GameState>(body);
+        using var document = JsonDocument.Parse(body);
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("match_id", out var bodyMatchId) ||
+            bodyMatchId.ValueKind != JsonValueKind.String ||
+            bodyMatchId.GetString() != matchId ||
+            !document.RootElement.TryGetProperty("turn", out var bodyTurn) ||
+            bodyTurn.ValueKind != JsonValueKind.Number ||
+            !bodyTurn.TryGetInt32(out var bodyTurnNumber) ||
+            bodyTurnNumber != turn)
+            return Results.Unauthorized();
+
+        state = JsonSerializer.Deserialize<GameState>(body, jsonOptions);
         if (state == null) return Results.BadRequest("Invalid game state");
     }
-    catch
+    catch (JsonException)
     {
         return Results.BadRequest("Invalid JSON");
     }
 
     var moves = DefenderStrategy.ComputeMoves(state);
-    var responseBody = JsonSerializer.Serialize(new { moves });
-    var turn = int.Parse(turnStr);
+    var responseBody = JsonSerializer.SerializeToUtf8Bytes(new { moves }, jsonOptions);
     var responseSig = SignResponse(secret, matchId, turn, responseBody);
 
     ctx.Response.Headers["X-ACB-Signature"] = responseSig;
-    return Results.Text(responseBody, "application/json");
+    return Results.Bytes(responseBody, "application/json");
 });
 
 app.Run();
@@ -66,20 +93,40 @@ app.Run();
 // --- HMAC helpers ---
 
 static bool VerifySignature(string secret, string matchId, string turn,
-    string timestamp, string body, string signature)
+    string timestamp, byte[] body, string signature)
 {
-    var bodyHash = Sha256Hex(Encoding.UTF8.GetBytes(body));
+    var bodyHash = Sha256Hex(body);
     var signingString = $"{matchId}.{turn}.{timestamp}.{bodyHash}";
     var expected = HmacSha256(secret, signingString);
-    return CryptographicOperations.FixedTimeEquals(
-        Convert.FromHexString(signature),
-        Convert.FromHexString(expected)
-    );
+    if (signature.Length != expected.Length)
+        return false;
+
+    try
+    {
+        return CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(signature),
+            Convert.FromHexString(expected)
+        );
+    }
+    catch (FormatException)
+    {
+        return false;
+    }
 }
 
-static string SignResponse(string secret, string matchId, int turn, string body)
+static bool VerifyTimestamp(string timestamp)
 {
-    var bodyHash = Sha256Hex(Encoding.UTF8.GetBytes(body));
+    if (!long.TryParse(timestamp, NumberStyles.None, CultureInfo.InvariantCulture,
+            out var seconds))
+        return false;
+
+    var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    return seconds >= now - 30 && seconds <= now + 30;
+}
+
+static string SignResponse(string secret, string matchId, int turn, byte[] body)
+{
+    var bodyHash = Sha256Hex(body);
     var signingString = $"{matchId}.{turn}.{bodyHash}";
     return HmacSha256(secret, signingString);
 }
@@ -150,5 +197,5 @@ record Position
 record Move
 {
     public Position Position { get; init; } = new();
-    public string Direction { get; init; } = "";
+    public string Direction { get; init; } = "stay";
 }

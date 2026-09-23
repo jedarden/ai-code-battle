@@ -1,10 +1,19 @@
 package validator
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/aicodebattle/acb/engine"
 )
 
 // ── Syntax tests ──────────────────────────────────────────────────────────
@@ -173,6 +182,198 @@ func TestCheckSchema_UnsupportedLanguage(t *testing.T) {
 	}
 }
 
+func TestVerifyTurnRequestAuthRejections(t *testing.T) {
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		headers := map[string]string{
+			"X-ACB-Match-Id":  r.Header.Get("X-ACB-Match-Id"),
+			"X-ACB-Turn":      r.Header.Get("X-ACB-Turn"),
+			"X-ACB-Timestamp": r.Header.Get("X-ACB-Timestamp"),
+			"X-ACB-Bot-Id":    r.Header.Get("X-ACB-Bot-Id"),
+			"X-ACB-Signature": r.Header.Get("X-ACB-Signature"),
+		}
+		auth, err := engine.ParseAuthHeaders(headers)
+		if err == nil {
+			err = engine.VerifyRequest(smokeSecret, auth, body)
+		}
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if err := verifyTurnRequestAuthRejections(context.Background(), server.Client(), server.Listener.Addr().String()); err != nil {
+		t.Fatalf("verifyTurnRequestAuthRejections() error = %v", err)
+	}
+	if got, want := requestCount.Load(), int32(11); got != want {
+		t.Fatalf("rejection probe count = %d, want %d", got, want)
+	}
+}
+
+func TestVerifyTurnRequestAuthRejections_RequiresHTTP401(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := verifyTurnRequestAuthRejections(context.Background(), server.Client(), server.Listener.Addr().String())
+	if err == nil {
+		t.Fatal("verifyTurnRequestAuthRejections() accepted HTTP 200")
+	}
+	if !strings.Contains(err.Error(), "expected HTTP 401") {
+		t.Fatalf("verifyTurnRequestAuthRejections() error = %q, want HTTP 401 requirement", err)
+	}
+}
+
+func TestSendTurnRequest_VerifiesResponseSignature(t *testing.T) {
+	tests := []struct {
+		name        string
+		signature   string
+		useValidSig bool
+		wantErr     bool
+	}{
+		{name: "valid", useValidSig: true},
+		{name: "missing", wantErr: true},
+		{name: "invalid", signature: "00", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			responseBody := []byte(`{"moves":[]}`)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				signature := tc.signature
+				if tc.useValidSig {
+					signature = engine.SignResponse(smokeSecret, smokeMatchID, 3, responseBody)
+				}
+				if signature != "" {
+					w.Header().Set("X-ACB-Signature", signature)
+				}
+				_, _ = w.Write(responseBody)
+			}))
+			defer server.Close()
+
+			err := sendTurnRequest(context.Background(), server.Client(), server.Listener.Addr().String(), 3)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("sendTurnRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestSendTurnRequest_RejectsOversizedSignedPrefix(t *testing.T) {
+	prefix := append([]byte(`{"moves":[]}`), bytes.Repeat([]byte(" "), maxSmokeResponseBytes-len(`{"moves":[]}`))...)
+	responseBody := append(append([]byte(nil), prefix...), ' ')
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-ACB-Signature", engine.SignResponse(smokeSecret, smokeMatchID, 3, prefix))
+		_, _ = w.Write(responseBody)
+	}))
+	defer server.Close()
+
+	err := sendTurnRequest(context.Background(), server.Client(), server.Listener.Addr().String(), 3)
+	if err == nil {
+		t.Fatal("sendTurnRequest() accepted a response body over the read cap")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("sendTurnRequest() error = %q, want response-size error", err)
+	}
+}
+
+func TestValidateMoveResponse_StrictSchema(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{name: "empty moves", body: `{"moves":[]}`},
+		{name: "nested move", body: `{"moves":[{"position":{"row":10,"col":15},"direction":"N"}]}`},
+		{name: "stay", body: `{"moves":[{"position":{"row":0,"col":0},"direction":"stay"}]}`},
+		{name: "additive fields", body: `{"moves":[{"position":{"row":1,"col":2,"extra":true},"direction":"E","meta":{"score":1}}],"debug":{},"future":{"enabled":true}}`},
+		{name: "engine debug shape", body: `{"moves":[],"debug":{"reasoning":"hold","targets":[{"position":{"row":1,"col":2},"label":"target","priority":0.5}],"values":{"score":1},"heatmap":{"name":"heat","data":[[1]]}}}`},
+		{name: "invalid JSON", body: `{`, wantErr: true},
+		{name: "top-level null", body: `null`, wantErr: true},
+		{name: "top-level array", body: `[]`, wantErr: true},
+		{name: "missing moves", body: `{"debug":{}}`, wantErr: true},
+		{name: "debug string", body: `{"moves":[],"debug":"bad"}`, wantErr: true},
+		{name: "debug array", body: `{"moves":[],"debug":[]}`, wantErr: true},
+		{name: "debug reasoning wrong type", body: `{"moves":[],"debug":{"reasoning":1}}`, wantErr: true},
+		{name: "debug targets wrong type", body: `{"moves":[],"debug":{"targets":{}}}`, wantErr: true},
+		{name: "debug values wrong type", body: `{"moves":[],"debug":{"values":[]}}`, wantErr: true},
+		{name: "debug heatmap wrong type", body: `{"moves":[],"debug":{"heatmap":"bad"}}`, wantErr: true},
+		{name: "moves null", body: `{"moves":null}`, wantErr: true},
+		{name: "moves object", body: `{"moves":{}}`, wantErr: true},
+		{name: "moves string", body: `{"moves":"N"}`, wantErr: true},
+		{name: "null move", body: `{"moves":[null]}`, wantErr: true},
+		{name: "non-object move", body: `{"moves":["N"]}`, wantErr: true},
+		{name: "missing position", body: `{"moves":[{"direction":"N"}]}`, wantErr: true},
+		{name: "flat position", body: `{"moves":[{"row":1,"col":2,"direction":"N"}]}`, wantErr: true},
+		{name: "null position", body: `{"moves":[{"position":null,"direction":"N"}]}`, wantErr: true},
+		{name: "missing row", body: `{"moves":[{"position":{"col":2},"direction":"N"}]}`, wantErr: true},
+		{name: "null row", body: `{"moves":[{"position":{"row":null,"col":2},"direction":"N"}]}`, wantErr: true},
+		{name: "string row", body: `{"moves":[{"position":{"row":"1","col":2},"direction":"N"}]}`, wantErr: true},
+		{name: "fractional row", body: `{"moves":[{"position":{"row":1.5,"col":2},"direction":"N"}]}`, wantErr: true},
+		{name: "negative position", body: `{"moves":[{"position":{"row":-1,"col":2},"direction":"N"}]}`, wantErr: true},
+		{name: "missing col", body: `{"moves":[{"position":{"row":1},"direction":"N"}]}`, wantErr: true},
+		{name: "missing direction", body: `{"moves":[{"position":{"row":1,"col":2}}]}`, wantErr: true},
+		{name: "null direction", body: `{"moves":[{"position":{"row":1,"col":2},"direction":null}]}`, wantErr: true},
+		{name: "numeric direction", body: `{"moves":[{"position":{"row":1,"col":2},"direction":1}]}`, wantErr: true},
+		{name: "empty direction", body: `{"moves":[{"position":{"row":1,"col":2},"direction":""}]}`, wantErr: true},
+		{name: "unknown direction", body: `{"moves":[{"position":{"row":1,"col":2},"direction":"spin"}]}`, wantErr: true},
+		{name: "invalid move rejects envelope", body: `{"moves":[{"position":{"row":1,"col":2},"direction":"N"},{"direction":"S"}]}`, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateMoveResponse([]byte(tc.body))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("validateMoveResponse() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateMoveResponse_NormalizedDebugLimit(t *testing.T) {
+	encode := func(debug *engine.DebugInfo) []byte {
+		body, err := json.Marshal(map[string]interface{}{
+			"moves": []json.RawMessage{},
+			"debug": debug,
+		})
+		if err != nil {
+			t.Fatalf("marshal debug response: %v", err)
+		}
+		return body
+	}
+
+	exact := &engine.DebugInfo{Reasoning: strings.Repeat("x", maxDebugJSONBytes-16)}
+	normalized, err := json.Marshal(exact)
+	if err != nil {
+		t.Fatalf("marshal normalized debug: %v", err)
+	}
+	if len(normalized) != maxDebugJSONBytes {
+		t.Fatalf("normalized debug test size = %d, want %d", len(normalized), maxDebugJSONBytes)
+	}
+	if err := validateMoveResponse(encode(exact)); err != nil {
+		t.Fatalf("exactly 10 KiB normalized debug rejected: %v", err)
+	}
+
+	oversized := &engine.DebugInfo{Reasoning: strings.Repeat("x", maxDebugJSONBytes+1)}
+	if err := validateMoveResponse(encode(oversized)); err == nil {
+		t.Fatal("normalized debug over 10 KiB was accepted")
+	}
+
+	unknownPadding := []byte(`{"moves":[],"debug":{"future":"` + strings.Repeat("x", maxDebugJSONBytes) + `"}}`)
+	if err := validateMoveResponse(unknownPadding); err != nil {
+		t.Fatalf("unknown debug fields should normalize away, got: %v", err)
+	}
+}
+
 // ── Pipeline tests ────────────────────────────────────────────────────────
 
 func TestValidate_FailFastOnSyntax(t *testing.T) {
@@ -261,7 +462,7 @@ func TestValidate_FullPipeline_Go(t *testing.T) {
 }
 
 // minimalGoBot returns a minimal, complete Go bot that passes all three
-// validation stages.  It uses the reference signature format from bots/gatherer.
+// validation stages using the protocol signature format.
 func minimalGoBot() string {
 	return `package main
 
@@ -275,22 +476,74 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 )
 
 type MoveResponse struct {
 	Moves []interface{} ` + "`json:\"moves\"`" + `
 }
 
-func verifySignature(secret, matchID, turnStr string, body []byte, signature string) error {
+type RequestIdentity struct {
+	MatchID *string ` + "`json:\"match_id\"`" + `
+	Turn    *int    ` + "`json:\"turn\"`" + `
+}
+
+func verifySignature(secret, matchID, turn, timestamp, botID, signature string, body []byte) error {
+	if matchID == "" {
+		return fmt.Errorf("missing X-ACB-Match-Id")
+	}
+	turnNumber, err := strconv.Atoi(turn)
+	if err != nil {
+		return fmt.Errorf("invalid X-ACB-Turn")
+	}
+	if turnNumber < 0 {
+		return fmt.Errorf("negative X-ACB-Turn")
+	}
+	if timestamp == "" {
+		return fmt.Errorf("missing X-ACB-Timestamp")
+	}
+	if botID == "" {
+		return fmt.Errorf("missing X-ACB-Bot-Id")
+	}
+	if signature == "" {
+		return fmt.Errorf("missing X-ACB-Signature")
+	}
+	timestampUnix, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid X-ACB-Timestamp")
+	}
+	age := time.Since(time.Unix(timestampUnix, 0))
+	if age < -30*time.Second || age > 30*time.Second {
+		return fmt.Errorf("stale X-ACB-Timestamp")
+	}
 	h := sha256.Sum256(body)
-	import_str := fmt.Sprintf("%s.%s.%s", matchID, turnStr, hex.EncodeToString(h[:]))
+	signingString := fmt.Sprintf("%s.%s.%s.%s", matchID, turn, timestamp, hex.EncodeToString(h[:]))
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(import_str))
+	mac.Write([]byte(signingString))
 	expected := hex.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(signature), []byte(expected)) {
 		return fmt.Errorf("invalid signature")
 	}
+	var identity RequestIdentity
+	if err := json.Unmarshal(body, &identity); err != nil {
+		return fmt.Errorf("invalid request body")
+	}
+	if identity.MatchID == nil || identity.Turn == nil {
+		return fmt.Errorf("missing request identity")
+	}
+	if *identity.MatchID != matchID || *identity.Turn != turnNumber {
+		return fmt.Errorf("request identity mismatch")
+	}
 	return nil
+}
+
+func signResponse(secret, matchID string, turn int, body []byte) string {
+	h := sha256.Sum256(body)
+	signingString := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(h[:]))
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(signingString))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func main() {
@@ -327,14 +580,19 @@ func main() {
 		sig := r.Header.Get("X-ACB-Signature")
 		matchID := r.Header.Get("X-ACB-Match-Id")
 		turn := r.Header.Get("X-ACB-Turn")
-		if err := verifySignature(secret, matchID, turn, body, sig); err != nil {
+		timestamp := r.Header.Get("X-ACB-Timestamp")
+		botID := r.Header.Get("X-ACB-Bot-Id")
+		if err := verifySignature(secret, matchID, turn, timestamp, botID, sig, body); err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
+		turnNumber, _ := strconv.Atoi(turn)
 		resp := MoveResponse{Moves: []interface{}{}}
 		out, _ := json.Marshal(resp)
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-ACB-Signature", signResponse(secret, matchID, turnNumber, out))
+		w.WriteHeader(http.StatusOK)
 		w.Write(out)
 	})
 

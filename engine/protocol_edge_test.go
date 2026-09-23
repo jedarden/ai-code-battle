@@ -26,8 +26,8 @@ import (
 //     and its units hold — the bot is NOT killed or disconnected, and keeps
 //     receiving future turns. (10 consecutive failures mark it crashed.)
 //  3. Requests carry X-ACB-Signature: HMAC-SHA256 over
-//     "{match_id}.{turn}.{sha256_hex(body)}"; responses carry the same family
-//     of signature over the response body, verified strictly by the engine.
+//     "{match_id}.{turn}.{timestamp}.{sha256_hex(body)}"; responses use
+//     "{match_id}.{turn}.{sha256_hex(body)}", verified strictly by the engine.
 
 // protocolEdgeAction scripts the fake bot's reply for one /turn request.
 type protocolEdgeAction struct {
@@ -263,9 +263,14 @@ func TestProtocolEdge_SchemaViolationIsNoOpAndRecovers(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:      "json null body",
-			body:      func(*VisibleState) []byte { return []byte("null") },
-			wantMoves: 0,
+			name:    "json null body",
+			body:    func(*VisibleState) []byte { return []byte("null") },
+			wantErr: true,
+		},
+		{
+			name:    "missing moves",
+			body:    func(*VisibleState) []byte { return []byte(`{"debug":null}`) },
+			wantErr: true,
 		},
 		{
 			name:    "moves field wrong type",
@@ -273,9 +278,9 @@ func TestProtocolEdge_SchemaViolationIsNoOpAndRecovers(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:      "moves null",
-			body:      func(*VisibleState) []byte { return []byte(`{"moves":null}`) },
-			wantMoves: 0,
+			name:    "moves null",
+			body:    func(*VisibleState) []byte { return []byte(`{"moves":null}`) },
+			wantErr: true,
 		},
 		{
 			name: "unknown direction string",
@@ -283,7 +288,7 @@ func TestProtocolEdge_SchemaViolationIsNoOpAndRecovers(t *testing.T) {
 				return []byte(fmt.Sprintf(`{"moves":[{"position":{"row":%d,"col":%d},"direction":"spin"}]}`,
 					state.Bots[0].Position.Row, state.Bots[0].Position.Col))
 			},
-			wantMoves: 0,
+			wantErr: true,
 		},
 		{
 			name: "documented stay direction holds",
@@ -299,7 +304,46 @@ func TestProtocolEdge_SchemaViolationIsNoOpAndRecovers(t *testing.T) {
 				return []byte(fmt.Sprintf(`{"moves":[{"position":{"row":%d,"col":%d},"direction":99}]}`,
 					state.Bots[0].Position.Row, state.Bots[0].Position.Col))
 			},
-			wantMoves: 0,
+			wantErr: true,
+		},
+		{
+			name: "missing position",
+			body: func(*VisibleState) []byte {
+				return []byte(`{"moves":[{"direction":"N"}]}`)
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing direction",
+			body: func(state *VisibleState) []byte {
+				return []byte(fmt.Sprintf(`{"moves":[{"position":{"row":%d,"col":%d}}]}`,
+					state.Bots[0].Position.Row, state.Bots[0].Position.Col))
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative position",
+			body: func(*VisibleState) []byte {
+				return []byte(`{"moves":[{"position":{"row":-1,"col":0},"direction":"N"}]}`)
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid move discards valid sibling",
+			body: func(state *VisibleState) []byte {
+				return []byte(fmt.Sprintf(`{"moves":[{"position":{"row":%d,"col":%d},"direction":"N"},{"position":{"row":%d,"col":%d},"direction":"spin"}]}`,
+					state.Bots[0].Position.Row, state.Bots[0].Position.Col,
+					state.Bots[0].Position.Row, state.Bots[0].Position.Col))
+			},
+			wantErr: true,
+		},
+		{
+			name: "trailing json value",
+			body: func(state *VisibleState) []byte {
+				return []byte(fmt.Sprintf(`{"moves":[{"position":{"row":%d,"col":%d},"direction":"N"}]} {}`,
+					state.Bots[0].Position.Row, state.Bots[0].Position.Col))
+			},
+			wantErr: true,
 		},
 		{
 			name: "move for non-owned position only",
@@ -557,10 +601,13 @@ func TestProtocolEdge_EngineRequestSignaturesMatchReadme(t *testing.T) {
 			}
 		}
 
-		// README recipe: sha256(body) → "{match_id}.{turn}.{body_hash}" → HMAC-SHA256 → hex.
 		bodyHash := sha256.Sum256(req.RawBody)
-		signingString := fmt.Sprintf("%s.%s.%s",
-			h.Get("X-ACB-Match-Id"), h.Get("X-ACB-Turn"), hex.EncodeToString(bodyHash[:]))
+		signingString := fmt.Sprintf("%s.%s.%s.%s",
+			h.Get("X-ACB-Match-Id"),
+			h.Get("X-ACB-Turn"),
+			h.Get("X-ACB-Timestamp"),
+			hex.EncodeToString(bodyHash[:]),
+		)
 		mac := hmac.New(sha256.New, []byte(secret))
 		mac.Write([]byte(signingString))
 		expected := hex.EncodeToString(mac.Sum(nil))

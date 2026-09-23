@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // Config holds bot configuration from environment variables.
@@ -81,10 +82,10 @@ type Direction string
 
 const (
 	DirNone Direction = ""
-	DirN   Direction = "N"
-	DirE   Direction = "E"
-	DirS   Direction = "S"
-	DirW   Direction = "W"
+	DirN    Direction = "N"
+	DirE    Direction = "E"
+	DirS    Direction = "S"
+	DirW    Direction = "W"
 )
 
 // Move represents a bot movement order.
@@ -136,6 +137,17 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	matchID := r.Header.Get("X-ACB-Match-Id")
+	turnStr := r.Header.Get("X-ACB-Turn")
+	timestamp := r.Header.Get("X-ACB-Timestamp")
+	botID := r.Header.Get("X-ACB-Bot-Id")
+	signature := r.Header.Get("X-ACB-Signature")
+
+	if matchID == "" || turnStr == "" || timestamp == "" || botID == "" || signature == "" {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
 	// Read request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -145,21 +157,31 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	// Verify signature
-	sig := r.Header.Get("X-ACB-Signature")
-	if sig == "" {
-		http.Error(w, "missing signature", http.StatusUnauthorized)
+	if err := verifySignature(s.config.Secret, matchID, turnStr, timestamp, body, signature); err != nil {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
 		return
 	}
 
-	matchID := r.Header.Get("X-ACB-Match-Id")
-	turnStr := r.Header.Get("X-ACB-Turn")
-
-	if err := verifySignature(s.config.Secret, matchID, turnStr, body, sig); err != nil {
-		http.Error(w, fmt.Sprintf("signature verification failed: %v", err), http.StatusUnauthorized)
+	turn, err := strconv.Atoi(turnStr)
+	if err != nil || turn < 0 {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
 		return
 	}
 
 	// Parse game state
+	var identity struct {
+		MatchID *string `json:"match_id"`
+		Turn    *int    `json:"turn"`
+	}
+	if err := json.Unmarshal(body, &identity); err != nil {
+		http.Error(w, "invalid game state", http.StatusBadRequest)
+		return
+	}
+	if identity.MatchID == nil || identity.Turn == nil || *identity.MatchID != matchID || *identity.Turn != turn {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
 	var state GameState
 	if err := json.Unmarshal(body, &state); err != nil {
 		http.Error(w, "invalid game state", http.StatusBadRequest)
@@ -180,7 +202,7 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sign response
-	responseSig := signResponse(s.config.Secret, matchID, turnStr, responseBody)
+	responseSig := signResponse(s.config.Secret, matchID, turn, responseBody)
 	w.Header().Set("X-ACB-Signature", responseSig)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(responseBody)
@@ -195,11 +217,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-// verifySignature verifies the HMAC signature of an incoming request.
-func verifySignature(secret, matchID, turnStr string, body []byte, signature string) error {
+// verifySignature verifies the timestamp-bound HMAC signature of an incoming request.
+func verifySignature(secret, matchID, turnStr, timestamp string, body []byte, signature string) error {
+	if secret == "" || matchID == "" || turnStr == "" || timestamp == "" || signature == "" {
+		return fmt.Errorf("missing authentication")
+	}
+
+	timestampUnix, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid timestamp")
+	}
+	age := time.Since(time.Unix(timestampUnix, 0))
+	if age < -30*time.Second || age > 30*time.Second {
+		return fmt.Errorf("expired timestamp")
+	}
+
 	bodyHash := sha256.Sum256(body)
-	turn, _ := strconv.Atoi(turnStr)
-	signingString := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
+	signingString := fmt.Sprintf("%s.%s.%s.%s", matchID, turnStr, timestamp, hex.EncodeToString(bodyHash[:]))
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(signingString))
@@ -213,9 +247,8 @@ func verifySignature(secret, matchID, turnStr string, body []byte, signature str
 }
 
 // signResponse signs the response body.
-func signResponse(secret, matchID, turnStr string, body []byte) string {
+func signResponse(secret, matchID string, turn int, body []byte) string {
 	bodyHash := sha256.Sum256(body)
-	turn, _ := strconv.Atoi(turnStr)
 	signingString := fmt.Sprintf("%s.%d.%s", matchID, turn, hex.EncodeToString(bodyHash[:]))
 
 	mac := hmac.New(sha256.New, []byte(secret))
