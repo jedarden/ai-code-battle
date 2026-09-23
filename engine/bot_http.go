@@ -7,20 +7,23 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
 // HTTPBot is a bot that communicates via HTTP POST requests.
 // It implements BotInterface for use with MatchRunner.
 type HTTPBot struct {
-	client    *http.Client
-	baseURL   string // bot's HTTP endpoint (e.g., "http://localhost:8080")
-	auth      AuthConfig
-	matchID   string
-	turn      int
-	crashed   bool
-	failCount int        // consecutive failures
-	lastDebug *DebugInfo // debug info from last response
+	client     *http.Client
+	baseURL    string // bot's HTTP endpoint (e.g., "http://localhost:8080")
+	auth       AuthConfig
+	matchID    string
+	turn       int
+	crashed    bool
+	failCount  int        // consecutive failures
+	lastDebug  *DebugInfo // debug info from last response
+	mu         sync.RWMutex
+	generation uint64
 }
 
 // HTTPOption is a functional option for HTTPBot.
@@ -60,15 +63,21 @@ func NewHTTPBot(baseURL string, auth AuthConfig, options ...HTTPOption) *HTTPBot
 
 // SetMatchID sets the current match ID (called at match start).
 func (b *HTTPBot) SetMatchID(matchID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.matchID = matchID
 	b.auth.MatchID = matchID
 	b.turn = 0
 	b.crashed = false
 	b.failCount = 0
+	b.lastDebug = nil
+	b.generation++
 }
 
 // IsCrashed returns true if the bot has been marked as crashed.
 func (b *HTTPBot) IsCrashed() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	return b.crashed
 }
 
@@ -76,7 +85,9 @@ func (b *HTTPBot) IsCrashed() bool {
 // is reached. Inactive bots remain alive in the game but no longer receive
 // turn requests.
 func (b *HTTPBot) markInactive() {
+	b.mu.Lock()
 	b.crashed = true
+	b.mu.Unlock()
 }
 
 // MoveResponse represents the JSON response from a bot.
@@ -172,114 +183,109 @@ func decodeMoveResponse(responseBody []byte) (MoveResponse, error) {
 // GetMoves sends the game state to the bot and returns its moves.
 // Implements BotInterface.
 func (b *HTTPBot) GetMoves(state *VisibleState) ([]Move, error) {
-	b.lastDebug = nil
-
-	// If crashed, return no moves (bots hold position)
+	b.mu.Lock()
 	if b.crashed {
+		b.mu.Unlock()
 		return []Move{}, nil
 	}
+	b.generation++
+	generation := b.generation
+	b.lastDebug = nil
+	client := b.client
+	baseURL := b.baseURL
+	auth := b.auth
+	b.mu.Unlock()
 
 	if state == nil || state.MatchID == "" {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("visible state must include match_id")
 	}
+	matchID := state.MatchID
+	turn := state.Turn
 
-	// Update request identity from the exact state that will be signed and sent.
-	b.matchID = state.MatchID
-	b.auth.MatchID = state.MatchID
-	b.turn = state.Turn
-
-	// Serialize state
 	requestBody, err := json.Marshal(state)
 	if err != nil {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	// Build request
-	url := fmt.Sprintf("%s/turn", b.baseURL)
+	url := fmt.Sprintf("%s/turn", baseURL)
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewReader(requestBody))
 	if err != nil {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Add headers
 	timestamp := time.Now().Unix()
-	signature := SignRequest(b.auth.Secret, b.matchID, b.turn, timestamp, requestBody)
+	signature := SignRequest(auth.Secret, matchID, turn, timestamp, requestBody)
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-ACB-Match-Id", b.matchID)
-	req.Header.Set("X-ACB-Turn", fmt.Sprintf("%d", b.turn))
+	req.Header.Set("X-ACB-Match-Id", matchID)
+	req.Header.Set("X-ACB-Turn", fmt.Sprintf("%d", turn))
 	req.Header.Set("X-ACB-Timestamp", fmt.Sprintf("%d", timestamp))
-	req.Header.Set("X-ACB-Bot-Id", b.auth.BotID)
+	req.Header.Set("X-ACB-Bot-Id", auth.BotID)
 	req.Header.Set("X-ACB-Signature", signature)
 
-	// Send request
-	resp, err := b.client.Do(req)
+	if client == nil {
+		b.recordFailure(generation)
+		return nil, fmt.Errorf("HTTP client is nil")
+	}
+	resp, err := client.Do(req)
 	if err != nil {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("bot returned status %d", resp.StatusCode)
 	}
 
-	// Read response body
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// Verify response signature (strict — per §4.4)
 	responseSig := resp.Header.Get("X-ACB-Signature")
 	if responseSig == "" {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("missing response signature")
 	}
-	if err := VerifyResponse(b.auth.Secret, b.matchID, b.turn, responseSig, responseBody); err != nil {
-		b.recordFailure()
+	if err := VerifyResponse(auth.Secret, matchID, turn, responseSig, responseBody); err != nil {
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("response signature verification failed: %w", err)
 	}
 
 	moveResp, err := decodeMoveResponse(responseBody)
 	if err != nil {
-		b.recordFailure()
+		b.recordFailure(generation)
 		return nil, fmt.Errorf("failed to validate response: %w", err)
 	}
 
-	// Validate debug size (max 10 KB per turn per §14.1)
 	if moveResp.Debug != nil {
 		debugJSON, err := json.Marshal(moveResp.Debug)
 		if err != nil {
-			b.recordFailure()
+			b.recordFailure(generation)
 			return nil, fmt.Errorf("failed to marshal debug data: %w", err)
 		}
-		if len(debugJSON) > 10*1024 { // 10 KB limit
-			b.recordFailure()
+		if len(debugJSON) > 10*1024 {
+			b.recordFailure(generation)
 			return nil, fmt.Errorf("debug data exceeds 10 KB limit (%d bytes)", len(debugJSON))
 		}
 	}
 
-	// Validate moves (basic validation)
 	moves := b.validateMoves(moveResp.Moves, state)
-
-	// Store debug info for replay
-	b.lastDebug = moveResp.Debug
-
-	// Reset failure count on success
-	b.failCount = 0
+	b.recordSuccess(generation, matchID, turn, moveResp.Debug)
 
 	return moves, nil
 }
 
 // LastDebug returns the debug info from the most recent response, or nil.
 func (b *HTTPBot) LastDebug() *DebugInfo {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	return b.lastDebug
 }
 
@@ -323,16 +329,39 @@ func (b *HTTPBot) validateMoves(moves []Move, state *VisibleState) []Move {
 // recordFailure tracks consecutive failures and marks the bot as crashed at
 // the match policy threshold. MatchRunner also tracks this boundary so bots
 // implementing BotInterface without HTTPBot receive the same treatment.
-func (b *HTTPBot) recordFailure() {
+func (b *HTTPBot) recordFailure(generation uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if generation != b.generation || b.crashed {
+		return
+	}
 	b.failCount++
 	if b.failCount >= BotInactiveAfterFailures {
 		b.crashed = true
 	}
 }
 
+func (b *HTTPBot) recordSuccess(generation uint64, matchID string, turn int, debug *DebugInfo) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if generation != b.generation || b.crashed {
+		return
+	}
+	b.matchID = matchID
+	b.auth.MatchID = matchID
+	b.turn = turn
+	b.lastDebug = debug
+	b.failCount = 0
+}
+
 // Health checks the bot's health endpoint.
 func (b *HTTPBot) Health() error {
-	url := fmt.Sprintf("%s/health", b.baseURL)
+	b.mu.RLock()
+	baseURL := b.baseURL
+	client := b.client
+	b.mu.RUnlock()
+
+	url := fmt.Sprintf("%s/health", baseURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -340,8 +369,11 @@ func (b *HTTPBot) Health() error {
 	if err != nil {
 		return fmt.Errorf("failed to create health request: %w", err)
 	}
+	if client == nil {
+		return fmt.Errorf("health check failed: HTTP client is nil")
+	}
 
-	resp, err := b.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
 	}
