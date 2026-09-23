@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -103,5 +104,29 @@ func TestFeedbackEndpointPath(t *testing.T) {
 
 	if wOld.Code != http.StatusNotFound {
 		t.Errorf("POST /api/ui-feedback returned %d, want 404 — old route name should not be registered", wOld.Code)
+	}
+}
+
+func TestValidateBotEndpointRejectsRedirect(t *testing.T) {
+	requests := make(chan string, 2)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.Path
+		if r.URL.Path == "/health" {
+			http.Redirect(w, r, server.URL+"/ready", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if err := newTestServer().validateBotEndpoint(context.Background(), server.URL); err == nil {
+		t.Fatal("validateBotEndpoint() accepted a redirecting health endpoint")
+	}
+	if got := len(requests); got != 1 {
+		t.Fatalf("health request count = %d, want 1", got)
+	}
+	if path := <-requests; path != "/health" {
+		t.Fatalf("health request path = %q, want /health", path)
 	}
 }

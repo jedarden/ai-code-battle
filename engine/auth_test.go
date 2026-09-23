@@ -3,6 +3,7 @@ package engine
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -81,7 +82,10 @@ func TestVerifyRequest(t *testing.T) {
 	matchID := "m_7f3a9b2c"
 	turn := 42
 	timestamp := time.Now().Unix()
-	body := []byte(`{"match_id":"m_7f3a9b2c","turn":42}`)
+	body, err := json.Marshal(botProtocolConformanceState(matchID, turn))
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
 
 	sig := SignRequest(secret, matchID, turn, timestamp, body)
 
@@ -152,7 +156,10 @@ func TestVerifyRequest(t *testing.T) {
 		t.Error("authenticated malformed request should fail schema verification")
 	}
 
-	mismatchedBody := []byte(`{"match_id":"m_other","turn":42}`)
+	mismatchedBody, err := json.Marshal(botProtocolConformanceState("m_other", turn))
+	if err != nil {
+		t.Fatalf("marshal mismatched request body: %v", err)
+	}
 	mismatchedAuth := auth
 	mismatchedAuth.Signature = SignRequest(secret, matchID, turn, timestamp, mismatchedBody)
 	if err := VerifyRequest(secret, mismatchedAuth, mismatchedBody); err == nil {

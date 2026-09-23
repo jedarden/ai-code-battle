@@ -1,12 +1,15 @@
 package engine
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,7 +21,7 @@ const (
 // AuthConfig holds authentication configuration for a bot.
 type AuthConfig struct {
 	BotID   string // Unique bot identifier (e.g., "b_4e8c1d2f")
-	Secret  string // Shared secret (hex-encoded, 64 characters)
+	Secret  string // Shared secret; its UTF-8 bytes are used directly as the HMAC key
 	MatchID string // Current match ID
 }
 
@@ -50,6 +53,9 @@ func signPayload(secret, payload string) string {
 }
 
 func decodeSignature(signature string) ([]byte, error) {
+	if signature != strings.ToLower(signature) {
+		return nil, fmt.Errorf("signature must use lowercase hex")
+	}
 	decoded, err := hex.DecodeString(signature)
 	if err != nil {
 		return nil, fmt.Errorf("signature must be hex encoded: %w", err)
@@ -73,23 +79,180 @@ func verifySignature(secret, payload, signature string) bool {
 }
 
 func validateRequestPayload(auth RequestAuth, requestBody []byte) error {
-	var payload struct {
-		MatchID *string `json:"match_id"`
-		Turn    *int    `json:"turn"`
-	}
-	if err := json.Unmarshal(requestBody, &payload); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(requestBody))
+	decoder.DisallowUnknownFields()
+	var state VisibleState
+	if err := decoder.Decode(&state); err != nil {
 		return fmt.Errorf("invalid request body: %w", err)
 	}
-	if payload.MatchID == nil || payload.Turn == nil {
-		return fmt.Errorf("request body must include match_id and turn")
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("invalid request body: multiple JSON values")
+		}
+		return fmt.Errorf("invalid request body: %w", err)
 	}
-	if *payload.MatchID != auth.MatchID {
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(requestBody, &fields); err != nil || fields == nil {
+		return fmt.Errorf("invalid request body: expected one JSON object")
+	}
+	if err := requireRequestFields(requestBody, "request", "match_id", "turn", "config", "you", "bots", "energy", "cores", "walls", "dead"); err != nil {
+		return err
+	}
+	if err := rejectRequestUnknownFields(requestBody, "request", "match_id", "turn", "config", "you", "bots", "energy", "cores", "walls", "dead", "zone"); err != nil {
+		return err
+	}
+	if state.MatchID != auth.MatchID {
 		return fmt.Errorf("request match_id does not match X-ACB-Match-Id")
 	}
-	if *payload.Turn != auth.Turn {
+	if state.Turn != auth.Turn {
 		return fmt.Errorf("request turn does not match X-ACB-Turn")
 	}
+
+	if err := requireRequestFields(fields["config"], "request.config", "rows", "cols", "max_turns", "vision_radius2", "attack_radius2", "spawn_cost", "energy_interval", "cores_per_player", "zone_enabled", "zone_start_turn", "zone_shrink_interval", "zone_shrink_step", "zone_min_radius", "kill_score"); err != nil {
+		return err
+	}
+	if err := rejectRequestUnknownFields(fields["config"], "request.config", "rows", "cols", "max_turns", "vision_radius2", "attack_radius2", "spawn_cost", "energy_interval", "cores_per_player", "map_id", "season_id", "rules_version", "turn_timeout", "zone_enabled", "zone_start_turn", "zone_shrink_interval", "zone_shrink_step", "zone_min_radius", "kill_score"); err != nil {
+		return err
+	}
+	if err := requireRequestFields(fields["you"], "request.you", "id", "energy", "score"); err != nil {
+		return err
+	}
+	if err := rejectRequestUnknownFields(fields["you"], "request.you", "id", "energy", "score"); err != nil {
+		return err
+	}
+	if err := requireRequestElements(fields["bots"], "request.bots", "position", "owner"); err != nil {
+		return err
+	}
+	if err := requireRequestPositionElements(fields["energy"], "request.energy"); err != nil {
+		return err
+	}
+	if err := requireRequestElements(fields["cores"], "request.cores", "position", "owner", "active"); err != nil {
+		return err
+	}
+	if err := requireRequestPositionElements(fields["walls"], "request.walls"); err != nil {
+		return err
+	}
+	if err := requireRequestElements(fields["dead"], "request.dead", "position", "owner"); err != nil {
+		return err
+	}
+
+	rawZone, hasZone := fields["zone"]
+	if state.Config.ZoneEnabled && !hasZone {
+		return fmt.Errorf("request must include zone when zone_enabled is true")
+	}
+	if !state.Config.ZoneEnabled && hasZone {
+		return fmt.Errorf("request must omit zone when zone_enabled is false")
+	}
+	if hasZone {
+		if err := requireRequestFields(rawZone, "request.zone", "center", "radius", "active"); err != nil {
+			return err
+		}
+		if err := rejectRequestUnknownFields(rawZone, "request.zone", "center", "radius", "active"); err != nil {
+			return err
+		}
+		var zone map[string]json.RawMessage
+		if err := json.Unmarshal(rawZone, &zone); err != nil {
+			return fmt.Errorf("invalid request.zone: %w", err)
+		}
+		if err := requireRequestFields(zone["center"], "request.zone.center", "row", "col"); err != nil {
+			return err
+		}
+		if err := rejectRequestUnknownFields(zone["center"], "request.zone.center", "row", "col"); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func requireRequestFields(raw json.RawMessage, context string, names ...string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return fmt.Errorf("%s must be a JSON object", context)
+	}
+	for _, name := range names {
+		if _, ok := object[name]; !ok {
+			return fmt.Errorf("%s must include %s", context, name)
+		}
+	}
+	for name, value := range object {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return fmt.Errorf("%s.%s must not be null", context, name)
+		}
+	}
+	return nil
+}
+
+func rejectRequestUnknownFields(raw json.RawMessage, context string, names ...string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return fmt.Errorf("%s must be a JSON object", context)
+	}
+	allowed := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		allowed[name] = struct{}{}
+	}
+	for name := range object {
+		if _, ok := allowed[name]; !ok {
+			return fmt.Errorf("%s contains unknown field %s", context, name)
+		}
+	}
+	return nil
+}
+
+func requireRequestElements(raw json.RawMessage, context string, names ...string) error {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return fmt.Errorf("%s must be an array", context)
+	}
+	var elements []json.RawMessage
+	if err := json.Unmarshal(raw, &elements); err != nil || elements == nil {
+		return fmt.Errorf("%s must be an array", context)
+	}
+	for i, element := range elements {
+		elementContext := fmt.Sprintf("%s[%d]", context, i)
+		if err := requireRequestFields(element, elementContext, names...); err != nil {
+			return err
+		}
+		if err := rejectRequestUnknownFields(element, elementContext, names...); err != nil {
+			return err
+		}
+		if err := requireRequestFields(elementValue(element, "position"), elementContext+".position", "row", "col"); err != nil {
+			return err
+		}
+		if err := rejectRequestUnknownFields(elementValue(element, "position"), elementContext+".position", "row", "col"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requireRequestPositionElements(raw json.RawMessage, context string) error {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return fmt.Errorf("%s must be an array", context)
+	}
+	var elements []json.RawMessage
+	if err := json.Unmarshal(raw, &elements); err != nil || elements == nil {
+		return fmt.Errorf("%s must be an array", context)
+	}
+	for i, element := range elements {
+		elementContext := fmt.Sprintf("%s[%d]", context, i)
+		if err := requireRequestFields(element, elementContext, "row", "col"); err != nil {
+			return err
+		}
+		if err := rejectRequestUnknownFields(element, elementContext, "row", "col"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func elementValue(raw json.RawMessage, name string) json.RawMessage {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil
+	}
+	return object[name]
 }
 
 // SignRequest generates the HMAC signature for an outgoing request.

@@ -290,6 +290,7 @@ func (gs *GameState) GetVisibleState(playerID int) *VisibleState {
 	}
 
 	// Filter dead bots (visible for one turn)
+	vs.Dead = make([]VisibleBot, 0)
 	for _, b := range gs.DeadBots {
 		if visible[b.Position] {
 			vs.Dead = append(vs.Dead, VisibleBot{

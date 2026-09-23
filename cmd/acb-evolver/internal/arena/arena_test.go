@@ -1,9 +1,14 @@
 package arena
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aicodebattle/acb/cmd/acb-evolver/internal/mapelites"
 )
@@ -289,6 +294,29 @@ func TestSelectDiverse_FewerThanN(t *testing.T) {
 	result := selectDiverse(bots, 10, rng)
 	if len(result) != 10 {
 		t.Errorf("fewer than n: got %d opponents, want 10", len(result))
+	}
+}
+
+func TestWaitForHealthRejectsRedirect(t *testing.T) {
+	var requests atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path == "/health" {
+			http.Redirect(w, r, server.URL+"/ready", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := waitForHealth(ctx, server.Listener.Addr().String()); err == nil {
+		t.Fatal("waitForHealth() accepted a redirecting candidate")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("health request count = %d, want 1", got)
 	}
 }
 

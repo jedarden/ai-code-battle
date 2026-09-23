@@ -218,6 +218,29 @@ func TestVerifyTurnRequestAuthRejections(t *testing.T) {
 	}
 }
 
+func TestWaitForHealthRejectsRedirect(t *testing.T) {
+	var requests atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path == "/health" {
+			http.Redirect(w, r, server.URL+"/ready", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := waitForHealth(ctx, server.Listener.Addr().String(), time.Second); err == nil {
+		t.Fatal("waitForHealth() accepted a redirecting health endpoint")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("health request count = %d, want 1", got)
+	}
+}
+
 func TestVerifyTurnRequestAuthRejections_RequiresHTTP401(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -265,6 +288,33 @@ func TestSendTurnRequest_VerifiesResponseSignature(t *testing.T) {
 				t.Fatalf("sendTurnRequest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestSendTurnRequest_RejectsRedirect(t *testing.T) {
+	var requests atomic.Int32
+	responseBody := []byte(`{"moves":[]}`)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path == "/turn" {
+			http.Redirect(w, r, server.URL+"/redirected", http.StatusTemporaryRedirect)
+			return
+		}
+		w.Header().Set("X-ACB-Signature", engine.SignResponse(smokeSecret, smokeMatchID, 3, responseBody))
+		_, _ = w.Write(responseBody)
+	}))
+	defer server.Close()
+
+	err := sendTurnRequest(context.Background(), server.Client(), server.Listener.Addr().String(), 3)
+	if err == nil {
+		t.Fatal("sendTurnRequest() followed a /turn redirect")
+	}
+	if !strings.Contains(err.Error(), "307") {
+		t.Fatalf("sendTurnRequest() error = %q, want HTTP 307", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("turn request count = %d, want 1", got)
 	}
 }
 

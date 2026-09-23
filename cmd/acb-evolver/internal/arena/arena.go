@@ -87,8 +87,8 @@ type Result struct {
 	Errors int
 
 	// Kill statistics across all matches (errors excluded).
-	TotalKills   int    // total kills credited to candidate
-	TotalMatches int    // non-error matches for kill rate normalization
+	TotalKills   int     // total kills credited to candidate
+	TotalMatches int     // non-error matches for kill rate normalization
 	KillRate     float64 // kills per match
 
 	// OpponentWinRates maps opponent BotID → candidate win rate vs that bot.
@@ -510,6 +510,9 @@ func allocateFreePort() (int, error) {
 func waitForHealth(ctx context.Context, addr string) error {
 	deadline := time.Now().Add(healthStartupTimeout)
 	client := &http.Client{Timeout: 500 * time.Millisecond}
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	for time.Now().Before(deadline) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/health", nil)
 		if err != nil {

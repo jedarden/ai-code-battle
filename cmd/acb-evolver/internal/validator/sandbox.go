@@ -265,6 +265,9 @@ func freePort() (int, error) {
 func waitForHealth(ctx context.Context, addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 500 * time.Millisecond}
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	for time.Now().Before(deadline) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/health", nil)
 		if err != nil {
@@ -289,6 +292,7 @@ func waitForHealth(ctx context.Context, addr string, timeout time.Duration) erro
 // sendTurnRequest sends one POST /turn request to the bot and validates the
 // JSON response.
 func sendTurnRequest(ctx context.Context, client *http.Client, addr string, turn int) error {
+	client = botProtocolClient(client)
 	req, err := newSignedTurnRequest(ctx, addr, makeTestState(turn), turn, time.Now().Unix())
 	if err != nil {
 		return err
@@ -321,6 +325,14 @@ func sendTurnRequest(ctx context.Context, client *http.Client, addr string, turn
 	return validateMoveResponse(respBody)
 }
 
+func botProtocolClient(client *http.Client) *http.Client {
+	copy := *client
+	copy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &copy
+}
+
 func newSignedTurnRequest(ctx context.Context, addr string, state smokeState, turn int, timestamp int64) (*http.Request, error) {
 	body, err := json.Marshal(state)
 	if err != nil {
@@ -344,6 +356,7 @@ func newSignedTurnRequest(ctx context.Context, addr string, state smokeState, tu
 }
 
 func verifyTurnRequestAuthRejections(ctx context.Context, client *http.Client, addr string) error {
+	client = botProtocolClient(client)
 	sendProbe := func(name string, state smokeState, turn int, timestamp int64, omitHeader string, tamperSignature bool) error {
 		req, err := newSignedTurnRequest(ctx, addr, state, turn, timestamp)
 		if err != nil {
@@ -425,13 +438,21 @@ type smokeState struct {
 }
 
 type smokeConfig struct {
-	Rows           int `json:"rows"`
-	Cols           int `json:"cols"`
-	MaxTurns       int `json:"max_turns"`
-	VisionRadius2  int `json:"vision_radius2"`
-	AttackRadius2  int `json:"attack_radius2"`
-	SpawnCost      int `json:"spawn_cost"`
-	EnergyInterval int `json:"energy_interval"`
+	Rows               int   `json:"rows"`
+	Cols               int   `json:"cols"`
+	MaxTurns           int   `json:"max_turns"`
+	VisionRadius2      int   `json:"vision_radius2"`
+	AttackRadius2      int   `json:"attack_radius2"`
+	SpawnCost          int   `json:"spawn_cost"`
+	EnergyInterval     int   `json:"energy_interval"`
+	CoresPerPlayer     int   `json:"cores_per_player"`
+	TurnTimeout        int64 `json:"turn_timeout,omitempty"`
+	ZoneEnabled        bool  `json:"zone_enabled"`
+	ZoneStartTurn      int   `json:"zone_start_turn"`
+	ZoneShrinkInterval int   `json:"zone_shrink_interval"`
+	ZoneShrinkStep     int   `json:"zone_shrink_step"`
+	ZoneMinRadius      int   `json:"zone_min_radius"`
+	KillScore          int   `json:"kill_score"`
 }
 
 type smokePlayer struct {
@@ -465,7 +486,10 @@ func makeTestState(turn int) smokeState {
 			Rows: 60, Cols: 60,
 			MaxTurns: 500, VisionRadius2: 49,
 			AttackRadius2: 1, SpawnCost: 3,
-			EnergyInterval: 10,
+			EnergyInterval: 10, CoresPerPlayer: 1,
+			ZoneEnabled: false, ZoneStartTurn: 0,
+			ZoneShrinkInterval: 0, ZoneShrinkStep: 0,
+			ZoneMinRadius: 0, KillScore: 1,
 		},
 		You: smokePlayer{ID: 1, Energy: 10, Score: 0},
 		Bots: []smokeBot{

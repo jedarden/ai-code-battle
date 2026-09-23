@@ -230,7 +230,11 @@ func (b *HTTPBot) GetMoves(state *VisibleState) ([]Move, error) {
 		b.recordFailure(generation)
 		return nil, fmt.Errorf("HTTP client is nil")
 	}
-	resp, err := client.Do(req)
+	requestClient := *client
+	requestClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := requestClient.Do(req)
 	if err != nil {
 		b.recordFailure(generation)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -372,8 +376,12 @@ func (b *HTTPBot) Health() error {
 	if client == nil {
 		return fmt.Errorf("health check failed: HTTP client is nil")
 	}
+	healthClient := *client
+	healthClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 
-	resp, err := client.Do(req)
+	resp, err := healthClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
 	}

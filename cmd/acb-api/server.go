@@ -239,6 +239,9 @@ func (s *Server) validateBotEndpoint(ctx context.Context, endpointURL string) er
 	// Try to GET /health endpoint with a timeout
 	healthURL := endpointURL + "/health"
 	client := &http.Client{Timeout: time.Duration(s.cfg.BotTimeoutSecs) * time.Second}
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 	if err != nil {

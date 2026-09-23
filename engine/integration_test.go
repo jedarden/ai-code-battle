@@ -103,7 +103,10 @@ func TestIntegration_HMACAuthentication(t *testing.T) {
 	matchID := "m_hmac_test"
 	turn := 42
 	timestamp := time.Now().Unix()
-	requestBody := []byte(`{"match_id":"m_hmac_test","turn":42}`)
+	requestBody, err := json.Marshal(botProtocolConformanceState(matchID, turn))
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
 
 	signature := SignRequest(secret, matchID, turn, timestamp, requestBody)
 
