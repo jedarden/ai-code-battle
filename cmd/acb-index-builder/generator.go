@@ -215,7 +215,7 @@ func generateAllIndexes(data *IndexData, outputDir string, db *sql.DB, cfg *Conf
 
 func generateLeaderboard(data *IndexData, outputDir string) error {
 	entries := make([]LeaderboardEntry, 0, len(data.Bots))
-	for i, bot := range data.Bots {
+	for _, bot := range data.Bots {
 		if bot.MatchesPlayed == 0 {
 			continue
 		}
@@ -224,17 +224,26 @@ func generateLeaderboard(data *IndexData, outputDir string) error {
 			winRate = float64(bot.MatchesWon) / float64(bot.MatchesPlayed) * 100
 		}
 		entries = append(entries, LeaderboardEntry{
-			Rank:            i + 1,
 			BotID:           bot.ID,
 			Name:            bot.Name,
 			OwnerID:         bot.OwnerID,
-			Rating:          int(bot.Rating),
+			Rating:          int(math.Round(bot.Rating - 2*bot.RatingDeviation)),
 			RatingDeviation: bot.RatingDeviation,
 			MatchesPlayed:   bot.MatchesPlayed,
 			MatchesWon:      bot.MatchesWon,
 			WinRate:         round1(winRate),
 			HealthStatus:    bot.HealthStatus,
 		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Rating == entries[j].Rating {
+			return entries[i].BotID < entries[j].BotID
+		}
+		return entries[i].Rating > entries[j].Rating
+	})
+	for i := range entries {
+		entries[i].Rank = i + 1
 	}
 
 	leaderboard := LeaderboardIndex{

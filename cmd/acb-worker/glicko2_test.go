@@ -80,6 +80,18 @@ func TestDisplayRating(t *testing.T) {
 	assertClose(t, "DisplayRating", r.DisplayRating(), 1500-2*350, 1e-9)
 }
 
+func TestDefaultRatingValues(t *testing.T) {
+	if glicko2DefaultMu != 1500 {
+		t.Errorf("default mu = %v, want 1500", glicko2DefaultMu)
+	}
+	if glicko2DefaultRD != 350 {
+		t.Errorf("default RD = %v, want 350", glicko2DefaultRD)
+	}
+	if glicko2DefaultSigma != 0.06 {
+		t.Errorf("default sigma = %v, want 0.06", glicko2DefaultSigma)
+	}
+}
+
 // TestUpdateSingleRatingPaperExample checks against the worked example in
 // glicko2.pdf: a player rated 1500 at RD 200 plays (and beats) a 1500/RD 30
 // bot, loses to a 1550/RD 100 bot, and loses to a 1700/RD 300 bot.

@@ -273,13 +273,20 @@ CREATE TABLE IF NOT EXISTS matches (
 );
 
 CREATE TABLE IF NOT EXISTS match_participants (
-    match_id      VARCHAR(32) NOT NULL REFERENCES matches(match_id),
-    bot_id        VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
-    player_slot   INTEGER NOT NULL,
-    score         INTEGER,
-    status        VARCHAR(16),
+    match_id          VARCHAR(32) NOT NULL REFERENCES matches(match_id),
+    bot_id            VARCHAR(16) NOT NULL REFERENCES bots(bot_id),
+    player_slot       INTEGER NOT NULL,
+    score             INTEGER,
+    status            VARCHAR(16),
+    rating_mu_after   DOUBLE PRECISION,
+    rating_phi_after  DOUBLE PRECISION,
+    rating_sigma_after DOUBLE PRECISION,
     PRIMARY KEY (match_id, bot_id)
 );
+
+ALTER TABLE match_participants ADD COLUMN IF NOT EXISTS rating_mu_after DOUBLE PRECISION;
+ALTER TABLE match_participants ADD COLUMN IF NOT EXISTS rating_phi_after DOUBLE PRECISION;
+ALTER TABLE match_participants ADD COLUMN IF NOT EXISTS rating_sigma_after DOUBLE PRECISION;
 
 CREATE TABLE IF NOT EXISTS jobs (
     job_id        VARCHAR(32) PRIMARY KEY,

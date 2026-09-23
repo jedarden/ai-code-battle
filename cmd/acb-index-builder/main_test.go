@@ -92,7 +92,7 @@ func TestGenerateLeaderboard(t *testing.T) {
 				Name:            "TestBot1",
 				OwnerID:         "owner1",
 				Rating:          1650.0,
-				RatingDeviation: 50.0,
+				RatingDeviation: 200.0,
 				MatchesPlayed:   100,
 				MatchesWon:      75,
 				HealthStatus:    "ACTIVE",
@@ -104,7 +104,7 @@ func TestGenerateLeaderboard(t *testing.T) {
 				Name:            "TestBot2",
 				OwnerID:         "owner2",
 				Rating:          1550.0,
-				RatingDeviation: 75.0,
+				RatingDeviation: 50.0,
 				MatchesPlayed:   50,
 				MatchesWon:      25,
 				HealthStatus:    "ACTIVE",
@@ -112,6 +112,14 @@ func TestGenerateLeaderboard(t *testing.T) {
 				Island:          "python",
 				Generation:      5,
 				CreatedAt:       time.Now(),
+			},
+			{
+				ID:            "unplayed",
+				Name:          "UnplayedBot",
+				OwnerID:       "owner3",
+				Rating:        2500.0,
+				MatchesPlayed: 0,
+				CreatedAt:     time.Now(),
 			},
 		},
 		Matches: []MatchData{},
@@ -144,12 +152,14 @@ func TestGenerateLeaderboard(t *testing.T) {
 		t.Errorf("Expected 2 entries, got %d", len(leaderboard.Entries))
 	}
 
-	// First entry should be highest rated
-	if leaderboard.Entries[0].BotID != "bot1" {
-		t.Errorf("First entry bot_id: got %q, want %q", leaderboard.Entries[0].BotID, "bot1")
+	if leaderboard.Entries[0].BotID != "bot2" {
+		t.Errorf("First entry bot_id: got %q, want %q", leaderboard.Entries[0].BotID, "bot2")
 	}
-	if leaderboard.Entries[0].Rating != 1650 {
-		t.Errorf("First entry rating: got %d, want %d", leaderboard.Entries[0].Rating, 1650)
+	if leaderboard.Entries[0].Rating != 1450 {
+		t.Errorf("First entry rating: got %d, want %d", leaderboard.Entries[0].Rating, 1450)
+	}
+	if leaderboard.Entries[0].Rank != 1 || leaderboard.Entries[1].Rank != 2 {
+		t.Errorf("Unexpected ranks: %d, %d", leaderboard.Entries[0].Rank, leaderboard.Entries[1].Rank)
 	}
 }
 
