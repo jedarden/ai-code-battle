@@ -49,6 +49,14 @@ func TestGridDistance2(t *testing.T) {
 		{Position{0, 0}, Position{58, 0}, 4},  // distance 2 via wrap
 		{Position{0, 0}, Position{0, 59}, 1},  // distance 1 via wrap col
 		{Position{0, 0}, Position{59, 59}, 2}, // distance sqrt(2) via corner wrap
+
+		// Same folds with the edge position as the first argument - the
+		// dr > Rows/2 / dc > Cols/2 branches are only exercised when the
+		// seam is crossed in the positive direction.
+		{Position{59, 0}, Position{0, 0}, 1},  // positive-direction row seam
+		{Position{58, 0}, Position{0, 0}, 4},  // positive-direction row seam, 2 wide
+		{Position{0, 59}, Position{0, 0}, 1},  // positive-direction col seam
+		{Position{59, 59}, Position{0, 0}, 2}, // positive-direction corner wrap
 	}
 
 	for _, tt := range tests {
