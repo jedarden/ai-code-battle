@@ -313,6 +313,23 @@ func resolveTurnTimeout(turnTimeoutMs int64, fallback time.Duration) time.Durati
 	return engine.DefaultTurnTimeout
 }
 
+// mapCrashedBots translates the engine's per-player-slot crash flags into the
+// result payload's bot-keyed map. The engine indexes Crashed by player slot —
+// bots join the runner in slot order (executeMatch above) — so each bot's flag
+// must key on its participant's PlayerSlot, not on the participant slice
+// position. Every participant gets an entry, crashed or not: updateCrashStrikes
+// reads the false entries to reset a clean bot's strike count. A participant
+// whose slot has no engine flag is skipped rather than fabricated.
+func mapCrashedBots(participants []DBParticipant, engineCrashed []bool) map[string]bool {
+	crashedBots := make(map[string]bool, len(participants))
+	for _, p := range participants {
+		if p.PlayerSlot < len(engineCrashed) {
+			crashedBots[p.BotID] = engineCrashed[p.PlayerSlot]
+		}
+	}
+	return crashedBots
+}
+
 // executeMatch runs a match and returns the result and replay.
 func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*MatchResult, *engine.Replay, error) {
 	turnTimeout := resolveTurnTimeout(claimData.TurnTimeoutMs, w.cfg.TurnTimeout)
@@ -407,11 +424,10 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 
 	// Convert result
 	result := &MatchResult{
-		WinnerID:    "",
-		Turns:       engineResult.Turns,
-		EndReason:   engineResult.Reason,
-		Scores:      make(map[string]int),
-		CrashedBots: make(map[string]bool),
+		WinnerID:  "",
+		Turns:     engineResult.Turns,
+		EndReason: engineResult.Reason,
+		Scores:    make(map[string]int),
 	}
 
 	// Set winner ID from result (Winner is int, -1 for draw)
@@ -431,12 +447,8 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 		}
 	}
 
-	// Propagate crash status from engine
-	for _, p := range claimData.Participants {
-		if p.PlayerSlot < len(engineResult.Crashed) {
-			result.CrashedBots[p.BotID] = engineResult.Crashed[p.PlayerSlot]
-		}
-	}
+	// Propagate crash status from engine into the result payload
+	result.CrashedBots = mapCrashedBots(claimData.Participants, engineResult.Crashed)
 
 	// Compute combat_turns: count distinct turns where ≥1 bot died from "combat" (enemy kill)
 	result.CombatTurns = computeCombatTurns(replay)
