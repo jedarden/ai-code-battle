@@ -87,13 +87,20 @@ func NewMatchRunner(config Config, options ...MatchOption) *MatchRunner {
 		rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
 		verbose:       false,
 		logger:        log.Default(),
-		timeout:       3 * time.Second,
+		timeout:       DefaultTurnTimeout,
 		failureStreak: make(map[int]int),
 		inactive:      make(map[int]bool),
 	}
 
 	for _, opt := range options {
 		opt(mr)
+	}
+
+	// A positive Config.TurnTimeout is the per-match budget and outranks
+	// WithTimeout. Non-positive config values preserve the option-selected
+	// budget, or the default above when no option is supplied.
+	if config.TurnTimeout > 0 {
+		mr.timeout = config.TurnTimeout
 	}
 
 	return mr

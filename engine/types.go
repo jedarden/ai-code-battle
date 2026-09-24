@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"time"
 )
 
 // Position represents a coordinate on the toroidal grid.
@@ -157,6 +158,11 @@ type Move struct {
 	Direction Direction `json:"direction"`
 }
 
+// DefaultTurnTimeout is the per-turn response budget enforced when a match
+// config does not name one — the historical 3-second "competitive" tier
+// budget, kept as the platform default for backward compatibility.
+const DefaultTurnTimeout = 3 * time.Second
+
 // Config holds game configuration parameters.
 type Config struct {
 	Rows           int    `json:"rows"`
@@ -170,6 +176,11 @@ type Config struct {
 	MapID          string `json:"map_id,omitempty"`
 	SeasonID       string `json:"season_id,omitempty"`
 	RulesVersion   string `json:"rules_version,omitempty"`
+
+	// TurnTimeout is the positive per-turn response budget selected for this
+	// match. Zero or negative leaves the engine default or an explicit runner
+	// option in effect. The JSON value is a nanosecond duration.
+	TurnTimeout time.Duration `json:"turn_timeout,omitempty"`
 
 	// Zone (storm) configuration
 	ZoneEnabled        bool `json:"zone_enabled"`         // whether the shrinking zone is active
