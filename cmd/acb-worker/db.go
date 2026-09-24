@@ -102,11 +102,13 @@ type DBMapData struct {
 
 // JobClaimData contains all data needed to execute a match.
 type JobClaimData struct {
-	Job          DBJob
-	Match        DBMatch
-	Participants []DBParticipant
-	Map          DBMapData
-	Bots         []DBBotInfo
+	Job           DBJob
+	Match         DBMatch
+	Participants  []DBParticipant
+	Map           DBMapData
+	Bots          []DBBotInfo
+	Tier          string
+	TurnTimeoutMs int64
 }
 
 // GetNextJob fetches the next pending job from the database.
@@ -161,15 +163,22 @@ func (c *DBClient) ClaimJob(ctx context.Context, jobID string, workerID string) 
 
 	// Get job details
 	var job DBJob
+	var configJSON []byte
 	err = tx.QueryRowContext(ctx, `
-		SELECT job_id, match_id, status, worker_id, claimed_at, heartbeat_at, created_at
+		SELECT job_id, match_id, status, worker_id, claimed_at, heartbeat_at, created_at,
+		       COALESCE(config_json, '{}'::jsonb)
 		FROM jobs WHERE job_id = $1
 	`, jobID).Scan(
 		&job.ID, &job.MatchID, &job.Status, &job.WorkerID,
-		&job.ClaimedAt, &job.HeartbeatAt, &job.CreatedAt,
+		&job.ClaimedAt, &job.HeartbeatAt, &job.CreatedAt, &configJSON,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get job: %w", err)
+	}
+
+	timing, err := extractJobTiming(configJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode job config_json: %w", err)
 	}
 
 	// Get match details + active season info
@@ -264,12 +273,29 @@ func (c *DBClient) ClaimJob(ctx context.Context, jobID string, workerID string) 
 	}
 
 	return &JobClaimData{
-		Job:          job,
-		Match:        match,
-		Participants: participants,
-		Map:          mapData,
-		Bots:         bots,
+		Job:           job,
+		Match:         match,
+		Participants:  participants,
+		Map:           mapData,
+		Bots:          bots,
+		Tier:          timing.Tier,
+		TurnTimeoutMs: timing.TurnTimeoutMs,
 	}, nil
+}
+
+type jobTiming struct {
+	Tier          string `json:"tier"`
+	TurnTimeoutMs int64  `json:"turn_timeout_ms"`
+}
+
+func extractJobTiming(configJSON []byte) (jobTiming, error) {
+	var timing jobTiming
+	if len(configJSON) > 0 {
+		if err := json.Unmarshal(configJSON, &timing); err != nil {
+			return timing, err
+		}
+	}
+	return timing, nil
 }
 
 // Heartbeat updates the heartbeat timestamp for a job.

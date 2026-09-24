@@ -61,7 +61,7 @@ func main() {
 	workerID := flag.String("worker-id", getEnv("ACB_WORKER_ID", generateWorkerID()), "Unique worker identifier")
 	pollPeriod := flag.Duration("poll", 5*time.Second, "Job polling period")
 	heartbeat := flag.Duration("heartbeat", 30*time.Second, "Heartbeat interval during matches")
-	turnTimeout := flag.Duration("timeout", 3*time.Second, "Per-turn bot timeout")
+	turnTimeout := flag.Duration("timeout", engine.DefaultTurnTimeout, "Per-turn bot timeout")
 	maxRetries := flag.Int("retries", 3, "Max retries for transient errors")
 	verbose := flag.Bool("verbose", getEnv("ACB_VERBOSE", "false") == "true", "Enable verbose logging")
 	mode := flag.String("mode", "worker", "Operation mode: 'worker' (normal polling) or 'recalc-ratings' (disaster recovery)")
@@ -303,8 +303,23 @@ func (w *Worker) pollAndExecute(ctx context.Context) error {
 	return nil
 }
 
+func resolveTurnTimeout(turnTimeoutMs int64, fallback time.Duration) time.Duration {
+	if turnTimeoutMs > 0 {
+		return time.Duration(turnTimeoutMs) * time.Millisecond
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return engine.DefaultTurnTimeout
+}
+
 // executeMatch runs a match and returns the result and replay.
 func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*MatchResult, *engine.Replay, error) {
+	turnTimeout := resolveTurnTimeout(claimData.TurnTimeoutMs, w.cfg.TurnTimeout)
+	if claimData.Tier != "" {
+		w.logger.Printf("Match tier %q: per-turn timeout %s", claimData.Tier, turnTimeout)
+	}
+
 	// Build game config using ConfigForPlayers to get proper attack radius and zone parameters
 	numPlayers := len(claimData.Participants)
 	config := engine.ConfigForPlayers(numPlayers, 2) // 2 cores per player default
@@ -316,6 +331,7 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 	// Set match metadata
 	config.SeasonID = claimData.Match.SeasonID
 	config.RulesVersion = claimData.Match.RulesVersion
+	config.TurnTimeout = turnTimeout
 
 	// Prepare pre-generated map data for the match runner
 	preGenMap := engine.PreGeneratedMap{
@@ -327,7 +343,7 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 	runner := engine.NewMatchRunner(config,
 		engine.WithRNG(w.rng),
 		engine.WithVerbose(w.cfg.Verbose),
-		engine.WithTimeout(w.cfg.TurnTimeout),
+		engine.WithTimeout(turnTimeout),
 		engine.WithMap(preGenMap),
 	)
 
@@ -370,7 +386,7 @@ func (w *Worker) executeMatch(ctx context.Context, claimData *JobClaimData) (*Ma
 		httpBot := engine.NewHTTPBot(
 			botInfo.EndpointURL,
 			auth,
-			engine.WithHTTPTimeout(w.cfg.TurnTimeout),
+			engine.WithHTTPTimeout(turnTimeout),
 		)
 
 		runner.AddBot(httpBot, p.BotID)
