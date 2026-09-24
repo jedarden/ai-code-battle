@@ -393,13 +393,7 @@ func (m *Matchmaker) createMatch(
 	// Randomise player slots.
 	slots := rng.Perm(len(participants))
 
-	type botConfig struct {
-		BotID    string `json:"bot_id"`
-		Endpoint string `json:"endpoint"`
-		Secret   string `json:"secret"`
-		Slot     int    `json:"slot"`
-	}
-	botCfgs := make([]botConfig, len(participants))
+	botCfgs := make([]matchBotConfig, len(participants))
 	for i, p := range participants {
 		secret := p.Secret
 		if m.cfg.EncryptionKey != "" {
@@ -407,7 +401,7 @@ func (m *Matchmaker) createMatch(
 				secret = dec
 			}
 		}
-		botCfgs[i] = botConfig{
+		botCfgs[i] = matchBotConfig{
 			BotID:    p.ID,
 			Endpoint: p.Endpoint,
 			Secret:   secret,
@@ -415,14 +409,6 @@ func (m *Matchmaker) createMatch(
 		}
 	}
 
-	type jobConfig struct {
-		MatchID  string      `json:"match_id"`
-		MapSeed  int64       `json:"map_seed"`
-		MaxTurns int         `json:"max_turns"`
-		Rows     int         `json:"rows"`
-		Cols     int         `json:"cols"`
-		Bots     []botConfig `json:"bots"`
-	}
 	cfg := jobConfig{
 		MatchID:  matchID,
 		MapSeed:  mapSeed,
@@ -431,7 +417,13 @@ func (m *Matchmaker) createMatch(
 		Cols:     mapCols,
 		Bots:     botCfgs,
 	}
-	configJSON, _ := json.Marshal(cfg)
+	if err := cfg.applyMatchTiming(m.cfg); err != nil {
+		return fmt.Errorf("resolve match tier: %w", err)
+	}
+	configJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal job config: %w", err)
+	}
 
 	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {

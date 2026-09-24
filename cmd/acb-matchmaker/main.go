@@ -36,6 +36,7 @@ type Config struct {
 	StaleJobMinutes   int
 	MaxConsecFails    int
 	SeasonDecayFactor float64
+	MatchTier         string
 }
 
 type Matchmaker struct {
@@ -64,11 +65,16 @@ func loadConfig() Config {
 		StaleJobMinutes:   envInt("ACB_STALE_JOB_MINUTES", 15),
 		MaxConsecFails:    envInt("ACB_MAX_CONSEC_FAILS", 3),
 		SeasonDecayFactor: envFloat("ACB_SEASON_DECAY_FACTOR", 0.7),
+		MatchTier:         envOr("ACB_MATCH_TIER", ""),
 	}
 }
 
 func main() {
 	cfg := loadConfig()
+
+	if err := validateMatchTiming(cfg); err != nil {
+		log.Fatalf("invalid ACB_MATCH_TIER: %v", err)
+	}
 
 	db, err := sql.Open("postgres", cfg.DatabaseURL)
 	if err != nil {

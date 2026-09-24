@@ -283,23 +283,6 @@ func (m *Matchmaker) createSeriesGames(ctx context.Context, seriesID int64, botA
 		}
 	}
 
-	type botConfig struct {
-		BotID    string `json:"bot_id"`
-		Endpoint string `json:"endpoint"`
-		Secret   string `json:"secret"`
-		Slot     int    `json:"slot"`
-	}
-	type jobConfig struct {
-		MatchID  string      `json:"match_id"`
-		SeriesID int64       `json:"series_id,omitempty"`
-		GameNum  int         `json:"game_num,omitempty"`
-		MapSeed  int64       `json:"map_seed"`
-		MaxTurns int         `json:"max_turns"`
-		Rows     int         `json:"rows"`
-		Cols     int         `json:"cols"`
-		Bots     []botConfig `json:"bots"`
-	}
-
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -334,12 +317,18 @@ func (m *Matchmaker) createSeriesGames(ctx context.Context, seriesID int64, botA
 			MaxTurns: 500,
 			Rows:     rows,
 			Cols:     cols,
-			Bots: []botConfig{
+			Bots: []matchBotConfig{
 				{BotID: botAID, Endpoint: endpointA, Secret: secretA, Slot: slotA},
 				{BotID: botBID, Endpoint: endpointB, Secret: secretB, Slot: slotB},
 			},
 		}
-		configJSON, _ := json.Marshal(config)
+		if err := config.applyMatchTiming(m.cfg); err != nil {
+			return fmt.Errorf("resolve match tier: %w", err)
+		}
+		configJSON, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("marshal job config: %w", err)
+		}
 
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO matches (match_id, map_id, map_seed, status) VALUES ($1, $2, $3, 'pending')`,
