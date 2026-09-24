@@ -575,6 +575,343 @@ func TestBotProtocolConformance_ResponseSchemaAndNoOp(t *testing.T) {
 	}
 }
 
+func TestBotProtocolConformance_RejectedRequestNeverExecutes(t *testing.T) {
+	const secret = "conformance-gate-secret"
+
+	// referenceGate implements the verification order mandated by
+	// docs/bot-protocol.md and returns the documented status for each
+	// rejection class. Bot logic may run only after every check succeeds.
+	referenceGate := func(r *http.Request) (int, bool) {
+		if r.Method != http.MethodPost {
+			return http.StatusMethodNotAllowed, false
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			return http.StatusUnauthorized, false
+		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			return http.StatusBadRequest, false
+		}
+		auth, err := ParseAuthHeaders(map[string]string{
+			"X-ACB-Match-Id":  r.Header.Get("X-ACB-Match-Id"),
+			"X-ACB-Turn":      r.Header.Get("X-ACB-Turn"),
+			"X-ACB-Timestamp": r.Header.Get("X-ACB-Timestamp"),
+			"X-ACB-Bot-Id":    r.Header.Get("X-ACB-Bot-Id"),
+			"X-ACB-Signature": r.Header.Get("X-ACB-Signature"),
+		})
+		if err != nil {
+			return http.StatusUnauthorized, false
+		}
+		if auth.Turn < 0 {
+			return http.StatusUnauthorized, false
+		}
+		now := time.Now()
+		requestTime := time.Unix(auth.Timestamp, 0)
+		if requestTime.Before(now.Add(-TimestampTolerance)) || requestTime.After(now.Add(TimestampTolerance)) {
+			return http.StatusUnauthorized, false
+		}
+		payload := CanonicalRequestPayload(auth.MatchID, auth.Turn, auth.Timestamp, raw)
+		if !verifySignature(secret, payload, auth.Signature) {
+			return http.StatusUnauthorized, false
+		}
+		var identity struct {
+			MatchID *string `json:"match_id"`
+			Turn    *int    `json:"turn"`
+		}
+		if err := json.Unmarshal(raw, &identity); err != nil {
+			return http.StatusBadRequest, false
+		}
+		// A body value that contradicts the authenticated headers is an
+		// authentication failure; an absent or null field is a schema
+		// violation and is reported by validateRequestPayload below.
+		if (identity.MatchID != nil && *identity.MatchID != auth.MatchID) ||
+			(identity.Turn != nil && *identity.Turn != auth.Turn) {
+			return http.StatusUnauthorized, false
+		}
+		if err := validateRequestPayload(auth, raw); err != nil {
+			return http.StatusBadRequest, false
+		}
+		return http.StatusOK, true
+	}
+
+	rewrite := func(body []byte, change func(map[string]interface{})) []byte {
+		t.Helper()
+		var object map[string]interface{}
+		if err := json.Unmarshal(body, &object); err != nil {
+			t.Fatalf("decode request fixture: %v", err)
+		}
+		change(object)
+		encoded, err := json.Marshal(object)
+		if err != nil {
+			t.Fatalf("encode request fixture: %v", err)
+		}
+		return encoded
+	}
+	resign := func(headers map[string]string, body []byte, timestamp int64) {
+		t.Helper()
+		turn, err := strconv.Atoi(headers["X-ACB-Turn"])
+		if err != nil {
+			t.Fatalf("parse fixture turn: %v", err)
+		}
+		headers["X-ACB-Signature"] = SignRequest(secret, headers["X-ACB-Match-Id"], turn, timestamp, body)
+	}
+	unchanged := func(_ map[string]string, body []byte, _ int64) []byte { return body }
+
+	tests := []struct {
+		name        string
+		wantStatus  int
+		method      string
+		contentType string
+		mutate      func(map[string]string, []byte, int64) []byte
+	}{
+		{name: "valid request", wantStatus: http.StatusOK, method: http.MethodPost, contentType: "application/json", mutate: unchanged},
+		{name: "wrong method", wantStatus: http.StatusMethodNotAllowed, method: http.MethodGet, contentType: "application/json", mutate: unchanged},
+		{name: "missing content type", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "", mutate: unchanged},
+		{name: "missing match id header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			delete(headers, "X-ACB-Match-Id")
+			return body
+		}},
+		{name: "missing turn header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			delete(headers, "X-ACB-Turn")
+			return body
+		}},
+		{name: "missing timestamp header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			delete(headers, "X-ACB-Timestamp")
+			return body
+		}},
+		{name: "missing bot id header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			delete(headers, "X-ACB-Bot-Id")
+			return body
+		}},
+		{name: "missing signature header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			delete(headers, "X-ACB-Signature")
+			return body
+		}},
+		{name: "malformed turn header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			headers["X-ACB-Turn"] = "eleven"
+			return body
+		}},
+		{name: "malformed timestamp header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			headers["X-ACB-Timestamp"] = "now"
+			return body
+		}},
+		{name: "malformed signature header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			headers["X-ACB-Signature"] = "not-hex"
+			return body
+		}},
+		{name: "uppercase signature header", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			headers["X-ACB-Signature"] = "F" + headers["X-ACB-Signature"][1:]
+			return body
+		}},
+		{name: "unauthorized signature", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, _ int64) []byte {
+			replacement := byte('0')
+			if headers["X-ACB-Signature"][0] == '0' {
+				replacement = '1'
+			}
+			headers["X-ACB-Signature"] = string(replacement) + headers["X-ACB-Signature"][1:]
+			return body
+		}},
+		{name: "negative turn", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["turn"] = -1 })
+			headers["X-ACB-Turn"] = "-1"
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "stale timestamp", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			timestamp -= int64(TimestampTolerance/time.Second) + 1
+			headers["X-ACB-Timestamp"] = strconv.FormatInt(timestamp, 10)
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "future timestamp", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			timestamp += int64(TimestampTolerance/time.Second) + 1
+			headers["X-ACB-Timestamp"] = strconv.FormatInt(timestamp, 10)
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "match id mismatch", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["match_id"] = "m_other" })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "turn mismatch", wantStatus: http.StatusUnauthorized, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["turn"] = 12 })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing body identity", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, _ []byte, timestamp int64) []byte {
+			body := []byte(`{}`)
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "malformed json body", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, _ []byte, timestamp int64) []byte {
+			body := []byte(`{"match_id":`)
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "non-object json body", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, _ []byte, timestamp int64) []byte {
+			body := []byte(`[1,2]`)
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing config", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "config") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "unknown request field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["future"] = true })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "case-variant request field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["Turn"] = 11 })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "null scalar", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["turn"] = nil })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "null nested scalar", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["you"].(map[string]interface{})["energy"] = nil
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "enabled zone omitted", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "zone") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "disabled zone included", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["config"].(map[string]interface{})["zone_enabled"] = false
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "null dead array", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["dead"] = nil })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "wrong nested type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["you"].(map[string]interface{})["energy"] = "high"
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			executed := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				status, ok := referenceGate(r)
+				if !ok {
+					w.WriteHeader(status)
+					return
+				}
+				executed++
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(server.Close)
+
+			timestamp := time.Now().Unix()
+			body, err := json.Marshal(botProtocolConformanceState("m_gate", 5))
+			if err != nil {
+				t.Fatalf("marshal request fixture: %v", err)
+			}
+			headers := map[string]string{
+				"X-ACB-Match-Id":  "m_gate",
+				"X-ACB-Turn":      "5",
+				"X-ACB-Timestamp": strconv.FormatInt(timestamp, 10),
+				"X-ACB-Bot-Id":    "b_gate",
+				"X-ACB-Signature": SignRequest(secret, "m_gate", 5, timestamp, body),
+			}
+			body = test.mutate(headers, body, timestamp)
+
+			req, err := http.NewRequest(test.method, server.URL+"/turn", bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("build request: %v", err)
+			}
+			if test.contentType != "" {
+				req.Header.Set("Content-Type", test.contentType)
+			}
+			for name, value := range headers {
+				req.Header.Set(name, value)
+			}
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("send request: %v", err)
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != test.wantStatus {
+				t.Errorf("status = %d, want %d", resp.StatusCode, test.wantStatus)
+			}
+			wantExecuted := test.wantStatus == http.StatusOK
+			if got := executed == 1; got != wantExecuted {
+				t.Errorf("bot logic executed = %v (count %d), want %v", got, executed, wantExecuted)
+			}
+		})
+	}
+}
+
+func TestBotProtocolConformance_ResponseTransportFailures(t *testing.T) {
+	const secret = "conformance-transport-secret"
+	body := []byte(`{"moves":[]}`)
+	tests := []struct {
+		name  string
+		serve func(w http.ResponseWriter, r *http.Request)
+	}{
+		{name: "server error status", serve: func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}},
+		{name: "missing response signature", serve: func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body)
+		}},
+		{name: "invalid response signature", serve: func(w http.ResponseWriter, r *http.Request) {
+			turn, err := strconv.Atoi(r.Header.Get("X-ACB-Turn"))
+			if err != nil {
+				t.Errorf("X-ACB-Turn is not an integer: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-ACB-Signature", SignResponse("wrong-"+secret, r.Header.Get("X-ACB-Match-Id"), turn, body))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body)
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(test.serve))
+			t.Cleanup(server.Close)
+
+			bot := NewHTTPBot(server.URL, AuthConfig{BotID: "b_transport", Secret: secret, MatchID: "m_transport"})
+			moves, err := bot.GetMoves(botProtocolConformanceState("m_transport", 9))
+			if err == nil {
+				t.Fatal("GetMoves() accepted a failed-turn response")
+			}
+			if len(moves) != 0 {
+				t.Errorf("GetMoves() returned %d moves, want 0", len(moves))
+			}
+			if bot.failCount != 1 {
+				t.Errorf("failCount = %d, want 1", bot.failCount)
+			}
+			if bot.IsCrashed() {
+				t.Error("one failed turn marked the bot inactive")
+			}
+		})
+	}
+}
+
 func botProtocolConformanceVisibleState(t *testing.T, matchID string, turn int) *VisibleState {
 	t.Helper()
 	game := NewGameState(DefaultConfig(), rand.New(rand.NewSource(7)))
