@@ -203,6 +203,11 @@ func TestGridVisibleFrom(t *testing.T) {
 	if visible[Position{30, 38}] {
 		t.Error("Should NOT see position 8 tiles away (dist^2 = 64 > 49)")
 	}
+	// Square corner inside the scan bound but outside the disc: the
+	// radius gate must trim the corner, not return the full square.
+	if visible[Position{37, 37}] {
+		t.Error("Should NOT see (7,7) diagonal (dist^2 = 98 > 49, inside scan square)")
+	}
 
 	// Multiple bots - union of visibility
 	positions = []Position{{10, 10}, {50, 50}}
