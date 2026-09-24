@@ -220,6 +220,22 @@ func TestGridVisibleFrom(t *testing.T) {
 	if !visible[Position{43, 50}] {
 		t.Error("Should see 7 tiles from second bot (via wrap)")
 	}
+
+	// Bot at the row-0 edge sees across the seam, and every returned
+	// position is wrapped: candidates are stored via Wrap, so a raw
+	// out-of-bounds offset like {-1, 30} must never appear as a key.
+	positions = []Position{{0, 30}}
+	visible = g.VisibleFrom(positions, 49)
+
+	if !visible[Position{59, 30}] {
+		t.Error("Should see across the row seam (dist^2 = 1 via wrap)")
+	}
+	if !visible[Position{59, 24}] {
+		t.Error("Should see diagonally across the row seam (dist^2 = 37 via wrap)")
+	}
+	if visible[Position{-1, 30}] || visible[Position{-7, 24}] {
+		t.Error("VisibleFrom must only return wrapped in-bounds positions")
+	}
 }
 
 func TestGridRandomPassable(t *testing.T) {
