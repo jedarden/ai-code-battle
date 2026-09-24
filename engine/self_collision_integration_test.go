@@ -106,6 +106,31 @@ func TestSelfCollisionLeavesDistinctDestinationsAlive(t *testing.T) {
 	}
 }
 
+func TestSameOwnerHeadOnSwapIsNotCollision(t *testing.T) {
+	gs := newSelfCollisionTestState()
+	p0 := gs.Players[0]
+	p1 := gs.Players[1]
+
+	first := gs.SpawnBot(p0.ID, Position{2, 1})
+	second := gs.SpawnBot(p0.ID, Position{2, 2})
+	gs.SpawnBot(p1.ID, Position{7, 7})
+	gs.ClearTurnState()
+
+	gs.SubmitMove(first.Position, DirE)
+	gs.SubmitMove(second.Position, DirW)
+	gs.ExecuteTurn()
+
+	if !first.Alive || !second.Alive {
+		t.Fatalf("friendly units died while swapping distinct destinations: first=%v, second=%v", first.Alive, second.Alive)
+	}
+	if first.Position != (Position{2, 2}) || second.Position != (Position{2, 1}) {
+		t.Errorf("swapped positions = %v, %v, want {2,2} and {2,1}", first.Position, second.Position)
+	}
+	if got := countSelfCollisionDeaths(gs); got != 0 {
+		t.Errorf("self-collision death events = %d, want 0", got)
+	}
+}
+
 func TestSelfCollisionUsesWrappedDestination(t *testing.T) {
 	gs := newSelfCollisionTestState()
 	p0 := gs.Players[0]
@@ -201,6 +226,39 @@ func TestSelfCollisionResolvesBeforeCombat(t *testing.T) {
 	}
 	if got := countEventType(gs, EventCombatDeath); got != 1 {
 		t.Errorf("combat death events = %d, want 1", got)
+	}
+}
+
+func TestSelfCollisionExcludesCollidingUnitsFromCombat(t *testing.T) {
+	gs := newSelfCollisionTestState()
+	gs.Config.AttackRadius2 = 1
+	p0 := gs.Players[0]
+	p1 := gs.Players[1]
+
+	first := gs.SpawnBot(p0.ID, Position{2, 1})
+	second := gs.SpawnBot(p0.ID, Position{2, 3})
+	enemy := gs.SpawnBot(p1.ID, Position{3, 2})
+	gs.SpawnBot(p1.ID, Position{0, 7})
+	gs.ClearTurnState()
+
+	gs.SubmitMove(first.Position, DirE)
+	gs.SubmitMove(second.Position, DirW)
+	gs.ExecuteTurn()
+
+	if first.Alive || second.Alive {
+		t.Fatalf("same-owner collision was not resolved before combat: first=%v, second=%v", first.Alive, second.Alive)
+	}
+	if !enemy.Alive {
+		t.Fatal("enemy in combat range killed the self-colliding units before the move phase")
+	}
+	if got := countSelfCollisionDeaths(gs); got != 2 {
+		t.Errorf("self-collision death events = %d, want 2", got)
+	}
+	if got := countEventType(gs, EventCombatDeath); got != 0 {
+		t.Errorf("combat death events = %d, want 0", got)
+	}
+	if got := gs.CombatDeaths[p0.ID]; got != 0 {
+		t.Errorf("player %d combat deaths = %d, want 0", p0.ID, got)
 	}
 }
 
