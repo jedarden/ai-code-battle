@@ -1,6 +1,7 @@
 // Standalone replay viewer page - lazy loaded from app.ts
 import type { Replay, GameEvent, DebugInfo, Position, ViewMode } from '../types';
 import { fetchCommentary, submitMapVote, fetchMapVotes } from '../api-types';
+import { API_TRANSPORT_ENABLED } from '../lib/api-transport';
 import {
   AnnotationOverlay,
   createAnnotationForm,
@@ -878,6 +879,16 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     const mapId = replay.config.map_id;
     if (!mapId) {
       mapVoteSection.innerHTML = '<div class="map-vote-status" style="margin-top:0">Voting unavailable (no map ID)</div>';
+      return;
+    }
+
+    // With no API transport the vote buttons can never reach a server — on
+    // the Pages host `/api/vote/map` is answered by the SPA HTML fallback.
+    // Replace the whole section with a notice instead of leaving dead
+    // buttons; the map metadata above still renders (it comes from the
+    // replay file itself).
+    if (!API_TRANSPORT_ENABLED) {
+      mapVoteSection.innerHTML = '<div class="map-vote-status" style="margin-top:0">Map voting is unavailable — the voting API has no public endpoint yet.</div>';
       return;
     }
 

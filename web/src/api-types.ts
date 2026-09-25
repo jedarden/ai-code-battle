@@ -1,5 +1,10 @@
 // API response types matching the Worker API and index builder
 
+// Every function below that targets `${API_BASE}` is gated on the transport
+// flag — on the Pages host those routes are answered by the SPA fallback with
+// HTML, so a request can never reach a server (see lib/api-transport.ts).
+import { requireApiTransport } from './lib/api-transport';
+
 // Leaderboard types
 export interface LeaderboardEntry {
   rank: number;
@@ -233,6 +238,7 @@ export async function fetchMatchIndex(): Promise<MatchIndex> {
 }
 
 export async function registerBot(request: RegisterRequest): Promise<RegisterResponse> {
+  requireApiTransport('Bot registration');
   const response = await fetch(`${API_BASE}/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -269,6 +275,7 @@ export async function fetchBlogPost(slug: string): Promise<BlogPost> {
 }
 
 export async function rotateApiKey(botId: string, currentKey: string): Promise<RegisterResponse> {
+  requireApiTransport('API key rotation');
   const response = await fetch(`${API_BASE}/rotate-key`, {
     method: 'POST',
     headers: {
@@ -375,6 +382,7 @@ export interface PredictionHistoryEntry {
 }
 
 export async function fetchPredictionHistory(predictorId: string, limit?: number): Promise<{ predictions: PredictionHistoryEntry[] }> {
+  requireApiTransport('Prediction history');
   const params = new URLSearchParams({ predictor_id: predictorId });
   if (limit) params.set('limit', String(limit));
   const response = await fetch(`/api/predictions/history?${params}`);
@@ -415,6 +423,7 @@ export interface OpenPredictionsResponse {
 }
 
 export async function fetchOpenPredictions(predictorId?: string): Promise<OpenPredictionsResponse> {
+  requireApiTransport('Open match predictions');
   const params = predictorId ? `?predictor_id=${encodeURIComponent(predictorId)}` : '';
   const response = await fetch(`/api/predictions/open${params}`);
   if (!response.ok) throw new Error(`Failed to fetch open predictions: ${response.status}`);
@@ -422,6 +431,7 @@ export async function fetchOpenPredictions(predictorId?: string): Promise<OpenPr
 }
 
 export async function submitPrediction(matchId: string, botId: string, predictorId: string): Promise<{ id: number }> {
+  requireApiTransport('Match predictions');
   const response = await fetch('/api/predict', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -589,6 +599,7 @@ export function getOrCreateVoterId(): string {
 }
 
 export async function submitMapVote(mapId: string, vote: 1 | -1): Promise<MapVoteResponse> {
+  requireApiTransport('Map voting');
   const voterId = getOrCreateVoterId();
   const response = await fetch(`${API_BASE}/vote/map`, {
     method: 'POST',
@@ -603,6 +614,7 @@ export async function submitMapVote(mapId: string, vote: 1 | -1): Promise<MapVot
 }
 
 export async function fetchMapVotes(mapId: string): Promise<MapVotesResponse> {
+  requireApiTransport('Map vote tallies');
   const voterId = getOrCreateVoterId();
   const response = await fetch(`${API_BASE}/vote/map/${encodeURIComponent(mapId)}?voter_id=${encodeURIComponent(voterId)}`);
   if (!response.ok) throw new Error(`Failed to fetch map votes: ${response.status}`);

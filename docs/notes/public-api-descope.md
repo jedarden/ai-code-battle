@@ -36,6 +36,6 @@ User-facing documentation advertised a public API endpoint that does not exist:
 
 ## Known remaining gaps (out of scope here)
 
-- The on-site register form (`#/compete/register`) posts to same-origin `/api/register`, which the Pages SPA fallback answers with HTML — the form errors on submit. The predictions, community-feedback, and map-vote calls in `web/src/api-types.ts` have the same dead same-origin transport. Fixing the SPA↔API transport is an architecture decision (Pages Function proxy vs registered-domain IngressRoute) gated on the API actually being deployed.
-
 (Resolved 2026-09-25: the `web/test-match-list.js` dev harness no longer references the dead `b2.aicodebattle.com` host — it live-probes the Pages origin and the `/r2/*` Pages Function instead.)
+
+(Resolved 2026-09-25, bead aicodeba-07caa4ec: the on-site register form (`#/compete/register`), the predictions page's pick/history sections, community-feedback submission, and map voting no longer attempt their dead same-origin `/api` calls. Every `/api` client function in `web/src/api-types.ts` and `web/src/components/annotation.ts` refuses to issue the request while `API_TRANSPORT_ENABLED` is false in `web/src/lib/api-transport.ts`, and the pages render explicit "unavailable" notices with disabled forms/buttons (feedback degrades to clearly-labelled local-only storage). `web/test-api-workflows.js` smoke-checks the built bundle for the notices and live-probes the origin — it fails loudly if `/api` ever stops answering with the SPA fallback, which is the signal to flip the flag back on once a real transport (Pages Function proxy or registered-domain IngressRoute, with acb-api actually deployed) exists.)

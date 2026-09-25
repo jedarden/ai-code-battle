@@ -4,6 +4,8 @@
 // Markers render on the canvas; annotations show in a side panel + event timeline.
 
 import type { Position } from '../types';
+import { API_TRANSPORT_ENABLED } from '../lib/api-transport';
+import { API_BASE } from '../api-types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -69,16 +71,20 @@ function mapFeedbackEntries(entries: FeedbackAPIEntry[]): Annotation[] {
 }
 
 export async function fetchFeedback(matchId: string): Promise<Annotation[]> {
-  // Try live API first
-  try {
-    const resp = await fetch(`${API_BASE}/feedback/${matchId}`);
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.feedback && Array.isArray(data.feedback)) {
-        return mapFeedbackEntries(data.feedback as FeedbackAPIEntry[]);
+  // Try the live API first — but only when a transport exists. On the Pages
+  // host `/api` is the SPA HTML fallback, so the request would always end in
+  // the static-file branch below anyway, one wasted round trip later.
+  if (API_TRANSPORT_ENABLED) {
+    try {
+      const resp = await fetch(`${API_BASE}/feedback/${matchId}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.feedback && Array.isArray(data.feedback)) {
+          return mapFeedbackEntries(data.feedback as FeedbackAPIEntry[]);
+        }
       }
-    }
-  } catch { /* fall through to static file */ }
+    } catch { /* fall through to static file */ }
+  }
 
   // Fallback: load from pre-built static index (data/matches/{id}/feedback.json)
   try {
@@ -106,31 +112,40 @@ function getVisitorId(): string {
 }
 
 export async function upvoteFeedback(feedbackId: string): Promise<boolean> {
+  // No transport → the upvote can never be counted; report that honestly
+  // instead of "succeeding" against the Pages SPA HTML fallback.
+  if (!API_TRANSPORT_ENABLED) return false;
   try {
     const resp = await fetch(`${API_BASE}/feedback/${feedbackId}/upvote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ voter_id: getVisitorId() }),
     });
-    return resp.ok;
+    // The Pages fallback answers /api with 200 text/html — require a real
+    // JSON response before reporting success.
+    const contentType = resp.headers.get('content-type') ?? '';
+    return resp.ok && contentType.includes('application/json');
   } catch {
     return false;
   }
 }
 
-// ─── Submit (POST to API, localStorage fallback) ────────────────────────────
-
-const API_BASE = '/api';
+// ─── Submit (POST to API when a transport exists, localStorage always) ──────
 
 export async function submitAnnotation(ann: Annotation): Promise<boolean> {
+  // Local storage is the durable copy: it is written even when no API
+  // transport exists, and the return value says whether the annotation also
+  // reached a server (false → caller should say "saved locally").
   saveLocal(ann);
+  if (!API_TRANSPORT_ENABLED) return false;
   try {
     const resp = await fetch(`${API_BASE}/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ann),
     });
-    return resp.ok;
+    const contentType = resp.headers.get('content-type') ?? '';
+    return resp.ok && contentType.includes('application/json');
   } catch {
     return false;
   }

@@ -13,6 +13,7 @@
     "test:ui": "vitest --ui",
     "test:run": "vitest run && playwright test",
     "test:unit": "vitest run",
+    "test:api-workflows": "node test-api-workflows.js",
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium"
   },

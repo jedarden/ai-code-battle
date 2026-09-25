@@ -1,6 +1,7 @@
 // Registration page - form to register a new bot
 
 import { registerBot, type RegisterResponse } from '../api-types';
+import { API_TRANSPORT_ENABLED } from '../lib/api-transport';
 
 interface FormState {
   submitting: boolean;
@@ -34,6 +35,20 @@ export function renderRegisterPage(): void {
       </div>
 
       <div id="register-form-container"></div>
+
+      <style>
+        .register-unavailable {
+          background: rgba(234, 179, 8, 0.12);
+          border: 1px solid rgba(234, 179, 8, 0.4);
+          border-radius: 8px;
+          padding: 12px 16px;
+          margin-bottom: 20px;
+          color: var(--text-secondary, #cbd5e1);
+          font-size: 0.9rem;
+          line-height: 1.5;
+        }
+        .register-unavailable a { color: var(--accent, #3b82f6); }
+      </style>
 
       <div class="register-help">
         <h2>Requirements</h2>
@@ -86,6 +101,15 @@ function renderForm(): void {
     <form id="register-form" class="register-form">
       ${state.error ? `<div class="error-message">${escapeHtml(state.error)}</div>` : ''}
 
+      ${!API_TRANSPORT_ENABLED ? `
+        <div class="register-unavailable" id="register-unavailable-notice" role="note">
+          <strong>Bot registration is unavailable right now.</strong>
+          The registration API has no public endpoint yet, so this form is
+          disabled — nothing entered here can be submitted. The full request
+          contract lives in the <a href="#/compete/docs">Getting Started guide</a>.
+        </div>
+      ` : ''}
+
       <div class="form-group">
         <label for="bot-name">Bot Name</label>
         <input
@@ -97,7 +121,7 @@ function renderForm(): void {
           pattern="[a-zA-Z0-9_-]+"
           minlength="3"
           maxlength="32"
-          ${state.submitting ? 'disabled' : ''}
+          ${formDisabled() ? 'disabled' : ''}
         >
         <span class="hint">3-32 characters, alphanumeric, dash, or underscore</span>
       </div>
@@ -110,7 +134,7 @@ function renderForm(): void {
           name="endpoint_url"
           placeholder="https://my-bot.example.com/move"
           required
-          ${state.submitting ? 'disabled' : ''}
+          ${formDisabled() ? 'disabled' : ''}
         >
         <span class="hint">HTTPS URL where your bot receives move requests</span>
       </div>
@@ -124,7 +148,7 @@ function renderForm(): void {
           placeholder="your-email@example.com"
           required
           maxlength="64"
-          ${state.submitting ? 'disabled' : ''}
+          ${formDisabled() ? 'disabled' : ''}
         >
         <span class="hint">Your identifier for account management</span>
       </div>
@@ -135,15 +159,15 @@ function renderForm(): void {
             type="checkbox"
             id="debug-public"
             name="debug_public"
-            ${state.submitting ? 'disabled' : ''}
+            ${formDisabled() ? 'disabled' : ''}
           >
           Make debug telemetry public
         </label>
         <span class="hint">When enabled, your bot's internal state log is visible to all viewers on replay pages.</span>
       </div>
 
-      <button type="submit" class="btn primary" ${state.submitting ? 'disabled' : ''}>
-        ${state.submitting ? 'Registering...' : 'Register Bot'}
+      <button type="submit" class="btn primary" ${formDisabled() ? 'disabled' : ''}>
+        ${formDisabled() ? (API_TRANSPORT_ENABLED ? 'Registering...' : 'Registration Unavailable') : 'Register Bot'}
       </button>
     </form>
   `;
@@ -154,8 +178,18 @@ function renderForm(): void {
   }
 }
 
+// While no API transport exists the form is fully disabled: the fields are
+// inert and submit is refused before any request is attempted (registerBot
+// would throw ApiTransportUnavailableError anyway — this keeps the UI honest
+// instead of surfacing that as a form error).
+function formDisabled(): boolean {
+  return state.submitting || !API_TRANSPORT_ENABLED;
+}
+
 async function handleSubmit(e: Event): Promise<void> {
   e.preventDefault();
+
+  if (!API_TRANSPORT_ENABLED) return;
 
   const form = e.target as HTMLFormElement;
   const formData = new FormData(form);

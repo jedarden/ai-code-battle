@@ -11,6 +11,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Agentation } from 'agentation'
 import type { Annotation } from 'agentation'
+import { API_TRANSPORT_ENABLED } from './lib/api-transport'
 
 const STORAGE_KEY = 'acb:agentation:feedback'
 const MAX_STORED = 50
@@ -24,15 +25,19 @@ function handleSubmit(markdown: string, annotations: Annotation[]): void {
   existing.push({ markdown, annotations, submittedAt: Date.now() })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(-MAX_STORED)))
 
-  // POST to the API if available (non-blocking, best-effort)
-  const apiBase = (window as unknown as Record<string, string>)['ACB_API_BASE'] ?? '/api'
-  fetch(`${apiBase}/feedback`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown, annotations, submitted_at: new Date().toISOString() }),
-  }).catch(() => {
-    // API not available yet — localStorage fallback is sufficient
-  })
+  // POST to the API if a transport exists (non-blocking, best-effort). On the
+  // Pages host `/api` is the SPA HTML fallback, so issuing the POST without a
+  // transport can only waste a round trip — localStorage is the real store.
+  if (API_TRANSPORT_ENABLED) {
+    const apiBase = (window as unknown as Record<string, string>)['ACB_API_BASE'] ?? '/api'
+    fetch(`${apiBase}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown, annotations, submitted_at: new Date().toISOString() }),
+    }).catch(() => {
+      // API not reachable — localStorage fallback is sufficient
+    })
+  }
 }
 
 export function initAgentation(): void {

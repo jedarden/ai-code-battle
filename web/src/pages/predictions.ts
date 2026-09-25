@@ -7,6 +7,7 @@ import {
   getOrCreatePredictorId,
   fetchPredictionHistory,
 } from '../api-types';
+import { API_TRANSPORT_ENABLED } from '../lib/api-transport';
 
 const PAGES_BASE = '';
 
@@ -24,6 +25,16 @@ export async function renderPredictionsPage(): Promise<void> {
     <div class="predictions-page">
       <h1 class="page-title">Predictions</h1>
       <p class="page-subtitle">Predict match outcomes and climb the leaderboard</p>
+
+      ${!API_TRANSPORT_ENABLED ? `
+        <div class="predictions-view-only" id="predictions-transport-notice" role="note">
+          <strong>Predictions are view-only right now.</strong>
+          Picking bots and your personal prediction history need the predictions
+          API, which has no public endpoint yet — both are disabled. The Top
+          Predictors leaderboard below is built from deployed match data and
+          keeps working.
+        </div>
+      ` : ''}
 
       <div class="how-it-works">
         <h2>How It Works</h2>
@@ -115,6 +126,17 @@ export async function renderPredictionsPage(): Promise<void> {
       .page-subtitle {
         color: var(--text-muted);
         margin-bottom: 32px;
+      }
+
+      .predictions-view-only {
+        background: rgba(234, 179, 8, 0.12);
+        border: 1px solid rgba(234, 179, 8, 0.4);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 32px;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.5;
       }
 
       .how-it-works {
@@ -502,13 +524,18 @@ export async function renderPredictionsPage(): Promise<void> {
     </style>
   `;
 
-  // Load open matches, leaderboard, and history in parallel
+  // Load open matches, leaderboard, and history in parallel. With no API
+  // transport the two live sections render their unavailable notices (no
+  // fetch is issued — the guards in api-types.ts would throw anyway) and the
+  // 15s poll would only re-render those notices, so it is skipped entirely.
   await Promise.all([loadOpenMatches(), loadLeaderboard(), loadHistory()]);
 
   // Poll for resolved predictions every 15 seconds
-  pollTimer = setInterval(async () => {
-    await Promise.all([loadOpenMatches(), loadHistory()]);
-  }, 15000);
+  if (API_TRANSPORT_ENABLED) {
+    pollTimer = setInterval(async () => {
+      await Promise.all([loadOpenMatches(), loadHistory()]);
+    }, 15000);
+  }
 }
 
 // Cleanup polling when navigating away (called by SPA router)
@@ -522,6 +549,11 @@ export function cleanupPredictionsPage(): void {
 async function loadOpenMatches(): Promise<void> {
   const container = document.getElementById('open-matches-container');
   if (!container) return;
+
+  if (!API_TRANSPORT_ENABLED) {
+    container.innerHTML = '<div class="empty-message" id="open-matches-unavailable">Predicting is unavailable right now — the predictions API has no public endpoint yet.</div>';
+    return;
+  }
 
   try {
     const data = await fetchOpenPredictions(predictorId);
@@ -622,6 +654,11 @@ async function handlePick(e: Event): Promise<void> {
 async function loadHistory(): Promise<void> {
   const container = document.getElementById('history-container');
   if (!container) return;
+
+  if (!API_TRANSPORT_ENABLED) {
+    container.innerHTML = '<div class="empty-message" id="history-unavailable">Your prediction history is unavailable right now — the predictions API has no public endpoint yet.</div>';
+    return;
+  }
 
   try {
     const data = await fetchPredictionHistory(predictorId, 20);

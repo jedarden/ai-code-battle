@@ -3,6 +3,7 @@
 // Types consolidated with annotation.ts to use shared Annotation schema from plan §8.3.
 
 import { fetchMatchIndex, type MatchSummary } from '../api-types';
+import { API_TRANSPORT_ENABLED } from '../lib/api-transport';
 import { ReplayViewer } from '../replay-viewer';
 import type { Replay } from '../types';
 import {
@@ -38,6 +39,15 @@ function buildHTML(): string {
         Annotate key moments in replays. High-quality annotations are used to seed the
         evolution pipeline with interesting positions.
       </p>
+
+      ${!API_TRANSPORT_ENABLED ? `
+        <div class="fb-notice" id="feedback-transport-notice" role="note">
+          <strong>Community sync is unavailable.</strong>
+          The feedback API has no public endpoint yet, so annotations are saved
+          in this browser only — they are not shared with other visitors or the
+          evolution pipeline yet.
+        </div>
+      ` : ''}
 
       <div class="feedback-layout">
         <!-- Left: load replay -->
@@ -326,10 +336,15 @@ function initFeedback(): void {
     submitStatus.className = 'fb-status';
 
     try {
-      await submitAnnotation(annotation);
+      // false → no API transport: the annotation was saved to this browser's
+      // localStorage by submitAnnotation, and saying anything stronger would
+      // misrepresent that.
+      const reachedServer = await submitAnnotation(annotation);
 
-      submitStatus.textContent = 'Annotation submitted! Thank you.';
-      submitStatus.className = 'fb-status ok';
+      submitStatus.textContent = reachedServer
+        ? 'Annotation submitted! Thank you.'
+        : 'Annotation saved in this browser only — community sync is unavailable (no public API endpoint yet).';
+      submitStatus.className = reachedServer ? 'fb-status ok' : 'fb-status warn';
 
       localAnnotations.push(annotation);
 
@@ -418,6 +433,7 @@ function escapeHtml(s: string): string {
 const FEEDBACK_STYLES = `
 <style>
 .feedback-intro { color: var(--text-muted); margin-bottom: 24px; max-width: 700px; }
+.fb-notice { background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.4); border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; max-width: 700px; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; }
 .feedback-layout { display: flex; gap: 20px; align-items: flex-start; }
 .feedback-left { width: 360px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
 .feedback-right { flex: 1; min-width: 0; }
@@ -434,6 +450,7 @@ const FEEDBACK_STYLES = `
 .fb-status { font-size: 0.8rem; padding: 8px; border-radius: 4px; margin-top: 8px; }
 .fb-status.hidden { display: none; }
 .fb-status.ok { background: rgba(34,197,94,0.15); color: var(--success); }
+.fb-status.warn { background: rgba(234,179,8,0.15); color: #eab308; }
 .fb-status.error { background: rgba(239,68,68,0.15); color: var(--error); }
 .recent-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .recent-match-row { background: var(--bg-primary); border-radius: 6px; padding: 8px 12px; cursor: pointer; transition: background 0.15s; }
