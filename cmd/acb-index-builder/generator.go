@@ -1037,7 +1037,10 @@ func buildPlaylistMatch(m MatchData, order int, data *IndexData, curationTag str
 	if !m.CompletedAt.IsZero() {
 		completedAt = m.CompletedAt.Format(time.RFC3339)
 	}
-	thumbnailURL := fmt.Sprintf("https://r2.aicodebattle.com/thumbnails/%s.png", m.ID)
+	// Same-origin path, matching what og-tags.ts and the home page build for
+	// <img> srcs; the old absolute r2.aicodebattle.com host never existed
+	// (the aicodebattle.com zone was never registered).
+	thumbnailURL := fmt.Sprintf("/data/thumbnails/%s.png", m.ID)
 	return PlaylistMatch{
 		MatchID:      m.ID,
 		Order:        order,

@@ -714,8 +714,9 @@ func (s *Server) filterReplayDebug(ctx context.Context, matchID string, data []b
 
 // fetchReplayFromR2 attempts to fetch a replay from R2 warm cache
 func (s *Server) fetchReplayFromR2(ctx context.Context, matchID string) ([]byte, error) {
-	// R2 endpoint and credentials would be configured via environment variables
-	r2Endpoint := "https://r2.aicodebattle.com" // Default R2 endpoint
+	// Default to the R2 Pages Function on the deployed site (keys look like
+	// replays/<id>.json.gz). Override with ACB_R2_ENDPOINT.
+	r2Endpoint := "https://ai-code-battle.pages.dev/r2"
 	if env := getEnv("ACB_R2_ENDPOINT", ""); env != "" {
 		r2Endpoint = env
 	}
@@ -743,10 +744,13 @@ func (s *Server) fetchReplayFromR2(ctx context.Context, matchID string) ([]byte,
 
 // fetchReplayFromB2 attempts to fetch a replay from B2 cold archive
 func (s *Server) fetchReplayFromB2(ctx context.Context, matchID string) ([]byte, error) {
-	// B2 endpoint and credentials would be configured via environment variables
-	b2Endpoint := "https://b2.aicodebattle.com" // Default B2 endpoint
-	if env := getEnv("ACB_B2_ENDPOINT", ""); env != "" {
-		b2Endpoint = env
+	// There is no public B2 host to default to: the legacy
+	// b2.aicodebattle.com CDN name was never live (the zone was never
+	// registered), and B2 is a private cold archive reached through its S3
+	// API. An HTTPS gateway must be configured explicitly.
+	b2Endpoint := getEnv("ACB_B2_ENDPOINT", "")
+	if b2Endpoint == "" {
+		return nil, fmt.Errorf("ACB_B2_ENDPOINT not configured (no public B2 host exists; replays serve via the R2 Pages Function)")
 	}
 
 	url := fmt.Sprintf("%s/replays/%s.json.gz", b2Endpoint, matchID)

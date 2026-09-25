@@ -12,6 +12,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, 'public');
 const distDir = path.join(__dirname, 'dist');
 
+// Origin for the live-fetch checks. Override with ACB_ORIGIN to test a local
+// `wrangler pages dev` instance instead of the deployed site.
+const origin = process.env.ACB_ORIGIN || 'https://ai-code-battle.pages.dev';
+
 // ANSI color codes for terminal output
 const colors = {
   reset: '\x1b[0m',
@@ -39,6 +43,18 @@ function logInfo(message) {
 
 function logWarn(message) {
   log(`⚠ ${message}`, colors.yellow);
+}
+
+// GET a URL but only report status + content-type; the body is discarded so we
+// never buffer large replay files just to check availability.
+async function fetchStatus(url) {
+  try {
+    const res = await fetch(url);
+    res.body?.cancel().catch(() => {});
+    return { status: res.status, contentType: res.headers.get('content-type') || '' };
+  } catch (e) {
+    return { status: 0, contentType: String(e?.message || e) };
+  }
 }
 
 let passed = 0;
@@ -163,15 +179,33 @@ async function main() {
   logInfo('\nTest 3: Verifying Watch Replay links...');
   if (matchData.matches.length > 0) {
     const firstMatch = matchData.matches[0];
-    const expectedUrl = `/replays/${firstMatch.id}.json.gz`;
+    // Same-origin path the SPA builds for Watch Replay links
+    // (web/src/lib/replay-data.ts REPLAY_BASE)
+    const expectedUrl = `/data/replays/${firstMatch.id}.json.gz`;
     logTest('Watch Replay link format', true, `Expected: ${expectedUrl}`);
     passed++;
 
-    // Check if replay file exists
-    const replayPath = path.join(publicDir, 'replays', `${firstMatch.id}.json.gz`);
-    // Note: Replays are on B2, not in public folder, so we just check the format
-    logInfo(`Replay files served from B2: https://b2.aicodebattle.com${expectedUrl}`);
-    warned++;
+    // Probe live sources for the replay bytes: the bundled Pages asset and the
+    // R2 Pages Function (/r2/<key>). A text/html response means the Pages SPA
+    // fallback answered because no such asset is in the deploy; missing
+    // test-only replays warn rather than fail the harness.
+    const sources = [
+      ['Pages asset', `${origin}${expectedUrl}`],
+      ['R2 function', `${origin}/r2/replays/${firstMatch.id}.json.gz`],
+    ];
+    for (const [label, url] of sources) {
+      const { status, contentType } = await fetchStatus(url);
+      if (status === 200 && !contentType.includes('text/html')) {
+        logTest(`Replay reachable (${label})`, true, `${status} ${contentType}`);
+        passed++;
+      } else if (status === 200) {
+        logWarn(`${label} served the SPA fallback for ${firstMatch.id} (not in this deploy): ${url}`);
+        warned++;
+      } else {
+        logWarn(`${label} unreachable (HTTP ${status} ${contentType}): ${url}`);
+        warned++;
+      }
+    }
   }
 
   // Test 4: Verify curated playlist sections
@@ -218,12 +252,24 @@ async function main() {
     failed++;
   }
 
-  // Test 5: Check thumbnails (B2)
+  // Test 5: Check thumbnails (same-origin, per web/src/og-tags.ts)
   logInfo('\nTest 5: Checking thumbnail availability...');
-  logInfo('Thumbnails served from B2: https://b2.aicodebattle.com/thumbnails/{match_id}.png');
-  logWarn('B2 thumbnail upload is broken (ESO credentials issue - known issue)');
-  logWarn('Thumbnails will 404 or show placeholders - UI should handle gracefully');
-  warned++;
+  {
+    const thumbId = matchData.matches[0]?.id ?? '{match_id}';
+    const thumbUrl = `${origin}/data/thumbnails/${thumbId}.png`;
+    const { status, contentType } = await fetchStatus(thumbUrl);
+    if (status === 200 && !contentType.includes('text/html')) {
+      logTest('Thumbnail reachable', true, `${status} ${contentType}`);
+      passed++;
+    } else if (status === 200) {
+      logWarn(`Thumbnail not in this deploy (SPA fallback served): ${thumbUrl}`);
+      warned++;
+    } else {
+      logWarn(`Thumbnail unavailable (HTTP ${status} ${contentType}): ${thumbUrl}`);
+      warned++;
+    }
+    logWarn('Missing thumbnails fall back to placeholders - UI handles gracefully');
+  }
 
   // Test 6: Check pagination support
   logInfo('\nTest 6: Verifying pagination / infinite scroll...');

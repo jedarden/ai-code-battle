@@ -2,6 +2,13 @@
 # DNS Configuration Script for AI Code Battle
 # Configures all required DNS records via Cloudflare API
 #
+# OBSOLETE: the aicodebattle.com zone was never registered, so none of the
+# records below can be created. The site is canonical at
+# https://ai-code-battle.pages.dev and replays serve through the R2 Pages
+# Function (/r2/*) — no custom DNS is needed. See
+# docs/notes/canonical-public-domain.md and docs/notes/public-api-descope.md.
+# Kept only as period reference; do not run.
+#
 # Prerequisites:
 #   export CLOUDFLARE_API_TOKEN=your_token_here
 #   export CLOUDFLARE_ZONE_ID=your_zone_id  # Optional, will auto-detect

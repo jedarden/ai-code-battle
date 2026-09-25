@@ -29,8 +29,11 @@ echo ""
 # Check Pages (SPA)
 check_url "https://aicodebattle.com" "Pages (SPA)" || true
 
-# Check R2 (replays) - just check the domain responds
-check_url "https://r2.aicodebattle.com" "R2 (custom domain)" || true
+# Check the R2 Pages Function (replays). It answers 404 on an empty bucket,
+# which still proves the function and binding are live — unlike the old
+# r2.aicodebattle.com custom domain, which never resolved.
+check_url "https://ai-code-battle.pages.dev/r2/replays/index.json" "R2 function" || true
+curl -s -o /dev/null -w "  (function status: %{http_code})\n" "https://ai-code-battle.pages.dev/r2/replays/index.json" || true
 
 # Check API (K8s Traefik)
 check_url "https://api.aicodebattle.com/health" "API health" || true
@@ -44,8 +47,8 @@ echo "aicodebattle.com:"
 dig +short aicodebattle.com || echo "  (not configured)"
 
 echo ""
-echo "r2.aicodebattle.com:"
-dig +short r2.aicodebattle.com || echo "  (not configured)"
+echo "R2 function path (no custom DNS - served on the Pages origin):"
+echo "  https://ai-code-battle.pages.dev/r2/<key>"
 
 echo ""
 echo "api.aicodebattle.com:"

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# B2 CDN Setup Information for AI Code Battle
-# Prints B2 bucket endpoint, CNAME target, and verifies credentials
+# B2 Cold Archive Information for AI Code Battle
+# Prints B2 bucket endpoint and verifies credentials
+#
+# NOTE: There is no public B2/CDN host. The legacy b2.aicodebattle.com custom
+# domain never went live (the aicodebattle.com zone was never registered);
+# replays are served from R2 through the Cloudflare Pages Function at
+# web/functions/r2/[[path]].ts, i.e. https://ai-code-battle.pages.dev/r2/<key>.
+# B2 remains the private cold archive, reached over its S3 API with credentials.
 #
 # Prerequisites:
 #   - B2_ENDPOINT environment variable set (or reads from cluster secret)
@@ -24,8 +30,6 @@ NC='\033[0m' # No Color
 BUCKET_NAME="acb-data"
 REGION="us-west-002"
 B2_ENDPOINT="${B2_ENDPOINT:-https://s3.us-west-002.backblazeb2.com}"
-CUSTOM_DOMAIN="b2.aicodebattle.com"
-CNAME_TARGET="${BUCKET_NAME}.s3.${REGION}.backblazeb2.com"
 
 echo -e "${BLUE}=== AI Code Battle - B2 CDN Setup Information ===${NC}"
 echo ""
@@ -58,14 +62,17 @@ echo "  S3 Endpoint: ${B2_ENDPOINT}"
 echo "  Friendly Endpoint: f002.backblazeb2.com"
 echo ""
 
-# Step 2: Print CNAME configuration
-echo -e "${BLUE}Step 2: Required CNAME Configuration${NC}"
+# Step 2: Public replay serving (no CDN CNAME needed)
+echo -e "${BLUE}Step 2: Public Replay Serving${NC}"
 echo ""
-echo "  Type: CNAME"
-echo "  Name: ${CUSTOM_DOMAIN}"
-echo "  Target: ${CNAME_TARGET}"
-echo "  Proxy: On (orange cloud) ← REQUIRED for Bandwidth Alliance"
-echo "  TTL: Auto (3600)"
+echo "  Replays are NOT served from B2. They serve through the R2 Pages"
+echo "  Function (web/functions/r2/[[path]].ts) on the Pages origin:"
+echo ""
+echo "    https://ai-code-battle.pages.dev/r2/replays/{match_id}.json.gz"
+echo ""
+echo "  The legacy b2.aicodebattle.com CDN custom domain never went live"
+echo "  (the aicodebattle.com zone was never registered) - no CNAME is"
+echo "  needed or possible."
 echo ""
 
 # Step 3: Verify B2 credentials (if available)
@@ -106,56 +113,32 @@ fi
 echo ""
 
 # Step 4: Print expected URLs
-echo -e "${BLUE}Step 4: Expected URLs After Configuration${NC}"
+echo -e "${BLUE}Step 4: Expected URLs${NC}"
 echo ""
-echo "Once the CNAME is configured and public access is enabled:"
+echo "  Replay files (R2 Pages Function):"
+echo "    https://ai-code-battle.pages.dev/r2/replays/{match_id}.json.gz"
 echo ""
-echo "  Replay files:"
-echo "    https://${CUSTOM_DOMAIN}/replays/{match_id}.json.gz"
-echo ""
-echo "  Match metadata:"
-echo "    https://${CUSTOM_DOMAIN}/matches/{match_id}.json"
-echo ""
-echo "  Evolution feed:"
-echo "    https://${CUSTOM_DOMAIN}/evolution/live.json"
-echo ""
-echo "  Bot cards:"
-echo "    https://${CUSTOM_DOMAIN}/bots/{bot_id}.json"
+echo "  The B2 S3 endpoint above is for archive uploads/downloads with"
+echo "  credentials, not for public URLs."
 echo ""
 
 # Step 5: Print manual setup steps
 echo -e "${BLUE}Step 5: Manual Setup Steps${NC}"
 echo ""
-echo "This script is informational only. To complete B2 CDN setup:"
+echo "This script is informational only. For B2 cold-archive access:"
 echo ""
-echo "1. Enable Public Access on B2 Bucket:"
+echo "1. Bucket access stays private:"
 echo "   - Go to: https://secure.backblaze.com/sign_in.htm"
 echo "   - Navigate to: B2 Cloud Storage > Buckets > ${BUCKET_NAME}"
-echo "   - Settings > Bucket Info > Files in Bucket are: Public"
+echo "   - Keep 'Files in Bucket are: Private'"
 echo ""
-echo "2. Create CNAME Record in Cloudflare:"
-echo "   - Type: CNAME"
-echo "   - Name: b2"
-echo "   - Target: ${CNAME_TARGET}"
-echo "   - Proxy: On (orange cloud) ← REQUIRED for Bandwidth Alliance"
-echo ""
-echo "3. Verify CNAME Resolution:"
-echo "   dig +short ${CUSTOM_DOMAIN}"
-echo "   # Expected: ${CNAME_TARGET}"
-echo ""
-echo "4. Test CDN Access:"
-echo "   curl -I https://${CUSTOM_DOMAIN}/"
-echo "   # Should return 404 from B2 (bucket public but file not found)"
-echo ""
-echo "5. Verify Bandwidth Alliance:"
-echo "   - Cloudflare Dashboard → Traffic → Bandwidth Alliance"
-echo "   - Should show Backblaze as active partner"
+echo "2. Verify credentials with Step 3 above"
 echo ""
 
-echo -e "${BLUE}=== B2 CDN Setup Information Complete ===${NC}"
+echo -e "${BLUE}=== B2 Cold Archive Information Complete ===${NC}"
 echo ""
 echo -e "${GREEN}Next Steps:${NC}"
-echo "  1. Enable public access on B2 bucket"
-echo "  2. Create CNAME record in Cloudflare DNS"
-echo "  3. Test CDN access with curl"
+echo "  1. Verify B2 API authentication (Step 3)"
+echo "  2. Upload/download archive objects over the S3 endpoint"
+echo "  3. Serve public replays via the R2 Pages Function, not B2"
 echo ""
