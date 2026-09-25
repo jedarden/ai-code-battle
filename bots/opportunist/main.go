@@ -95,7 +95,13 @@ func handleTurn(w http.ResponseWriter, r *http.Request, secret string, strategy 
 		return
 	}
 
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "invalid authentication", http.StatusUnauthorized)
+		return
+	}
+
 	matchID := r.Header.Get("X-ACB-Match-Id")
+
 	turnStr := r.Header.Get("X-ACB-Turn")
 	timestamp := r.Header.Get("X-ACB-Timestamp")
 	botID := r.Header.Get("X-ACB-Bot-Id")
@@ -124,15 +130,23 @@ func handleTurn(w http.ResponseWriter, r *http.Request, secret string, strategy 
 		return
 	}
 
+	// Schema strictness comes before the identity comparison: a missing or
+	// mis-typed field is authenticated malformed input (400), while present
+	// but contradictory values are an authentication failure (401).
+	if err := decodeStrictState(body); err != nil {
+		http.Error(w, "invalid game state", http.StatusBadRequest)
+		return
+	}
+
 	var identity struct {
-		MatchID *string `json:"match_id"`
-		Turn    *int    `json:"turn"`
+		MatchID string `json:"match_id"`
+		Turn    int    `json:"turn"`
 	}
 	if err := json.Unmarshal(body, &identity); err != nil {
 		http.Error(w, "invalid game state", http.StatusBadRequest)
 		return
 	}
-	if identity.MatchID == nil || identity.Turn == nil || *identity.MatchID != matchID || *identity.Turn != turn {
+	if identity.MatchID != matchID || identity.Turn != turn {
 		http.Error(w, "invalid authentication", http.StatusUnauthorized)
 		return
 	}

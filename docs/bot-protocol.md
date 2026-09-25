@@ -26,7 +26,7 @@ The engine sets all of these headers:
 | `X-ACB-Bot-Id` | The registered bot identifier |
 | `X-ACB-Signature` | Lowercase hexadecimal HMAC-SHA256 described below |
 
-`X-ACB-Turn` and `X-ACB-Timestamp` use canonical base-10 spelling: no sign, whitespace, leading zero, or other alternate representation. A bot may reject non-canonical values.
+`X-ACB-Turn` and `X-ACB-Timestamp` use canonical base-10 spelling: no sign, whitespace, leading zero, or other alternate representation. The engine always sends canonical spellings, and a conformant bot must accept them. On receiving a non-canonical but well-formed spelling, a bot chooses one of two conformant behaviors: reject the request as an authentication failure (`401`), or accept it by verifying the signature over the exact spelling received and using the parsed integer value. Neither choice is required for conformance; what conformance requires is that a canonical request always executes, and that a non-canonical spelling whose value disagrees with the authenticated body never executes.
 
 The body is one JSON object with these required fields:
 
@@ -72,7 +72,7 @@ The body is one JSON object with these required fields:
 }
 ```
 
-`zone` is included whenever `config.zone_enabled` is true; its `active` value reports whether shrinking is active. It is omitted when zone support is disabled. Optional `config.map_id`, `config.season_id`, `config.rules_version`, and `config.turn_timeout` fields carry match metadata; `turn_timeout` is an integer number of nanoseconds. All other shown request fields are required. A request is malformed when it is not exactly one JSON object, omits a required field, gives a required field the wrong JSON type, contains an unknown field, or has different `match_id` or `turn` values in the body and headers.
+`zone` is included whenever `config.zone_enabled` is true; its `active` value reports whether shrinking is active. It is omitted when zone support is disabled. Optional `config.map_id`, `config.season_id`, `config.rules_version`, and `config.turn_timeout` fields carry match metadata. `turn_timeout` is a duration, not a clock reading: it is the per-turn response budget, encoded as an integer number of nanoseconds (the JSON form of a Go `time.Duration`). It shares no unit or epoch with `X-ACB-Timestamp`, which is an instant in Unix time measured in seconds. All other shown request fields are required. A request is malformed when it is not exactly one JSON object, omits a required field, gives a required field the wrong JSON type, contains an unknown field, or has different `match_id` or `turn` values in the body and headers.
 
 Authentication failures, including a missing required header, a stale or future timestamp, a bad signature, and a body/header identity mismatch, must not execute the request. A syntactically malformed authenticated body must not execute the request either. Implementations should return `401 Unauthorized` for authentication failures and `400 Bad Request` for authenticated malformed input.
 
