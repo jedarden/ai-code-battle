@@ -289,4 +289,42 @@ describe('replay.ts error handling (URL load button)', () => {
     expect(liveMain!.querySelector('.mobile-event-timeline')).toBeTruthy();
     expect(document.querySelector('.replay-page .replay-layout > .replay-sidebar')).toBeTruthy();
   });
+
+  it('should render the ribbon as the only event timeline — none of the deleted event-timeline.ts markup', async () => {
+    const { renderReplayPage } = await import('./replay');
+    renderReplayPage({});
+
+    await waitForElement('url-input');
+    expect(document.querySelector('.replay-page')).toBeTruthy();
+
+    // Exactly one timeline container mounts, under the shared id the KeyE
+    // shortcut flips (lib/event-timeline-toggle.ts)
+    const timelines = document.querySelectorAll('.mobile-event-timeline');
+    expect(timelines.length).toBe(1);
+    expect(document.getElementById('mobile-timeline')).toBeTruthy();
+
+    // event-timeline.ts — the phase-9 strip removed at commit 537b9df — used
+    // to mount into a #event-timeline-container under the canvas at every
+    // width, painting a second timeline with its own divergent color table
+    // alongside the ribbon. None of its markup may come back: the container,
+    // the track/progress/turn-label structure, the event and annotation
+    // markers, even its empty state. (The markup is width-independent — the
+    // per-width sweep lives in layout-tests/event-ribbon-regression.spec.ts.)
+    const legacySelectors = [
+      '#event-timeline-container',
+      '.timeline-track',
+      '.timeline-progress',
+      '#timeline-progress',
+      '#timeline-current',
+      '#timeline-total',
+      '.timeline-turn-label',
+      '.timeline-event',
+      '.timeline-annotation',
+      '.timeline-empty',
+      '.ann-marker-count',
+    ];
+    for (const selector of legacySelectors) {
+      expect(document.querySelectorAll(selector).length, `legacy ${selector} must not render`).toBe(0);
+    }
+  });
 });

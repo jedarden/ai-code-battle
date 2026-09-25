@@ -1095,6 +1095,75 @@ describe('EventRibbon', () => {
     });
   });
 
+  describe('Seven-type registry consistency (marker, tooltip, legend)', () => {
+    // Every member of the union, driven through ONE ribbon so the three
+    // surfaces can be compared against the same descriptor per type. The
+    // earlier registry tests pin the pieces separately — two types here, the
+    // legend loop there, the tooltip titles with explicit emojis — so a type
+    // whose marker glyph drifted (or whose tooltip fell back to a hard-coded
+    // name) could pass each piece in isolation. No event carries an emoji:
+    // every icon below must come from `event.emoji || style.icon`'s registry
+    // half, not from the replay data.
+    const TYPES = Object.keys(EVENT_TYPE_REGISTRY) as SignificantEventType[];
+
+    function ribbonWithAllTypes(): EventRibbon {
+      const events: SignificantEvent[] = TYPES.map((type, i) => ({
+        type,
+        turn: 5 + i * 12,
+        description: `${EVENT_TYPE_REGISTRY[type].name} consistency probe`,
+      }));
+      // Clickable: the accessible name under test is only built for markers
+      // that can be activated (a handler makes them buttons)
+      const ribbon = new EventRibbon({ container, events, totalTurns: 100, onEventClick: () => {} });
+      ribbon.renderLegend();
+      return ribbon;
+    }
+
+    it('should render all seven types with the registry icon, name and color on marker, tooltip and legend alike', () => {
+      ribbonWithAllTypes();
+
+      expect(container.querySelectorAll('.event-marker').length).toBe(TYPES.length);
+      expect(container.querySelectorAll('.event-legend-item').length).toBe(TYPES.length);
+
+      for (const type of TYPES) {
+        const style = EVENT_TYPE_REGISTRY[type];
+
+        // Marker: the registry glyph with the descriptor's color inline, the
+        // generated per-type class applied, and the accessible name leading
+        // with the registry display name
+        const icon = container.querySelector(`.event-marker-icon.${type}`) as HTMLElement;
+        expect(icon, `marker icon for ${type}`).toBeTruthy();
+        expect(icon.textContent?.trim(), `marker glyph for ${type}`).toBe(style.icon);
+        expect(icon.getAttribute('style'), `marker color for ${type}`)
+          .toContain(`color: ${style.color}`);
+
+        const marker = icon.closest('.event-marker') as HTMLElement;
+        expect(marker.getAttribute('aria-label'), `accessible name for ${type}`)
+          .toContain(`${style.name} at turn`);
+
+        // Tooltip: the same hover renders the same glyph and display name —
+        // the title comes from the descriptor, never from the type string
+        icon.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        const tooltip = document.querySelector('.event-tooltip') as HTMLElement;
+        expect(tooltip.classList.contains('event-tooltip-visible'), `tooltip shows for ${type}`).toBe(true);
+        expect(tooltip.querySelector('.event-tooltip-icon')?.textContent, `tooltip glyph for ${type}`)
+          .toBe(style.icon);
+        expect(tooltip.querySelector('.event-tooltip-type')?.textContent, `tooltip title for ${type}`)
+          .toBe(style.name);
+
+        // Legend: the key's row agrees with the marker on all three facts
+        const item = container.querySelector(`.event-legend-item[data-event-type="${type}"]`) as HTMLElement;
+        expect(item, `legend item for ${type}`).toBeTruthy();
+        const legendIcon = item.querySelector('.event-legend-icon') as HTMLElement;
+        expect(legendIcon.textContent, `legend glyph for ${type}`).toBe(style.icon);
+        expect(legendIcon.getAttribute('style'), `legend color for ${type}`)
+          .toContain(`color: ${style.color}`);
+        expect(item.querySelector('.event-legend-label')?.textContent, `legend label for ${type}`)
+          .toBe(style.name);
+      }
+    });
+  });
+
   describe('Event legend', () => {
     it('should render legend when renderLegend is called', () => {
       const ribbon = new EventRibbon({ container });

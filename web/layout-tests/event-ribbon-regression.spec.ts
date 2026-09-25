@@ -128,16 +128,32 @@ async function openRibbonPage(page: import('@playwright/test').Page): Promise<vo
  * renderLegend. Called after every load/reload — the constructor reads the
  * legend preference from localStorage at construction time, which is exactly
  * the persistence path being tested.
+ *
+ * The scrub handlers record into window.__ribbonClicks the way replay.ts's
+ * record into viewer.setTurn — the click-to-jump test reads them back out.
  */
 async function mountRibbon(page: import('@playwright/test').Page): Promise<void> {
   await page.addScriptTag({ content: ribbonBundle });
   await page.addScriptTag({ content: toggleBundle });
   await page.evaluate(({ id, events }: { id: string; events: SignificantEvent[] }) => {
+    (window as unknown as { __ribbonClicks: { events: unknown[]; turns: number[] } }).__ribbonClicks =
+      { events: [], turns: [] };
     const container = document.getElementById(id) as HTMLElement;
     container.innerHTML = '';
     const ribbon = new (window as unknown as {
       ACBEventRibbonBundle: { EventRibbon: new (options: Record<string, unknown>) => unknown };
-    }).ACBEventRibbonBundle.EventRibbon({ container, events, totalTurns: 100 });
+    }).ACBEventRibbonBundle.EventRibbon({
+      container,
+      events,
+      totalTurns: 100,
+      onEventClick: (event: unknown) => {
+        (window as unknown as { __ribbonClicks: { events: unknown[] } }).__ribbonClicks
+          .events.push(event);
+      },
+      onTurnClick: (turn: number) => {
+        (window as unknown as { __ribbonClicks: { turns: number[] } }).__ribbonClicks.turns.push(turn);
+      },
+    });
     (ribbon as { setEvents(e: SignificantEvent[], t: number): void }).setEvents(events, 100);
     (ribbon as { renderLegend(): void }).renderLegend();
   }, { id: EVENT_TIMELINE_CONTAINER_ID, events: RIBBON_EVENTS });
@@ -190,6 +206,17 @@ for (const width of WIDTHS) {
     expect(legend).toBeTruthy();
     expect(legend!.y).toBeGreaterThanOrEqual(ribbon!.y + ribbon!.height - EPS);
     expect(container.scrollWidth).toBeLessThanOrEqual(width + EPS);
+
+    // The legacy timeline — event-timeline.ts, deleted at 537b9df — used to
+    // mount its own strip under the canvas at EVERY width, which is exactly
+    // the regression to guard: none of its markup may exist at any viewport
+    // width. The ribbon's container is the page's one event timeline.
+    const legacyNodes = await page.evaluate(() => document.querySelectorAll(
+      '#event-timeline-container, .timeline-track, .timeline-progress, #timeline-progress, '
+      + '#timeline-current, #timeline-total, .timeline-turn-label, .timeline-event, '
+      + '.timeline-annotation, .timeline-empty, .ann-marker-count',
+    ).length);
+    expect(legacyNodes, `no legacy event-timeline.ts markup at ${width}px`).toBe(0);
   });
 }
 
@@ -301,6 +328,128 @@ test('markers, glow and legend all land on the registry color in the real cascad
   const unknownLegendItem = await readAttrs(page,
     `.event-legend-item[data-event-type="${unknownType}"]`, ['class']);
   expect(unknownLegendItem.class).toContain('event-legend-item-unknown');
+});
+
+// ── 5. Registry icon consistency ─────────────────────────────────────────────
+// The color test above pins the computed cascade; this one pins the glyph
+// itself, per type, on both surfaces the registry feeds — the marker renders
+// `event.emoji || style.icon` (no fixture event carries an emoji, so the
+// registry half is what must show), and the legend row must agree with it.
+
+test('every registry type renders its own icon glyph on marker and legend alike', async ({ page }) => {
+  await openRibbonPage(page);
+
+  const glyphs = await page.evaluate((id: string) => {
+    const root = document.getElementById(id)!;
+    return {
+      markers: Array.from(root.querySelectorAll('.event-marker'), (m) => ({
+        type: (m as HTMLElement).dataset.eventType ?? '',
+        glyph: (m.querySelector('.event-marker-icon') as HTMLElement).textContent?.trim() ?? '',
+      })),
+      legend: Array.from(root.querySelectorAll('.event-legend-item'), (el) => ({
+        type: (el as HTMLElement).dataset.eventType ?? '',
+        glyph: (el.querySelector('.event-legend-icon') as HTMLElement).textContent?.trim() ?? '',
+      })),
+    };
+  }, EVENT_TIMELINE_CONTAINER_ID);
+
+  expect(glyphs.markers.length).toBe(RIBBON_EVENTS.length);
+  for (const { type, glyph } of glyphs.markers) {
+    const style = (EVENT_TYPE_REGISTRY as Record<string, EventTypeDescriptor>)[type] ?? UNKNOWN_EVENT_TYPE;
+    expect(glyph, `marker glyph for ${type}`).toBe(style.icon);
+  }
+  for (const { type, glyph } of glyphs.legend) {
+    const style = (EVENT_TYPE_REGISTRY as Record<string, EventTypeDescriptor>)[type] ?? UNKNOWN_EVENT_TYPE;
+    expect(glyph, `legend glyph for ${type}`).toBe(style.icon);
+  }
+});
+
+// ── 6. Tooltips in the real browser ──────────────────────────────────────────
+// jsdom owns the tooltip's content and hide-timing logic; only a real hover
+// proves the mouseenter wiring raises the shared tooltip with the registry
+// facts, swaps between markers, and hides once the pointer is gone.
+
+test('hovering a marker shows the shared tooltip with the registry facts, and it hides again', async ({ page }) => {
+  await openRibbonPage(page);
+
+  const tooltip = page.locator('.event-tooltip');
+  const markerFor = (type: string) =>
+    page.locator(`#${EVENT_TIMELINE_CONTAINER_ID} .event-marker[data-event-type="${type}"]`);
+
+  await markerFor('combat').hover();
+  await expect(tooltip).toHaveClass(/event-tooltip-visible/);
+  expect(await tooltip.getAttribute('aria-hidden')).toBe('false');
+  await expect(tooltip.locator('.event-tooltip-icon')).toHaveText(EVENT_TYPE_REGISTRY.combat.icon);
+  await expect(tooltip.locator('.event-tooltip-type')).toHaveText(EVENT_TYPE_REGISTRY.combat.name);
+  await expect(tooltip.locator('.event-tooltip-description')).toHaveText('Combat regression probe');
+  await expect(tooltip.locator('.event-tooltip-turn')).toHaveText('Turn 5');
+
+  // Sliding to the unknown-type marker keeps the same tooltip up and swaps
+  // the content to the fallback descriptor — never the raw type string
+  await markerFor('prehistory_mass_firing').hover();
+  await expect(tooltip.locator('.event-tooltip-icon')).toHaveText(UNKNOWN_EVENT_TYPE.icon);
+  await expect(tooltip.locator('.event-tooltip-type')).toHaveText(UNKNOWN_EVENT_TYPE.name);
+
+  // Pointer gone: the 100ms grace passes and the tooltip hides
+  await page.mouse.move(4, 4);
+  await expect(tooltip).not.toHaveClass(/event-tooltip-visible/);
+  expect(await tooltip.getAttribute('aria-hidden')).toBe('true');
+});
+
+// ── 7. Click-to-jump in the real browser ─────────────────────────────────────
+// jsdom owns the guard matrix (secondary button, zero width, double-fire);
+// this proves the real click paths land: a marker click jumps to its event
+// and its turn — once — and a track click seeks the turn under the pointer.
+
+test('clicking a marker jumps to its event; clicking the track seeks the turn under the pointer', async ({ page }) => {
+  await openRibbonPage(page);
+
+  const readClicks = () => page.evaluate(() => (
+    (window as unknown as {
+      __ribbonClicks: { events: Array<{ type: string }>; turns: number[] };
+    }).__ribbonClicks));
+
+  const markerFor = (type: string) =>
+    page.locator(`#${EVENT_TIMELINE_CONTAINER_ID} .event-marker[data-event-type="${type}"]`);
+  await markerFor('combat').click();
+
+  const clicks = await readClicks();
+  expect(clicks.events.map((e) => e.type), 'the marker jump carries its event').toEqual(['combat']);
+  expect(clicks.turns, 'and its turn — once, the track seek kept out by stopPropagation')
+    .toEqual([5]);
+
+  // Track click in the widest stretch of free track (merge the tap targets,
+  // take the largest gap): the seek is the inverse of the marker placement —
+  // the turn at the click's x, clamped to the last turn
+  const gap = await page.evaluate((id: string) => {
+    const root = document.getElementById(id)!;
+    const ribbon = root.querySelector('.event-ribbon') as HTMLElement;
+    const rect = ribbon.getBoundingClientRect();
+    const targets = Array.from(root.querySelectorAll('.event-marker'),
+      (m) => (m as HTMLElement).getBoundingClientRect())
+      .map((b) => ({ l: b.left, r: b.right }))
+      .sort((a, b) => a.l - b.l);
+    const gaps: Array<{ l: number; r: number }> = [];
+    let cursor = rect.left;
+    for (const t of targets) {
+      if (t.l > cursor) gaps.push({ l: cursor, r: Math.min(t.l, rect.right) });
+      cursor = Math.max(cursor, t.r);
+    }
+    if (cursor < rect.right) gaps.push({ l: cursor, r: rect.right });
+    const widest = gaps.reduce((a, b) => (b.r - b.l > a.r - a.l ? b : a));
+    return { x: (widest.l + widest.r) / 2, left: rect.left, width: rect.width };
+  }, EVENT_TIMELINE_CONTAINER_ID);
+
+  const ribbonBox = await page.locator(`#${EVENT_TIMELINE_CONTAINER_ID} .event-ribbon`)
+    .boundingBox();
+  await page.mouse.click(gap.x, ribbonBox!.y + ribbonBox!.height / 2);
+
+  const after = await readClicks();
+  const ratio = (gap.x - gap.left) / gap.width;
+  const expectedTurn = Math.max(0, Math.min(99, Math.round(ratio * 100)));
+  expect(after.events.length, 'a track click never fires the event jump').toBe(1);
+  expect(after.turns.length).toBe(2);
+  expect(after.turns[1], `the seek lands on turn ${expectedTurn} at this width`).toBe(expectedTurn);
 });
 
 async function readComputed(
