@@ -2,7 +2,8 @@
 
 **Decision Date:** 2026-09-25
 **Bead:** aicodeba-84d1d61b
-**Status:** IMPLEMENTED (community tier live; match tier offline by design)
+**Status:** Implemented in-repo (a6b425e); origin deployment pending — this
+note is the single source of truth for `/api` transport state
 
 ## Decision
 
@@ -18,12 +19,37 @@ Before this, every `/api/*` request was answered by the Pages SPA fallback
 with `index.html` (HTTP 200, `text/html`), which is why the workflows were
 explicitly disabled in bead aicodeba-07caa4ec.
 
+## Deployment state (verified live 2026-09-25)
+
+The function ships with the site: `wrangler pages deploy dist` bundles
+whatever is under `web/functions/` at deploy time, so the SPA bundle and the
+function always go live in the same deploy and cannot diverge. Probed live
+against `https://ai-code-battle.pages.dev` on 2026-09-25 (~21:30Z):
+
+- `GET /api/health`, `GET /api/vote/map/*`, `GET /api/feedback/*` answered
+  **200 `text/html`** — the SPA fallback — and `POST /api/register` a bare
+  **405** from Pages' static layer. No `/api` function is in the deployed
+  bundle: the last successful site deploy predates a6b425e.
+- `GET /r2/<missing>` answered the r2 function's own `text/plain` 404, so
+  Pages Functions deploy fine for this project — the deployed bundle just
+  predates `web/functions/api/`.
+- The deploy that would have shipped it (`acb-site-pages-build-rg9vx`,
+  triggered by the 03912f0 push, 2026-09-25 20:32Z) failed all four retries
+  with exit 128 in the git-clone step; Forgejo answered 200 when probed
+  right after, so the cause was transient and undiagnosed from the available
+  evidence. Every later push to `main` re-triggers the same pipeline.
+
+Until one of those deploys succeeds, the live origin has **no** `/api` route
+and the community tier is **not live**. The table below describes the
+contract the routes answer with once deployed; `web/test-api-workflows.js`
+is the arbiter of which state the origin is in (see Probe).
+
 ## Capability split
 
 The function implements what its storage can support and is honest about the
 rest:
 
-| Flow | Route | Status |
+| Flow | Route | Once deployed |
 |---|---|---|
 | Replay feedback (annotations) | `POST /api/feedback`, `GET /api/feedback/{match_id}`, `POST /api/feedback/{id}/upvote` | **LIVE** |
 | Agentation site feedback | `POST /api/feedback` (body carries `markdown`) | **LIVE** |
@@ -76,8 +102,13 @@ from `cmd/acb-api/spamfilter.go`.
 
 ## Operations
 
-- **Probe:** `npm run test:api-workflows` in `web/` (read-only against the
-  live origin) — fails loudly if `/api` ever stops answering JSON.
+- **Probe:** `npm run test:api-workflows` in `web/`
+  (`web/test-api-workflows.js` — read-only against the live origin) is the
+  one retained live probe for this transport. It fails loudly while `/api`
+  answers anything but JSON — the origin's state as of the verification
+  above — and keeps guarding the transport after it ships. Do not revert it
+  to the descope-era expectation (fail unless `/api` answers the SPA
+  fallback); that contract is dead and the flip is the deploy signal.
 - **Reviving the match tier:** deploy acb-api with its databases, expose it
   to the function (same-zone service or a Pages-compatible route), then
   replace the `matchTierOffline()` branch in `web/src/lib/api-backend.ts`

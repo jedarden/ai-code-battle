@@ -2,7 +2,10 @@
 
 **Decision Date:** 2026-09-25
 **Bead:** aicodeba-a42aec94
-**Status:** DESCOPED
+**Status:** DESCOPED — no public hostname, unchanged. The same-origin `/api/*`
+transport named below as the realistic option has since been implemented
+([api-transport.md](api-transport.md)), which owns `/api` transport state
+from here on; this note keeps only the hostname descope.
 
 ## Problem
 
@@ -17,6 +20,7 @@ User-facing documentation advertised a public API endpoint that does not exist:
 - `aicodebattle.com` is NXDOMAIN — the zone was never registered (DEPLOYMENT.md states the same), so `api.aicodebattle.com` can never resolve.
 - `api.ai-code-battle.pages.dev` resolves only through Cloudflare's `*.pages.dev` anycast and serves Cloudflare's 404 "no project" page. A Pages project gets exactly one `<project>.pages.dev` hostname; a nested `api.` name under it cannot be claimed.
 - `https://ai-code-battle.pages.dev/api/register` and `/api/bots` return the SPA's `index.html` (`content-type: text/html`) via the Pages SPA fallback — there is no `/api` route on Pages (`web/functions/` contains only `r2/`). A real user POSTing the old docs example gets HTML, and `registerBot()` then fails parsing it.
+  (Re-verified 2026-09-25, bead aicodeba-968bfa99: still true of the **deployed origin** — GETs answer the SPA fallback and a POST gets Pages' bare 405 — but no longer of the **repo**, which has carried `web/functions/api/[[path]].ts` since a6b425e. The origin keeps answering the fallback only because no site deploy has succeeded since; see "Deployment state" in `api-transport.md`. This bullet describes the origin, not the tree.)
 - No `acb-api` Deployment is running in any fleet cluster (all eight read-only kubectl endpoints checked 2026-09-25). The Go service is built in-repo (`cmd/acb-api/`, with a manifest at `manifests/acb-api-deployment.yml`), but nothing is deployed.
 - `DEPLOYMENT.md` already documents the operative truth: "the public api subdomain was never registered; the Go API is reached via internal cluster networking."
 
@@ -40,4 +44,4 @@ User-facing documentation advertised a public API endpoint that does not exist:
 
 (Resolved 2026-09-25, bead aicodeba-07caa4ec: the on-site register form (`#/compete/register`), the predictions page's pick/history sections, community-feedback submission, and map voting no longer attempt their dead same-origin `/api` calls. Every `/api` client function in `web/src/api-types.ts` and `web/src/components/annotation.ts` refuses to issue the request while `API_TRANSPORT_ENABLED` is false in `web/src/lib/api-transport.ts`, and the pages render explicit "unavailable" notices with disabled forms/buttons (feedback degrades to clearly-labelled local-only storage). `web/test-api-workflows.js` smoke-checks the built bundle for the notices and live-probes the origin — it fails loudly if `/api` ever stops answering with the SPA fallback, which is the signal to flip the flag back on once a real transport (Pages Function proxy or registered-domain IngressRoute, with acb-api actually deployed) exists.)
 
-(Superseded 2026-09-25, bead aicodeba-84d1d61b: the path-based route named above as the realistic option is now implemented — a Pages Function under `web/functions/api/` serves same-origin `/api/*`, making the community flows (replay feedback, agentation site feedback, map voting) live on the already-bound `ACB_BUCKET` R2 bucket. The match-tier routes (registration, key rotation, predictions) answer 503 JSON with code `match_tier_offline` — acb-api remains undeployed and exposing it is still an operator decision. See `api-transport.md` for the full decision record. The flag-flip signal is now inverted: `web/test-api-workflows.js` fails loudly if `/api` ever stops answering with JSON.)
+(Superseded 2026-09-25, bead aicodeba-84d1d61b: the path-based route named above as the realistic option is now implemented — a Pages Function under `web/functions/api/` serves same-origin `/api/*`, putting the community flows (replay feedback, agentation site feedback, map voting) on the already-bound `ACB_BUCKET` R2 bucket. Corrected 2026-09-25, bead aicodeba-968bfa99, after live probing: the function is in the repo, not yet in any successful Pages deploy, so the community tier is **not live on the origin** yet — every push to `main` re-triggers the deploy pipeline, and `web/test-api-workflows.js` fails until one ships the function (that failure is the retained deploy signal, do not delete the probe). The match-tier routes (registration, key rotation, predictions) answer 503 JSON with code `match_tier_offline` — acb-api remains undeployed and exposing it is still an operator decision. See `api-transport.md` for the full decision record and the deployment-state verification.)

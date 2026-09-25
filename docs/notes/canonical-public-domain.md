@@ -91,4 +91,4 @@ Cloudflare Pages custom domain:
 
 - Cloudflare Pages project: `ai-code-battle` (`ai-code-battle.pages.dev`)
 - Replays served via: Pages Function `web/functions/r2/[[path]].ts` (R2 binding)
-- Public API endpoint: none — descoped; `acb-api` is reachable via internal cluster networking only (see [public-api-descope.md](public-api-descope.md))
+- Public API hostname: none — descoped ([public-api-descope.md](public-api-descope.md)); same-origin `/api/*` routes are the site's own Pages Function ([api-transport.md](api-transport.md)), and `acb-api` (match tier) remains internal-cluster-only
