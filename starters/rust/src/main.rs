@@ -1,3 +1,4 @@
+mod protocol;
 mod strategy;
 mod types;
 
@@ -58,6 +59,16 @@ async fn turn(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, StatusCode> {
+    // Content-Type is part of the transport contract (step 1 of the
+    // documented verification order).
+    if headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        != Some("application/json")
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
     let match_id = headers
         .get("x-acb-match-id")
         .and_then(|v| v.to_str().ok())
@@ -100,22 +111,21 @@ async fn turn(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let body_value: serde_json::Value =
-        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let body_match_id = body_value
-        .get("match_id")
-        .and_then(serde_json::Value::as_str)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    let body_turn = body_value
-        .get("turn")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|turn| i32::try_from(turn).ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    // Strict schema before identity: a missing, unknown, or mis-typed
+    // field is authenticated malformed input (400); present but
+    // contradictory values are an authentication failure (401). The
+    // schema closes every object the contract names — including
+    // zone.center and each bots/energy/cores/walls/dead element.
+    let (body_match_id, body_turn) =
+        protocol::validate_request_schema(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let Ok(body_turn) = i32::try_from(body_turn) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
     if body_match_id != match_id || body_turn != turn {
         return Err(StatusCode::UNAUTHORIZED);
     }
     let req_state: types::VisibleState =
-        serde_json::from_value(body_value).map_err(|_| StatusCode::BAD_REQUEST)?;
+        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Compute moves
     let moves = strategy::compute_moves(&req_state);
@@ -173,6 +183,15 @@ fn verify_signature(
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
     mac.update(signing_string.as_bytes());
 
+    // The contract requires exactly 64 lowercase hex characters; the hex
+    // decoder alone would also accept uppercase.
+    if signature.len() != 64
+        || !signature
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return false;
+    }
     let Ok(signature) = hex::decode(signature) else {
         return false;
     };

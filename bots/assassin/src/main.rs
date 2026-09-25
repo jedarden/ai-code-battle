@@ -4,6 +4,8 @@
 //! No perimeter defense — commits fully.
 
 mod game;
+#[allow(dead_code)]
+mod protocol;
 mod strategy;
 
 use axum::{
@@ -65,6 +67,16 @@ async fn handle_turn(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<impl IntoResponse, StatusCode> {
+    // Content-Type is part of the transport contract (step 1 of the
+    // documented verification order).
+    if headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        != Some("application/json")
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
     let match_id = headers
         .get("X-ACB-Match-Id")
         .and_then(|v| v.to_str().ok())
@@ -113,21 +125,18 @@ async fn handle_turn(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let body_value: serde_json::Value =
-        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let body_match_id = body_value
-        .get("match_id")
-        .and_then(serde_json::Value::as_str)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    let body_turn = body_value
-        .get("turn")
-        .and_then(serde_json::Value::as_u64)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    if body_match_id != match_id || body_turn != u64::from(turn) {
+    // Strict schema before identity: a missing, unknown, or mis-typed
+    // field is authenticated malformed input (400); present but
+    // contradictory values are an authentication failure (401). The
+    // schema closes every object the contract names — including
+    // zone.center and each bots/energy/cores/walls/dead element.
+    let (body_match_id, body_turn) =
+        protocol::validate_request_schema(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if body_match_id != match_id || body_turn != i64::from(turn) {
         return Err(StatusCode::UNAUTHORIZED);
     }
     let game_state: GameState =
-        serde_json::from_value(body_value).map_err(|_| StatusCode::BAD_REQUEST)?;
+        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let moves = state.strategy.compute_moves(&game_state);
 

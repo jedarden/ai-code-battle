@@ -22,6 +22,159 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 DIRECTIONS = [("N", -1, 0), ("E", 0, 1), ("S", 1, 0), ("W", 0, -1)]
 
+# --- Request schema (docs/bot-protocol.md) ---
+REQUIRED_TOP = ("match_id", "turn", "config", "you", "bots", "energy",
+                "cores", "walls", "dead")
+REQUIRED_CONFIG = ("rows", "cols", "max_turns", "vision_radius2",
+                   "attack_radius2", "spawn_cost", "energy_interval",
+                   "cores_per_player", "zone_enabled", "zone_start_turn",
+                   "zone_shrink_interval", "zone_shrink_step",
+                   "zone_min_radius", "kill_score")
+OPTIONAL_CONFIG = ("map_id", "season_id", "rules_version", "turn_timeout")
+
+
+def _json_int(value) -> bool:
+    """JSON integer: bool is a distinct JSON type and never counts."""
+    return type(value) is int
+
+
+def _position_error(position, where):
+    if not isinstance(position, dict):
+        return f"{where} must be an object"
+    for key in position:
+        if key not in ("row", "col"):
+            return f"unknown {where} field: {key}"
+    if not _json_int(position.get("row")) or not _json_int(position.get("col")):
+        return f"{where} requires integer row/col"
+    return None
+
+
+def _element_error(element, shape, where):
+    if not isinstance(element, dict):
+        return f"{where} elements must be objects"
+    if shape == "point":
+        for key in element:
+            if key not in ("row", "col"):
+                return f"unknown {where} element field: {key}"
+        if not _json_int(element.get("row")) or not _json_int(element.get("col")):
+            return f"{where} elements require integer row/col"
+        return None
+    allowed = ("position", "owner", "active") if shape == "core" else ("position", "owner")
+    for key in element:
+        if key not in allowed:
+            return f"unknown {where} element field: {key}"
+    error = _position_error(element.get("position"), f"{where} element position")
+    if error is not None:
+        return error
+    if not _json_int(element.get("owner")):
+        return f"{where} elements require integer owner"
+    if shape == "core" and not isinstance(element.get("active"), bool):
+        return f"{where} elements require boolean active"
+    return None
+
+
+def validate_request_schema(state):
+    """Return None when the body is schema-conformant, else a short reason.
+
+    Runs after signature verification: a failure here is authenticated
+    malformed input (400), never an authentication failure. Unknown fields
+    are rejected everywhere the contract closes an object (top level,
+    config, you, zone, zone.center, and every array element), and required
+    fields must carry the documented JSON types.
+    """
+    if not isinstance(state, dict):
+        return "request must be one JSON object"
+    known_top = frozenset(REQUIRED_TOP).union({"zone"})
+    for key in state:
+        if key not in known_top:
+            return f"unknown field: {key}"
+    for key in REQUIRED_TOP:
+        if key not in state:
+            return f"missing required field: {key}"
+    if not isinstance(state["match_id"], str) or not state["match_id"]:
+        return "match_id must be a non-empty string"
+    if not _json_int(state["turn"]):
+        return "turn must be an integer"
+
+    config = state["config"]
+    if not isinstance(config, dict):
+        return "config must be an object"
+    known_config = frozenset(REQUIRED_CONFIG + OPTIONAL_CONFIG)
+    for key in config:
+        if key not in known_config:
+            return f"unknown config field: {key}"
+    for key in REQUIRED_CONFIG:
+        if key not in config:
+            return f"config missing required field: {key}"
+        if key == "zone_enabled":
+            if type(config[key]) is not bool:
+                return "config.zone_enabled must be a boolean"
+        elif not _json_int(config[key]):
+            return f"config.{key} must be an integer"
+    for key in OPTIONAL_CONFIG:
+        if key in config:
+            if key == "turn_timeout":
+                if not _json_int(config[key]):
+                    return "config.turn_timeout must be an integer"
+            elif not isinstance(config[key], str):
+                return f"config.{key} must be a string"
+
+    you = state["you"]
+    if not isinstance(you, dict):
+        return "you must be an object"
+    for key in you:
+        if key not in ("id", "energy", "score"):
+            return f"unknown you field: {key}"
+    for key in ("id", "energy", "score"):
+        if key not in you:
+            return f"you missing required field: {key}"
+        if not _json_int(you[key]):
+            return f"you.{key} must be an integer"
+
+    for key in ("bots", "energy", "cores", "walls", "dead"):
+        if not isinstance(state[key], list):
+            return f"{key} must be an array"
+    for element in state["bots"]:
+        error = _element_error(element, "bot", "bots")
+        if error is not None:
+            return error
+    for element in state["dead"]:
+        error = _element_error(element, "bot", "dead")
+        if error is not None:
+            return error
+    for element in state["energy"]:
+        error = _element_error(element, "point", "energy")
+        if error is not None:
+            return error
+    for element in state["walls"]:
+        error = _element_error(element, "point", "walls")
+        if error is not None:
+            return error
+    for element in state["cores"]:
+        error = _element_error(element, "core", "cores")
+        if error is not None:
+            return error
+
+    zone = state.get("zone")
+    if zone is not None:
+        if not isinstance(zone, dict):
+            return "zone must be an object"
+        for key in zone:
+            if key not in ("center", "radius", "active"):
+                return f"unknown zone field: {key}"
+        for key in ("center", "radius", "active"):
+            if key not in zone:
+                return f"zone missing required field: {key}"
+        error = _position_error(zone.get("center"), "zone.center")
+        if error is not None:
+            return error
+        if not _json_int(zone.get("radius")):
+            return "zone.radius must be an integer"
+        if not isinstance(zone.get("active"), bool):
+            return "zone.active must be a boolean"
+
+    return None
+
 # Per-match persistent state
 _seen = {}       # match_id -> dict of (row,col) -> last_seen_turn
 _walls = {}      # match_id -> set of (row,col)
@@ -370,6 +523,12 @@ class ScoutBotHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
             return
 
+        # Content-Type is part of the transport contract (step 1 of
+        # the documented verification order).
+        if self.headers.get("Content-Type") != "application/json":
+            self.send_error(401, "Invalid authentication")
+            return
+
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length)
 
@@ -399,10 +558,15 @@ class ScoutBotHandler(BaseHTTPRequestHandler):
             self.send_error(400, f"Invalid game state: {e}")
             return
 
-        if (not isinstance(data, dict)
-                or data.get("match_id") != match_id
-                or type(data.get("turn")) is not int
-                or data.get("turn") != turn):
+        # Strict schema before identity: a missing, unknown, or mis-typed
+        # field is authenticated malformed input (400); present but
+        # contradictory values are an authentication failure (401).
+        schema_error = validate_request_schema(data)
+        if schema_error is not None:
+            self.send_error(400, f"Invalid request schema: {schema_error}")
+            return
+
+        if data["match_id"] != match_id or data["turn"] != turn:
             self.send_error(401, "Request identity mismatch")
             return
 

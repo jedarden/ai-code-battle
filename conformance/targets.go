@@ -77,10 +77,10 @@ func Targets() []Target {
 		// Node strategy bots (plain JS, zero dependencies).
 		{Name: "bots/kamikaze", Lang: "node", Run: []string{"node", "index.js"}, EnvVarNames: envBot},
 		{Name: "bots/pacifist", Lang: "node", Run: []string{"node", "index.js"}, EnvVarNames: envBot},
-		// TypeScript strategy bots run from their committed dist/ builds;
-		// rebuilding needs tsc via npm, which the harness does not require.
-		{Name: "bots/coordinator", Lang: "typescript", Run: []string{"node", "dist/index.js"}, EnvVarNames: envBot},
-		{Name: "bots/swarm", Lang: "typescript", Run: []string{"node", "dist/index.js"}, EnvVarNames: envBot},
+		// TypeScript strategy bots compile from src via npm ci (dist/ is
+		// gitignored, so a fresh checkout has no build to run).
+		{Name: "bots/coordinator", Lang: "typescript", Build: npmCiBuild(), BuildTimeoutHint: npmBuildTimeout, Run: []string{"node", "dist/index.js"}, EnvVarNames: envBot},
+		{Name: "bots/swarm", Lang: "typescript", Build: npmCiBuild(), BuildTimeoutHint: npmBuildTimeout, Run: []string{"node", "dist/index.js"}, EnvVarNames: envBot},
 		// Rust strategy bots (cargo, offline-friendly locked builds).
 		{Name: "bots/assassin", Lang: "rust", Build: cargoBuildLocked(), BuildTimeoutHint: cargoBuildTimeout, Binary: "assassin-bot", EnvVarNames: envBot},
 		{Name: "bots/phalanx", Lang: "rust", Build: cargoBuildLocked(), BuildTimeoutHint: cargoBuildTimeout, Binary: "phalanx-bot", EnvVarNames: envBot},
