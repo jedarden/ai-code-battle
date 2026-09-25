@@ -482,3 +482,179 @@ func TestZoneActivationTurnKillsWithoutShrinking(t *testing.T) {
 		t.Fatalf("turn 5: radius = %d, want 9 (first shrink at ZoneStartTurn+ZoneShrinkInterval)", gs.ZoneRadius)
 	}
 }
+
+// TestZoneDamageCatchesBotsAcrossTurns pins damage as a per-turn consequence
+// of the shrinking radius: a bot that starts inside the zone stays alive until
+// the radius first crosses its distance², dies exactly on that turn (never
+// before), and a bot sitting exactly on the final boundary soaks every turn.
+// gs.Events only holds the current turn's events (ClearTurnState), so each
+// zone_death is captured on the turn it fires and the death turns are
+// reconciled at the end.
+func TestZoneDamageCatchesBotsAcrossTurns(t *testing.T) {
+	const (
+		startTurn = 1
+		interval  = 1
+		step      = 1
+		minRadius = 2
+	)
+	gs := newZoneTestState(startTurn, interval, step, minRadius)
+	gs.ZoneActive = true
+	gs.ZoneRadius = 10
+
+	p0 := gs.Players[0]
+	p1 := gs.Players[1]
+	// d² from the center (10,10): far 36, mid 16, edge 4. The radius path is
+	// 10,9,8,... clamped at 2, so the shrink crosses far's d² on turn 6
+	// (radius 5) and mid's on turn 8 (radius 3), while edge sits exactly on
+	// the final boundary (4 == 2²) and must survive the whole soak. The bots
+	// are pairwise beyond attack range (min mutual d² 20) and never move, so
+	// combat cannot interfere with the zone verdicts.
+	far := gs.SpawnBot(p0.ID, Position{Row: 4, Col: 10})
+	mid := gs.SpawnBot(p0.ID, Position{Row: 10, Col: 6})
+	edge := gs.SpawnBot(p1.ID, Position{Row: 12, Col: 10})
+
+	// Radius expected after executing turn N; clamped at minRadius from 9 on.
+	wantRadius := map[int]int{
+		1: 10, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3,
+		9: 2, 10: 2, 11: 2, 12: 2,
+	}
+	// Death turn = first turn with dist² > radius²: alive on every earlier
+	// turn, dead from that one on.
+	wantDeathTurn := map[*Bot]int{far: 6, mid: 8}
+
+	deathTurns := map[int]int{} // bot ID -> turn its zone_death fired
+	for turn := 1; turn <= 12; turn++ {
+		gs.ExecuteTurn()
+		if gs.ZoneRadius != wantRadius[turn] {
+			t.Fatalf("after turn %d: ZoneRadius = %d, want %d", turn, gs.ZoneRadius, wantRadius[turn])
+		}
+
+		for _, b := range []*Bot{far, mid, edge} {
+			wantAlive := true
+			if dt, dying := wantDeathTurn[b]; dying && turn >= dt {
+				wantAlive = false
+			}
+			if b.Alive != wantAlive {
+				t.Fatalf("turn %d: bot at %v (d² %d) alive = %v, want %v",
+					turn, b.Position, gs.Grid.Distance2(b.Position, gs.ZoneCenter), b.Alive, wantAlive)
+			}
+		}
+
+		for _, e := range findZoneDeaths(gs) {
+			id, _ := zoneDeathDetails(t, e)["bot_id"].(int)
+			if prev, seen := deathTurns[id]; seen {
+				if prev != e.Turn {
+					t.Fatalf("bot %d has zone_death stamped turn %d and turn %d", id, prev, e.Turn)
+				}
+				continue // same event still on the accumulated list
+			}
+			if e.Turn != turn {
+				t.Fatalf("new zone_death for bot %d stamped turn %d, first seen during turn %d", id, e.Turn, turn)
+			}
+			deathTurns[id] = turn
+		}
+		for _, b := range []*Bot{far, mid} {
+			wantAlive := true
+			if dt := wantDeathTurn[b]; turn >= dt {
+				wantAlive = false
+			}
+			if _, ok := deathTurns[b.ID]; ok != !wantAlive {
+				t.Fatalf("turn %d: bot at %v zone_death event presence = %v, want %v",
+					turn, b.Position, ok, !wantAlive)
+			}
+		}
+		for _, e := range gs.Events {
+			if e.Type == EventCombatDeath {
+				t.Fatalf("turn %d: unexpected combat_death event: %+v", turn, e)
+			}
+		}
+	}
+
+	if len(deathTurns) != 2 {
+		t.Fatalf("got %d zone_death events over the soak (%v), want exactly 2", len(deathTurns), deathTurns)
+	}
+	for b, want := range wantDeathTurn {
+		if got := deathTurns[b.ID]; got != want {
+			t.Errorf("bot at %v (d² %d) died on turn %d, want turn %d",
+				b.Position, gs.Grid.Distance2(b.Position, gs.ZoneCenter), got, want)
+		}
+	}
+	if !edge.Alive {
+		t.Fatalf("edge bot died: d² %d must survive at the final radius %d (boundary == radius²)",
+			gs.Grid.Distance2(edge.Position, gs.ZoneCenter), gs.ZoneRadius)
+	}
+	if gs.Players[p0.ID].BotCount != 0 || gs.Players[p1.ID].BotCount != 1 {
+		t.Errorf("bot counts = %d/%d, want 0/1",
+			gs.Players[p0.ID].BotCount, gs.Players[p1.ID].BotCount)
+	}
+	for _, p := range gs.Players {
+		if p.Score != 0 {
+			t.Errorf("player %d score = %d, want 0 (zone kills award no score)", p.ID, p.Score)
+		}
+	}
+}
+
+// TestZoneDisabledMatchHasNoZoneActivity drives a full MatchRunner match with
+// the zone disabled and pins the absence contract end to end: no turn records
+// ZoneBounds (the replay only records bounds when the zone is enabled), no
+// zone_death or combat_death event ever fires, both idle bots survive to the
+// turn limit, and the match still completes normally on turns.
+func TestZoneDisabledMatchHasNoZoneActivity(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Rows = 20
+	cfg.Cols = 20
+	cfg.MaxTurns = 6
+	cfg.ZoneEnabled = false
+
+	mr := NewMatchRunner(cfg, WithRNG(rand.New(rand.NewSource(11))))
+	mr.AddBot(NewIdleBot(), "idle-0")
+	mr.AddBot(NewIdleBot(), "idle-1")
+
+	result, replay, err := mr.Run()
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result == nil {
+		t.Fatalf("Run() returned nil result for a turn-limited match")
+	}
+	if len(replay.Turns) != cfg.MaxTurns+1 {
+		t.Fatalf("replay has %d turns, want %d (turn 0 + %d executed)", len(replay.Turns), cfg.MaxTurns+1, cfg.MaxTurns)
+	}
+
+	for _, turn := range replay.Turns {
+		if turn.ZoneBounds != nil {
+			t.Errorf("turn %d: ZoneBounds = %+v, want nil when the zone is disabled", turn.Turn, turn.ZoneBounds)
+		}
+		for _, e := range turn.Events {
+			if e.Type == EventZoneDeath {
+				t.Errorf("turn %d: unexpected zone_death event: %+v", turn.Turn, e)
+			}
+			if e.Type == EventCombatDeath {
+				t.Errorf("turn %d: unexpected combat_death event: %+v", turn.Turn, e)
+			}
+		}
+	}
+
+	final := replay.Turns[len(replay.Turns)-1]
+	for _, b := range final.Bots {
+		if !b.Alive {
+			t.Errorf("final turn: bot %d alive = false, want true (nothing may die in a disabled-zone idle match)", b.ID)
+		}
+	}
+
+	if result.Turns != cfg.MaxTurns {
+		t.Errorf("result.Turns = %d, want %d", result.Turns, cfg.MaxTurns)
+	}
+	if result.Reason != "turns" {
+		t.Errorf("result.Reason = %q, want %q (idle bots must reach the turn limit with the zone disabled)", result.Reason, "turns")
+	}
+	if len(result.BotsAlive) != 2 {
+		t.Fatalf("result.BotsAlive = %v, want one entry per player", result.BotsAlive)
+	}
+	for i, alive := range result.BotsAlive {
+		if alive != cfg.CoresPerPlayer {
+			t.Errorf("result.BotsAlive[%d] = %d, want %d (every bot must survive a disabled-zone idle match)",
+				i, alive, cfg.CoresPerPlayer)
+		}
+	}
+}
