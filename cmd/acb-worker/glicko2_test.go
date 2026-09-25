@@ -13,6 +13,9 @@ import (
 const tol = 1e-2      // rating / RD tolerance in Glicko-1 points
 const tolSigma = 5e-5 // volatility tolerance
 
+const refTol = 1e-6      // tolerance against the reference implementation's full-precision vectors
+const refTolSigma = 5e-7 // volatility tolerance against the reference vectors
+
 func assertClose(t *testing.T, name string, got, want, tolerance float64) {
 	t.Helper()
 	if math.Abs(got-want) > tolerance {
@@ -257,4 +260,147 @@ func TestVolatilityStaysBounded(t *testing.T) {
 	}
 	assertClose(t, "mu after 10 wins", player.Mu, 2020.12, 1.0)
 	assertClose(t, "phi after 10 wins", player.Phi, 149.55, 1.0)
+}
+
+// TestPersistenceAcrossMatches runs the documented workflow end to end at the
+// math level: two bots meet three times, each match consuming the ratings the
+// previous one produced (win, win, then a draw). Every intermediate state is
+// pinned to the full-precision reference vectors, so the test fails if a
+// later match does not start exactly from the earlier match's output.
+// Expected values (independent reference, tau=0.5, epsilon=1e-6):
+//
+//	start       A=(1500.000000,350.000000,0.06000000) B=(1500.000000,350.000000,0.06000000)
+//	after win   A=(1662.310894,290.318964,0.05999968) B=(1337.689106,290.318964,0.05999968)
+//	after win   A=(1720.317198,260.488763,0.05999892) B=(1279.682802,260.488763,0.05999892)
+//	after draw  A=(1621.332893,243.596493,0.05999903) B=(1378.667107,243.596493,0.05999903)
+//	B idle 1 period: (1378.667107,243.819376,0.05999903)
+func TestPersistenceAcrossMatches(t *testing.T) {
+	A := Glicko2Rating{Mu: 1500, Phi: 350, Sigma: 0.06}
+	B := A
+
+	type want struct {
+		mu, phi, sigma float64
+	}
+	wantWin := [2]want{
+		{1662.310894, 290.318964, 0.05999968},
+		{1337.689106, 290.318964, 0.05999968},
+	}
+	wantSecond := [2]want{
+		{1720.317198, 260.488763, 0.05999892},
+		{1279.682802, 260.488763, 0.05999892},
+	}
+	wantDraw := [2]want{
+		{1621.332893, 243.596493, 0.05999903},
+		{1378.667107, 243.596493, 0.05999903},
+	}
+
+	check := func(stage string, got []Glicko2Rating, exp [2]want) {
+		t.Helper()
+		if len(got) != 2 {
+			t.Fatalf("%s: got %d ratings, want 2", stage, len(got))
+		}
+		for i, name := range []string{"A", "B"} {
+			assertClose(t, stage+" "+name+" mu", got[i].Mu, exp[i].mu, refTol)
+			assertClose(t, stage+" "+name+" phi", got[i].Phi, exp[i].phi, refTol)
+			assertClose(t, stage+" "+name+" sigma", got[i].Sigma, exp[i].sigma, refTolSigma)
+		}
+	}
+
+	// Match 1: A beats B from the defaults.
+	step := UpdateRatings([]Glicko2Rating{A, B}, []float64{1.0, 0.0})
+	A, B = step[0], step[1]
+	check("after match 1", step, wantWin)
+
+	// Match 2: A beats B again — this only lands on the right vector if the
+	// post-match-1 ratings were carried forward unchanged.
+	step = UpdateRatings([]Glicko2Rating{A, B}, []float64{1.0, 0.0})
+	A, B = step[0], step[1]
+	check("after match 2", step, wantSecond)
+
+	// RD must converge as evidence accumulates.
+	if !(A.Phi < 290.32 && 290.32 < 350) || !(B.Phi < 290.32 && 290.32 < 350) {
+		t.Errorf("RD not converging across matches: A %v B %v", A.Phi, B.Phi)
+	}
+
+	// Match 3: a draw pulls the ratings toward each other without crossing,
+	// so the leaderboard-visible ordering (mu - 2*phi) survives.
+	step = UpdateRatings([]Glicko2Rating{A, B}, []float64{0.5, 0.5})
+	A, B = step[0], step[1]
+	check("after match 3", step, wantDraw)
+	if A.Mu <= B.Mu {
+		t.Errorf("draw crossed the ordering: A %v B %v", A.Mu, B.Mu)
+	}
+	if da, db := A.DisplayRating(), B.DisplayRating(); da <= db {
+		t.Errorf("leaderboard display ordering not preserved: A %v B %v", da, db)
+	}
+
+	// B then idles a rating period: mu and sigma freeze, RD grows from the
+	// carried-forward value, still capped by the default RD.
+	idle := updateSingleRating(B, nil)
+	assertClose(t, "idle mu", idle.Mu, 1378.667107, refTol)
+	assertClose(t, "idle phi", idle.Phi, 243.819376, refTol)
+	assertClose(t, "idle sigma", idle.Sigma, 0.05999903, refTolSigma)
+}
+
+// TestComputeRatingUpdatesFeedsNextMatch pins the worker-level persistence
+// contract in updateSingleRating's callers: the after-fields of one match's
+// []RatingUpdate are exactly the before-fields of the next claim (what
+// ClaimJob reads back and SubmitMatchResult persists), and a draw — an empty
+// WinnerID — scores everyone 0.5 pairwise.
+func TestComputeRatingUpdatesFeedsNextMatch(t *testing.T) {
+	claim1 := &JobClaimData{
+		Participants: []DBParticipant{
+			{BotID: "a", RatingMuBefore: 1500, RatingPhiBefore: 350, RatingSigmaBefore: 0.06},
+			{BotID: "b", RatingMuBefore: 1500, RatingPhiBefore: 350, RatingSigmaBefore: 0.06},
+		},
+	}
+	result1 := &MatchResult{WinnerID: "a"}
+
+	updates1 := (&Worker{}).computeRatingUpdates(claim1, result1)
+	if len(updates1) != 2 {
+		t.Fatalf("updates1 = %d entries, want 2", len(updates1))
+	}
+
+	// The next claim is built from what the DB now holds: the after-fields
+	// of match 1.
+	claim2 := &JobClaimData{
+		Participants: []DBParticipant{
+			{BotID: "a", RatingMuBefore: updates1[0].Mu, RatingPhiBefore: updates1[0].Phi, RatingSigmaBefore: updates1[0].Sigma},
+			{BotID: "b", RatingMuBefore: updates1[1].Mu, RatingPhiBefore: updates1[1].Phi, RatingSigmaBefore: updates1[1].Sigma},
+		},
+	}
+	result2 := &MatchResult{WinnerID: ""} // draw: everyone scores 0.5
+
+	updates2 := (&Worker{}).computeRatingUpdates(claim2, result2)
+	if len(updates2) != 2 {
+		t.Fatalf("updates2 = %d entries, want 2", len(updates2))
+	}
+
+	// before-fields echo the claim; the after-fields match the reference
+	// chain (win from defaults, then a draw): 1662.310894/290.318964 ->
+	// 1576.688664/260.488764 for a, mirrored for b.
+	assertClose(t, "a before mu (match 2)", updates2[0].RatingMuBefore, 1662.310894, refTol)
+	assertClose(t, "a after mu (draw)", updates2[0].Mu, 1576.688664, refTol)
+	assertClose(t, "a after phi (draw)", updates2[0].Phi, 260.488764, refTol)
+	assertClose(t, "b before mu (match 2)", updates2[1].RatingMuBefore, 1337.689106, refTol)
+	assertClose(t, "b after mu (draw)", updates2[1].Mu, 1423.311336, refTol)
+	assertClose(t, "b after phi (draw)", updates2[1].Phi, 260.488764, refTol)
+
+	// The draw pulled both toward each other without crossing, and both
+	// display ratings stay ordered for the leaderboard.
+	if updates2[0].Mu <= updates2[1].Mu {
+		t.Errorf("draw crossed the ordering: a %v b %v", updates2[0].Mu, updates2[1].Mu)
+	}
+	if updates2[0].DisplayRating <= updates2[1].DisplayRating {
+		t.Errorf("display ordering not preserved: a %v b %v", updates2[0].DisplayRating, updates2[1].DisplayRating)
+	}
+
+	// Both matches learned: every RD change stays negative.
+	for _, updates := range [][]RatingUpdate{updates1, updates2} {
+		for _, u := range updates {
+			if u.RatingDeviationChange >= 0 {
+				t.Errorf("RD change for %s = %v, want negative", u.BotID, u.RatingDeviationChange)
+			}
+		}
+	}
 }
