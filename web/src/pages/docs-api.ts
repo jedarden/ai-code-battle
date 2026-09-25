@@ -298,6 +298,89 @@ const sections: Section[] = [
     ],
   },
   {
+    title: 'Interactive API (Same-Origin)',
+    description: 'State-changing endpoints served by this site itself as JSON under /api/* (a Pages Function backed by R2 — see docs/notes/api-transport.md for the transport decision). Replay feedback and map voting are live; match-tier endpoints (bot registration, API key rotation, predictions) are backed by the acb-api service, which is not deployed yet, so they answer 503 with JSON code "match_tier_offline". Everything is rate-limited per IP and caps request bodies at 32 KiB.',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/api/health',
+        description: 'Liveness and capability report. A false capability flag means that flow currently renders its offline state in the UI.',
+        cache: 'no cache (dynamic)',
+        responseExample: `{
+  "status": "ok",
+  "capabilities": {
+    "register": false,
+    "rotate_key": false,
+    "predictions": false,
+    "feedback": true,
+    "map_votes": true
+  }
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/feedback',
+        description: 'Submit replay feedback ({match_id, turn, type: "insight"|"mistake"|"idea"|"highlight", body, author?}) or site feedback from the Agentation overlay ({markdown, ...}).',
+        cache: 'no cache (rate-limited)',
+        responseExample: `{"status": "recorded", "feedback_id": "fb_3f2a91c04b7e"}`,
+      },
+      {
+        method: 'GET',
+        path: '/api/feedback/{match_id}',
+        description: 'Feedback entries for one replay. Voter dedupe sets are internal and never served.',
+        cache: 'no cache (dynamic)',
+        responseExample: `{
+  "match_id": "match_xyz789",
+  "feedback": [
+    {
+      "feedback_id": "fb_3f2a91c04b7e",
+      "match_id": "match_xyz789",
+      "turn": 42,
+      "type": "insight",
+      "body": "White sacrifices the east core to win the energy race.",
+      "author": "Anonymous",
+      "upvotes": 3,
+      "created_at": "2026-09-25T12:00:00.000Z"
+    }
+  ]
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/feedback/{id}/upvote',
+        description: 'Upvote a feedback entry. Body: {"voter_id": "..."}. One upvote per voter; repeats answer {"status": "already_upvoted"}.',
+        cache: 'no cache (rate-limited)',
+        responseExample: `{"status": "recorded"}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/vote/map',
+        description: 'Vote a map up or down. Body: {"map_id", "voter_id", "vote": 1|-1}. One vote per voter per map; voting again replaces it.',
+        cache: 'no cache (rate-limited)',
+        responseExample: `{"map_id": "map_tq8tx8vk", "vote": 1, "net_votes": 12}`,
+      },
+      {
+        method: 'GET',
+        path: '/api/vote/map/{map_id}',
+        description: 'Net votes for a map. Pass ?voter_id= to include your own current vote as my_vote.',
+        cache: 'no cache (dynamic)',
+        responseExample: `{"map_id": "map_tq8tx8vk", "net_votes": 12, "my_vote": 1}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/register',
+        description: 'Match tier — offline. Answers 503 {"error": "...", "code": "match_tier_offline"} until acb-api is deployed. The request shape is frozen to the service contract (Getting Started → Register Your Bot).',
+        cache: 'no cache (offline)',
+      },
+      {
+        method: 'POST',
+        path: '/api/predict',
+        description: 'Match tier — offline, same 503 "match_tier_offline" answer as /api/register. /api/rotate-key and the /api/predictions/* reads behave identically.',
+        cache: 'no cache (offline)',
+      },
+    ],
+  },
+  {
     title: 'B2 Endpoints (Archive)',
     description: 'Permanent archive for ALL replays and match data served from Backblaze B2.',
     endpoints: [
