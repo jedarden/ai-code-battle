@@ -38,7 +38,7 @@
  * after the swap has settled (skeleton.test.ts's "ships the fade the swap
  * runs" holds the shipped CSS text this run depends on).
  *
- * Two comparisons are deliberately narrower than "the whole box":
+ * Three comparisons are deliberately narrower than "the whole box":
  *  - the .canvas-wrapper's height: the live wrapper gains #no-replay, whose
  *    .no-replay-message rule pads 60px around the same body-text line the
  *    skeleton stands in for with a bare one-line bar, so the wrapper grows
@@ -52,6 +52,12 @@
  *    sidebar hangs lower on the live side. Its x and width are what the
  *    layout grid assigns and no content size can move, so they are compared
  *    at every width.
+ *  - the .mobile-event-timeline's top, for the same reason one level down:
+ *    the ribbon hangs below the canvas wrapper, so wherever the live wrapper
+ *    grows (everywhere but phone) the ribbon lands lower on the live side.
+ *    Until the ribbon went page-wide (2026-09-25) the container was hidden on
+ *    both sides at those widths and the narrowing was moot; its height is
+ *    still compared at every width, and on phone its top joins them.
  */
 
 import { expect, test } from '@playwright/test';
@@ -167,7 +173,17 @@ const REGIONS: ReadonlyArray<readonly [
     '.mobile-replay-controls > input[type="range"]',
     FIELDS,
   ],
-  ['event timeline', '.mobile-event-timeline', '.mobile-event-timeline', FIELDS],
+  // The event timeline container: left/width/height only. Its top hangs below
+  // the canvas wrapper, which the live side alone may grow (#no-replay, see
+  // above) — hidden on both sides until the ribbon went page-wide, so this
+  // narrowing only bites from 640px up; on phone the square wrapper pins the
+  // top and the sweep below compares it.
+  [
+    'event timeline',
+    '.mobile-event-timeline',
+    '.mobile-event-timeline',
+    ['left', 'width', 'height'],
+  ],
   // Content-sized live panels over fixed-height stand-ins (see
   // skeletonReplay's derivation notes), so the column's x/width are the
   // contract; its top joins them at the widths that stack the columns and
@@ -297,6 +313,17 @@ test.describe('replay skeleton → content swap parity', () => {
         ]);
         within(skeletonSidebar.top, liveSidebar.top, 'sidebar: top');
       }
+
+      // On phone the square wrapper also pins the event timeline's top (it is
+      // region-compared without one above). At 768/1280 the live wrapper
+      // grows by #no-replay, so nothing below it shares a y across the swap.
+      if (width === 375) {
+        const [skeletonTimeline, liveTimeline] = await Promise.all([
+          boxWithinSection(page, '.mobile-event-timeline', 'skeleton-fixture'),
+          boxWithinSection(page, '.mobile-event-timeline', 'live-fixture'),
+        ]);
+        within(skeletonTimeline.top, liveTimeline.top, 'event timeline: top');
+      }
     });
 
     test(`the swap moves nothing between the pre- and post-swap cascades at ${width}px`, async ({ page }) => {
@@ -325,6 +352,20 @@ test.describe('replay skeleton → content swap parity', () => {
         await openReplayFixture(page, buildPostSwapHtml());
         const liveSidebar = await boxWithinSection(page, '.replay-sidebar', 'live-fixture');
         within(preSwapSidebar.top, liveSidebar.top, 'sidebar: top');
+      }
+
+      // Same phone-only timeline-top check as the same-document sweep: the
+      // square wrapper pins it, the content-sized wrapper at 768/1280 cannot.
+      if (width === 375) {
+        await openReplayFixture(page, buildPreSwapHtml());
+        const preSwapTimeline = await boxWithinSection(
+          page,
+          '.mobile-event-timeline',
+          'skeleton-fixture'
+        );
+        await openReplayFixture(page, buildPostSwapHtml());
+        const liveTimeline = await boxWithinSection(page, '.mobile-event-timeline', 'live-fixture');
+        within(preSwapTimeline.top, liveTimeline.top, 'event timeline: top');
       }
     });
   }

@@ -10,6 +10,27 @@
 
 /* ─── Phone (<640px) ───────────────────────────────────────────────────────────── */
 
+/* §14.8 event ribbon container — the page-wide event timeline, at every
+   viewport width. Historically phone-only (hence the class name, which the
+   live template and skeletonReplay() both keep); the desktop event-timeline.ts
+   strip it used to sit beside was removed when the ribbon became the one
+   timeline, so this scroller is declared outside the phone block and no
+   breakpoint hides it any more. */
+.mobile-event-timeline {
+  display: flex;
+  overflow-x: auto;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mobile-event-timeline::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 639px) {
   /* Typography */
   h1 { font-size: 1.5rem; }
@@ -257,21 +278,9 @@
     padding: var(--space-xs);
   }
 
-  /* Mobile event timeline - horizontal scrollable ribbon */
-  .mobile-event-timeline {
-    display: flex;
-    overflow-x: auto;
-    gap: var(--space-xs);
-    padding: var(--space-sm);
-    background-color: var(--bg-secondary);
-    border-radius: var(--radius-md);
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .mobile-event-timeline::-webkit-scrollbar {
-    display: none;
-  }
+  /* Mobile event timeline - horizontal scrollable ribbon
+     (the container rules moved above the breakpoints when the ribbon became
+     the page-wide timeline; the dots below are the pre-ribbon strip's) */
 
   .mobile-event-dot {
     flex-shrink: 0;
@@ -611,9 +620,9 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
-  /* Hide mobile-specific elements */
+  /* Hide mobile-specific elements (.mobile-event-timeline stays — the ribbon
+     is the page-wide timeline, not phone chrome) */
   .mobile-replay-controls,
-  .mobile-event-timeline,
   .mobile-view-mode-toggle,
   .mobile-debug-sheet,
   .sandbox-mobile-message {
@@ -651,12 +660,12 @@
 @media (min-width: 1024px) {
   /* Full layout with sidebar where appropriate */
 
-  /* Hide mobile-specific elements */
+  /* Hide mobile-specific elements (.mobile-event-timeline stays — the ribbon
+     is the page-wide timeline, not phone chrome) */
   .mobile-bottom-nav,
   .mobile-menu-toggle,
   .mobile-menu,
   .mobile-replay-controls,
-  .mobile-event-timeline,
   .mobile-view-mode-toggle,
   .mobile-debug-sheet,
   .sandbox-mobile-message,

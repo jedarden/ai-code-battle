@@ -25,11 +25,13 @@
  * survive — and each instance is followed by a plain sibling so "in flow with
  * the surrounding page" has something concrete to be asserted against.
  *
- * Widths: .mobile-event-timeline is display:flex only inside
- * @media (max-width: 639px); mobile.css hides it from 640px to 1023px and again
- * at 1024px and up. The ribbon and its legend therefore only ever render on
- * phones, so "wide and narrow" means within that range: 639 (the widest it
- * ever shows), 390 (a common phone) and 320 (the narrowest worth supporting).
+ * Widths: .mobile-event-timeline is the page-wide timeline now — its
+ * display:flex scroller rule sits above every breakpoint in mobile.css and no
+ * media query hides it (the desktop event-timeline.ts strip it used to share
+ * the page with was removed 2026-09-25), so the legend contract is asserted
+ * at phone and desktop widths alike: 639 and 390 and 320 (phones — 320 the
+ * narrowest worth supporting), plus 768 and 1280 (the tablet band and desktop,
+ * where the container used to be display:none).
  */
 
 import { expect, test } from '@playwright/test';
@@ -116,7 +118,7 @@ async function markerGeometry(page: import('@playwright/test').Page, containerId
   }));
 }
 
-const WIDTHS = [639, 390, 320];
+const WIDTHS = [1280, 768, 639, 390, 320];
 const EPS = 0.5;
 
 for (const width of WIDTHS) {
@@ -124,7 +126,7 @@ for (const width of WIDTHS) {
     await openRibbonFixture(page, width);
 
     const timeline = await measure(page, '#tl-legend');
-    expect(timeline.display, 'the ribbon only renders inside the ≤639px phone block').toBe('flex');
+    expect(timeline.display, 'the ribbon container is the unhidden page-wide timeline').toBe('flex');
 
     const ribbon = await measure(page, '#tl-legend .event-ribbon');
     const legend = await measure(page, '#tl-legend .event-ribbon-legend');

@@ -18,10 +18,6 @@ The event ribbon is a horizontal timeline displaying significant game events pro
 - **`web/src/extract-significant-events.ts`** (477 lines)
   - Client-side event extraction from replay data
   - Defines `SignificantEventType` union and event detection logic
-  
-- **`web/src/components/event-timeline.ts`** (413 lines)
-  - Alternative/older timeline implementation
-  - Similar functionality but different DOM structure
 
 ### Supporting Files
 - **`web/src/types.ts`** - Type definitions for Replay, GameEvent, Position, etc.
@@ -33,6 +29,26 @@ The event ribbon is a horizontal timeline displaying significant game events pro
 > `renderLegend()` and its own `.event-type-legend*` CSS block as a second,
 > drifting legend. The ribbon legend is the one legend; the registry is the one
 > source of its icons, names and colors.
+
+> **Removed:** `web/src/components/event-timeline.ts` (the "alternative/older
+> timeline implementation" this section used to list) was deleted on
+> 2026-09-25. Unlike the legend above, it *was* mounted: the replay page
+> (`web/src/pages/replay.ts`) instantiated it into a
+> `#event-timeline-container` strip under the canvas — at every width, since
+> no stylesheet ever hid that container, so phones actually rendered both
+> timelines stacked. It was the phase-9 implementation the ribbon superseded:
+> its own `EVENT_CONFIG` color table had already drifted from the registry
+> (e.g. combat `#f97316` vs the registry's `#ef4444`), it had no test file,
+> and its last substantive change predates the ribbon's whole
+> tooltip/legend/keyboard-scrub work. The convergence made the **ribbon the
+> one timeline at every viewport width**: the `.mobile-event-timeline`
+> scroller rules moved out of mobile.css's phone block to the top level, and
+> the 640–1023px and ≥1024px "hide mobile chrome" lists no longer name the
+> class. The ribbon is the page-wide timeline the replay template's comment
+> already claimed. Two details did not carry over: the old strip's annotation
+> badges (annotations remain on the canvas `AnnotationOverlay` and the sidebar
+> panel) and nothing else — the `E` shortcut still toggles the timeline, now
+> the ribbon's `#mobile-timeline` container.
 
 ## Event Type Definitions
 
@@ -288,7 +304,11 @@ if (tooltipLeft < 8) {
 
 ## Annotations Integration
 
-**Timeline also supports annotation badges** (from annotation system):
+**The event timeline (the ribbon) does not render annotation badges.** The
+deleted `event-timeline.ts` strip did, as separate `.timeline-annotation`
+markers; that surface was not ported when the ribbon became the one timeline.
+Annotations live on the canvas `AnnotationOverlay` (per-turn markers) and in
+the replay sidebar's annotation panel; the ribbon takes no annotation input.
 
 ```typescript
 interface Annotation {
@@ -296,14 +316,12 @@ interface Annotation {
   type: 'insight' | 'mistake' | 'idea' | 'highlight';
 }
 
-// Annotation icons/colors:
+// Annotation icons/colors (canvas overlay markers):
 insight: 💎 (blue #3b82f6)
 mistake: ⚠️ (red #ef4444)
 idea: 💡 (green #22c55e)
 highlight: ⭐ (yellow #fbbf24)
 ```
-
-**Rendered as separate markers** on timeline with `.timeline-annotation` class.
 
 ## Styling Conventions
 

@@ -10,10 +10,6 @@ import {
   type Annotation,
 } from '../components/annotation';
 import {
-  EventTimeline,
-  EVENT_TIMELINE_STYLES,
-} from '../components/event-timeline';
-import {
   EventRibbon,
   EVENT_RIBBON_STYLES,
 } from '../components/event-ribbon';
@@ -122,13 +118,13 @@ export function replayPageMarkup(initialUrl?: string): string {
               style="width:100%;margin-top:4px" disabled aria-label="Turn scrubber">
           </div>
 
-          <!-- Mobile event timeline ribbon — CSS hides on tablet+ -->
+          <!-- §14.8 event ribbon — the event timeline at every viewport width.
+               The class name is historical: this was phone-only until the ribbon
+               became the page-wide timeline, and skeletonReplay() mirrors the
+               class, so it stays. -->
           <div class="mobile-event-timeline" id="mobile-timeline" aria-label="Event timeline">
             <span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">${initialUrl ? 'Loading…' : 'Enter a URL to load'}</span>
           </div>
-
-          <!-- Desktop event timeline with annotation badges (hidden on mobile) -->
-          <div class="event-timeline-container" id="event-timeline-container" style="display:none"></div>
 
           <div id="win-prob-section" class="win-prob-section" style="display:none">
             <div class="win-prob-header">
@@ -555,7 +551,6 @@ export function replayPageMarkup(initialUrl?: string): string {
       .annotation-canvas-hint.visible { opacity: 1; }
     </style>
     <style>${ANNOTATION_OVERLAY_STYLES}</style>
-    <style>${EVENT_TIMELINE_STYLES}</style>
     <style>${EVENT_RIBBON_STYLES}</style>
     <style>${THEATER_STYLES}</style>
   `;
@@ -618,7 +613,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   const mobileTurnInfo = document.getElementById('mobile-turn-info') as HTMLSpanElement;
   const mobileTurnSlider = document.getElementById('mobile-turn-slider') as HTMLInputElement;
   const mobileSpeedBtn = document.getElementById('mobile-speed-btn') as HTMLButtonElement;
-  const mobileTimeline = document.getElementById('mobile-timeline') as HTMLDivElement;
   const viewModeSelect = document.getElementById('view-mode-select') as HTMLSelectElement;
   const mobileViewModeBtn = document.getElementById('mobile-view-mode-btn') as HTMLButtonElement;
 
@@ -743,47 +737,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     mobilePlayBtn.textContent = viewer.getIsPlaying() ? '⏸' : '▶';
   }
 
-  function buildMobileTimeline(replay: Replay): void {
-    const eventTurns: number[] = [];
-    replay.turns.forEach((t: any, i: number) => {
-      if (t.events && t.events.length > 0) eventTurns.push(i);
-    });
-
-    if (eventTurns.length === 0) {
-      mobileTimeline.innerHTML = '<span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">No events</span>';
-      return;
-    }
-
-    const currentTurn = viewer.getTurn();
-    mobileTimeline.innerHTML = eventTurns.map(turn => {
-      const active = turn === currentTurn ? ' active' : '';
-      return `<button class="mobile-event-dot${active}" data-turn="${turn}" aria-label="Turn ${turn}"><span style="font-size:0.65rem">${turn}</span></button>`;
-    }).join('');
-
-    mobileTimeline.querySelectorAll<HTMLElement>('.mobile-event-dot').forEach(dot => {
-      dot.addEventListener('click', () => {
-        const t = parseInt(dot.dataset.turn!, 10);
-        viewer.setTurn(t);
-        updateUI();
-        updateEventLog();
-        updateMobileUI();
-        updateMobileTimeline();
-      });
-    });
-  }
-
-  function updateMobileTimeline(): void {
-    const currentTurn = viewer.getTurn();
-    mobileTimeline.querySelectorAll<HTMLElement>('.mobile-event-dot').forEach(dot => {
-      const t = parseInt(dot.dataset.turn!, 10);
-      dot.classList.toggle('active', t === currentTurn);
-    });
-    const activeDot = mobileTimeline.querySelector<HTMLElement>('.mobile-event-dot.active');
-    if (activeDot) {
-      activeDot.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    }
-  }
-
   function updateUI(): void {
     turnDisplay.textContent = String(viewer.getTurn());
     totalTurnsSpan.textContent = String(viewer.getTotalTurns());
@@ -838,7 +791,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateUI();
     updateEventLog();
     updateMobileUI();
-    buildMobileTimeline(replay);
     initWinProb(replay);
     initDirector(replay);
     loadCommentary(replay.match_id);
@@ -1078,7 +1030,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   // ── Annotation overlay integration (§16.8) ──────────────────────────────────────
 
   let annotationOverlay: AnnotationOverlay | null = null;
-  let eventTimeline: EventTimeline | null = null;
   let eventRibbon: EventRibbon | null = null;
   let allAnnotations: Annotation[] = [];
   let clickedGridPosition: Position | undefined;
@@ -1087,8 +1038,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   function syncAnnotationsToViewer(): void {
     // Push annotations to the canvas renderer for marker drawing
     viewer.setAnnotations(allAnnotations);
-    // Push annotations to the event timeline for badge rendering
-    eventTimeline?.setAnnotations(allAnnotations);
     // Update event ribbon turn highlight
     eventRibbon?.updateTurnHighlight();
   }
@@ -1114,7 +1063,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
           updateUI();
           updateEventLog();
           updateMobileUI();
-          updateMobileTimeline();
           updateAnnotationOverlay();
           updateTranscript();
         },
@@ -1144,26 +1092,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
 
       // Render legend below the event ribbon
       eventRibbon.renderLegend();
-    }
-
-    // Initialize EventTimeline (desktop)
-    const timelineContainer = document.getElementById('event-timeline-container');
-    if (timelineContainer) {
-      eventTimeline = new EventTimeline(timelineContainer, {
-        onTurnClick: (turn: number) => {
-          viewer.setTurn(turn);
-          updateUI();
-          updateEventLog();
-        },
-      });
-      // Extract events from replay turns and feed to timeline with win probability data
-      const timelineTurns = replay.turns.map((t: any, i: number) => ({
-        turn: i,
-        events: t.events ?? [],
-        energy_collected: t.energy_collected ?? [],
-      }));
-      eventTimeline.setEvents(timelineTurns, replay.win_prob);
-      timelineContainer.style.display = '';
     }
 
     annotationOverlay = new AnnotationOverlay(overlayContainer, {
@@ -1216,9 +1144,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   function updateAnnotationOverlay(): void {
     if (annotationOverlay) {
       annotationOverlay.setCurrentTurn(viewer.getTurn());
-    }
-    if (eventTimeline) {
-      eventTimeline.setCurrentTurn(viewer.getTurn());
     }
     if (eventRibbon) {
       eventRibbon.updateTurnHighlight();
@@ -1707,7 +1632,6 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     updateEventLog();
     updateCriticalMomentNav();
     updateMobileUI();
-    updateMobileTimeline();
     viewer.refreshWinProbSparkline();
     updateAnnotationOverlay();
     updateTranscript();
@@ -1794,20 +1718,20 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
   mobilePlayBtn.addEventListener('click', () => viewer.togglePlay());
   mobilePrevBtn.addEventListener('click', () => {
     viewer.setTurn(viewer.getTurn() - 1);
-    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+    updateUI(); updateEventLog(); updateMobileUI();
   });
   mobileNextBtn.addEventListener('click', () => {
     viewer.setTurn(viewer.getTurn() + 1);
-    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+    updateUI(); updateEventLog(); updateMobileUI();
   });
   mobileResetBtn.addEventListener('click', () => {
     viewer.pause(); viewer.setTurn(0);
-    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+    updateUI(); updateEventLog(); updateMobileUI();
   });
   mobileTurnSlider.addEventListener('input', () => {
     if (directorState.enabled) directorState.pauseReason = 'scrubbing';
     viewer.setTurn(parseInt(mobileTurnSlider.value, 10));
-    updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+    updateUI(); updateEventLog(); updateMobileUI();
   });
   mobileTurnSlider.addEventListener('change', () => {
     if (directorState.enabled) directorState.pauseReason = 'none';
@@ -1892,7 +1816,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
         } else {
           viewer.setTurn(viewer.getTurn() - 1);
         }
-        updateUI(); updateEventLog(); updateMobileUI(); updateMobileTimeline();
+        updateUI(); updateEventLog(); updateMobileUI();
       }
     }
 
@@ -2191,9 +2115,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
         toggleTranscriptPanel();
         break;
       case 'KeyE':
-        // Toggle event timeline visibility
+        // Toggle event timeline visibility — the ribbon is the one timeline,
+        // so its container is what the shortcut flips
         e.preventDefault();
-        const timelineContainer = document.getElementById('event-timeline-container');
+        const timelineContainer = document.getElementById('mobile-timeline');
         if (timelineContainer) {
           const isHidden = timelineContainer.style.display === 'none';
           timelineContainer.style.display = isHidden ? '' : 'none';
