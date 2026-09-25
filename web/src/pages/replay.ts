@@ -1,7 +1,7 @@
 // Standalone replay viewer page - lazy loaded from app.ts
 import type { Replay, GameEvent, DebugInfo, Position, ViewMode } from '../types';
 import { fetchCommentary, submitMapVote, fetchMapVotes } from '../api-types';
-import { API_TRANSPORT_ENABLED } from '../lib/api-transport';
+import { API_TRANSPORT_ENABLED, MatchTierOfflineError } from '../lib/api-transport';
 import {
   AnnotationOverlay,
   createAnnotationForm,
@@ -897,10 +897,17 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     mapVoteUp.disabled = false;
     mapVoteDown.disabled = false;
 
-    // Load existing votes
+    // Load existing votes. A match-tier 503 means the votes API is offline
+    // by design — say so and keep the buttons inert instead of dead-looking.
     fetchMapVotes(mapId).then(data => {
       updateMapVoteUI(data.net_votes, data.my_vote ?? null);
-    }).catch(() => {
+    }).catch((err) => {
+      if (err instanceof MatchTierOfflineError) {
+        mapVoteUp.disabled = true;
+        mapVoteDown.disabled = true;
+        mapVoteStatus.textContent = err.message;
+        return;
+      }
       mapVoteCount.textContent = '0';
     });
 

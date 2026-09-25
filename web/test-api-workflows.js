@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 /**
- * Live smoke: SPA→API workflows disabled without a transport (bead aicodeba-07caa4ec)
+ * Live smoke: SPA→API workflows over the Pages Function transport (bead aicodeba-84d1d61b)
  *
  * Two halves:
  *
  *  A. Local build markers — the production bundle (dist/assets/*.js) must
- *     carry the per-workflow "unavailable" notices (registration,
- *     predictions, community feedback, map voting). Run `npm run build`
- *     first; a stale dist fails here, which is the point.
+ *     carry the transport contract markers. Run `npm run build` first; a
+ *     stale dist fails here, which is the point.
  *
- *  B. Live origin premise — the deployed site must still answer /api/* with
- *     the SPA HTML fallback (200, text/html). That fallback is exactly why
- *     the workflows are disabled; if it ever returns JSON, a transport has
- *     appeared and web/src/lib/api-transport.ts (API_TRANSPORT_ENABLED)
- *     needs flipping back on — this script fails loudly so that cannot be
- *     missed.
+ *  B. Live origin transport — the deployed site must answer /api/* with the
+ *     Pages Function's JSON (docs/notes/api-transport.md). Anything that
+ *     answers text/html is the SPA fallback, i.e. the transport regressed to
+ *     the pre-aicodeba-84d1d61b state — this script fails loudly so that
+ *     cannot be missed. Match-tier routes must answer 503 JSON with code
+ *     "match_tier_offline" while acb-api is undeployed; the community reads
+ *     must be live. All probes are read-only or refused-with-503 — nothing
+ *     is written to the community store.
  *
  * Override the origin with ACB_ORIGIN (e.g. a local `wrangler pages dev`).
  */
@@ -37,6 +38,10 @@ function log(message, color = colors.reset) {
   console.log(`${color}${message}${colors.reset}`);
 }
 
+function logInfo(message) {
+  log(`ℹ ${message}`, colors.blue);
+}
+
 function logTest(name, passed, message) {
   const icon = passed ? '✓' : '✗';
   const color = passed ? colors.green : colors.red;
@@ -47,7 +52,7 @@ function logTest(name, passed, message) {
 let passed = 0;
 let failed = 0;
 
-// ─── Part A: built bundle carries the disable notices ────────────────────────
+// ─── Part A: built bundle carries the transport contract ─────────────────────
 
 function checkBundle() {
   log('\n--- A. Local build markers (dist/assets) ---\n', colors.cyan);
@@ -72,13 +77,15 @@ function checkBundle() {
 
   // Each marker must be a contiguous substring on one source line, so it
   // survives minification as an unbroken string literal in the page chunk.
+  // (Runtime-computed literals only: with API_TRANSPORT_ENABLED true the
+  // minifier folds away the kill-switch branches and their strings.)
   const markers = [
-    ['register notice', 'registration API has no public endpoint'],
-    ['predictions banner', 'Predictions are view-only right now'],
-    ['predictions open-matches notice', 'Predicting is unavailable right now'],
-    ['feedback banner', 'Community sync is unavailable'],
-    ['feedback saved-locally status', 'Annotation saved in this browser only'],
-    ['map-vote notice', 'Map voting is unavailable'],
+    // The match-tier offline envelope the clients detect (api-transport.ts).
+    ['match-tier offline code', 'match_tier_offline'],
+    // The live map-vote client (api-types.ts voter identity).
+    ['map-vote voter id', 'acb_voter_id'],
+    // The live annotation client (components/annotation.ts local copy).
+    ['annotation local store', 'acb_annotations_v2'],
   ];
 
   for (const [name, marker] of markers) {
@@ -87,14 +94,15 @@ function checkBundle() {
       logTest(name, true, `found "${marker}"`);
     } else {
       failed++;
-      logTest(name, false, `"${marker}" missing — rebuild or re-check the disabled states`);
+      logTest(name, false, `"${marker}" missing — rebuild or re-check the transport contract`);
     }
   }
 }
 
-// ─── Part B: live origin still has no /api transport ─────────────────────────
+// ─── Part B: live origin serves the /api Pages Function ──────────────────────
 
-async function fetchProbe(url, method, body) {
+async function fetchProbe(route, method, body) {
+  const url = `${origin}${route}`;
   try {
     const res = await fetch(url, {
       method,
@@ -102,67 +110,116 @@ async function fetchProbe(url, method, body) {
       body: body ? JSON.stringify(body) : undefined,
     });
     const contentType = res.headers.get('content-type') || '';
-    res.body?.cancel?.().catch(() => {});
-    return { status: res.status, contentType };
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // non-JSON body: callers branch on contentType
+    }
+    return { status: res.status, contentType, json };
   } catch (e) {
-    return { status: 0, contentType: String(e?.message || e) };
+    return { status: 0, contentType: String(e?.message || e), json: null };
   }
 }
 
-async function checkLivePremise(route, method, body) {
-  const url = `${origin}${route}`;
-  const { status, contentType } = await fetchProbe(url, method, body);
-  logInfo(`probed ${method} ${url} → ${status} ${contentType}`);
+async function expectJson(name, route, method, body, verify) {
+  const { status, contentType, json } = await fetchProbe(route, method, body);
+  logInfo(`probed ${method} ${origin}${route} → ${status} ${contentType}`);
 
-  // A JSON body on an /api route means something answered as an API.
-  if (contentType.includes('application/json')) {
+  if (!contentType.includes('application/json') || json === null) {
     failed++;
-    return logTest(
-      `${route} premise`,
+    logTest(
+      name,
       false,
-      'answered with JSON — a transport appears LIVE: flip API_TRANSPORT_ENABLED in web/src/lib/api-transport.ts and remove the disabled states',
+      `answered ${status} ${contentType || '(no content-type)'} — /api is not answering JSON. ` +
+        'If this is text/html, the Pages Function is missing from the deploy ' +
+        '(web/functions/api/) and the SPA fallback is answering again.',
     );
+    return;
   }
-
-  // No transport, two shapes: GETs fall through to the SPA (200 text/html),
-  // and writes are refused by Pages before any fallback (405; unmatched
-  // routes can also surface 404). Either way no server saw the request.
-  const noTransport =
-    (status === 200 && contentType.includes('text/html')) ||
-    status === 404 || status === 405;
-  if (noTransport) {
+  const problem = verify(json, status);
+  if (problem) {
+    failed++;
+    logTest(name, false, problem);
+  } else {
     passed++;
-    return logTest(
-      `${route} premise`,
-      true,
-      `${status} ${contentType || '(no content-type)'} — no transport on /api (disable decision holds)`,
-    );
+    logTest(name, true, `${status} JSON as expected`);
   }
-
-  failed++;
-  return logTest(
-    `${route} premise`,
-    false,
-    `unexpected answer for a transport-less /api route: ${status} ${contentType}`,
-  );
-}
-
-function logInfo(message) {
-  log(`ℹ ${message}`, colors.blue);
 }
 
 async function main() {
-  log('\n=== SPA→API Workflows Smoke (transport disabled) ===\n', colors.cyan);
+  log('\n=== SPA→API Workflows Smoke (Pages Function transport) ===\n', colors.cyan);
   logInfo(`live origin: ${origin} (override with ACB_ORIGIN)`);
 
   checkBundle();
 
-  log('\n--- B. Live origin premise (/api is the SPA fallback) ---\n', colors.cyan);
-  await checkLivePremise('/api/register', 'POST', {
-    name: 'smoke-probe', endpoint_url: 'https://example.com/move', owner_id: 'smoke',
+  log('\n--- B. Live origin transport (/api answers JSON) ---\n', colors.cyan);
+
+  // The transport's proof of life and its live capability set.
+  await expectJson('health + capabilities', '/api/health', 'GET', null, (json, status) => {
+    if (status !== 200) return `expected 200, got ${status}`;
+    if (json.status !== 'ok') return `expected status "ok", got ${JSON.stringify(json.status)}`;
+    const caps = json.capabilities;
+    if (!caps || typeof caps !== 'object') return 'capabilities object missing';
+    for (const key of ['register', 'rotate_key', 'predictions', 'feedback', 'map_votes']) {
+      if (typeof caps[key] !== 'boolean') return `capability "${key}" is not a boolean`;
+    }
+    if (caps.feedback !== true || caps.map_votes !== true) {
+      return `community capabilities are off (feedback=${caps.feedback}, map_votes=${caps.map_votes}) — storage is unhealthy`;
+    }
+    return null;
   });
-  await checkLivePremise('/api/predictions/open', 'GET', null);
-  await checkLivePremise('/api/vote/map/probe', 'GET', null);
+
+  // Community reads are live (both read-only).
+  await expectJson(
+    'map vote tallies read',
+    '/api/vote/map/probe-nonexistent-map-84d1d61b',
+    'GET',
+    null,
+    (json, status) => {
+      if (status !== 200) return `expected 200, got ${status}`;
+      if (json.map_id !== 'probe-nonexistent-map-84d1d61b') return 'map_id not echoed';
+      if (typeof json.net_votes !== 'number') return 'net_votes is not a number';
+      return null;
+    },
+  );
+
+  await expectJson(
+    'replay feedback read',
+    '/api/feedback/probe-nonexistent-match-84d1d61b',
+    'GET',
+    null,
+    (json, status) => {
+      if (status !== 200) return `expected 200, got ${status}`;
+      if (!Array.isArray(json.feedback)) return 'feedback array missing';
+      return null;
+    },
+  );
+
+  // Match-tier routes answer the honest offline envelope (no write happens).
+  await expectJson(
+    'register answers match_tier_offline',
+    '/api/register',
+    'POST',
+    { name: 'smoke-probe-84d1d61b', endpoint_url: 'https://example.com/move', owner_id: 'smoke-probe' },
+    (json, status) => {
+      if (status !== 503) return `expected 503, got ${status}`;
+      if (json.code !== 'match_tier_offline') return `expected code "match_tier_offline", got ${JSON.stringify(json.code)}`;
+      if (typeof json.error !== 'string' || !json.error) return 'user-facing error message missing';
+      return null;
+    },
+  );
+
+  // The SPA itself is still served normally.
+  const home = await fetchProbe('/', 'GET', null);
+  if (home.status === 200 && home.contentType.includes('text/html')) {
+    passed++;
+    logTest('SPA still served at /', true, '200 text/html');
+  } else {
+    failed++;
+    logTest('SPA still served at /', false, `unexpected: ${home.status} ${home.contentType}`);
+  }
 
   log('');
   if (failed > 0) {

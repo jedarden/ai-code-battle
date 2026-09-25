@@ -1,18 +1,38 @@
 /**
- * Predictions page view-only contract (bead aicodeba-07caa4ec).
+ * Predictions page contract with the transport live (bead aicodeba-84d1d61b).
  *
- * Picking bots, personal history, and the 15s resolution poll all target the
- * same-origin `/api/predictions*` routes, which the Pages SPA fallback
- * answers with HTML — there is no public API endpoint yet. With the transport
- * disabled the page must render explicit unavailable notices for the two
- * live sections, never issue an `/api` request, skip the poll timer, and
- * keep the static `/data`-backed Top Predictors leaderboard working.
+ * Predictions are a match-tier flow: the function answers the reads with 503
+ * JSON (code match_tier_offline), and the page renders those server-driven
+ * offline notices for open matches and history. The compile-time kill switch
+ * is off — the requests really do go out — and the static /data-backed Top
+ * Predictors leaderboard keeps working. The 15s poll runs and keeps the
+ * offline state fresh, so a revived compute tier turns the sections on with
+ * zero client changes.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderPredictionsPage, cleanupPredictionsPage } from './predictions';
 
 const calls: string[] = [];
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => body,
+  } as unknown as Response;
+}
+
+function matchTierOffline(): Response {
+  return jsonResponse(
+    {
+      error: 'Predictions is offline: the compute tier that runs matches is not deployed.',
+      code: 'match_tier_offline',
+    },
+    503,
+  );
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -22,29 +42,17 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
-    if (url.startsWith('/api/')) {
-      throw new Error(`unexpected /api fetch while transport is disabled: ${url}`);
-    }
+    if (url.startsWith('/api/predictions/')) return matchTierOffline();
     if (url === '/data/predictions/leaderboard.json') {
-      return {
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        json: async () => ({
-          updated_at: '2026-09-25T00:00:00Z',
-          entries: [
-            { predictor_id: 'p-1', correct: 5, incorrect: 1, streak: 3, best_streak: 4 },
-          ],
-        }),
-      } as unknown as Response;
+      return jsonResponse({
+        updated_at: '2026-09-25T00:00:00Z',
+        entries: [
+          { predictor_id: 'p-1', correct: 5, incorrect: 1, streak: 3, best_streak: 4 },
+        ],
+      });
     }
     // Bot profile lookups (and anything else static) may 404 harmlessly.
-    return {
-      ok: false,
-      status: 404,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: async () => ({}),
-    } as unknown as Response;
+    return jsonResponse({}, 404);
   });
 });
 
@@ -54,32 +62,44 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('renderPredictionsPage with no API transport', () => {
-  it('renders the view-only notice naming the missing predictions API', async () => {
+describe('renderPredictionsPage with the transport live', () => {
+  it('renders no compile-time transport notice — the transport exists', async () => {
     await renderPredictionsPage();
 
-    const notice = document.getElementById('predictions-transport-notice');
-    expect(notice).not.toBeNull();
-    // The notice copy wraps across source lines — compare on collapsed space.
-    const text = notice!.textContent!.replace(/\s+/g, ' ');
-    expect(text).toContain('Predictions are view-only right now');
-    expect(text).toContain('predictions API');
-    expect(text).toContain('has no public endpoint');
+    expect(document.getElementById('predictions-transport-notice')).toBeNull();
   });
 
-  it('shows unavailable notices for open matches and history — no dead fetches', async () => {
+  it('renders server-driven offline notices for open matches and history', async () => {
     await renderPredictionsPage();
 
     const openMatches = document.getElementById('open-matches-unavailable');
     expect(openMatches).not.toBeNull();
-    expect(openMatches!.textContent).toContain('predictions API has no public endpoint');
+    expect(openMatches!.textContent).toContain('Predictions is offline');
+    expect(openMatches!.textContent).toContain('compute tier');
 
     const history = document.getElementById('history-unavailable');
     expect(history).not.toBeNull();
-    expect(history!.textContent).toContain('predictions API has no public endpoint');
+    expect(history!.textContent).toContain('Predictions is offline');
 
-    expect(calls).not.toContainEqual(expect.stringContaining('/api/'));
-    expect(calls.some(url => url.includes('/api/'))).toBe(false);
+    // The reads really went to the same-origin function.
+    expect(calls.some(url => url.startsWith('/api/predictions/open'))).toBe(true);
+    expect(calls.some(url => url.startsWith('/api/predictions/history'))).toBe(true);
+  });
+
+  it('offline is not a wrong answer — a 500 renders the generic failure instead', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.startsWith('/api/predictions/')) return jsonResponse({ error: 'boom' }, 500);
+      if (url === '/data/predictions/leaderboard.json') return jsonResponse({ updated_at: '', entries: [] });
+      return jsonResponse({}, 404);
+    });
+
+    await renderPredictionsPage();
+
+    expect(document.getElementById('open-matches-unavailable')).toBeNull();
+    expect(document.getElementById('history-unavailable')).toBeNull();
+    expect(document.getElementById('open-matches-container')!.textContent).toContain('Failed to load open matches');
   });
 
   it('still renders the static leaderboard from /data', async () => {
@@ -93,17 +113,19 @@ describe('renderPredictionsPage with no API transport', () => {
     // module-level SWR cache from an earlier test in this file — what
     // matters is it never comes from /api.
     expect(leaderboard!.textContent).toContain('p-1');
-    expect(calls.some(url => url.includes('/api/'))).toBe(false);
+    expect(calls.some(url => url.includes('/api/') && url.includes('leaderboard'))).toBe(false);
   });
 
-  it('does not schedule the 15s resolution poll', async () => {
+  it('keeps polling and the offline state stays honest', async () => {
     await renderPredictionsPage();
     const callsAfterRender = calls.length;
 
     await vi.advanceTimersByTimeAsync(60000);
 
-    // Only the static leaderboard reads may have happened — nothing new.
-    expect(calls.length).toBe(callsAfterRender);
-    expect(calls.some(url => url.includes('/api/'))).toBe(false);
+    // The 15s poll re-issued the two match-tier reads (the transport is
+    // live — polling is no longer skipped) and re-rendered the notices.
+    expect(calls.length).toBeGreaterThan(callsAfterRender);
+    expect(document.getElementById('open-matches-unavailable')).not.toBeNull();
+    expect(document.getElementById('history-unavailable')).not.toBeNull();
   });
 });

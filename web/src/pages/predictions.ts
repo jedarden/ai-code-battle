@@ -7,7 +7,7 @@ import {
   getOrCreatePredictorId,
   fetchPredictionHistory,
 } from '../api-types';
-import { API_TRANSPORT_ENABLED } from '../lib/api-transport';
+import { API_TRANSPORT_ENABLED, MatchTierOfflineError } from '../lib/api-transport';
 
 const PAGES_BASE = '';
 
@@ -607,6 +607,12 @@ async function loadOpenMatches(): Promise<void> {
       btn.addEventListener('click', handlePick);
     });
   } catch (err) {
+    // The function answers match-tier reads with 503 JSON — render the
+    // server's offline notice rather than a generic failure.
+    if (err instanceof MatchTierOfflineError) {
+      container.innerHTML = `<div class="empty-message" id="open-matches-unavailable">Predicting is unavailable right now — ${escapeHtml(err.message)}</div>`;
+      return;
+    }
     console.error('Failed to load open matches:', err);
     container.innerHTML = '<div class="empty-message">Failed to load open matches</div>';
   }
@@ -701,6 +707,10 @@ async function loadHistory(): Promise<void> {
       `;
     }).join('');
   } catch (err) {
+    if (err instanceof MatchTierOfflineError) {
+      container.innerHTML = `<div class="empty-message" id="history-unavailable">Your prediction history is unavailable right now — ${escapeHtml(err.message)}</div>`;
+      return;
+    }
     console.error('Failed to load prediction history:', err);
     container.innerHTML = '<div class="empty-message">Failed to load prediction history</div>';
   }

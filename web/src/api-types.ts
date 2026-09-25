@@ -1,9 +1,28 @@
 // API response types matching the Worker API and index builder
 
-// Every function below that targets `${API_BASE}` is gated on the transport
-// flag — on the Pages host those routes are answered by the SPA fallback with
-// HTML, so a request can never reach a server (see lib/api-transport.ts).
-import { requireApiTransport } from './lib/api-transport';
+// The `/api` client functions below target the same-origin Pages Function
+// transport (web/functions/api/, see lib/api-transport.ts). Match-tier
+// routes answer 503 with code "match_tier_offline" until acb-api is
+// deployed; those surface as MatchTierOfflineError so pages can render
+// their unavailable states from the server's answer.
+import {
+  requireApiTransport,
+  MatchTierOfflineError,
+  matchTierOfflineMessage,
+} from './lib/api-transport';
+
+/** True when the response carries a real JSON body (the SPA fallback is HTML). */
+function isJsonResponse(response: Response): boolean {
+  return (response.headers.get('content-type') ?? '').includes('application/json');
+}
+
+/** Throws MatchTierOfflineError when this 503 response is a match-tier gate. */
+async function throwIfMatchTierOffline(response: Response): Promise<void> {
+  if (response.status !== 503) return;
+  const body: unknown = await response.json().catch(() => null);
+  const msg = matchTierOfflineMessage(response.status, body);
+  if (msg) throw new MatchTierOfflineError(msg);
+}
 
 // Leaderboard types
 export interface LeaderboardEntry {
@@ -244,6 +263,9 @@ export async function registerBot(request: RegisterRequest): Promise<RegisterRes
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });
+  if (!isJsonResponse(response)) {
+    return { success: false, error: `Registration failed: unexpected non-JSON response (${response.status})` };
+  }
   return response.json();
 }
 
@@ -284,6 +306,9 @@ export async function rotateApiKey(botId: string, currentKey: string): Promise<R
     },
     body: JSON.stringify({ bot_id: botId }),
   });
+  if (!isJsonResponse(response)) {
+    return { success: false, error: `Key rotation failed: unexpected non-JSON response (${response.status})` };
+  }
   return response.json();
 }
 
@@ -386,7 +411,11 @@ export async function fetchPredictionHistory(predictorId: string, limit?: number
   const params = new URLSearchParams({ predictor_id: predictorId });
   if (limit) params.set('limit', String(limit));
   const response = await fetch(`/api/predictions/history?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch prediction history: ${response.status}`);
+  if (!response.ok) {
+    await throwIfMatchTierOffline(response);
+    throw new Error(`Failed to fetch prediction history: ${response.status}`);
+  }
+  if (!isJsonResponse(response)) throw new Error('Failed to fetch prediction history: non-JSON response');
   return response.json();
 }
 
@@ -426,7 +455,11 @@ export async function fetchOpenPredictions(predictorId?: string): Promise<OpenPr
   requireApiTransport('Open match predictions');
   const params = predictorId ? `?predictor_id=${encodeURIComponent(predictorId)}` : '';
   const response = await fetch(`/api/predictions/open${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch open predictions: ${response.status}`);
+  if (!response.ok) {
+    await throwIfMatchTierOffline(response);
+    throw new Error(`Failed to fetch open predictions: ${response.status}`);
+  }
+  if (!isJsonResponse(response)) throw new Error('Failed to fetch open predictions: non-JSON response');
   return response.json();
 }
 
@@ -438,6 +471,7 @@ export async function submitPrediction(matchId: string, botId: string, predictor
     body: JSON.stringify({ match_id: matchId, bot_id: botId, predictor_id: predictorId }),
   });
   if (!response.ok) {
+    await throwIfMatchTierOffline(response);
     const err = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(err.error || `Failed to submit prediction: ${response.status}`);
   }
@@ -607,6 +641,7 @@ export async function submitMapVote(mapId: string, vote: 1 | -1): Promise<MapVot
     body: JSON.stringify({ map_id: mapId, voter_id: voterId, vote }),
   });
   if (!response.ok) {
+    await throwIfMatchTierOffline(response);
     const err = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(err.error || `Failed to submit vote: ${response.status}`);
   }
@@ -617,7 +652,11 @@ export async function fetchMapVotes(mapId: string): Promise<MapVotesResponse> {
   requireApiTransport('Map vote tallies');
   const voterId = getOrCreateVoterId();
   const response = await fetch(`${API_BASE}/vote/map/${encodeURIComponent(mapId)}?voter_id=${encodeURIComponent(voterId)}`);
-  if (!response.ok) throw new Error(`Failed to fetch map votes: ${response.status}`);
+  if (!response.ok) {
+    await throwIfMatchTierOffline(response);
+    throw new Error(`Failed to fetch map votes: ${response.status}`);
+  }
+  if (!isJsonResponse(response)) throw new Error('Failed to fetch map votes: non-JSON response');
   return response.json();
 }
 

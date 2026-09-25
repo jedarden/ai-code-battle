@@ -1,11 +1,14 @@
 /**
- * Map-vote disabled state on the replay page (bead aicodeba-07caa4ec).
+ * Map voting on the replay page with the Pages Function transport live
+ * (bead aicodeba-84d1d61b).
  *
- * `Rate this map` posts to same-origin `/api/vote/map`, which the Pages SPA
- * fallback answers with HTML — there is no public API endpoint. Loading a
- * real replay through the page's URL flow must leave the map metadata panel
- * populated (it comes from the replay file), replace the vote controls with
- * an explicit unavailable notice, and never issue an `/api` request.
+ * Map voting is a LIVE capability of the /api function. Loading a real
+ * replay through the page's URL flow must populate the map metadata panel
+ * (it comes from the replay file), fetch the current tallies from
+ * `/api/vote/map/{map_id}`, and record a click as a real POST — updating the
+ * count and disabling the buttons for this voter. A match-tier 503 renders
+ * the server's offline notice with inert buttons instead of dead-looking
+ * controls.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -14,6 +17,7 @@ import type { Replay } from '../types';
 const calls: string[] = [];
 
 const REPLAY_URL = 'https://example.com/replays/mapvote-fixture.json';
+const MAP_ID = 'map-fixture-1';
 
 function replayFixture(): Replay {
   return {
@@ -34,7 +38,7 @@ function replayFixture(): Replay {
       zone_shrink_interval: 1,
       zone_shrink_step: 1,
       zone_min_radius: 2,
-      map_id: 'map-fixture-1',
+      map_id: MAP_ID,
     },
     map: {
       rows: 40,
@@ -96,7 +100,30 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 5000)
   }
 }
 
-describe('replay page map vote with no API transport', () => {
+async function loadReplayThroughThePage(): Promise<void> {
+  const { renderReplayPage } = await import('./replay');
+  renderReplayPage({});
+
+  // Wait for the lazy-loaded content to mount.
+  let urlInput = document.getElementById('url-input') as HTMLInputElement | null;
+  const deadline = Date.now() + 5000;
+  while (!urlInput) {
+    if (Date.now() > deadline) throw new Error('url-input never appeared');
+    await new Promise(resolve => setTimeout(resolve, 25));
+    urlInput = document.getElementById('url-input') as HTMLInputElement | null;
+  }
+
+  urlInput.value = REPLAY_URL;
+  (document.getElementById('load-url-btn') as HTMLButtonElement).click();
+
+  // initMapVote runs after the replay loads; it unhides #map-vote-panel.
+  await waitFor(
+    () => (document.getElementById('map-vote-panel') as HTMLElement | null)?.style.display === '',
+    'map-vote panel to become visible',
+  );
+}
+
+describe('replay page map vote with the transport live', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
     localStorage.clear();
@@ -116,21 +143,26 @@ describe('replay page map vote with no API transport', () => {
       })),
     });
 
-    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       calls.push(url);
-      if (url.startsWith('/api/')) {
-        throw new Error(`unexpected /api fetch while transport is disabled: ${url}`);
-      }
-      const json = (body: unknown, ok = true) => ({
-        ok,
-        status: ok ? 200 : 404,
+      const json = (body: unknown, status = 200) => ({
+        ok: status >= 200 && status < 300,
+        status,
         headers: new Headers({ 'content-type': 'application/json' }),
         json: async () => body,
       }) as unknown as Response;
+
       if (url === REPLAY_URL) return json(replayFixture());
+      // GET tallies (query carries the voter id) and POST votes are distinct.
+      if (url === '/api/vote/map' && init?.method === 'POST') {
+        return json({ map_id: MAP_ID, vote: 1, net_votes: 4 });
+      }
+      if (url.startsWith(`/api/vote/map/${MAP_ID}?`)) {
+        return json({ map_id: MAP_ID, net_votes: 3 });
+      }
       if (url === '/data/matches/mapvote-fixture/feedback.json') return json({ feedback: [] });
-      return json({}, false);
+      return json({}, 404);
     });
 
     // Minimal 2D canvas mock so ReplayViewer can construct.
@@ -155,41 +187,80 @@ describe('replay page map vote with no API transport', () => {
     vi.restoreAllMocks();
   });
 
-  it('replaces vote controls with an unavailable notice and never fetches /api', async () => {
-    const { renderReplayPage } = await import('./replay');
-    renderReplayPage({});
+  it('loads tallies from the API and records a click as a real vote', async () => {
+    await loadReplayThroughThePage();
 
-    // Wait for the lazy-loaded content to mount.
-    let urlInput = document.getElementById('url-input') as HTMLInputElement | null;
-    const deadline = Date.now() + 5000;
-    while (!urlInput) {
-      if (Date.now() > deadline) throw new Error('url-input never appeared');
-      await new Promise(resolve => setTimeout(resolve, 25));
-      urlInput = document.getElementById('url-input') as HTMLInputElement | null;
-    }
-
-    urlInput.value = REPLAY_URL;
-    (document.getElementById('load-url-btn') as HTMLButtonElement).click();
-
-    // initMapVote runs after the replay loads; it unhides #map-vote-panel.
+    // The GET populated the count from the function's answer.
     await waitFor(
-      () => (document.getElementById('map-vote-panel') as HTMLElement | null)?.style.display === '',
-      'map-vote panel to become visible',
+      () => document.getElementById('map-vote-count')?.textContent === '3',
+      'vote count to be fetched',
     );
-    // Give the disabled-branch a tick to replace the section content.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    const up = document.getElementById('map-vote-up') as HTMLButtonElement;
+    const down = document.getElementById('map-vote-down') as HTMLButtonElement;
+    expect(up.disabled).toBe(false);
+    expect(down.disabled).toBe(false);
+    expect(calls.some(url => url.startsWith(`/api/vote/map/${MAP_ID}?voter_id=`))).toBe(true);
 
-    const section = document.getElementById('map-vote-section') as HTMLElement;
-    expect(section).not.toBeNull();
-    expect(section.textContent).toContain('Map voting is unavailable');
-    expect(section.textContent).toContain('voting API has no public endpoint');
-    // The dead vote buttons must be gone entirely, not merely disabled.
-    expect(document.getElementById('map-vote-up')).toBeNull();
-    expect(document.getElementById('map-vote-down')).toBeNull();
+    // Click upvote → POST /api/vote/map with this browser's voter id.
+    up.click();
+    await waitFor(
+      () => document.getElementById('map-vote-count')?.textContent === '4',
+      'the POSTed net votes to render',
+    );
 
-    // Map metadata still renders — it comes from the replay file itself.
+    const postCall = calls.find(url => url.endsWith('/api/vote/map'));
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls.find(
+      c => String(c[0]).endsWith('/api/vote/map'),
+    )?.[1]?.body));
+    expect(body).toMatchObject({ map_id: MAP_ID, vote: 1, voter_id: localStorage.getItem('acb_voter_id') });
+
+    expect(document.getElementById('map-vote-status')!.textContent).toBe('You upvoted this map');
+    expect((document.getElementById('map-vote-up') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById('map-vote-down') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps the map metadata panel working — it comes from the replay file', async () => {
+    await loadReplayThroughThePage();
+
     expect(document.getElementById('map-info-dimensions')?.textContent).toBe('40 x 40');
+    expect(document.getElementById('map-info-wall-density')?.textContent).toContain('0.1%');
+    expect(document.getElementById('map-info-energy-count')?.textContent).toBe('2');
+  });
 
-    expect(calls.some(url => url.includes('/api/'))).toBe(false);
+  it('renders the server offline notice with inert buttons on a match-tier 503', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      const json = (body: unknown, status = 200) => ({
+        ok: status >= 200 && status < 300,
+        status,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => body,
+      }) as unknown as Response;
+
+      if (url === REPLAY_URL) return json(replayFixture());
+      if (url.startsWith('/api/')) {
+        return json(
+          {
+            error: 'Map voting is offline: the compute tier that runs matches is not deployed.',
+            code: 'match_tier_offline',
+          },
+          503,
+        );
+      }
+      if (url === '/data/matches/mapvote-fixture/feedback.json') return json({ feedback: [] });
+      return json({}, 404);
+    });
+
+    await loadReplayThroughThePage();
+    await waitFor(
+      () => document.getElementById('map-vote-status')?.textContent?.includes('offline'),
+      'the offline notice to render',
+    );
+
+    expect(document.getElementById('map-vote-status')!.textContent).toContain('Map voting is offline');
+    expect((document.getElementById('map-vote-up') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById('map-vote-down') as HTMLButtonElement).disabled).toBe(true);
   });
 });
