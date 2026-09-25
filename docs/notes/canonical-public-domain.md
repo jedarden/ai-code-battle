@@ -4,6 +4,12 @@
 **Bead:** aicodeba-ee0426a0  
 **Status:** IMPLEMENTED
 
+> This note supersedes [bf-5kk-canonical-domain-decision.md](bf-5kk-canonical-domain-decision.md)
+> (2026-07-02), which made the same decision; its custom-domain migration
+> checklist has been folded into the "Future Work" section below. That note is
+> retained only as a pointer — this is the single source of truth for the
+> canonical domain.
+
 ## Problem
 
 The domain `aicodebattle.com` is NXDOMAIN (not registered), but documentation and code referenced it as the primary public domain. The deployed site is only reachable at `ai-code-battle.pages.dev`.
@@ -61,11 +67,25 @@ Updated domains array from `["aicodebattle.com"]` to `["ai-code-battle.pages.dev
 
 ## Future Work
 
-If `aicodebattle.com` is later registered and attached as a Cloudflare Pages custom domain:
-1. Add the custom domain in Cloudflare Pages dashboard
-2. Update `web/src/og-tags.ts` default URL (line 14)
-3. Update `web/index.html` meta tags
-4. Update this decision note with the custom domain configuration
+Consolidated custom-domain migration checklist (merged from the superseded
+bf-5kk note). If `aicodebattle.com` is later registered and attached as a
+Cloudflare Pages custom domain:
+
+1. Add the custom domain in the Cloudflare Pages dashboard (`ai-code-battle`
+   project → Custom domains), and let DNS/SSL provision.
+2. Search-and-replace `ai-code-battle.pages.dev` → `aicodebattle.com` in every
+   file that emits the absolute origin:
+   - `web/src/og-tags.ts` — default `url` (line 14) plus the generated
+     bot/replay/replays URLs further down
+   - `web/index.html` — `og:url`/`og:image`/`twitter:url`/`twitter:image` meta tags
+   - `web/pages.json` — `domains` array
+   - `web/src/pages/clip-maker.ts` — clip share URL and the rendered watermark text
+   - `web/src/pages/sandbox.ts` — mobile notice
+   - `docs/plan/plan.md` — shareable URL examples
+3. Deploy and verify all URLs resolve and existing pages.dev links still work
+   (Cloudflare keeps the pages.dev origin serving alongside attached custom
+   domains, so old links continue to resolve).
+4. Update this note with the migration date and new canonical domain.
 
 ## Related Documentation
 
