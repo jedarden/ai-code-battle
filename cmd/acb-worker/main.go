@@ -855,14 +855,20 @@ func (w *Worker) updateLiveTail(ctx context.Context, claimData *JobClaimData, re
 	return nil
 }
 
-// LeaderboardDeltaEntry represents rating deltas for a single bot.
+// LeaderboardDeltaEntry represents rating deltas for a single bot. NewWinRate
+// is a percentage (0-100), matching the win_rate scale of the leaderboard.json
+// entries this feed patches between full index builds. NewMatchesWon and
+// NewWinRate carry no omitempty: a fresh loss is a legitimate 0, and dropping
+// the field would leave the stale batch value on display — the page merges
+// with a `??` fallback (fetchLeaderboardWithDeltas), so an omitted field means
+// "keep the old value".
 type LeaderboardDeltaEntry struct {
 	RatingDelta        float64 `json:"rating_delta"`
 	NewRating          float64 `json:"new_rating"`
 	NewRatingDeviation float64 `json:"new_rating_deviation,omitempty"`
 	NewMatchesPlayed   int     `json:"new_matches_played,omitempty"`
-	NewMatchesWon      int     `json:"new_matches_won,omitempty"`
-	NewWinRate         float64 `json:"new_win_rate,omitempty"`
+	NewMatchesWon      int     `json:"new_matches_won"`
+	NewWinRate         float64 `json:"new_win_rate"`
 }
 
 // LiveDeltaFeed represents the live-delta.json structure.
@@ -918,10 +924,10 @@ func (w *Worker) botMatchStats(ctx context.Context, updates []RatingUpdate, resu
 // change in the conservative display rating (mu - 2*phi): new DisplayRating
 // minus (RatingMuBefore - 2*RatingPhiBefore). Deltas accumulate across
 // matches since the last full index build, while every absolute field
-// (rating, RD, match record) is replaced by the latest match's values.
-// Participants without a stats entry are skipped. now stamps feed.Updated as
-// RFC3339 UTC. A feed with a nil Deltas map (missing file, "deltas": null
-// payload) starts fresh.
+// (rating, RD, match record — the win rate as a percentage) is replaced by
+// the latest match's values. Participants without a stats entry are skipped.
+// now stamps feed.Updated as RFC3339 UTC. A feed with a nil Deltas map
+// (missing file, "deltas": null payload) starts fresh.
 func mergeLiveDeltas(feed LiveDeltaFeed, updates []RatingUpdate, stats map[string]BotMatchStats, now time.Time) LiveDeltaFeed {
 	if feed.Deltas == nil {
 		feed.Deltas = make(map[string]LeaderboardDeltaEntry)
@@ -933,9 +939,12 @@ func mergeLiveDeltas(feed LiveDeltaFeed, updates []RatingUpdate, stats map[strin
 			continue
 		}
 
+		// Win rate is published as a percentage (won/played * 100) so a
+		// merged row keeps the leaderboard.json win_rate scale this feed
+		// patches — the page renders the value with a "%" suffix.
 		newWinRate := 0.0
 		if s.MatchesPlayed > 0 {
-			newWinRate = float64(s.MatchesWon) / float64(s.MatchesPlayed)
+			newWinRate = 100 * float64(s.MatchesWon) / float64(s.MatchesPlayed)
 		}
 
 		ratingDelta := update.DisplayRating - (update.RatingMuBefore - 2*update.RatingPhiBefore)

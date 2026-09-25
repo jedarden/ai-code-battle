@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { renderLeaderboardPage, ROW_HEIGHT } from './leaderboard';
+import { renderDesktopRow, renderLeaderboardPage, renderMobileCard, ROW_HEIGHT } from './leaderboard';
 import { fetchLeaderboardWithDeltas, type LeaderboardEntry } from '../api-types';
 import { skeletonLeaderboard } from '../components/skeleton';
 
@@ -253,5 +253,50 @@ describe('VirtualList ROW_HEIGHT vs the shared .lb-row min-height', () => {
     const minHeight = lbRowRule.match(/--lb-row-min-height\s*:\s*([^;]+)/)?.[1]?.trim() ?? '';
     expect(minHeight, '--lb-row-min-height must stay a concrete px length').toMatch(/^[\d.]+px$/);
     expect(parseFloat(minHeight)).toBe(ROW_HEIGHT);
+  });
+});
+
+// ─── Rating and deviation values ──────────────────────────────────────────────
+// The rating pipeline ends at this markup: leaderboard.json (patched by the
+// worker's live-delta publication, pinned producer-side in
+// cmd/acb-worker/live_delta_test.go and consumer-side in api-types.test.ts)
+// carries rating and rating_deviation, and the rating ± RD pair is the only
+// place a Glicko RD is user-visible. The swap tests above check structure;
+// these hold the actual values in both layouts, including the
+// live-delta-merged values the publication pipeline produces between full
+// index builds.
+describe('rating and deviation render', () => {
+  it('renders the rating and ±deviation in a desktop row', () => {
+    const row = new DOMParser().parseFromString(renderDesktopRow(entry(1), 0), 'text/html').body;
+    expect(row.querySelector('.rating-value')?.textContent).toBe('1001');
+    expect(row.querySelector('.rating-dev')?.textContent).toBe('±50');
+  });
+
+  it('renders the rating and ±deviation in a mobile card', () => {
+    const card = new DOMParser().parseFromString(renderMobileCard(entry(1)), 'text/html').body;
+    const rating = card.querySelector('.leaderboard-mobile-rating')?.textContent ?? '';
+    expect(rating).toContain('1001');
+    expect(rating).toContain('±50');
+  });
+
+  it('renders the live-delta-merged rating and RD on both layouts', async () => {
+    // The worker's first-win publication for a fresh bot: display rating
+    // 800 -> 1081.672966, RD 350 -> 290.318964 (the reference vectors in
+    // cmd/acb-worker/glicko2_test.go). These are exactly the values
+    // fetchLeaderboardWithDeltas hands the page after a fresh live delta.
+    vi.mocked(fetchLeaderboardWithDeltas).mockResolvedValue({
+      entries: [{ ...entry(1), rating: 1081.672966, rating_deviation: 290.318964 }, entry(2), entry(3)],
+      updated_at: '2026-09-03T12:00:00Z',
+    });
+    await renderLeaderboardPage();
+
+    const page = document.querySelector('#app > .leaderboard-page')!;
+    const desktopRating = page.querySelector('#lb-desktop .rating-value')?.textContent;
+    expect(desktopRating).toBe('1081.672966');
+    expect(page.querySelector('#lb-desktop .rating-dev')?.textContent).toBe('±290.318964');
+
+    const mobileRating = page.querySelector('#lb-mobile .leaderboard-mobile-rating')?.textContent ?? '';
+    expect(mobileRating).toContain('1081.672966');
+    expect(mobileRating).toContain('±290.318964');
   });
 });

@@ -16,6 +16,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,8 +79,11 @@ func TestMergeLiveDeltasPublishesFirstMatch(t *testing.T) {
 	}
 	assertClose(t, "a new_rating", a.NewRating, wantDisplayA, refTol)
 	assertClose(t, "a new_rating_deviation", a.NewRatingDeviation, 290.318964, refTol)
-	if a.NewMatchesPlayed != 1 || a.NewMatchesWon != 1 || a.NewWinRate != 1 {
-		t.Errorf("a match record = played %d won %d rate %v, want 1/1/1", a.NewMatchesPlayed, a.NewMatchesWon, a.NewWinRate)
+	// NewWinRate is a percentage on the leaderboard.json scale this feed
+	// patches (the page renders it with a % suffix): a 1/1 record publishes
+	// 100, not the 0-1 fraction.
+	if a.NewMatchesPlayed != 1 || a.NewMatchesWon != 1 || a.NewWinRate != 100 {
+		t.Errorf("a match record = played %d won %d rate %v, want 1/1/100", a.NewMatchesPlayed, a.NewMatchesWon, a.NewWinRate)
 	}
 
 	b, ok := feed.Deltas["b"]
@@ -93,6 +97,19 @@ func TestMergeLiveDeltasPublishesFirstMatch(t *testing.T) {
 	assertClose(t, "b new_rating", b.NewRating, wantDisplayB, refTol)
 	if b.NewMatchesPlayed != 1 || b.NewMatchesWon != 0 || b.NewWinRate != 0 {
 		t.Errorf("b match record = played %d won %d rate %v, want 1/0/0", b.NewMatchesPlayed, b.NewMatchesWon, b.NewWinRate)
+	}
+
+	// A fresh loss is a legitimate zero, so the loser's zero fields must
+	// serialize (no omitempty): an omitted new_matches_won/new_win_rate would
+	// leave the stale batch values on display while the rest of the record
+	// moved — the page merges with a ?? fallback. b is the only participant
+	// with zeros here, so the blob check is specifically the loser's.
+	blob, err := json.Marshal(feed)
+	if err != nil {
+		t.Fatalf("marshal published feed: %v", err)
+	}
+	if !strings.Contains(string(blob), `"new_matches_won":0`) || !strings.Contains(string(blob), `"new_win_rate":0`) {
+		t.Errorf("loser zero fields omitted from published JSON: %s", blob)
 	}
 
 	// The zero-value feed (missing live-delta.json) publishes a usable map.
