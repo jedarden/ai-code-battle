@@ -33,11 +33,17 @@ against `https://ai-code-battle.pages.dev` on 2026-09-25 (~21:30Z):
 - `GET /r2/<missing>` answered the r2 function's own `text/plain` 404, so
   Pages Functions deploy fine for this project — the deployed bundle just
   predates `web/functions/api/`.
-- The deploy that would have shipped it (`acb-site-pages-build-rg9vx`,
-  triggered by the 03912f0 push, 2026-09-25 20:32Z) failed all four retries
-  with exit 128 in the git-clone step; Forgejo answered 200 when probed
-  right after, so the cause was transient and undiagnosed from the available
-  evidence. Every later push to `main` re-triggers the same pipeline.
+- The deploys that would have shipped it failed identically, twice: 
+  `acb-site-pages-build-rg9vx` (03912f0 push, 20:32Z) and
+  `acb-site-pages-build-pbmvp` (4ee9bfe push, 22:01Z) each lost all four
+  retries with exit 128 in the git-clone step, and the sibling `acb-build`
+  template failed the same way at both times. Forgejo answered 200 (and
+  accepted authenticated pushes from this box) throughout, so this is **not
+  transient**: the prime suspect is the `FORGEJO_TOKEN` credential the clone
+  step reads from the `forgejo-webhook-token` secret in `iad-ci`, which looks
+  stale or revoked. Rotating it is an operator action in that cluster —
+  outside this repo — and every later push to `main` re-triggers the same
+  pipeline until it happens.
 
 Until one of those deploys succeeds, the live origin has **no** `/api` route
 and the community tier is **not live**. The table below describes the
