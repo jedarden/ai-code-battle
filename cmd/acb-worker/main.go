@@ -871,8 +871,103 @@ type LiveDeltaFeed struct {
 	Updated string                           `json:"updated_at"`
 }
 
+// BotMatchStats is a participant's match record as published to the live
+// leaderboard: the persisted bots-row counters advanced by the current match.
+type BotMatchStats struct {
+	MatchesPlayed int
+	MatchesWon    int
+}
+
+// botMatchStats reads each participant's persisted matches_played/matches_won
+// and advances it by the current match, so every published entry describes the
+// post-match state. The bots row is only read here (the worker never writes
+// the counters back), and a bot whose row cannot be read falls back to zeros
+// for this match.
+func (w *Worker) botMatchStats(ctx context.Context, updates []RatingUpdate, result *MatchResult) map[string]BotMatchStats {
+	stats := make(map[string]BotMatchStats, len(updates))
+	for _, update := range updates {
+		var matchesPlayed, matchesWon int
+		err := w.db.db.QueryRowContext(ctx, `
+			SELECT COALESCE(matches_played, 0), COALESCE(matches_won, 0)
+			FROM bots WHERE bot_id = $1
+		`, update.BotID).Scan(&matchesPlayed, &matchesWon)
+		if err != nil {
+			w.logger.Printf("Warning: failed to get stats for bot %s: %v", update.BotID, err)
+			// Use zeros as fallback
+			matchesPlayed, matchesWon = 0, 0
+		}
+
+		// Increment matches played for this match (the update represents the new state),
+		// counting the win here too.
+		won := 0
+		if result.WinnerID == update.BotID {
+			won = 1
+		}
+		stats[update.BotID] = BotMatchStats{
+			MatchesPlayed: matchesPlayed + 1,
+			MatchesWon:    matchesWon + won,
+		}
+	}
+	return stats
+}
+
+// mergeLiveDeltas folds one match's rating updates into the live-delta feed
+// that backs leaderboard/live-delta.json — the leaderboard's publication of
+// rating movement between full index rebuilds. stats carries each
+// participant's post-match record (botMatchStats). A rating delta is the
+// change in the conservative display rating (mu - 2*phi): new DisplayRating
+// minus (RatingMuBefore - 2*RatingPhiBefore). Deltas accumulate across
+// matches since the last full index build, while every absolute field
+// (rating, RD, match record) is replaced by the latest match's values.
+// Participants without a stats entry are skipped. now stamps feed.Updated as
+// RFC3339 UTC. A feed with a nil Deltas map (missing file, "deltas": null
+// payload) starts fresh.
+func mergeLiveDeltas(feed LiveDeltaFeed, updates []RatingUpdate, stats map[string]BotMatchStats, now time.Time) LiveDeltaFeed {
+	if feed.Deltas == nil {
+		feed.Deltas = make(map[string]LeaderboardDeltaEntry)
+	}
+
+	for _, update := range updates {
+		s, ok := stats[update.BotID]
+		if !ok {
+			continue
+		}
+
+		newWinRate := 0.0
+		if s.MatchesPlayed > 0 {
+			newWinRate = float64(s.MatchesWon) / float64(s.MatchesPlayed)
+		}
+
+		ratingDelta := update.DisplayRating - (update.RatingMuBefore - 2*update.RatingPhiBefore)
+
+		existing, exists := feed.Deltas[update.BotID]
+		if !exists {
+			existing = LeaderboardDeltaEntry{
+				RatingDelta:        ratingDelta,
+				NewRating:          update.DisplayRating,
+				NewRatingDeviation: update.Phi,
+				NewMatchesPlayed:   s.MatchesPlayed,
+				NewMatchesWon:      s.MatchesWon,
+				NewWinRate:         newWinRate,
+			}
+		} else {
+			// Accumulate: add delta, replace absolute values
+			existing.RatingDelta += ratingDelta
+			existing.NewRating = update.DisplayRating
+			existing.NewRatingDeviation = update.Phi
+			existing.NewMatchesPlayed = s.MatchesPlayed
+			existing.NewMatchesWon = s.MatchesWon
+			existing.NewWinRate = newWinRate
+		}
+
+		feed.Deltas[update.BotID] = existing
+	}
+	feed.Updated = now.UTC().Format(time.RFC3339)
+	return feed
+}
+
 // updateLiveDelta updates leaderboard/live-delta.json in R2 with rating changes from the latest match.
-// Accumulates deltas since the last full index build.
+// Accumulates deltas since the last full index build (see mergeLiveDeltas).
 func (w *Worker) updateLiveDelta(ctx context.Context, claimData *JobClaimData, result *MatchResult, ratingUpdates []RatingUpdate) error {
 	// Download existing live-delta.json
 	var feed LiveDeltaFeed
@@ -880,97 +975,14 @@ func (w *Worker) updateLiveDelta(ctx context.Context, claimData *JobClaimData, r
 	if err == nil && len(existingData) > 0 {
 		if err := json.Unmarshal(existingData, &feed); err != nil {
 			w.logger.Printf("Warning: failed to parse existing live-delta.json, starting fresh: %v", err)
-			feed = LiveDeltaFeed{Deltas: make(map[string]LeaderboardDeltaEntry)}
-		}
-	} else {
-		// File doesn't exist yet, start fresh
-		feed = LiveDeltaFeed{Deltas: make(map[string]LeaderboardDeltaEntry)}
-	}
-
-	// Query current bot stats (matches_played, matches_won) from database
-	botIDs := make([]string, len(ratingUpdates))
-	for i, update := range ratingUpdates {
-		botIDs[i] = update.BotID
-	}
-
-	// Build bot info map with current stats from database
-	botStats := make(map[string]struct {
-		matchesPlayed int
-		matchesWon    int
-	})
-
-	// Query each bot's current stats from the database
-	for _, botID := range botIDs {
-		var matchesPlayed, matchesWon int
-		err := w.db.db.QueryRowContext(ctx, `
-			SELECT COALESCE(matches_played, 0), COALESCE(matches_won, 0)
-			FROM bots WHERE bot_id = $1
-		`, botID).Scan(&matchesPlayed, &matchesWon)
-		if err != nil {
-			w.logger.Printf("Warning: failed to get stats for bot %s: %v", botID, err)
-			// Use zeros as fallback
-			matchesPlayed, matchesWon = 0, 0
-		}
-
-		// Increment matches played for this match (the update represents the new state),
-		// counting the win here too — a map value's fields are not addressable in Go.
-		won := 0
-		if result.WinnerID == botID {
-			won = 1
-		}
-		botStats[botID] = struct {
-			matchesPlayed int
-			matchesWon    int
-		}{
-			matchesPlayed: matchesPlayed + 1,
-			matchesWon:    matchesWon + won,
+			feed = LiveDeltaFeed{}
 		}
 	}
+	// A missing file (or a "deltas": null payload) leaves a zero feed, which
+	// mergeLiveDeltas initializes.
 
-	// Update deltas for each participant
-	for _, update := range ratingUpdates {
-		stats, ok := botStats[update.BotID]
-		if !ok {
-			continue
-		}
-
-		// Calculate new rating state
-		newRating := update.DisplayRating
-		newRatingDeviation := update.Phi
-		newMatchesPlayed := stats.matchesPlayed
-		newMatchesWon := stats.matchesWon
-		newWinRate := 0.0
-		if newMatchesPlayed > 0 {
-			newWinRate = float64(newMatchesWon) / float64(newMatchesPlayed)
-		}
-
-		// Calculate rating delta
-		ratingDelta := newRating - (update.RatingMuBefore - 2*update.RatingPhiBefore)
-
-		// Store or accumulate delta
-		existing, exists := feed.Deltas[update.BotID]
-		if !exists {
-			existing = LeaderboardDeltaEntry{
-				RatingDelta:        ratingDelta,
-				NewRating:          newRating,
-				NewRatingDeviation: newRatingDeviation,
-				NewMatchesPlayed:   newMatchesPlayed,
-				NewMatchesWon:      newMatchesWon,
-				NewWinRate:         newWinRate,
-			}
-		} else {
-			// Accumulate: add delta, replace absolute values
-			existing.RatingDelta += ratingDelta
-			existing.NewRating = newRating
-			existing.NewRatingDeviation = newRatingDeviation
-			existing.NewMatchesPlayed = newMatchesPlayed
-			existing.NewMatchesWon = newMatchesWon
-			existing.NewWinRate = newWinRate
-		}
-
-		feed.Deltas[update.BotID] = existing
-	}
-	feed.Updated = time.Now().UTC().Format(time.RFC3339)
+	stats := w.botMatchStats(ctx, ratingUpdates, result)
+	feed = mergeLiveDeltas(feed, ratingUpdates, stats, time.Now())
 
 	// Serialize and upload
 	data, err := json.MarshalIndent(feed, "", "  ")

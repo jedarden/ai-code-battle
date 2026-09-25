@@ -406,6 +406,8 @@ Match flow:
 
 The leaderboard and bot profiles display μ with the RD shown as ±RD; the matchmaker's top-N selection and the evolver's culling order by the conservative estimate μ − 2φ. Ratings are updated by the match worker after every match (`computeRatingUpdates` in `cmd/acb-worker/main.go`), persisted to PostgreSQL, and can be rebuilt from scratch by replaying all matches (`recalcRatings`).
 
+*Publication pipeline* (per match, in `executeMatch`): the worker computes updates for every participant, persists them (`SubmitMatchResult` writes the new μ/RD/σ to `bots`, the after-values to `match_participants`, and the display rating μ − 2φ to `rating_history`), then publishes the movement to `leaderboard/live-delta.json` in R2 via `updateLiveDelta`/`mergeLiveDeltas` — rating deltas measured on the display scale accumulate there between full index rebuilds, while the absolute rating/RD/match-record fields always reflect the latest match. The `acb-index-builder` rebuild turns the persisted ratings into `data/leaderboard.json` (its counts come from `match_participants` itself, so they are authoritative where live-delta's per-match record is only the current match). The math and the publication contract are pinned in `glicko2_test.go` and `live_delta_test.go`; `rating_pipeline_test.go` covers the DB persistence round trip (requires `ACB_TEST_DATABASE_URL`).
+
 ---
 
 ## Testing
