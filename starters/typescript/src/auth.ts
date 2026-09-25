@@ -25,7 +25,11 @@ export function verifySignature(
   signature: string,
   secret: string
 ): boolean {
-  if (!/^[0-9a-fA-F]{64}$/.test(signature)) return false;
+  // The contract requires exactly 64 lowercase hex characters. The guard
+  // must run before the byte comparison below: Buffer.from(..., "hex")
+  // accepts uppercase, so an uppercase spelling of an otherwise valid
+  // signature would decode to the same bytes and verify.
+  if (!/^[0-9a-f]{64}$/.test(signature)) return false;
   const bodyHash = createHash("sha256").update(body).digest("hex");
   const signingString = `${matchId}.${turn}.${timestamp}.${bodyHash}`;
   const expected = createHmac("sha256", secret)
