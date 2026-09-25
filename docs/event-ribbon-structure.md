@@ -22,6 +22,7 @@ The event ribbon is a horizontal timeline displaying significant game events pro
 ### Supporting Files
 - **`web/src/types.ts`** - Type definitions for Replay, GameEvent, Position, etc.
 - **`web/src/components/event-type-registry.ts`** - Single source of truth for each event type's icon, name and color
+- **`web/src/lib/event-timeline-toggle.ts`** - The `E` shortcut's flip primitive, shared by the replay page and the regression spec so both target the same container id
 
 > **Removed:** `web/src/components/EventTypeLegend.tsx` (a React legend) was
 > deleted on 2026-09-04. It was never mounted — the app is vanilla TS, and the
@@ -370,6 +371,35 @@ All event icons get colored text shadows:
   /* Triangle pointer at top */
 }
 ```
+
+## Regression Net
+
+`web/layout-tests/event-ribbon-regression.spec.ts` pins the four behaviors that
+define the ribbon as the replay page's **only** event timeline, against the real
+`EventRibbon` class running in real Chromium (bundled with esbuild and injected
+as an IIFE — no mirrored markup, no jsdom layout):
+
+1. **Responsive rendering** — `.mobile-event-timeline` renders and holds its
+   markers at 320/390/768/1280px: visible at every width (no breakpoint hide
+   list may name the class again), 48px ribbon height, markers inside the
+   container band, legend below the ribbon, no horizontal overflow.
+2. **The `E` shortcut** — pressing `E` flips the container via
+   `toggleEventTimeline()` from `web/src/lib/event-timeline-toggle.ts`, the same
+   module the page's `KeyE` case calls; the container id comes from the same
+   `EVENT_TIMELINE_CONTAINER_ID` constant the template interpolates, so
+   shortcut and markup cannot drift apart.
+3. **Legend persistence** — hiding the legend with the close button survives a
+   real reload via real `localStorage` (the spec serves its fixture from a
+   synthetic http origin because `localStorage` throws on the opaque origin a
+   `page.setContent` document gets), and the toggle chip brings it back and
+   persists that too.
+4. **Registry color consistency** — markers, their glow and the legend all land
+   on the registry color in the computed cascade, and a type missing from the
+   registry renders the `UNKNOWN_EVENT_TYPE` fallback in both places rather
+   than an empty marker.
+
+Run it with the rest of the layout harness: `npm run test:browser` (see
+`web/playwright.config.ts` for the Chromium executable note on NixOS).
 
 ## Acceptance Criteria Status
 

@@ -32,6 +32,7 @@ import { setActiveReplay } from '../components/pip-registry';
 import { getPipMatchId, restorePip } from '../components/pip';
 import { fetchReplayFromUrl } from '../lib/replay-data';
 import { hapticPulse, isHapticEnabled, setHapticEnabled } from '../lib/ambient';
+import { EVENT_TIMELINE_CONTAINER_ID, toggleEventTimeline } from '../lib/event-timeline-toggle';
 import { skeletonReplay } from '../components/skeleton';
 
 const loadReplayViewer = () => import('../replay-viewer');
@@ -123,7 +124,7 @@ export function replayPageMarkup(initialUrl?: string): string {
                The class name is historical: this was phone-only until the ribbon
                became the page-wide timeline, and skeletonReplay() mirrors the
                class, so it stays. -->
-          <div class="mobile-event-timeline" id="mobile-timeline" aria-label="Event timeline">
+          <div class="mobile-event-timeline" id="${EVENT_TIMELINE_CONTAINER_ID}" aria-label="Event timeline">
             <span style="color:var(--text-muted);font-size:0.75rem;padding:4px 8px">${initialUrl ? 'Loading…' : 'Enter a URL to load'}</span>
           </div>
 
@@ -1059,7 +1060,7 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
     if (!overlayContainer || !formContainer) return;
 
     // Initialize EventRibbon (mobile event timeline ribbon)
-    const mobileTimelineContainer = document.getElementById('mobile-timeline');
+    const mobileTimelineContainer = document.getElementById(EVENT_TIMELINE_CONTAINER_ID);
     if (mobileTimelineContainer) {
       // Clear the placeholder/turn-dot markup BEFORE constructing the ribbon:
       // the constructor appends its DOM to the container, so wiping afterwards
@@ -2127,13 +2128,12 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
         break;
       case 'KeyE':
         // Toggle event timeline visibility — the ribbon is the one timeline,
-        // so its container is what the shortcut flips
+        // so its container is what the shortcut flips. The flip itself lives
+        // in lib/event-timeline-toggle.ts so the browser regression spec
+        // (web/layout-tests/event-ribbon-regression.spec.ts) exercises the
+        // real logic, not a copy.
         e.preventDefault();
-        const timelineContainer = document.getElementById('mobile-timeline');
-        if (timelineContainer) {
-          const isHidden = timelineContainer.style.display === 'none';
-          timelineContainer.style.display = isHidden ? '' : 'none';
-        }
+        toggleEventTimeline();
         break;
       case 'KeyC':
         // Toggle commentary subtitles
