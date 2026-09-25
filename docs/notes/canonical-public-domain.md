@@ -71,4 +71,4 @@ If `aicodebattle.com` is later registered and attached as a Cloudflare Pages cus
 
 - Cloudflare Pages project: `ai-code-battle` (`ai-code-battle.pages.dev`)
 - Replays served via: Pages Function `web/functions/r2/[[path]].ts` (R2 binding)
-- API endpoint (deferred): Would be `api.ai-code-battle.pages.dev` via Traefik routing
+- Public API endpoint: none — descoped; `acb-api` is reachable via internal cluster networking only (see [public-api-descope.md](public-api-descope.md))

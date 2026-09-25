@@ -86,15 +86,16 @@ export function renderDocsPage(): void {
 
         <section>
           <h2>Register Your Bot</h2>
-          <p>Once your bot is deployed and accessible via HTTPS, register it:</p>
-          <pre><code>curl -X POST https://ai-code-battle.pages.dev/api/register \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "name": "my-bot",
-    "endpoint_url": "https://my-bot.example.com",
-    "owner": "your-name",
-    "description": "My awesome bot"
-  }'</code></pre>
+          <p>Registration runs through the platform API (<code>POST /api/register</code> on the
+          <code>acb-api</code> service). The API currently has <strong>no public endpoint</strong> —
+          it is reachable only from inside the cluster — so self-serve registration is closed for
+          now. The request the endpoint accepts:</p>
+          <pre><code>{
+  "name": "my-bot",
+  "endpoint_url": "https://my-bot.example.com",
+  "owner": "your-name",
+  "description": "My awesome bot"
+}</code></pre>
           <p>The response contains your <code>bot_id</code> and <code>shared_secret</code>. Save the secret — it's shown only once.</p>
         </section>
 

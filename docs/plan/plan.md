@@ -72,17 +72,19 @@ All backend compute runs in two namespaces: `ai-code-battle` (core infrastructur
 
 ### Go API Service (`acb-api`)
 
-A public Go HTTP service (`acb-api`, deployed as a Deployment in the
-`ai-code-battle` namespace) fronts all dynamic, interactive endpoints at
-`api.ai-code-battle.pages.dev`. It is the write path for bot registration,
+A Go HTTP service (`acb-api`, manifest `manifests/acb-api-deployment.yml`,
+namespace `ai-code-battle`) owns all dynamic, interactive endpoints. It is
+the write path for bot registration,
 key rotation, status checks, predictions, community feedback/voting, map
 voting, and replay-enrichment requests, and it ingests match results from
 workers. The static read path (leaderboards, profiles, replays, indexes)
 stays on Cloudflare Pages — `acb-api` serves only dynamic endpoints and no
 static files. It connects to CNPG PostgreSQL for persistent state and Valkey
-for the job queue. It is **built and deployed** today (see `cmd/acb-api/`);
-earlier drafts of this document labelled it "(deferred)", which is no longer
-accurate. Scheduling (matchmaking, health checks, season/series management)
+for the job queue. The service is **built** today (see `cmd/acb-api/`) but
+has **no public endpoint**: it is reachable only via internal cluster
+networking, and public exposure stays descoped until social features need it
+(see `docs/notes/public-api-descope.md` and §9.6). Scheduling (matchmaking,
+health checks, season/series management)
 runs in the separate `acb-matchmaker` Deployment (§8.2.1), not inside
 `acb-api` — `acb-api` is request-driven and enqueues no jobs of its own.
 
@@ -1190,8 +1192,9 @@ No build-time data fetching -- all data loaded at runtime.
 const leaderboard = await fetch('/data/leaderboard.json').then(r => r.json())
 // Replays from R2 via Pages Functions (same origin)
 const replay = await fetch(`/r2/replays/${matchId}.json.gz`)
-// Dynamic operations via the Go API (acb-api Deployment)
-const result = await fetch('https://api.ai-code-battle.pages.dev/api/register', { method: 'POST', body: ... })
+// Dynamic operations go through the acb-api Deployment (cluster-internal
+// only; no public route exists — docs/notes/public-api-descope.md)
+const result = await fetch(`${ACB_API_BASE}/api/register`, { method: 'POST', body: ... })
 ```
 
 Index JSON files are rebuilt and deployed to Pages every ~15 minutes by
@@ -1204,8 +1207,10 @@ B2 in real time by match workers and available immediately.
 
 The Go HTTP service (`acb-api`) is the **request-driven, HTTP-facing** tier.
 It runs as a Deployment in the `ai-code-battle` namespace with a ClusterIP
-Service. Traefik routes `api.ai-code-battle.pages.dev` to it via an
-IngressRoute (TLS via cert-manager). The API serves only dynamic endpoints —
+Service. There is no public route to it today; a Traefik IngressRoute with a
+public hostname (TLS via cert-manager) stays descoped until social features
+need it, and a `*.pages.dev` subdomain cannot host it
+(see `docs/notes/public-api-descope.md`). The API serves only dynamic endpoints —
 no static files — and connects to CNPG PostgreSQL for persistent state and
 Valkey for ephemeral cache. It runs **no background tickers** and enqueues no
 jobs of its own; all scheduling lives in the separate `acb-matchmaker`
@@ -1814,8 +1819,9 @@ Match workers coordinate via **Valkey** (job queue) and **PostgreSQL**
 - `ai-code-battle.pages.dev` (or custom domain) → Cloudflare Pages
   (static SPA + data indexes)
 - B2 public URL (via Cloudflare CDN) → Backblaze B2 (replay/match data storage)
-- No K8s services are exposed externally in v1. The Go API IngressRoute
-  at `api.ai-code-battle.pages.dev` is planned for when social features are added.
+- No K8s services are exposed externally in v1. A Go API IngressRoute under a
+  public hostname stays descoped until social features are added (and cannot
+  use a `*.pages.dev` subdomain — see `docs/notes/public-api-descope.md`).
 - TLS: Pages handles TLS automatically. B2 via Cloudflare CDN gets TLS
   from the CDN layer.
 
@@ -4273,7 +4279,8 @@ rate limiting needed.
 ```
 PAGES = https://ai-code-battle.pages.dev  (Cloudflare Pages)
 R2    = {PAGES}/r2                        (R2 via Pages Functions)
-API   = https://api.ai-code-battle.pages.dev    (K8s Go API — acb-api Deployment)
+API   = cluster-internal acb-api Service (K8s Go API; no public hostname —
+        docs/notes/public-api-descope.md)
 
 --- Index files on Pages (deployed every ~90 min by index builder) ---
 
