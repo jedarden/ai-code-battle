@@ -7,6 +7,9 @@
  * conditional-put semantics the production binding has: a put carrying
  * `onlyIf.etagMatches` stores only when the etag still matches and resolves
  * null otherwise.
+ *
+ * The storage-bound, upvote-rate-limit, 413-on-every-write-route, and
+ * read-path storage-failure coverage was added for bead aicodeba-be4ad99a.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -69,6 +72,12 @@ class MemBucket implements CommunityBucket {
 class BrokenBucket extends MemBucket {
   async head(): Promise<{ etag: string } | null> {
     throw new Error('bucket unreachable');
+  }
+}
+
+class ThrowingBucket extends MemBucket {
+  async get(): Promise<{ etag: string; text(): Promise<string> } | null> {
+    throw new Error('bucket down');
   }
 }
 
@@ -232,6 +241,41 @@ describe('map voting', () => {
     expect(last.status).toBe(429);
     expect(String(last.json.error)).toContain('too many votes');
   });
+
+  it('answers 413 when a vote body exceeds the cap, like feedback', async () => {
+    const res = await call('/vote/map', {
+      method: 'POST',
+      body: { map_id: 'map-1', voter_id: 'x'.repeat(33 * 1024), vote: 1 },
+      ip: 'vote-big',
+    });
+
+    expect(res.status).toBe(413);
+    expect(res.json.error).toBe('request body too large');
+  });
+
+  it('declines a new voter once a map hits its dedupe-set cap', async () => {
+    bucket.put('community/map-votes.json', JSON.stringify({
+      updated_at: '2026-01-01T00:00:00Z',
+      votes: {
+        'map-1': Object.fromEntries(
+          Array.from({ length: 5000 }, (_, i) => [`voter-${i}`, 1 as const]),
+        ),
+      },
+    }));
+
+    const res = await call('/vote/map', {
+      method: 'POST',
+      body: { map_id: 'map-1', voter_id: 'newcomer', vote: 1 },
+      ip: 'vote-cap',
+    });
+
+    // Full set: the late vote is declined in place — net unchanged, set bound held.
+    expect(res.status).toBe(200);
+    expect(res.json.net_votes).toBe(5000);
+    const stored = bucket.peek('community/map-votes.json') as { votes: Record<string, Record<string, number>> };
+    expect(Object.keys(stored.votes['map-1'])).toHaveLength(5000);
+    expect(stored.votes['map-1'].newcomer).toBeUndefined();
+  });
 });
 
 // ─── Replay feedback ────────────────────────────────────────────────────────
@@ -353,6 +397,90 @@ describe('replay feedback', () => {
     expect(last.status).toBe(429);
     expect(String(last.json.error)).toContain('too much feedback');
   });
+
+  it('rate-limits upvotes per client IP with 429', async () => {
+    const created = await call('/feedback', { method: 'POST', body: feedbackBody(), ip: 'fb-upvote-limit' });
+    const id = String(created.json.feedback_id);
+
+    let last = { status: 0, json: {} as Record<string, unknown> };
+    for (let i = 0; i < 61; i++) {
+      last = await call(`/feedback/${id}/upvote`, {
+        method: 'POST',
+        body: { voter_id: `voter-${i}` },
+        ip: 'upvote-limit',
+      });
+    }
+    expect(last.status).toBe(429);
+    expect(String(last.json.error)).toContain('too many upvotes');
+  });
+
+  it('answers 413 on upvote bodies too', async () => {
+    const res = await call('/feedback/fb_x/upvote', {
+      method: 'POST',
+      body: { voter_id: 'x'.repeat(33 * 1024) },
+      ip: 'fb-up-big',
+    });
+    expect(res.status).toBe(413);
+  });
+
+  it('trims the store to the 500-entry FIFO, dropping the oldest', async () => {
+    bucket.put('community/replay-feedback.json', JSON.stringify({
+      updated_at: '2026-01-01T00:00:00Z',
+      feedback: Array.from({ length: 500 }, (_, i) => ({
+        feedback_id: `fb_${String(i).padStart(4, '0')}`,
+        match_id: 'match-1',
+        turn: i,
+        type: 'insight',
+        body: `stored entry ${i}`,
+        author: 'a',
+        upvotes: 0,
+        created_at: '2026-01-01T00:00:00Z',
+        voters: {},
+      })),
+    }));
+
+    const res = await call('/feedback', { method: 'POST', body: feedbackBody(), ip: 'fb-fifo' });
+    expect(res.status).toBe(201);
+
+    const stored = bucket.peek('community/replay-feedback.json') as { feedback: { feedback_id: string }[] };
+    expect(stored.feedback).toHaveLength(500);
+    expect(stored.feedback[0].feedback_id).toBe(res.json.feedback_id);
+    expect(stored.feedback.some((f) => f.feedback_id === 'fb_0000')).toBe(true); // newest of the old survives
+    expect(stored.feedback.some((f) => f.feedback_id === 'fb_0499')).toBe(false); // oldest is dropped
+  });
+
+  it('stops counting upvotes once an entry hits its voter-set cap', async () => {
+    bucket.put('community/replay-feedback.json', JSON.stringify({
+      updated_at: '2026-01-01T00:00:00Z',
+      feedback: [{
+        feedback_id: 'fb_full',
+        match_id: 'match-1',
+        turn: 1,
+        type: 'insight',
+        body: 'a popular take',
+        author: 'a',
+        upvotes: 7,
+        created_at: '2026-01-01T00:00:00Z',
+        voters: Object.fromEntries(
+          Array.from({ length: 1000 }, (_, i) => [`voter-${i}`, true as const]),
+        ),
+      }],
+    }));
+
+    const res = await call('/feedback/fb_full/upvote', {
+      method: 'POST',
+      body: { voter_id: 'newcomer' },
+      ip: 'fb-entry-cap',
+    });
+
+    expect(res.status).toBe(200);
+    const stored = bucket.peek('community/replay-feedback.json') as {
+      feedback: { upvotes: number; voters: Record<string, boolean> }[];
+    };
+    expect(stored.feedback[0].upvotes).toBe(7);
+    expect(Object.keys(stored.feedback[0].voters)).toHaveLength(1000);
+    expect(stored.feedback[0].voters.newcomer).toBeUndefined();
+  });
 });
 
 // ─── Site feedback (agentation overlay) ─────────────────────────────────────
@@ -386,6 +514,67 @@ describe('site feedback', () => {
       ip: 'site-3',
     });
     expect(spam.status).toBe(422);
+  });
+
+  it('trims site feedback to its 200-entry FIFO, dropping the oldest', async () => {
+    bucket.put('community/site-feedback.json', JSON.stringify({
+      updated_at: '2026-01-01T00:00:00Z',
+      feedback: Array.from({ length: 200 }, (_, i) => ({
+        feedback_id: `site_${String(i).padStart(4, '0')}`,
+        markdown: `submission ${i}`,
+        annotations: [],
+        submitted_at: '2026-01-01T00:00:00Z',
+      })),
+    }));
+
+    const res = await call('/feedback', {
+      method: 'POST',
+      body: { markdown: 'a fresh site submission, long enough for the spam floor' },
+      ip: 'site-fifo',
+    });
+    expect(res.status).toBe(201);
+
+    const stored = bucket.peek('community/site-feedback.json') as { feedback: { feedback_id: string }[] };
+    expect(stored.feedback).toHaveLength(200);
+    expect(stored.feedback[0].feedback_id).toBe(res.json.feedback_id);
+    expect(stored.feedback.some((f) => f.feedback_id === 'site_0000')).toBe(true); // newest of the old survives
+    expect(stored.feedback.some((f) => f.feedback_id === 'site_0199')).toBe(false); // oldest is dropped
+  });
+});
+
+// ─── Storage failure responses ──────────────────────────────────────────────
+
+describe('storage failure responses', () => {
+  it('serves the empty document shape when nothing is stored yet', async () => {
+    const votes = await call('/vote/map/map-1');
+    const feedback = await call('/feedback/match-1');
+
+    expect(votes.status).toBe(200);
+    expect(votes.json).toEqual({ map_id: 'map-1', net_votes: 0 });
+    expect(feedback.status).toBe(200);
+    expect(feedback.json).toEqual({ match_id: 'match-1', feedback: [] });
+  });
+
+  it('serves the empty document shape when stored JSON is corrupt (read path)', async () => {
+    bucket.put('community/map-votes.json', 'NOT JSON{');
+    bucket.put('community/replay-feedback.json', 'NOT JSON{');
+
+    const votes = await call('/vote/map/map-1');
+    const feedback = await call('/feedback/match-1');
+
+    expect(votes.status).toBe(200);
+    expect(votes.json).toEqual({ map_id: 'map-1', net_votes: 0 });
+    expect(feedback.status).toBe(200);
+    expect(feedback.json).toEqual({ match_id: 'match-1', feedback: [] });
+  });
+
+  it('answers JSON 500 when storage reads fail outright', async () => {
+    env = { ACB_BUCKET: new ThrowingBucket() };
+    const res = await call('/feedback/match-1');
+
+    expect(res.status).toBe(500);
+    expect(res.contentType).toContain('application/json');
+    expect(String(res.json.error)).toContain('internal error');
   });
 });
 
