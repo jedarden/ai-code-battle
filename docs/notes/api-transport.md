@@ -219,7 +219,11 @@ reporting, map voting, replay + site feedback round trips, match-tier 503
 envelopes, per-IP rate limits (429), request bounds (413 plus the FIFO and
 dedupe-set caps), CAS retry/storage-busy (503) behavior, and the JSON
 content-type contract on every route and status class — the same gate the
-probe applies live. Also runs as part of plain `npm run test:unit`.
+probe applies live. A per-route method-isolation table (bead
+aicodeba-8632c428) pins the verb dimension too: every documented route
+refuses its undocumented verbs as JSON — a 404 fall-through, except GET on
+an upvote path, which the sibling read route answers 400 `invalid match ID`
+— with no handler write attempted. Also runs as part of plain `npm run test:unit`.
 
 The deployed adapter itself — `functions/api/[[path]].ts`, the URL parse,
 one-time `/api` prefix strip, and env hand-off the Pages runtime invokes —

@@ -678,14 +678,63 @@ describe('router', () => {
     expect(unknown.contentType).toContain('application/json');
   });
 
-  it('ignores a trailing slash', async () => {
-    const res = await call('/health/', { ip: 'rt-3' });
-    expect(res.status).toBe(200);
+  it('ignores a trailing slash on literal and parameterized routes', async () => {
+    expect((await call('/health/', { ip: 'rt-3' })).status).toBe(200);
+    expect((await call('/vote/map/map-1/', { ip: 'rt-4' })).status).toBe(200);
   });
+});
 
-  it('ignores a trailing slash', async () => {
-    const res = await call('/health/', { ip: 'rt-3' });
-    expect(res.status).toBe(200);
+// ─── Method isolation (bead aicodeba-8632c428) ──────────────────────────────
+//
+// Every route in the capability table (docs/notes/api-transport.md) answers
+// exactly one verb; a verb the route does not document must fall through to
+// the router's JSON 404 with the handler never running. Pinned per route:
+// dropping a `&& method === ...` guard would silently turn e.g. GET /feedback
+// into a body-read 400, or POST /predictions/open into a community-handler
+// invocation, with only this table to catch it.
+
+describe('method isolation — an undocumented verb never reaches its route handler', () => {
+  // [route, documented verb, [wrong verb, the answer it must get]] — every
+  // documented /api route. A wrong verb normally falls through to the router's
+  // JSON 404. The one exception is pinned too: GET /feedback/{id}/upvote
+  // syntactically matches the sibling read route /feedback/{match_id}, whose
+  // id validator refuses the slash — still function-owned JSON, still no
+  // write. The wrong-verb POST/PUT/DELETE probes carry a valid-shaped body to
+  // prove refusal is decided by the verb alone: the body is never read,
+  // validated, or stored.
+  const cases: [route: string, documented: string, wrong: [method: string, status: number][]][] = [
+    ['/health', 'GET', [['POST', 404], ['DELETE', 404]]],
+    ['/vote/map', 'POST', [['GET', 404], ['PUT', 404]]],
+    ['/vote/map/map-1', 'GET', [['POST', 404], ['DELETE', 404]]],
+    ['/feedback', 'POST', [['GET', 404], ['PUT', 404]]],
+    ['/feedback/match-1', 'GET', [['POST', 404], ['DELETE', 404]]],
+    ['/feedback/fb_1/upvote', 'POST', [['GET', 400], ['PUT', 404]]],
+    ['/register', 'POST', [['GET', 404], ['DELETE', 404]]],
+    ['/rotate-key', 'POST', [['GET', 404], ['PUT', 404]]],
+    ['/predict', 'POST', [['GET', 404], ['DELETE', 404]]],
+    ['/predictions/open', 'GET', [['POST', 404], ['DELETE', 404]]],
+    ['/predictions/history', 'GET', [['POST', 404], ['PUT', 404]]],
+  ];
+
+  it.each(cases)('%s is %s-only — any other verb is refused as JSON', async (route, _documented, wrong) => {
+    for (const [method, status] of wrong) {
+      const res = await call(route, {
+        method,
+        // A Request with a body is illegal for GET/HEAD; the verb probe is
+        // what matters there, not the payload.
+        body: method === 'GET' ? undefined : { map_id: 'mi-map', voter_id: 'mi-voter', vote: 1 },
+        ip: `mi-${route}-${method}`.replace(/[^a-zA-Z0-9.-]/g, ''),
+      });
+      expect(res.status).toBe(status);
+      expect(res.contentType).toContain('application/json');
+      if (status === 404) expect(res.json).toEqual({ error: 'not found' });
+    }
+
+    // No probe reached a write path: nothing was stored or even attempted.
+    expect(bucket.lastPut).toBeNull();
+    expect(bucket.peek('community/map-votes.json')).toBeUndefined();
+    expect(bucket.peek('community/replay-feedback.json')).toBeUndefined();
+    expect(bucket.peek('community/site-feedback.json')).toBeUndefined();
   });
 });
 
