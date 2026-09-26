@@ -18,6 +18,12 @@ jsdom-only loop (no browser) for iterating; `npm run test:browser` runs just
 the Playwright specs when working on the harness itself. The gate needs a
 Chromium (see the two setup notes below).
 
+`npm run test:e2e-api` is a third, opt-in loop: the live /api flow suite
+(`e2e/`, own vitest config, never collected by the default gate) completes
+the register / predictions / map-vote / feedback client flows against the
+real origin (`ACB_ORIGIN` overrides; default
+`https://ai-code-battle.pages.dev`). See `docs/notes/api-transport.md`.
+
 jsdom has no layout engine — every `getBoundingClientRect()` there returns
 zeros and no media query is ever evaluated. Anything that needs real laid-out
 geometry (e.g. leaderboard skeleton-vs-live parity) belongs in

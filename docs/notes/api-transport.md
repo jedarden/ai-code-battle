@@ -236,3 +236,25 @@ health + capabilities, one map tally, one feedback read, and one refused
 register. It is the arbiter of which state the origin is in (see Deployment
 state above): it fails loudly while `/api` answers anything but JSON — which
 is currently the deploy signal, not a code bug.
+
+### Live end-to-end flows (needs the network; opt-in like the smoke)
+
+```bash
+cd web && npm run test:e2e-api
+# against a local function instead of production:
+ACB_ORIGIN=http://127.0.0.1:8788 npm run test:e2e-api
+```
+
+`web/e2e/api-flows.e2e.test.ts` (run by `vitest.e2e.config.ts`, whose include
+never overlaps the default gate) completes the four client flows against the
+real origin with no mocked fetch: the register form submitting and rendering
+the server's 503 match_tier_offline answer, the predictions page rendering
+its open/history unavailable states from the same 503s plus predict
+surfacing `MatchTierOfflineError`, and — through the real client functions —
+the map-vote POST→GET round trip and the replay-feedback POST→GET→upvote
+round trip. Every flow asserts `application/json` on the wire before
+believing a body, so an SPA-fallback regression fails the suite rather than
+passing as a 200. Round-trip writes land under an
+`acb-e2e-probe-<timestamp>-<rand>` match/map id no page ever renders (same
+namespace argument as the write probe above); the 503-aware flows are green
+without acb-api — that is their designed answer.
