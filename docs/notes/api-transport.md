@@ -2,8 +2,9 @@
 
 **Decision Date:** 2026-09-25
 **Bead:** aicodeba-84d1d61b
-**Status:** Implemented in-repo (a6b425e); origin deployment pending — this
-note is the single source of truth for `/api` transport state
+**Status:** Implemented in-repo (a6b425e); origin deploy unblocked
+2026-09-26 (clone-URL fix, declarative-config `1d37a701`) and re-triggered
+— this note is the single source of truth for `/api` transport state
 
 ## Decision
 
@@ -19,37 +20,54 @@ Before this, every `/api/*` request was answered by the Pages SPA fallback
 with `index.html` (HTTP 200, `text/html`), which is why the workflows were
 explicitly disabled in bead aicodeba-07caa4ec.
 
-## Deployment state (verified live 2026-09-25, re-verified 2026-09-26)
+## Deployment state (root-caused and unblocked 2026-09-26 — bead aicodeba-a34b8a80)
 
 The function ships with the site: `wrangler pages deploy dist` bundles
 whatever is under `web/functions/` at deploy time, so the SPA bundle and the
-function always go live in the same deploy and cannot diverge. Probed live
-against `https://ai-code-battle.pages.dev` on 2026-09-25 (~21:30Z) and
-re-probed 2026-09-26 (~01:55Z, bead aicodeba-968bfa99) with identical
-answers both times:
+function always go live in the same deploy and cannot diverge.
 
-- `GET /api/health`, `GET /api/vote/map/*`, `GET /api/feedback/*` answered
-  **200 `text/html`** — the SPA fallback — and `POST /api/register` a bare
-  **405** from Pages' static layer. No `/api` function is in the deployed
-  bundle: the last successful site deploy predates a6b425e.
-- `GET /r2/<missing>` answered the r2 function's own `text/plain` 404, so
-  Pages Functions deploy fine for this project — the deployed bundle just
-  predates `web/functions/api/`.
-- The deploys that would have shipped it failed identically, three times:
-  `acb-site-pages-build-rg9vx` (03912f0 push, 20:32Z),
-  `acb-site-pages-build-pbmvp` (4ee9bfe push, 22:01Z) and
-  `acb-site-pages-build-cj75n` (5f51993 push, 01:05Z 2026-09-26) each lost
-  all four retries with exit 128 in the git-clone step; the sibling
-  `acb-build` template failed the same way at the first two (still `Running`
-  an hour into the third at verification time). Forgejo answered 200 (and
-  accepted authenticated pushes from this box) throughout, so this is **not
-  transient**: the prime suspect is the `FORGEJO_TOKEN` credential the clone
-  step reads from the `forgejo-webhook-token` secret in `iad-ci`, which looks
-  stale or revoked. Rotating it is an operator action in that cluster —
-  outside this repo — and every later push to `main` re-triggers the same
-  pipeline until it happens.
+**What was broken (2026-08-28 → 2026-09-26):** every push to `main` re-ran
+`acb-site-pages-build` and lost all four retries with exit 128 in the
+git-clone step — `acb-site-pages-build-rg9vx` (03912f0 push, 20:32Z 09-25),
+`-pbmvp` (4ee9bfe, 22:01Z 09-25), `-cj75n` (5f51993, 01:05Z 09-26) and
+`-97p2n` (f0f8d48, ~03:13Z 09-26) — with the sibling `acb-build` failing
+the same way at its clone. This note previously suspected the
+`FORGEJO_TOKEN` credential in the `forgejo-webhook-token` secret in `iad-ci`;
+**that suspect is refuted.** The credential stored at OpenBao
+`secret/rs-manager/iad-ci/forgejo/ci-token` was exercised directly
+(`git ls-remote` against the real repo) and answered with the then-current
+HEAD (f0f8d48) — healthy, never rotated, nothing to rotate. Forgejo's 200s
+throughout the outage were real; the pipeline was simply never reaching it.
 
-Until one of those deploys succeeds, the live origin has **no** `/api` route
+**Actual root cause:** the template's `git-repo` parameter pointed at
+`forgejo.ardenone.com/ai-code-battle/ai-code-battle` — a hostname that does
+not exist (established in declarative-config `29152867`, 2026-07-16: the
+only real Forgejo instance is `git.ardenone.com`) **and** an org repo path
+that does not exist (the repo is `jedarden/ai-code-battle`). git answers an
+unresolvable host with exit 128 — the same code an auth failure produces,
+which is what made the token look guilty. The bogus URL was introduced by
+declarative-config `9a3ec073` (2026-08-28), which flipped the parameter
+**from** the correct `git.ardenone.com/jedarden/ai-code-battle` **to** the
+bogus one. Consequence: **no site deploy of any kind has shipped since
+2026-08-28**, which is why the deployed bundle predates a6b425e by more
+than the `/api` work — and why the deployed `/r2` function kept answering
+(`GET /r2/<missing>` → its own `text/plain` 404) while every `/api` route
+fell to the SPA fallback (**200 `text/html`**, `POST /api/register` a bare
+405 from the static layer).
+
+**Fix:** declarative-config `1d37a701` (2026-09-26) corrects the
+`git-repo`/`repo` parameters of `acb-site-pages-build` and both templates in
+`acb-build.yml` to `git.ardenone.com/jedarden/ai-code-battle`; ArgoCD synced
+iad-ci and the live templates verify free of the bogus host. Deliberately
+**not** fixed here (dormant image CI, follow-up material): the `registry`
+parameter in `acb-build.yml`, the kaniko destinations/cache-repo in
+`acb-images-build`, `acb-enrichment-build`, `acb-site-build` and
+`acb-build-site`, and the image references in this repo's `manifests/` still
+carry `forgejo.ardenone.com/ai-code-battle/*`. `acb-bots-build` never had
+the bogus host (its unrelated `build-farmer` failures are a separate
+history). No rotation of `forgejo-webhook-token` was needed or performed.
+
+Until the re-triggered deploy lands, the live origin has **no** `/api` route
 and the community tier is **not live**. The table below describes the
 contract the routes answer with once deployed; `web/test-api-workflows.js`
 is the arbiter of which state the origin is in (see Probe).
