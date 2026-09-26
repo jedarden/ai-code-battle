@@ -84,10 +84,14 @@ class ThrowingBucket extends MemBucket {
 let bucket: MemBucket;
 let env: ApiEnv;
 
-function request(path: string, init?: { method?: string; body?: unknown; ip?: string }): Request {
+function request(
+  path: string,
+  init?: { method?: string; body?: unknown; rawBody?: string; ip?: string },
+): Request {
   const headers = new Headers();
   if (init?.ip) headers.set('CF-Connecting-IP', init.ip);
-  const body = init?.body !== undefined ? JSON.stringify(init.body) : undefined;
+  if (init?.rawBody !== undefined) headers.set('Content-Type', 'application/json');
+  const body = init?.rawBody ?? (init?.body !== undefined ? JSON.stringify(init.body) : undefined);
   return new Request(`https://ai-code-battle.pages.dev/api${path}`, {
     method: init?.method ?? 'GET',
     headers,
@@ -95,7 +99,7 @@ function request(path: string, init?: { method?: string; body?: unknown; ip?: st
   });
 }
 
-async function call(path: string, init?: { method?: string; body?: unknown; ip?: string }) {
+async function call(path: string, init?: { method?: string; body?: unknown; rawBody?: string; ip?: string }) {
   // The deployed wrapper hands handleApiRequest the bare pathname (query
   // stripped by its own URL parse) — mirror that here.
   const route = path.replace(/\?.*$/, '');
@@ -618,15 +622,98 @@ describe('router', () => {
     expect(res.status).toBe(200);
   });
 
-  it('every answer is JSON — never the SPA fallback content type', async () => {
-    const paths: [string, string][] = [
-      ['/health', 'GET'],
-      ['/vote/map/map-1', 'GET'],
-      ['/feedback/match-1', 'GET'],
-      ['/nope', 'GET'],
-    ];
-    for (const [path, method] of paths) {
-      const res = await call(path, { method, ip: 'rt-json' });
+  it('ignores a trailing slash', async () => {
+    const res = await call('/health/', { ip: 'rt-3' });
+    expect(res.status).toBe(200);
+  });
+});
+
+// ─── JSON content-type contract ─────────────────────────────────────────────
+
+// The SPA clients gate every /api response on content-type before believing it
+// (isJsonResponse in api-types.ts and components/annotation.ts): the SPA HTML
+// fallback answers 200 text/html, so JSON is the only proof this function —
+// not the fallback — answered. The live probe (test-api-workflows.js) fails on
+// the same condition against the origin; this pins it offline across every
+// route and status class the function can answer, not just the probe's
+// read-only paths.
+
+describe('every answer is JSON — never the SPA fallback content type', () => {
+  type CallResult = Awaited<ReturnType<typeof call>>;
+  type Probe = () => Promise<CallResult>;
+
+  const cases: [string, Probe][] = [
+    ['GET /health', () => call('/health', { ip: 'ct-health' })],
+    ['GET /vote/map/{id}', () => call('/vote/map/ct-map', { ip: 'ct-votes-read' })],
+    ['POST /vote/map (recorded)', () =>
+      call('/vote/map', { method: 'POST', body: { map_id: 'ct-map', voter_id: 'ct-v', vote: 1 }, ip: 'ct-vote' })],
+    ['POST /vote/map (invalid shape → 400)', () =>
+      call('/vote/map', { method: 'POST', body: { vote: 1 }, ip: 'ct-vote-bad' })],
+    ['POST /vote/map (oversized → 413)', () =>
+      call('/vote/map', { method: 'POST', body: { map_id: 'ct-map', voter_id: 'x'.repeat(33 * 1024), vote: 1 }, ip: 'ct-vote-big' })],
+    ['POST /vote/map (rate-limited → 429)', async () => {
+      let last!: CallResult;
+      for (let i = 0; i < 31; i++) {
+        last = await call('/vote/map', { method: 'POST', body: { map_id: `ct-rl-${i}`, voter_id: 'v', vote: 1 }, ip: 'ct-vote-rl' });
+      }
+      return last;
+    }],
+    ['POST /vote/map (storage busy → 503)', async () => {
+      await call('/vote/map', { method: 'POST', body: { map_id: 'ct-map', voter_id: 'seed', vote: 1 }, ip: 'ct-vote-busy-seed' });
+      bucket.forcedConflicts = 999;
+      return call('/vote/map', { method: 'POST', body: { map_id: 'ct-map', voter_id: 'v', vote: 1 }, ip: 'ct-vote-busy' });
+    }],
+    ['GET /feedback/{match}', () => call('/feedback/ct-match', { ip: 'ct-fb-read' })],
+    ['POST /feedback (recorded → 201)', () =>
+      call('/feedback', { method: 'POST', body: feedbackBody(), ip: 'ct-fb' })],
+    ['POST /feedback (spam → 422)', () =>
+      call('/feedback', { method: 'POST', body: feedbackBody({ body: 'this is total shit, delete it now' }), ip: 'ct-fb-spam' })],
+    ['POST /feedback (invalid shape → 400)', () =>
+      call('/feedback', { method: 'POST', body: { type: 'insight' }, ip: 'ct-fb-bad' })],
+    ['POST /feedback (oversized → 413)', () =>
+      call('/feedback', { method: 'POST', body: feedbackBody({ body: 'x'.repeat(33 * 1024) }), ip: 'ct-fb-big' })],
+    ['POST /feedback (rate-limited → 429)', async () => {
+      let last!: CallResult;
+      for (let i = 0; i < 21; i++) {
+        last = await call('/feedback', { method: 'POST', body: feedbackBody({ match_id: `ct-fb-rl-${i}` }), ip: 'ct-fb-rl' });
+      }
+      return last;
+    }],
+    ['POST /feedback/{id}/upvote (recorded)', async () => {
+      const created = await call('/feedback', { method: 'POST', body: feedbackBody(), ip: 'ct-up-seed' });
+      return call(`/feedback/${String(created.json.feedback_id)}/upvote`, {
+        method: 'POST',
+        body: { voter_id: 'ct-up' },
+        ip: 'ct-up',
+      });
+    }],
+    ['POST /feedback/{id}/upvote (unknown id → 404)', () =>
+      call('/feedback/fb_nobody/upvote', { method: 'POST', body: { voter_id: 'ct-up-404' }, ip: 'ct-up-404' })],
+    ['POST /register (match-tier → 503)', () =>
+      call('/register', { method: 'POST', body: {}, ip: 'ct-mt' })],
+    ['GET /nope (unknown route → 404)', () => call('/nope', { ip: 'ct-404' })],
+    ['GET /register (wrong method → 404)', () => call('/register', { ip: 'ct-405' })],
+    ['GET /feedback/{match} (storage read fails → 500)', () => {
+      env = { ACB_BUCKET: new ThrowingBucket() };
+      return call('/feedback/ct-match', { ip: 'ct-500' });
+    }],
+  ];
+
+  for (const [name, probe] of cases) {
+    it(`${name} answers application/json`, async () => {
+      const res = await probe();
+      expect(res.contentType).toContain('application/json');
+      expect(() => JSON.parse(res.text)).not.toThrow();
+    });
+  }
+
+  it('a non-JSON request body is refused with a JSON 400 on every write route', async () => {
+    const vote = await call('/vote/map', { method: 'POST', rawBody: '{not json', ip: 'ct-raw-vote' });
+    const feedback = await call('/feedback', { method: 'POST', rawBody: 'not json at all', ip: 'ct-raw-fb' });
+    const upvote = await call('/feedback/fb_x/upvote', { method: 'POST', rawBody: '"unparseable', ip: 'ct-raw-up' });
+
+    for (const res of [vote, feedback, upvote]) {
+      expect(res.status).toBe(400);
       expect(res.contentType).toContain('application/json');
     }
   });

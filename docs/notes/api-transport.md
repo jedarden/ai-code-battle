@@ -126,10 +126,41 @@ from `cmd/acb-api/spamfilter.go`.
 
 ## Testing
 
-- `web/src/lib/api-backend.test.ts` — server contract against an in-memory
-  CAS bucket: routing, validation, spam/rate limits, vote + feedback round
-  trips, CAS contention, match-tier 503s.
-- `web/src/api-transport.test.ts`, `web/src/components/annotation.test.ts`,
-  `web/src/pages/register.test.ts`, `web/src/pages/predictions.test.ts`,
-  `web/src/pages/replay-mapvote.test.ts` — client and page behavior with the
-  transport live (and the HTML-fallback backstops).
+Two tiers cover the transport; both matter, and they answer different
+questions. The local suite proves the function's *contract*; the live smoke
+proves the *origin's state*.
+
+### Local regression suite (offline — no network, no build, no bucket)
+
+```bash
+cd web && npm run test:unit -- src/lib/api-backend.test.ts
+```
+
+Drives `handleApiRequest` in-process against an in-memory CAS bucket and
+pins the whole server contract the probe only samples: health and capability
+reporting, map voting, replay + site feedback round trips, match-tier 503
+envelopes, per-IP rate limits (429), request bounds (413 plus the FIFO and
+dedupe-set caps), CAS retry/storage-busy (503) behavior, and the JSON
+content-type contract on every route and status class — the same gate the
+probe applies live. Also runs as part of plain `npm run test:unit`.
+
+The client and page halves (kill switch, `MatchTierOfflineError` rendering,
+HTML-fallback backstops) live in `web/src/api-transport.test.ts`,
+`web/src/components/annotation.test.ts`, `web/src/pages/register.test.ts`,
+`web/src/pages/predictions.test.ts`, and `web/src/pages/replay-mapvote.test.ts`
+— covered by the default `npm test`.
+
+### Live smoke (needs a fresh build and a reachable origin)
+
+```bash
+cd web && npm run build && npm run test:api-workflows
+# against a local function instead of production:
+ACB_ORIGIN=http://127.0.0.1:8788 npm run test:api-workflows   # wrangler pages dev
+```
+
+`web/test-api-workflows.js` is read-only against the origin. Part A asserts
+the built bundle still carries the transport contract markers; part B probes
+health + capabilities, one map tally, one feedback read, and one refused
+register. It is the arbiter of which state the origin is in (see Deployment
+state above): it fails loudly while `/api` answers anything but JSON — which
+is currently the deploy signal, not a code bug.
