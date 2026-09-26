@@ -98,8 +98,9 @@ rest:
 | Predictions | `GET /api/predictions/open`, `GET /api/predictions/history`, `POST /api/predict` | **503** `match_tier_offline` |
 
 The match-tier flows need acb-api's PostgreSQL/Valkey backend, which is not
-deployed anywhere (compute tier decommissioned 2026-07-21; reviving it is an
-operator decision — see `public-api-descope.md`). Those routes answer
+deployed anywhere (compute tier decommissioned 2026-07-21; the deferral is
+the recorded decision — see "Match-tier contract decision" in
+`public-api-descope.md`, bead aicodeba-a0052569). Those routes answer
 **503 JSON with code `match_tier_offline`** so the SPA renders its
 unavailable states from the server's answer instead of a compile-time flag.
 When acb-api is revived and exposed, the function becomes a thin proxy for
@@ -182,7 +183,9 @@ case the documents can grow to is a few hundred KiB regardless of traffic.
 - **Reviving the match tier:** deploy acb-api with its databases, expose it
   to the function (same-zone service or a Pages-compatible route), then
   replace the `matchTierOffline()` branch in `web/src/lib/api-backend.ts`
-  with a proxy. The routes, shapes, and clients stay as-is.
+  with a proxy. The routes, shapes, and clients stay as-is. Deferring until
+  then is the recorded decision ("Match-tier contract decision" in
+  `public-api-descope.md`), and its revival triggers live there too.
 
 ## Testing
 

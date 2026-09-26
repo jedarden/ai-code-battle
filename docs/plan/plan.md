@@ -73,16 +73,23 @@ All backend compute runs in two namespaces: `ai-code-battle` (core infrastructur
 ### Go API Service (`acb-api`)
 
 A Go HTTP service (`acb-api`, manifest `manifests/acb-api-deployment.yml`,
-namespace `ai-code-battle`) owns all dynamic, interactive endpoints. It is
-the write path for bot registration,
-key rotation, status checks, predictions, community feedback/voting, map
-voting, and replay-enrichment requests, and it ingests match results from
-workers. The static read path (leaderboards, profiles, replays, indexes)
-stays on Cloudflare Pages — `acb-api` serves only dynamic endpoints and no
-static files. It connects to CNPG PostgreSQL for persistent state and Valkey
-for the job queue. The service is **built** today (see `cmd/acb-api/`) but
-has **no public endpoint**: it is reachable only via internal cluster
-networking, and public exposure stays descoped until social features need it
+namespace `ai-code-battle`) is the designed write path for bot registration,
+key rotation, status checks, predictions, and replay-enrichment requests,
+and it ingests match results from workers. The static read path
+(leaderboards, profiles, replays, indexes) stays on Cloudflare Pages —
+`acb-api` serves only dynamic endpoints and no static files. It connects to
+CNPG PostgreSQL for persistent state and Valkey for the job queue.
+
+Current state (2026-09-26): the service is **built** (see `cmd/acb-api/`)
+but **not deployed anywhere** — the compute tier it belongs to was
+decommissioned 2026-07-21. The live interactive endpoints are the same-origin
+`/api/*` Cloudflare Pages Function (community feedback/voting and map voting
+run there today; see `docs/notes/api-transport.md`), while the match-tier
+routes (registration, key rotation, predictions) answer a designed 503
+`match_tier_offline` envelope from that same function. Deferring the match
+tier until an operator revives acb-api is the recorded decision in
+`docs/notes/public-api-descope.md` ("Match-tier contract decision"). Public
+exposure stays descoped until social features need it
 (see `docs/notes/public-api-descope.md` and §9.6). Scheduling (matchmaking,
 health checks, season/series management)
 runs in the separate `acb-matchmaker` Deployment (§8.2.1), not inside
@@ -1635,11 +1642,15 @@ Key principles:
   are cluster-level services. The ai-code-battle namespace consumes them
   but does not manage them.
 - **Static reads, dynamic writes** — the static read path (leaderboards,
-  profiles, replays, indexes) is fully served from Cloudflare Pages. Dynamic
-  and interactive operations (bot registration, predictions, feedback/voting,
-  map voting, enrichment requests) go through the `acb-api` Go HTTP service.
-  The API is built and deployed (see `cmd/acb-api/`); the core match loop
-  (matchmaker → worker) does not depend on it.
+  profiles, replays, indexes) is fully served from Cloudflare Pages.
+  Dynamic and interactive operations go through JSON APIs: the community
+  flows (replay/site feedback, map voting) are live on the same-origin
+  `/api/*` Pages Function (`docs/notes/api-transport.md`), while the match
+  tier (registration, key rotation, predictions) is deferred — its routes
+  answer 503 `match_tier_offline` from that function until the `acb-api`
+  service is revived (`docs/notes/public-api-descope.md`).
+  The API is built but not deployed (see `cmd/acb-api/`); the core match
+  loop (matchmaker → worker) does not depend on it.
 
 ### 9.2 Kubernetes Namespace Layout
 

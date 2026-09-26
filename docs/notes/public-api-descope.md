@@ -5,7 +5,8 @@
 **Status:** DESCOPED — no public hostname, unchanged. The same-origin `/api/*`
 transport named below as the realistic option has since been implemented
 ([api-transport.md](api-transport.md)), which owns `/api` transport state
-from here on; this note keeps only the hostname descope.
+from here on; this note keeps the hostname descope and, since 2026-09-26,
+the match-tier deferral decision (bottom of this file).
 
 ## Problem
 
@@ -47,3 +48,74 @@ User-facing documentation advertised a public API endpoint that does not exist:
 (Superseded 2026-09-25, bead aicodeba-84d1d61b: the path-based route named above as the realistic option is now implemented — a Pages Function under `web/functions/api/` serves same-origin `/api/*`, putting the community flows (replay feedback, agentation site feedback, map voting) on the already-bound `ACB_BUCKET` R2 bucket. Corrected 2026-09-25, bead aicodeba-968bfa99, after live probing: the function is in the repo, not yet in any successful Pages deploy, so the community tier is **not live on the origin** yet — every push to `main` re-triggers the deploy pipeline, and `web/test-api-workflows.js` fails until one ships the function (that failure is the retained deploy signal, do not delete the probe). The match-tier routes (registration, key rotation, predictions) answer 503 JSON with code `match_tier_offline` — acb-api remains undeployed and exposing it is still an operator decision. See `api-transport.md` for the full decision record and the deployment-state verification.)
 
 (Live 2026-09-26, bead aicodeba-a34b8a80: the deploy shipped — `acb-site-pages-build-fq8tb` landed the function on the origin, the community tier is **live** (`GET /api/health` → 200 JSON with `feedback` and `map_votes` capabilities true), and the match-tier routes answer their designed 503 `match_tier_offline` envelopes. The "not live" paragraph above described the origin only until that deploy; `api-transport.md` "Deployment state" is the current record.)
+
+## Match-tier contract decision (2026-09-26)
+
+**Decision Date:** 2026-09-26
+**Bead:** aicodeba-a0052569
+**Decision:** DEFER. The five match-tier routes (`POST /api/register`,
+`POST /api/rotate-key`, `POST /api/predict`, `GET /api/predictions/open`,
+`GET /api/predictions/history`) keep their clients, pages, documentation, and
+designed 503 `match_tier_offline` envelope exactly as shipped. Restoring
+acb-api and its databases is **rejected for now**; ripping the routes out is
+**rejected outright**.
+
+### Why not restore (yet)
+
+Standing acb-api back up is not a manifest away — it is operator-scale work,
+and nothing currently consumes it:
+
+- **The compute tier's namespace is still draining.** `ai-code-battle` on
+  `apexalgo-iad` reads `Terminating` (read-only kubectl, 2026-09-26), and no
+  `acb-api` Deployment runs in any fleet cluster (all eight read-only
+  endpoints re-checked 2026-09-26). The 2026-07-21 decommission never
+  finished reversing because nobody asked it to.
+- **Restore needs more than the one Deployment.** Per
+  `manifests/acb-api-deployment.yml` it wants the CNPG PostgreSQL cluster
+  with its credentials (`acb-app-credentials-acb-app`) and Valkey
+  (`keydb-secret`), a live image build (`acb-build.yml`'s registry parameters
+  still point at the dead `forgejo.ardenone.com` host — see "Deployment
+  state" in [api-transport.md](api-transport.md)), and — decisive — a route
+  from the Cloudflare-edge Pages Function to the service, which a ClusterIP
+  cannot provide. That last piece is the same public-exposure question this
+  note descoped, plus secrets provisioning. Every item is operator +
+  declarative-config territory; none is a repo-level change.
+- **No live consumer.** Registration is announced closed on-site
+  (`web/src/pages/docs.ts`), and the only callers of these routes are the
+  tests and probes that assert the 503.
+
+### Why not remove
+
+- **The shapes are frozen by design.** `web/src/pages/docs-api.ts` states the
+  request shape is frozen to the service contract; deleting the routes,
+  clients, and pages (`#/compete/register`, predictions) would destroy
+  working, tested UI for a platform feature that is still intended, and turn
+  revival into a rewrite instead of the no-client-change flip
+  [api-transport.md](api-transport.md) already specifies ("Reviving the
+  match tier").
+- **The offline contract is the designed answer, not a debris state.** The
+  function's router refuses all five routes before any body read, rate
+  limit, or storage write (verified in `web/src/lib/api-backend.ts`
+  `handleApiRequest` — free at runtime), `GET /api/health` publishes the
+  capability set so the state is observable, the SPA renders its unavailable
+  states from the server's own envelope, and the unit suite, the e2e flows,
+  and the deploy release gate all verify the five 503s against the live
+  origin. Removal would delete that coverage along with the feature.
+- **Honesty is already achieved where it matters.** The remaining
+  misrepresentations were plan.md's ("built and deployed", acb-api owning
+  the live community flows) — reconciled by the same bead as this decision.
+
+### Revival triggers (revisit when any becomes true)
+
+1. An operator stands the compute tier back up and provisions acb-api with
+   PostgreSQL and Valkey (manifests, SealedSecrets/OpenBao, image CI).
+2. A Pages-reachable route to the service exists — a registered domain
+   IngressRoute or a Pages-compatible proxy target — i.e. the public-exposure
+   decision this note descopes, un-descoped.
+3. Self-serve registration or predictions is wanted again (social features,
+   per plan.md §9.6).
+
+Until then, the contract of record for the five routes is: **documented,
+frozen, and answered 503 `match_tier_offline` by
+`web/functions/api/[[path]].ts`** — transport state owned by
+[api-transport.md](api-transport.md).
