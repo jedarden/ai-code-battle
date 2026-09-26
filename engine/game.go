@@ -239,6 +239,11 @@ func (gs *GameState) KillBot(bot *Bot, reason string) {
 }
 
 // SubmitMove records a move for a bot at a given position.
+//
+// Semantics: the move is silently ignored when no alive bot stands at pos —
+// not an error. Turn processing snapshots positions before resolution, so a
+// bot can die or move earlier in the same turn before its own submission is
+// read; a stale position must then be a no-op rather than a failed turn.
 func (gs *GameState) SubmitMove(pos Position, dir Direction) {
 	// Find the bot at this position
 	for _, b := range gs.Bots {
