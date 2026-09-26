@@ -2,9 +2,10 @@
 
 **Decision Date:** 2026-09-25
 **Bead:** aicodeba-84d1d61b
-**Status:** Implemented in-repo (a6b425e); origin deploy unblocked
-2026-09-26 (clone-URL fix, declarative-config `1d37a701`) and re-triggered
-— this note is the single source of truth for `/api` transport state
+**Status:** LIVE on the origin as of 2026-09-26 ~06:00Z (deploy
+`acb-site-pages-build-fq8tb`, first attempt, after the clone-URL fix in
+declarative-config `1d37a701`) — this note is the single source of truth
+for `/api` transport state
 
 ## Decision
 
@@ -67,10 +68,21 @@ carry `forgejo.ardenone.com/ai-code-battle/*`. `acb-bots-build` never had
 the bogus host (its unrelated `build-farmer` failures are a separate
 history). No rotation of `forgejo-webhook-token` was needed or performed.
 
-Until the re-triggered deploy lands, the live origin has **no** `/api` route
-and the community tier is **not live**. The table below describes the
-contract the routes answer with once deployed; `web/test-api-workflows.js`
-is the arbiter of which state the origin is in (see Probe).
+**Verified live 2026-09-26 ~06:00Z:** the re-triggered
+`acb-site-pages-build-fq8tb` (dispatched by the push of the root-cause
+note above) ran clean — clone, tsc, build and `wrangler pages deploy` on
+the first attempt, 05:58:29Z → 06:00:35Z — and the origin now answers the
+transport contract: `GET /api/health` → **200 `application/json`**
+(`{"status":"ok","capabilities":{"register":false,"rotate_key":false,
+"predictions":false,"feedback":true,"map_votes":true}}`), and
+`web/test-api-workflows.js` passes against the live origin (exit 0). The
+community tier is **LIVE** (replay/site feedback + map voting); the
+match-tier routes answer their 503 `match_tier_offline` envelopes as
+designed until acb-api is revived.
+
+The table below describes the contract the routes answer with; 
+`web/test-api-workflows.js` is the arbiter of which state the origin is in
+(see Probe).
 
 ## Capability split
 
