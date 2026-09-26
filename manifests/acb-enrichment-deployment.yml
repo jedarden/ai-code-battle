@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/name: acb-enrichment
     app.kubernetes.io/part-of: ai-code-battle
   annotations:
-    argocd-image-updater.argoproj.io/image-list: app=forgejo.ardenone.com/ai-code-battle/acb-enrichment
+    argocd-image-updater.argoproj.io/image-list: app=ronaldraygun/acb-enrichment
     argocd-image-updater.argoproj.io/app.update-strategy: name
     argocd-image-updater.argoproj.io/app.allow-tags: 'regexp:^sha-[0-9a-f]+$'
     argocd-image-updater.argoproj.io/write-back-method: argocd
@@ -38,7 +38,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: enrichment
-          image: forgejo.ardenone.com/ai-code-battle/acb-enrichment:sha-97b4b0f
+          image: ronaldraygun/acb-enrichment@sha256:33622d8c6c6f940831851cc0766c40e136c85dfd90b996cfa02a9e49cadcec04
           imagePullPolicy: Always
           ports:
             - containerPort: 9090
@@ -154,4 +154,4 @@ spec:
             periodSeconds: 60
             failureThreshold: 3
       imagePullSecrets:
-        - name: forgejo-container-registry
+        - name: docker-hub-registry
