@@ -65,6 +65,17 @@ themselves on `testing.Short()` (e.g. `engine/integration_test.go`), so:
   - *Additive wiring*: the gate is a separate dependency + trigger on the
     sensor, so it cannot disturb the acb-build / acb-bots / acb-site
     triggers even if it misbehaves.
+  - *Where the evidence of a run lives*: the cluster's `workflowDefaults`
+    TTL (`argo-workflows-iad-ci-workflow-controller-configmap`:
+    `secondsAfterSuccess: 1800`, `secondsAfterFailure: 7200`) reaps gate
+    workflow CRs — a successful gate disappears ~30 minutes after it
+    finishes, and this cluster keeps no workflow archive. To answer "did
+    the gate run for push X?", read the `ai-code-battle-ci-sensor` pod
+    logs in `argo-events` (submission: `Successfully processed trigger
+    'acb-engine-semantics-trigger'` with the pushed event id and the
+    spawned `acb-engine-semantics-*` name) and the
+    `argo-workflows-iad-ci-workflow-controller` pod logs in
+    `argo-workflows` (the run's phase and completion) for that window.
 
 - **Full suite, manual (`acb-full-tests` template, iad-ci)**: still there
   for running the suite at an arbitrary ref or before pushing:
