@@ -298,6 +298,105 @@ func TestBotProtocolConformance_SignedTurnRequest(t *testing.T) {
 	}
 }
 
+// TestBotProtocolConformance_TurnTimeoutDurationVersusTimestampInstant pins
+// the unit distinction docs/bot-protocol.md draws within one signed request:
+// config.turn_timeout is a duration encoded as an integer number of
+// nanoseconds (the JSON form of a Go time.Duration), X-ACB-Timestamp is an
+// instant in Unix time measured in seconds, and the two share no unit or
+// epoch.
+func TestBotProtocolConformance_TurnTimeoutDurationVersusTimestampInstant(t *testing.T) {
+	const (
+		secret  = "conformance-units-secret"
+		botID   = "b_units"
+		matchID = "m_units"
+		turn    = 3
+		// 2.5s. Misread as Unix seconds this value spells a 2049 clock
+		// reading, so confusing the budget with the timestamp cannot pass
+		// this test by accident.
+		budget = 2500 * time.Millisecond
+	)
+
+	responseBody := []byte(`{"moves":[]}`)
+	observed := make(chan botProtocolConformanceObservation, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		observed <- botProtocolConformanceObservation{
+			method:  r.Method,
+			path:    r.URL.Path,
+			headers: r.Header.Clone(),
+			body:    body,
+			err:     err,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-ACB-Signature", SignResponse(secret, r.Header.Get("X-ACB-Match-Id"), turn, responseBody))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(responseBody)
+	}))
+	t.Cleanup(server.Close)
+
+	state := botProtocolConformanceVisibleState(t, matchID, turn)
+	state.Config.TurnTimeout = budget
+
+	bot := NewHTTPBot(server.URL, AuthConfig{BotID: botID, Secret: secret, MatchID: matchID})
+	if _, err := bot.GetMoves(state); err != nil {
+		t.Fatalf("GetMoves() error = %v", err)
+	}
+
+	request := <-observed
+	if request.err != nil {
+		t.Fatalf("read turn request body: %v", request.err)
+	}
+
+	// The body carries the per-turn budget as an integer number of
+	// nanoseconds — not seconds, not milliseconds.
+	var wire struct {
+		Config struct {
+			TurnTimeout *int64 `json:"turn_timeout"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(request.body, &wire); err != nil {
+		t.Fatalf("decode turn request body: %v", err)
+	}
+	if wire.Config.TurnTimeout == nil {
+		t.Fatal("turn request body omits config.turn_timeout")
+	}
+	if got := *wire.Config.TurnTimeout; got != int64(budget) {
+		t.Errorf("config.turn_timeout = %d, want the nanosecond encoding of %v (%d)", got, budget, int64(budget))
+	}
+
+	// The header carries the instant in Unix seconds: it falls within the
+	// freshness tolerance of the wall clock only when read as seconds. The
+	// same instant in nanoseconds or milliseconds would miss the window by
+	// orders of magnitude and fail here.
+	timestamp, err := strconv.ParseInt(request.headers.Get("X-ACB-Timestamp"), 10, 64)
+	if err != nil {
+		t.Fatalf("X-ACB-Timestamp is not an integer: %v", err)
+	}
+	skew := time.Since(time.Unix(timestamp, 0))
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > TimestampTolerance {
+		t.Errorf("X-ACB-Timestamp = %d: skew %v exceeds %v — the header must carry Unix seconds", timestamp, skew, TimestampTolerance)
+	}
+
+	// The nanosecond value rides inside the authenticated body, so the exact
+	// captured bytes must verify as a complete request.
+	auth, err := ParseAuthHeaders(map[string]string{
+		"X-ACB-Match-Id":  request.headers.Get("X-ACB-Match-Id"),
+		"X-ACB-Turn":      request.headers.Get("X-ACB-Turn"),
+		"X-ACB-Timestamp": request.headers.Get("X-ACB-Timestamp"),
+		"X-ACB-Bot-Id":    request.headers.Get("X-ACB-Bot-Id"),
+		"X-ACB-Signature": request.headers.Get("X-ACB-Signature"),
+	})
+	if err != nil {
+		t.Fatalf("ParseAuthHeaders() error = %v", err)
+	}
+	if err := VerifyRequest(secret, auth, request.body); err != nil {
+		t.Fatalf("VerifyRequest() rejected the signed request carrying a nanosecond turn_timeout: %v", err)
+	}
+}
+
 func TestBotProtocolConformance_TurnRedirectRejected(t *testing.T) {
 	const secret = "conformance-redirect-secret"
 	requests := make(chan struct{}, 2)

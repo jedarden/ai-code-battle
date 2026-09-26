@@ -128,6 +128,33 @@ func TestBuildCasesInvariants(t *testing.T) {
 	}
 }
 
+// TestTurnTimeoutFixtureIsNanosecondScale pins the unit distinction
+// docs/bot-protocol.md draws between config.turn_timeout and X-ACB-Timestamp.
+// Every positive case signs the base fixture, so its turn_timeout must stay
+// nanosecond-scale alongside the cases' Unix-second timestamps: a bot that
+// mistakes the duration for a clock reading then fails the suite instead of
+// sailing through on a seconds-scale fixture.
+func TestTurnTimeoutFixtureIsNanosecondScale(t *testing.T) {
+	var state struct {
+		Config struct {
+			TurnTimeout *int64 `json:"turn_timeout"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(baseStateJSON, &state); err != nil {
+		t.Fatalf("decode base fixture: %v", err)
+	}
+	if state.Config.TurnTimeout == nil {
+		t.Fatal("base fixture omits config.turn_timeout")
+	}
+	// 3000000000 is three seconds as a duration but spells a 2065 clock
+	// reading as Unix seconds, so the fixture keeps the two scales of the
+	// same request far apart.
+	const threeSecondsAsNanos = int64(3 * time.Second / time.Nanosecond)
+	if got := *state.Config.TurnTimeout; got != threeSecondsAsNanos {
+		t.Errorf("base fixture config.turn_timeout = %d, want the nanosecond encoding %d", got, threeSecondsAsNanos)
+	}
+}
+
 // TestSuiteAgainstReference proves the suite accepts a fully conformant bot.
 func TestSuiteAgainstReference(t *testing.T) {
 	server := httptest.NewServer(ReferenceBotHandler(DefaultConformanceSecret))
