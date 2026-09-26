@@ -451,4 +451,15 @@ class EmbedViewer {
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
   new EmbedViewer();
+  // Agentation feedback toolbar (workspace standard: every page gets it, and
+  // embed.html is its own vite entry, so it wires its own mount here — see
+  // agentation-entries.test.ts, which audits every entry). The async import
+  // keeps react+agentation in the separate 'agentation' chunk and off the
+  // embed's critical path; fire-and-forget — a feedback toolbar must never
+  // break the embeddable widget. initAgentation is idempotent.
+  import('./agentation-overlay')
+    .then(m => m.initAgentation())
+    .catch(() => {
+      /* toolbar is best-effort feedback tooling — never break the embed */
+    });
 });
