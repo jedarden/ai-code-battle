@@ -128,6 +128,33 @@ six failed attempts answer 503 `storage_busy`. Bounds: 32 KiB request bodies,
 (feedback 20/h, votes 30/h, upvotes 60/h per IP), and the spam filter ported
 from `cmd/acb-api/spamfilter.go`.
 
+## Abuse controls (bead aicodeba-278507ce)
+
+The community routes are anonymous public writes to shared storage feeding
+user-visible pages, so the function enforces its own abuse controls before
+any write reaches the bucket. Everything below answers JSON in the same
+error envelope as every other route — no HTML, no silent drops.
+
+| Control | Enforcement | Answer |
+|---|---|---|
+| Payload size | A declared oversized `Content-Length` is rejected before a byte is read; bodies are then consumed **incrementally** and aborted mid-stream (`reader.cancel()`) past the cap, so the isolate never buffers more than 32 KiB of any upload — a `text()`-then-check shape would be an OOM lever on a public write path. The ceiling is enforced in bytes. | 413 |
+| Field validation | Replay feedback: `match_id` ≤128 chars of `[A-Za-z0-9_.:-]`, `type` ≤32 chars and one of `insight`/`mistake`/`idea`/`highlight`, `body` 1–2000 chars, `turn` integer 0–1M, `author` ≤64 chars (missing → `Anonymous`). Site feedback (markdown-carrying): `markdown` 1–8000 chars, `annotations` must be an array (first 50 kept), `submitted_at` ≤40 chars (else server timestamp). Extra client-local fields are ignored, never stored. | 400 |
+| Content screening | Spam filter ported from `cmd/acb-api/spamfilter.go`: block list, leetspeak/homoglyph normalization, 10-character floor — applied to both feedback flavors. | 422 |
+| Per-identity dedup | One upvote per `voter_id` per feedback entry (repeat → idempotent `already_upvoted`); one vote per `voter_id` per map (a switched vote replaces, never stacks). Ids equal to `__proto__` are rejected outright: they double as object keys in the stored documents, where the write would route through the inherited setter and be **silently dropped**, and a JSON round-trip can hand the read path an own `__proto__` key no legitimate voter produced (`my_vote` is only ever echoed for a genuine stored `±1`). | 200 / 400 |
+| Dedup-set bounds | ≤1000 voters per feedback entry, ≤5000 per map; a full set declines new writers in place (tally unchanged) rather than growing unboundedly. | 200 (no-op) |
+| Per-IP rate limit | Fixed windows keyed on `CF-Connecting-IP` (`X-Forwarded-For` first hop as fallback): feedback 20/h, map votes 30/h, upvotes 60/h. Checked after validation but before any storage write, so a rejected write costs nothing but the answer. | 429 |
+| Storage contention | etag CAS with six retries so concurrent writers serialize instead of clobbering. | 503 `storage_busy` |
+
+The rate limiter is **per-isolate** by design: Workers isolates come and go,
+so these windows bound accidental hammering and make abuse cost something —
+they are not a global guarantee. Cloudflare's edge (WAF / rate-limiting
+rules) is the global layer for a real flood; the in-function limiter keeps
+any single origin from filling the community documents in the meantime.
+
+Storage-side bounds cap total exposure even under abuse: 500 replay / 200
+site-feedback entries FIFO, and each entry is field-capped, so the worst
+case the documents can grow to is a few hundred KiB regardless of traffic.
+
 ## Client contract
 
 - `web/src/lib/api-transport.ts` — `API_TRANSPORT_ENABLED` compile-time kill

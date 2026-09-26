@@ -181,6 +181,17 @@ function isId(value: unknown): value is string {
   return typeof value === 'string' && ID_PATTERN.test(value);
 }
 
+/**
+ * map_id/voter_id double as object keys inside the stored documents, so an
+ * id equal to `__proto__` would send its write through the inherited setter
+ * and silently drop it (a JSON round-trip can also hand the read path an
+ * own `__proto__` key no legitimate voter produced). Such ids are rejected
+ * outright rather than written lossily or echoed back.
+ */
+function isStorageId(value: unknown): value is string {
+  return isId(value) && value !== '__proto__';
+}
+
 function isNonEmptyString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
@@ -327,16 +338,18 @@ async function handleHealth(env: ApiEnv): Promise<Response> {
 }
 
 async function handleGetMapVotes(env: ApiEnv, mapId: string, voterId: string | null): Promise<Response> {
-  if (!isId(mapId)) return writeError(400, 'invalid map ID');
+  if (!isStorageId(mapId)) return writeError(400, 'invalid map ID');
   const votesDoc = await readDoc<MapVotesDoc>(env.ACB_BUCKET, VOTES_KEY,
     () => ({ updated_at: nowIso(), votes: {} }));
   const response: { map_id: string; net_votes: number; my_vote?: number } = {
     map_id: mapId,
     net_votes: netVotesFor(votesDoc, mapId),
   };
-  if (voterId !== null && voterId !== '') {
+  // Strict ±1: votes are object-keyed in storage, so only a genuine stored
+  // vote may be echoed back, never an inherited-key artifact.
+  if (voterId !== null && voterId !== '' && isStorageId(voterId)) {
     const mine = votesDoc.votes[mapId]?.[voterId];
-    if (mine !== undefined) response.my_vote = mine;
+    if (mine === 1 || mine === -1) response.my_vote = mine;
   }
   return json(response);
 }
@@ -352,8 +365,8 @@ async function handleMapVote(request: Request, env: ApiEnv): Promise<Response> {
     return writeError(400, 'invalid request body');
   }
   const req = body as { map_id?: unknown; voter_id?: unknown; vote?: unknown };
-  if (!isId(req.map_id)) return writeError(400, 'map_id and voter_id are required');
-  if (!isId(req.voter_id)) return writeError(400, 'map_id and voter_id are required');
+  if (!isStorageId(req.map_id)) return writeError(400, 'map_id and voter_id are required');
+  if (!isStorageId(req.voter_id)) return writeError(400, 'map_id and voter_id are required');
   if (req.vote !== 1 && req.vote !== -1) return writeError(400, 'vote must be +1 or -1');
   if (!rateLimit('map-vote', request)) return writeError(429, 'too many votes, try later');
   const mapId = req.map_id;
@@ -401,7 +414,7 @@ async function handleFeedbackUpvote(request: Request, env: ApiEnv, feedbackId: s
     return writeError(400, 'invalid request body');
   }
   const voterId = (body as { voter_id?: unknown }).voter_id;
-  if (!isId(voterId)) return writeError(400, 'voter_id is required');
+  if (!isStorageId(voterId)) return writeError(400, 'voter_id is required');
   if (!rateLimit('upvote', request)) return writeError(429, 'too many upvotes, try later');
 
   // Signals how the LAST mutate invocation (the one that was stored) saw the
@@ -545,10 +558,42 @@ function matchTierOffline(action: string): Response {
 
 // ─── Request body helper ────────────────────────────────────────────────────
 
+/**
+ * Read the request body under MAX_BODY_BYTES without ever buffering more
+ * than the cap. A declared Content-Length is rejected before a single byte
+ * is read, and every body is consumed incrementally so an oversized upload
+ * is aborted mid-stream (reader.cancel() sheds the rest) instead of landing
+ * in isolate memory first — `await request.text()` would buffer the whole
+ * upload before the check could run, which on a public write path is an
+ * OOM lever, not a cap. The ceiling is enforced in bytes; JSON parsing of
+ * the (at most 32 KiB) result is the caller's concern.
+ */
 async function cappedBody(request: Request): Promise<string> {
-  const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) throw new BodyTooLargeError();
-  return raw;
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isInteger(declared) && declared > MAX_BODY_BYTES) throw new BodyTooLargeError();
+  if (request.body === null) return ''; // bodyless request: nothing to read
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) throw new BodyTooLargeError();
+      chunks.push(value);
+    }
+  } catch (err) {
+    reader.cancel().catch(() => undefined); // abort the upload, don't drain it
+    throw err;
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(body);
 }
 
 class BodyTooLargeError extends Error {}

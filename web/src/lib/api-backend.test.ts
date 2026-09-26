@@ -280,6 +280,33 @@ describe('map voting', () => {
     expect(Object.keys(stored.votes['map-1'])).toHaveLength(5000);
     expect(stored.votes['map-1'].newcomer).toBeUndefined();
   });
+
+  it('rejects __proto__ as a map or voter id instead of dropping the vote silently', async () => {
+    // An id equal to __proto__ would route its write through the inherited
+    // setter: assignment silently does nothing, so the voter sees a recorded
+    // vote that was never stored. It is a 400 instead.
+    const protoMap = await call('/vote/map', { method: 'POST', body: { map_id: '__proto__', voter_id: 'v', vote: 1 }, ip: 'vote-proto1' });
+    const protoVoter = await call('/vote/map', { method: 'POST', body: { map_id: 'map-1', voter_id: '__proto__', vote: 1 }, ip: 'vote-proto2' });
+    for (const res of [protoMap, protoVoter]) {
+      expect(res.status).toBe(400);
+    }
+    expect(bucket.peek('community/map-votes.json')).toBeUndefined();
+  });
+
+  it('never echoes my_vote for a JSON-round-tripped __proto__ key', async () => {
+    // JSON.parse produces an own __proto__ key where a string literal in
+    // source would hit the inherited setter — seed one directly and require
+    // the read path to ignore it as the artifact it is.
+    bucket.put('community/map-votes.json', '{"updated_at":"2026-01-01T00:00:00Z","votes":{"map-1":{"__proto__":1}}}');
+
+    const get = await call('/vote/map/map-1?voter_id=__proto__');
+    expect(get.status).toBe(200);
+    expect(get.json.net_votes).toBe(1); // the stray key still tallies — it is stored data
+    expect(get.json).not.toHaveProperty('my_vote');
+
+    const legit = await call('/vote/map/map-1?voter_id=nobody');
+    expect(legit.json).not.toHaveProperty('my_vote');
+  });
 });
 
 // ─── Replay feedback ────────────────────────────────────────────────────────
@@ -425,6 +452,40 @@ describe('replay feedback', () => {
       ip: 'fb-up-big',
     });
     expect(res.status).toBe(413);
+  });
+
+  it('rejects __proto__ as an upvote voter id', async () => {
+    const res = await call('/feedback/fb_x/upvote', {
+      method: 'POST',
+      body: { voter_id: '__proto__' },
+      ip: 'fb-up-proto',
+    });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('voter_id is required');
+  });
+
+  it('answers 413 for an oversized chunked body that declares no content-length', async () => {
+    // The cap must hold mid-stream, not just after buffering: this request
+    // declares nothing and streams 40 KiB, so a text()-then-check
+    // implementation would have swallowed all of it before answering.
+    const oversized = new TextEncoder().encode('{"body":"' + 'x'.repeat(40 * 1024) + '"}');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(oversized);
+        controller.close();
+      },
+    });
+    const req = new Request('https://ai-code-battle.pages.dev/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': 'fb-stream413' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+
+    const res = await handleApiRequest(req, env, '/feedback');
+    expect(res.status).toBe(413);
+    expect(await res.text()).toBe(JSON.stringify({ error: 'request body too large' }));
+    expect(bucket.peek('community/replay-feedback.json')).toBeUndefined();
   });
 
   it('trims the store to the 500-entry FIFO, dropping the oldest', async () => {
