@@ -113,6 +113,18 @@ func (gs *GameState) executeMoves() {
 }
 
 // executeZone handles the shrinking zone (storm) that forces combat.
+//
+// Contract (pinned end to end by zone_test.go): the zone activates on the
+// turn matching ZoneStartTurn — before moves are collected, see RunMatch —
+// and snaps to setInitialZoneRadius at that moment. Shrink steps then land
+// on every turn where Turn > ZoneStartTurn and
+// (Turn-ZoneStartTurn) % ZoneShrinkInterval == 0: the activation turn never
+// shrinks, the first step is at ZoneStartTurn+ZoneShrinkInterval, each step
+// subtracts ZoneShrinkStep and clamps at ZoneMinRadius, never below it.
+// While the zone is active, a living bot dies iff its toroidal distance²
+// from ZoneCenter is strictly greater than ZoneRadius² — a bot exactly on
+// the boundary is safe. Each kill decrements the owner's BotCount and emits
+// one zone_death event; no score is awarded to anyone.
 func (gs *GameState) executeZone() {
 	if !gs.Config.ZoneEnabled {
 		return
