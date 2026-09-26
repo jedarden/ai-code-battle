@@ -24,7 +24,25 @@
 // becomes a thin proxy for those routes and no client change is needed.
 //
 // Request/response shapes mirror cmd/acb-api/server.go so the SPA clients in
-// api-types.ts / components/annotation.ts work against either backend.
+// api-types.ts / components/annotation.ts work against either backend. The
+// mirror is enforced, not aspirational: every response below is constructed
+// against the client-facing types (MapVoteResponse/MapVotesResponse and the
+// error/health/recorded envelopes in api-types.ts, FeedbackEntry/
+// FeedbackResponse in types.ts), so a shape change fails the tsc gate
+// instead of drifting silently.
+
+import type {
+  ApiCapabilities,
+  ApiErrorBody,
+  ApiHealthResponse,
+  FeedbackRecordedResponse,
+  FeedbackUpvoteResponse,
+  MapVoteResponse,
+  MapVotesResponse,
+} from '../api-types';
+import type { FeedbackEntry, FeedbackResponse, FeedbackType } from '../types';
+
+export type { ApiCapabilities };
 
 // ─── Environment ────────────────────────────────────────────────────────────
 
@@ -61,14 +79,8 @@ const MAX_VOTERS_PER_ENTRY = 1000; // dedupe set cap per feedback entry
 const MAX_VOTERS_PER_MAP = 5000; // dedupe set cap per map
 
 // ─── Capabilities ───────────────────────────────────────────────────────────
-
-export interface ApiCapabilities {
-  register: boolean;
-  rotate_key: boolean;
-  predictions: boolean;
-  feedback: boolean;
-  map_votes: boolean;
-}
+// (ApiCapabilities is imported from api-types.ts — the client-facing shape —
+// and re-exported above for the health handler and any existing importers.)
 
 const MATCH_TIER_CAPABILITIES: ApiCapabilities = {
   register: false,
@@ -92,7 +104,8 @@ function json(data: unknown, status = 200): Response {
 }
 
 function writeError(status: number, message: string, code?: string): Response {
-  return json(code ? { error: message, code } : { error: message }, status);
+  const body: ApiErrorBody = code ? { error: message, code } : { error: message };
+  return json(body, status);
 }
 
 // ─── Spam filter (ported from cmd/acb-api/spamfilter.go) ────────────────────
@@ -276,15 +289,12 @@ interface MapVotesDoc {
   votes: Record<string, Record<string, 1 | -1>>; // map_id -> voter_id -> vote
 }
 
-interface ReplayFeedbackEntry {
-  feedback_id: string;
-  match_id: string;
-  turn: number;
-  type: string;
-  body: string;
-  author: string;
-  upvotes: number;
-  created_at: string;
+/**
+ * Stored replay-feedback entry: the served FeedbackEntry contract
+ * (types.ts, shared with the static-file fallback) plus the internal
+ * upvote dedupe set, which is never serialized into a response.
+ */
+interface ReplayFeedbackEntry extends FeedbackEntry {
   voters: Record<string, true>;
 }
 
@@ -334,14 +344,14 @@ async function handleHealth(env: ApiEnv): Promise<Response> {
     capabilities.feedback = false;
     capabilities.map_votes = false;
   }
-  return json({ status: 'ok', capabilities });
+  return json({ status: 'ok', capabilities } satisfies ApiHealthResponse);
 }
 
 async function handleGetMapVotes(env: ApiEnv, mapId: string, voterId: string | null): Promise<Response> {
   if (!isStorageId(mapId)) return writeError(400, 'invalid map ID');
   const votesDoc = await readDoc<MapVotesDoc>(env.ACB_BUCKET, VOTES_KEY,
     () => ({ updated_at: nowIso(), votes: {} }));
-  const response: { map_id: string; net_votes: number; my_vote?: number } = {
+  const response: MapVotesResponse = {
     map_id: mapId,
     net_votes: netVotesFor(votesDoc, mapId),
   };
@@ -391,7 +401,7 @@ async function handleMapVote(request: Request, env: ApiEnv): Promise<Response> {
     if (err instanceof StorageBusyError) return writeError(503, err.message, 'storage_busy');
     throw err;
   }
-  return json({ map_id: mapId, vote, net_votes: netVotesFor(votesDoc, mapId) });
+  return json({ map_id: mapId, vote, net_votes: netVotesFor(votesDoc, mapId) } satisfies MapVoteResponse);
 }
 
 async function handleGetFeedback(env: ApiEnv, matchId: string): Promise<Response> {
@@ -399,7 +409,7 @@ async function handleGetFeedback(env: ApiEnv, matchId: string): Promise<Response
   const doc = await readDoc<ReplayFeedbackDoc>(env.ACB_BUCKET, REPLAY_FEEDBACK_KEY,
     () => ({ updated_at: nowIso(), feedback: [] }));
   const forMatch = doc.feedback.filter((f) => f.match_id === matchId);
-  return json({ match_id: matchId, feedback: toPublicFeedback(forMatch) });
+  return json({ match_id: matchId, feedback: toPublicFeedback(forMatch) } satisfies FeedbackResponse);
 }
 
 async function handleFeedbackUpvote(request: Request, env: ApiEnv, feedbackId: string): Promise<Response> {
@@ -445,7 +455,9 @@ async function handleFeedbackUpvote(request: Request, env: ApiEnv, feedbackId: s
   }
   const entry = doc.feedback.find((f) => f.feedback_id === feedbackId);
   if (!entry) return writeError(404, 'feedback not found');
-  return json(alreadyUpvoted ? { status: 'already_upvoted' } : { status: 'recorded' });
+  return json(alreadyUpvoted
+    ? { status: 'already_upvoted' } satisfies FeedbackUpvoteResponse
+    : { status: 'recorded' } satisfies FeedbackUpvoteResponse);
 }
 
 async function handleCreateFeedback(request: Request, env: ApiEnv): Promise<Response> {
@@ -491,7 +503,7 @@ async function handleCreateFeedback(request: Request, env: ApiEnv): Promise<Resp
           feedback_id: feedbackId,
           match_id: req.match_id as string,
           turn: req.turn as number,
-          type: req.type as string,
+          type: req.type as FeedbackType,
           body: req.body as string,
           author: author as string,
           upvotes: 0,
@@ -506,7 +518,7 @@ async function handleCreateFeedback(request: Request, env: ApiEnv): Promise<Resp
     if (err instanceof StorageBusyError) return writeError(503, err.message, 'storage_busy');
     throw err;
   }
-  return json({ status: 'recorded', feedback_id: feedbackId }, 201);
+  return json({ status: 'recorded', feedback_id: feedbackId } satisfies FeedbackRecordedResponse, 201);
 }
 
 async function createSiteFeedback(request: Request, env: ApiEnv, req: Record<string, unknown>): Promise<Response> {
@@ -542,7 +554,7 @@ async function createSiteFeedback(request: Request, env: ApiEnv, req: Record<str
     if (err instanceof StorageBusyError) return writeError(503, err.message, 'storage_busy');
     throw err;
   }
-  return json({ status: 'recorded', feedback_id: feedbackId }, 201);
+  return json({ status: 'recorded', feedback_id: feedbackId } satisfies FeedbackRecordedResponse, 201);
 }
 
 // ─── Match-tier placeholder ─────────────────────────────────────────────────

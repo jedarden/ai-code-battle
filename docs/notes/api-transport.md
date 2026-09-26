@@ -107,7 +107,10 @@ those routes and **no client change is needed**.
 
 Request/response shapes mirror `cmd/acb-api/server.go` so the SPA clients in
 `web/src/api-types.ts` and `web/src/components/annotation.ts` work against
-either backend unchanged.
+either backend unchanged. The mirror is enforced, not aspirational: every
+handler answer is constructed against the client-facing types (`satisfies`
+checks against `api-types.ts` and `types.ts`), so a shape change fails the
+tsc gate on both sides instead of drifting from the Go server at runtime.
 
 ## Storage design (community tier)
 
@@ -190,7 +193,7 @@ proves the *origin's state*.
 ### Local regression suite (offline — no network, no build, no bucket)
 
 ```bash
-cd web && npm run test:unit -- src/lib/api-backend.test.ts
+cd web && npm run test:unit -- src/lib/api-backend.test.ts src/lib/api-function-adapter.test.ts
 ```
 
 Drives `handleApiRequest` in-process against an in-memory CAS bucket and
@@ -200,6 +203,18 @@ envelopes, per-IP rate limits (429), request bounds (413 plus the FIFO and
 dedupe-set caps), CAS retry/storage-busy (503) behavior, and the JSON
 content-type contract on every route and status class — the same gate the
 probe applies live. Also runs as part of plain `npm run test:unit`.
+
+The deployed adapter itself — `functions/api/[[path]].ts`, the URL parse,
+one-time `/api` prefix strip, and env hand-off the Pages runtime invokes —
+is pinned end-to-end by `src/lib/api-function-adapter.test.ts` (same
+runner, same in-memory bucket): every documented route answered through
+`/api/*`, the strip proven one-time (`/api/api/health` is not health), the
+query string proven to survive, the handed env proven to answer, and the
+JSON content-type contract re-asserted over every adapter-reachable answer
+class. `web/tsconfig.json` includes `web/functions/**` (runtime globals via
+`functions/pages-runtime.d.ts`, minimal stand-ins for the uninstalled
+`@cloudflare/workers-types`), so the adapter file the deploy actually ships
+is inside the tsc gate too.
 
 The client and page halves (kill switch, `MatchTierOfflineError` rendering,
 HTML-fallback backstops) live in `web/src/api-transport.test.ts`,

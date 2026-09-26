@@ -623,6 +623,43 @@ export interface MapVotesResponse {
   my_vote?: number;
 }
 
+// ─── Community /api response envelopes (served by web/functions/api) ─────────────
+// The Pages Function constructs its answers against these types
+// (lib/api-backend.ts imports them), so a shape change fails the tsc gate
+// on both sides instead of silently drifting from cmd/acb-api/server.go at
+// runtime. The replay-feedback entry and round-trip types are FeedbackEntry
+// and FeedbackResponse in types.ts — shared with the static-file fallback.
+
+export interface ApiCapabilities {
+  register: boolean;
+  rotate_key: boolean;
+  predictions: boolean;
+  feedback: boolean;
+  map_votes: boolean;
+}
+
+export interface ApiHealthResponse {
+  status: 'ok';
+  capabilities: ApiCapabilities;
+}
+
+/** Every error answer, any status. `code` marks a machine-readable subclass. */
+export interface ApiErrorBody {
+  error: string;
+  code?: string;
+}
+
+export interface FeedbackRecordedResponse {
+  status: 'recorded';
+  feedback_id: string;
+}
+
+export type FeedbackUpvoteStatus = 'recorded' | 'already_upvoted';
+
+export interface FeedbackUpvoteResponse {
+  status: FeedbackUpvoteStatus;
+}
+
 export function getOrCreateVoterId(): string {
   let id = localStorage.getItem('acb_voter_id');
   if (!id) {
