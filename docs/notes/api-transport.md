@@ -19,12 +19,14 @@ Before this, every `/api/*` request was answered by the Pages SPA fallback
 with `index.html` (HTTP 200, `text/html`), which is why the workflows were
 explicitly disabled in bead aicodeba-07caa4ec.
 
-## Deployment state (verified live 2026-09-25)
+## Deployment state (verified live 2026-09-25, re-verified 2026-09-26)
 
 The function ships with the site: `wrangler pages deploy dist` bundles
 whatever is under `web/functions/` at deploy time, so the SPA bundle and the
 function always go live in the same deploy and cannot diverge. Probed live
-against `https://ai-code-battle.pages.dev` on 2026-09-25 (~21:30Z):
+against `https://ai-code-battle.pages.dev` on 2026-09-25 (~21:30Z) and
+re-probed 2026-09-26 (~01:55Z, bead aicodeba-968bfa99) with identical
+answers both times:
 
 - `GET /api/health`, `GET /api/vote/map/*`, `GET /api/feedback/*` answered
   **200 `text/html`** — the SPA fallback — and `POST /api/register` a bare
@@ -33,11 +35,13 @@ against `https://ai-code-battle.pages.dev` on 2026-09-25 (~21:30Z):
 - `GET /r2/<missing>` answered the r2 function's own `text/plain` 404, so
   Pages Functions deploy fine for this project — the deployed bundle just
   predates `web/functions/api/`.
-- The deploys that would have shipped it failed identically, twice: 
-  `acb-site-pages-build-rg9vx` (03912f0 push, 20:32Z) and
-  `acb-site-pages-build-pbmvp` (4ee9bfe push, 22:01Z) each lost all four
-  retries with exit 128 in the git-clone step, and the sibling `acb-build`
-  template failed the same way at both times. Forgejo answered 200 (and
+- The deploys that would have shipped it failed identically, three times:
+  `acb-site-pages-build-rg9vx` (03912f0 push, 20:32Z),
+  `acb-site-pages-build-pbmvp` (4ee9bfe push, 22:01Z) and
+  `acb-site-pages-build-cj75n` (5f51993 push, 01:05Z 2026-09-26) each lost
+  all four retries with exit 128 in the git-clone step; the sibling
+  `acb-build` template failed the same way at the first two (still `Running`
+  an hour into the third at verification time). Forgejo answered 200 (and
   accepted authenticated pushes from this box) throughout, so this is **not
   transient**: the prime suspect is the `FORGEJO_TOKEN` credential the clone
   step reads from the `forgejo-webhook-token` secret in `iad-ci`, which looks
