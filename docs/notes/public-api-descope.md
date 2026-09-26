@@ -119,3 +119,82 @@ Until then, the contract of record for the five routes is: **documented,
 frozen, and answered 503 `match_tier_offline` by
 `web/functions/api/[[path]].ts`** — transport state owned by
 [api-transport.md](api-transport.md).
+
+## Static-data endpoint decision (2026-09-26)
+
+**Decision Date:** 2026-09-26
+**Bead:** aicodeba-4be62ac3
+**Decision:** RETIRE the docs page's advertisements of asset URLs nothing
+serves; the replay/media pipeline they came from stays deferred under the
+same revival triggers as the match tier above. Implementing the assets under
+the `/api` Pages Function was considered and **rejected** — the function
+would have no data to serve.
+
+### What docs-api.ts advertised vs. what the origin serves
+
+Audited live against `https://ai-code-battle.pages.dev` on 2026-09-26
+(content-type is the signal — a missing Pages asset answers the 200
+`text/html` SPA fallback, never a 404):
+
+| Advertised on the page | Reality 2026-09-26 |
+|---|---|
+| `GET /data/leaderboard.json`, `/data/bots/index.json`, `/data/bots/{bot_id}.json`, `/data/matches/index.json`, `/data/playlists/index.json`, `/data/playlists/{slug}.json`, `/data/blog/index.json` | **Live** — the committed seed data in `web/public/data/` ships with every Pages deploy (all probed 200 `application/json`, including a real bot id and playlist slug) |
+| `GET /data/blog/{slug}.json` | **Wrong path** — the live file is `/data/blog/posts/{slug}.json` (verified); docs corrected to the real path |
+| `GET /replay-schema-v1.json` | **Live** (200 `application/json`) |
+| `GET /evolution/live.json`, `/replays/{match_id}.json.gz`, `/matches/{match_id}.json`, `/cards/{bot_id}.png`, `/thumbnails/{match_id}.png` (both "B2" sections) | **Dead** — B2-origin-era paths served nowhere; the `b2.aicodebattle.com` host they predate is itself retired, and at the Pages origin each answers the SPA fallback HTML |
+| `GET /maps/index.json`, `/maps/{map_id}.json` | **Dead on the origin** — but this base is the designed one: it is what the builder writes (`generator.go` `mapsDir`) and what the SPA client fetches (`api-types.ts` `fetchMapsIndex`); only the producer is missing |
+| Interactive `/api/*` section | **Live/accurate** — community routes answer, match-tier routes answer their designed 503s (see the match-tier decision above) |
+
+### Why retire rather than implement
+
+- **The dead URLs were the same misrepresentation the 2026-09-25 descope
+  removed from docs.ts**: the page pointed its "B2" sections at the Pages
+  origin (`B2_BASE = PAGES_BASE`), where those paths answer HTML — a client
+  following the docs gets a 200 that is not data.
+- **The designed contract is real and implemented on both ends — only the
+  producer is missing.** `cmd/acb-index-builder` bundles
+  `data/replays/{id}.json.gz`, `data/cards/{id}.png`,
+  `data/thumbnails/{id}.png`, `data/evolution/live.json` and `maps/` into
+  the Pages deploy (`deploy.go` `bundleWarm*`), and the SPA already fetches
+  those bases (`web/src/lib/replay-data.ts` `REPLAY_BASE`,
+  `api-types.ts` `fetchEvolutionLive`/`fetchMapsIndex`). But the builder
+  needs the compute tier's PostgreSQL, and B2 has no public hostname at all
+  — operator-scale revival, not a repo-level change.
+- **A function route would be a stub, not an implementation.** The R2
+  bucket behind the `/api` function holds no replay or map keys (probed
+  404 `text/plain` from the live `/r2/*` function on 2026-09-26), so
+  "implementing" these under `/api` today could only serve an empty index —
+  exactly the fake surface this bead exists to remove.
+- **`GET /matches/{match_id}.json` is retired outright, not deferred**: its
+  payload (win-prob curve, critical moments) lives in the replay itself
+  (`win_prob`/`critical_moments`, written by the enrichment pass), and no
+  SPA code has ever fetched a per-match metadata route.
+
+### What changed (docs-api.ts)
+
+1. Both "B2 Endpoints" sections are gone. The designed replay/media/map
+   paths now appear under **"Replay & Media Assets (Pipeline Offline)"**,
+   every card carrying an explicit `OFFLINE — not served until the
+   index-builder pipeline runs` marker (the static-tier analogue of the
+   match tier's `match_tier_offline` envelope) — and with their real bases
+   (`/data/replays/…`, `/data/evolution/live.json`, `/data/cards/…`,
+   `/data/thumbnails/…`, `/maps/…`), not the retired origin-root forms.
+2. The blog-post path is corrected to `/data/blog/posts/{slug}.json`.
+3. The intro no longer claims "there is no live API" (the community tier
+   has been live since 2026-09-26 ~06:00Z) and states that offline endpoints
+   are marked, not advertised.
+4. The fetching-pattern example now uses the designed `/data/replays/` base
+   and says when it answers with data; the rate-limit note covers the /api
+   routes.
+5. `web/src/pages/docs-api.test.ts` pins the honesty contract: no retired
+   path, every pipeline endpoint OFFLINE-marked, the live tiers stay
+   documented, and the real blog path is advertised.
+
+### Revival trigger
+
+The same list as the match tier above — an operator standing the compute
+tier (and with it the index builder's database) back up. The docs section
+flips from OFFLINE to served by dropping the markers; no shape change is
+expected on either side of the contract. See the "Docs honesty" note in
+[api-transport.md](api-transport.md) for how this sits next to the /api
+transport record.

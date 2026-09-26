@@ -304,3 +304,16 @@ SPA-fallback answer:
 The match-tier 503 probes cost nothing and write nothing: the router
 refuses those routes before any body is read, rate-limited, or stored, so
 proving all five are function-owned is free on every deploy.
+
+## Docs honesty for the static tier (bead aicodeba-4be62ac3, 2026-09-26)
+
+`web/src/pages/docs-api.ts` is the user-facing index of what this deploy
+serves. As of the static-endpoint decision ("Static-data endpoint decision"
+in `public-api-descope.md`) it no longer advertises unavailable URLs: the
+retired B2-origin asset paths are gone, the live committed seed files are
+documented as verified, and the replay/media pipeline contract appears only
+under an explicit OFFLINE marking — the static-tier analogue of this note's
+`match_tier_offline` envelopes. The `/api` contract above is untouched by
+that change; the page's Interactive section is and remains the
+documentation of this note's routes, and `web/test-api-workflows.js` keeps
+guarding it on every deploy.

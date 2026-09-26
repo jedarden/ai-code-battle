@@ -17,7 +17,6 @@ interface Section {
 }
 
 const PAGES_BASE = 'https://ai-code-battle.pages.dev';
-const B2_BASE = PAGES_BASE;
 
 const sections: Section[] = [
   {
@@ -168,8 +167,8 @@ const sections: Section[] = [
       },
       {
         method: 'GET',
-        path: '/data/blog/{slug}.json',
-        description: 'Full blog post with HTML content and weekly stats.',
+        path: '/data/blog/posts/{slug}.json',
+        description: 'Full blog post with HTML content and weekly stats. Posts live one level below the index that lists their slugs.',
         cache: '~90 min (deploy cycle)',
         responseExample: `{
   "slug": "meta-week-13-season-1",
@@ -188,112 +187,45 @@ const sections: Section[] = [
     ],
   },
   {
-    title: 'B2 Endpoints (Warm Cache)',
-    description: 'Recent replays and real-time data served from Backblaze B2. Free egress via Cloudflare Bandwidth Alliance. Try B2 first, fall back to R2 for older data.',
+    title: 'Replay & Media Assets (Pipeline Offline)',
+    description: 'Replays, bot cards, thumbnails, evolution live data, and the map library are produced by the index builder, which bundles the warm set into the Pages deploy and keeps the cold archive in private B2 (B2 has no public hostname). The compute tier that feeds that pipeline is decommissioned, so none of these URLs is served today — each currently answers the SPA HTML fallback, not data. The paths below are the designed contract: the SPA loader (web/src/lib/replay-data.ts) and the builder (cmd/acb-index-builder bundleWarm*) already implement both halves, and they come online unchanged when the pipeline runs. See docs/notes/public-api-descope.md for the deferral decision and revival triggers.',
     endpoints: [
       {
         method: 'GET',
-        path: '/evolution/live.json',
-        description: 'Real-time evolution observatory data. Updated every evolution cycle (~5 min) with Cache-Control: max-age=10.',
-        cache: '10 seconds',
-        responseExample: `{
-  "updated_at": "2026-03-29T12:05:00Z",
-  "total_programs": 1247,
-  "promoted_count": 12,
-  "islands": {
-    "alpha": {"count": 312, "best_fitness": 0.85, "avg_fitness": 0.62}
-  },
-  "generation_log": [...],
-  "lineage": [...],
-  "meta_snapshots": [...]
-}`,
-      },
-      {
-        method: 'GET',
-        path: '/replays/{match_id}.json.gz',
-        description: 'Compressed replay file for recent matches. Contains full turn-by-turn game state.',
-        cache: 'immutable (content-addressed)',
+        path: '/data/replays/{match_id}.json.gz',
+        description: 'Gzipped replay (compact delta-encoded v2.1). Pages serves the .json.gz bytes verbatim, so the client gunzips with DecompressionStream — see the Fetching Pattern below.',
+        cache: 'OFFLINE — not served until the index-builder pipeline runs (designed: immutable, content-addressed)',
         schemaLink: '#replay-schema',
       },
       {
         method: 'GET',
-        path: '/matches/{match_id}.json',
-        description: 'Per-match metadata including win probability curve and critical moments.',
-        cache: 'immutable (content-addressed)',
-        responseExample: `{
-  "match_id": "match_xyz789",
-  "completed_at": "2026-03-29T11:45:00Z",
-  "map_id": "map_2p_001",
-  "config": {"rows": 60, "cols": 60},
-  "participants": [...],
-  "result": {"winner": 0, "reason": "dominance", "turns": 247},
-  "win_prob": [[0.5, 0.5], [0.52, 0.48], ...],
-  "critical_moments": [
-    {"turn": 87, "delta": 0.22, "description": "Decisive engagement"}
-  ]
-}`,
+        path: '/data/evolution/live.json',
+        description: 'Real-time evolution observatory data, refreshed every evolution cycle (~5 min) once live.',
+        cache: 'OFFLINE — not served until the index-builder pipeline runs (designed: 10 seconds)',
       },
       {
         method: 'GET',
-        path: '/cards/{bot_id}.png',
+        path: '/data/cards/{bot_id}.png',
         description: 'Canvas-rendered bot profile card image (1200x630) for Open Graph social sharing.',
-        cache: 'max-age=86400 (1 day)',
+        cache: 'OFFLINE — not served until the index-builder pipeline runs (designed: max-age=86400)',
       },
       {
         method: 'GET',
-        path: '/thumbnails/{match_id}.png',
+        path: '/data/thumbnails/{match_id}.png',
         description: 'Auto-generated match thumbnail for embed previews.',
-        cache: 'max-age=86400 (1 day)',
+        cache: 'OFFLINE — not served until the index-builder pipeline runs (designed: max-age=86400)',
       },
       {
         method: 'GET',
         path: '/maps/index.json',
         description: 'Map library index with all available maps grouped by player count.',
-        cache: '~90 min (deploy cycle)',
-        responseExample: `{
-  "updated_at": "2026-05-25T18:55:00Z",
-  "maps": [
-    {
-      "map_id": "map_tq8tx8vk",
-      "player_count": 2,
-      "status": "active",
-      "engagement": 0.0,
-      "wall_density": 0.15,
-      "energy_count": 8,
-      "grid_width": 40,
-      "grid_height": 40,
-      "net_votes": 0,
-      "created_at": "2026-05-25T08:40:00Z"
-    }
-  ],
-  "by_player_count": {
-    "2": [...],
-    "3": [...],
-    "4": [...],
-    "6": [...]
-  }
-}`,
+        cache: 'OFFLINE — not served until the index-builder pipeline runs (designed: ~90 min, deploy cycle)',
       },
       {
         method: 'GET',
         path: '/maps/{map_id}.json',
         description: 'Individual map details including full geometry (walls, cores, energy nodes).',
-        cache: '~90 min (deploy cycle)',
-        responseExample: `{
-  "map_id": "map_tq8tx8vk",
-  "player_count": 2,
-  "status": "active",
-  "engagement": 0.0,
-  "wall_density": 0.15,
-  "energy_count": 8,
-  "grid_width": 40,
-  "grid_height": 40,
-  "net_votes": 0,
-  "created_at": "2026-05-25T08:40:00Z",
-  "walls": [{"row": 0, "col": 8}, ...],
-  "cores": [{"position": {"row": 20, "col": 20}, "owner": 0}, ...],
-  "energy_nodes": [{"row": 10, "col": 10}, ...]
-}`,
+        cache: 'OFFLINE — not served until the index-builder pipeline runs (designed: ~90 min, deploy cycle)',
       },
     ],
   },
@@ -381,37 +313,19 @@ const sections: Section[] = [
     ],
   },
   {
-    title: 'B2 Endpoints (Archive)',
-    description: 'Permanent archive for ALL replays and match data served from Backblaze B2.',
-    endpoints: [
-      {
-        method: 'GET',
-        path: '/replays/{match_id}.json.gz',
-        description: 'Compressed replay file. All replays are archived permanently on B2.',
-        cache: 'immutable (content-addressed)',
-        schemaLink: '#replay-schema',
-      },
-      {
-        method: 'GET',
-        path: '/matches/{match_id}.json',
-        description: 'Per-match metadata.',
-        cache: 'immutable (content-addressed)',
-      },
-      {
-        method: 'GET',
-        path: '/cards/{bot_id}.png',
-        description: 'Bot profile card images. All cards archived permanently.',
-        cache: 'immutable',
-      },
-      {
-        method: 'GET',
-        path: '/thumbnails/{match_id}.png',
-        description: 'Match thumbnails. All thumbnails archived permanently.',
-        cache: 'immutable',
-      },
-    ],
+    title: 'Archive',
+    description: 'The permanent cold archive for ALL replays and match media is private Backblaze B2, reached only by the index builder — B2 has no public hostname (the old b2.aicodebattle.com host is retired) and no archive path is publicly fetchable. Public replay access is the warm set the builder bundles into the Pages deploy above.',
+    endpoints: [],
   },
 ];
+
+// Exported for the honesty-contract test (docs-api.test.ts): the 2026-09-26
+// static-endpoint decision (bead aicodeba-4be62ac3) retired the B2-origin
+// listings — b2.aicodebattle.com is dead, and pointing its paths at the Pages
+// origin advertised URLs that answer the SPA HTML fallback. Every path a
+// section advertises must be either verified-live or explicitly marked
+// OFFLINE. See docs/notes/public-api-descope.md.
+export const docsApiSections = sections;
 
 // Replay JSON Schema section
 const replaySchema = `{
@@ -602,9 +516,10 @@ export function renderDocsApiPage(): void {
       <h1 class="page-title">API Reference</h1>
 
       <p class="intro">
-        All match data is exposed as static JSON files. There is no live API for data access —
-        everything is pre-computed and served from CDN. This architecture enables unlimited
-        read scale with zero server cost.
+        Match data is exposed as pre-computed JSON files served from the Cloudflare CDN, plus a
+        small same-origin JSON API for community interactions. The Pages Endpoints and Interactive
+        API sections below are live; the replay/media asset pipeline is offline, and every endpoint
+        it documents is marked OFFLINE rather than advertised as fetchable.
       </p>
 
       <div class="api-nav">
@@ -628,23 +543,28 @@ export function renderDocsApiPage(): void {
 
       <section id="fetching-pattern" class="pattern-section">
         <h2>Recommended Fetching Pattern</h2>
-        <p>For replays and match metadata, fetch directly from B2:</p>
+        <p>Every live file under <code>/data/</code> is plain JSON — a plain <code>fetch</code> and
+        <code>response.json()</code> is all a client needs. Replays are the one exception once the
+        asset pipeline is online: they are stored gzipped and served byte-verbatim, so the client
+        gunzips them (this is exactly what the site loader, <code>web/src/lib/replay-data.ts</code>, does):</p>
         <pre><code>async function fetchReplay(matchId: string): Promise<Replay> {
-  const b2Url = \`https://ai-code-battle.pages.dev/replays/\${matchId}.json.gz\`;
-  const b2Resp = await fetch(b2Url);
-  if (!b2Resp.ok) throw new Error(\`Replay not found: \${matchId}\`);
-  return decompress(await b2Resp.arrayBuffer());
+  const resp = await fetch(\`/data/replays/\${matchId}.json.gz\`);
+  if (!resp.ok) throw new Error(\`Replay not found: \${matchId}\`);
+  return decompress(await resp.arrayBuffer()); // DecompressionStream('gzip')
 }</code></pre>
+        <p>This path is part of the pipeline-offline contract above — it answers with data once the
+        index builder bundles the warm replay set into a Pages deploy.</p>
 
         <h3>Cache Behavior</h3>
         <ul>
-          <li><strong>Pages</strong>: ~90 min stale max (deploy cycle)</li>
-          <li><strong>B2 replays</strong>: immutable, cache forever</li>
-          <li><strong>B2 live.json</strong>: 10 second max-age</li>
+          <li><strong>Pages data files</strong>: ~90 min stale max (deploy cycle)</li>
+          <li><strong>Replays</strong>: immutable, cache forever (designed; pipeline offline)</li>
+          <li><strong>evolution live.json</strong>: 10 second max-age (designed; pipeline offline)</li>
         </ul>
 
         <h3>Rate Limits</h3>
-        <p>There are no rate limits on static file access. The CDN handles unlimited concurrent requests.</p>
+        <p>Static file access is not rate limited — the CDN handles unlimited concurrent requests.
+        The same-origin /api routes are rate limited per IP; see the Interactive API section.</p>
       </section>
 
       <style>
@@ -838,15 +758,13 @@ function renderSection(section: Section): string {
     <section id="${slugify(section.title)}" class="endpoint-section">
       <h2>${section.title}</h2>
       <p>${section.description}</p>
-      ${section.endpoints.map(e => renderEndpoint(e, section.title)).join('')}
+      ${section.endpoints.map(e => renderEndpoint(e)).join('')}
     </section>
   `;
 }
 
-function renderEndpoint(endpoint: EndpointDoc, sectionTitle: string): string {
-  let baseUrl = '';
-  if (sectionTitle.includes('B2')) baseUrl = B2_BASE;
-  else baseUrl = PAGES_BASE;
+function renderEndpoint(endpoint: EndpointDoc): string {
+  const baseUrl = PAGES_BASE;
 
   return `
     <div class="endpoint">
