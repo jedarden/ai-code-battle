@@ -350,7 +350,7 @@ ai-code-battle/
 │   ├── acb-local/       # CLI match runner (local testing)
 │   ├── acb-mapgen/      # Map generator
 │   ├── acb-worker/      # Match execution worker
-│   ├── acb-api/         # Public Go HTTP service for dynamic endpoints
+│   ├── acb-api/         # Go match-tier API (undeployed; see docs/notes/public-api-descope.md)
 │   ├── acb-matchmaker/  # Internal match scheduler
 │   ├── acb-indexer/     # Index builder for static files
 │   └── acb-evolver/     # LLM evolution pipeline
@@ -359,6 +359,7 @@ ai-code-battle/
 │   │   ├── replay-viewer.ts  # Canvas replay renderer
 │   │   └── app.ts            # SPA entry point
 │   └── functions/
+│       ├── api/              # Same-origin /api/* transport (Pages Function)
 │       └── r2/               # R2 replay serving (Pages Functions)
 ├── bots/                # Strategy bot implementations (21 bots)
 ├── starters/            # Starter templates (8 languages)
@@ -377,10 +378,10 @@ ai-code-battle/
 
 ## Architecture
 
-The platform uses a **static-first** architecture. The public-facing product is a Cloudflare Pages static site — all data visitors see (leaderboards, match history, bot profiles, replays) is pre-computed JSON served from the CDN. All compute runs in a Kubernetes cluster (Rackspace Spot), which acts as a match factory: it runs battles, generates replays, and periodically publishes the updated site to Pages.
+The platform uses a **static-first** architecture. The public-facing product is a Cloudflare Pages static site — nearly all data visitors see (leaderboards, match history, bot profiles, replays) is pre-computed JSON served from the CDN; the dynamic remainder is community interaction (replay/site feedback, map voting), served by a same-origin Pages Function under `/api/*` backed by R2 (see `docs/notes/api-transport.md`). All compute runs in a Kubernetes cluster (Rackspace Spot), which acts as a match factory: it runs battles, generates replays, and periodically publishes the updated site to Pages.
 
 - **Cloudflare Pages** — Static SPA (replay viewer, leaderboard, match history) with all data pre-computed as JSON
-- **Cloudflare Pages Functions + R2** — Replay storage and serving through R2 bucket binding
+- **Cloudflare Pages Functions + R2** — Replay storage and serving through R2 bucket binding, plus the same-origin `/api/*` transport for community flows (match-tier routes answer 503 `match_tier_offline` until acb-api is deployed)
 - **Kubernetes cluster** — Match workers, matchmaker, API service, bot containers, and index builder
 
 Match flow:

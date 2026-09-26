@@ -883,11 +883,10 @@ function initReplayViewer(ReplayViewerClass: any, initialUrl?: string): void {
       return;
     }
 
-    // With no API transport the vote buttons can never reach a server — on
-    // the Pages host `/api/vote/map` is answered by the SPA HTML fallback.
-    // Replace the whole section with a notice instead of leaving dead
-    // buttons; the map metadata above still renders (it comes from the
-    // replay file itself).
+    // With the kill switch off there is no transport to answer
+    // `/api/vote/map` — replace the whole section with a notice instead of
+    // leaving dead buttons; the map metadata above still renders (it comes
+    // from the replay file itself).
     if (!API_TRANSPORT_ENABLED) {
       mapVoteSection.innerHTML = '<div class="map-vote-status" style="margin-top:0">Map voting is unavailable — the voting API has no public endpoint yet.</div>';
       return;

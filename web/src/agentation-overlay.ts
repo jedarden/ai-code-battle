@@ -25,9 +25,9 @@ function handleSubmit(markdown: string, annotations: Annotation[]): void {
   existing.push({ markdown, annotations, submittedAt: Date.now() })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(-MAX_STORED)))
 
-  // POST to the API if a transport exists (non-blocking, best-effort). On the
-  // Pages host `/api` is the SPA HTML fallback, so issuing the POST without a
-  // transport can only waste a round trip — localStorage is the real store.
+  // POST to the API when the transport exists (non-blocking, best-effort).
+  // With the kill switch off no /api route answers — the POST would fall to
+  // the SPA HTML fallback — so it is skipped; localStorage is the real store.
   if (API_TRANSPORT_ENABLED) {
     const apiBase = (window as unknown as Record<string, string>)['ACB_API_BASE'] ?? '/api'
     fetch(`${apiBase}/feedback`, {

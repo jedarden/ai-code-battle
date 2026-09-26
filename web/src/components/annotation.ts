@@ -71,9 +71,10 @@ function mapFeedbackEntries(entries: FeedbackAPIEntry[]): Annotation[] {
 }
 
 export async function fetchFeedback(matchId: string): Promise<Annotation[]> {
-  // Try the live API first — but only when a transport exists. On the Pages
-  // host `/api` is the SPA HTML fallback, so the request would always end in
-  // the static-file branch below anyway, one wasted round trip later.
+  // Try the live API first — but only when the transport exists. While the
+  // kill switch is off no /api route answers (the SPA fallback would return
+  // HTML), so the fetch is skipped and the static-file branch below answers
+  // instead of wasting a round trip.
   if (API_TRANSPORT_ENABLED) {
     try {
       const resp = await fetch(`${API_BASE}/feedback/${matchId}`);
