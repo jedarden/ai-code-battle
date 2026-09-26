@@ -8,7 +8,7 @@
 # 1. Clones the ai-code-battle repo (bot source already committed)
 # 2. Generates Dockerfile for the language
 # 3. Builds container image with Kaniko
-# 4. Pushes to Forgejo registry
+# 4. Pushes to the Docker Hub registry (ronaldraygun/*)
 # 5. Creates K8s Secret, Deployment, Service manifests
 # 6. Commits manifests to declarative-config repo (ArgoCD syncs them)
 ---
@@ -37,18 +37,18 @@ spec:
       - name: program_id
         # Program ID from database
       - name: bot_repo
-        value: https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git
+        value: https://git.ardenone.com/jedarden/ai-code-battle.git
       - name: bot_branch
-        value: master
+        value: main
       - name: bot_path
         # Path to bot source in repo (relative to repo root)
         # The promoter writes to bots/evolved/<bot_name>/
       - name: declarative_config_repo
-        value: https://forgejo.ardenone.com/infra/ardenone-cluster.git
+        value: https://git.ardenone.com/jedarden/declarative-config.git
       - name: declarative_config_branch
         value: main
       - name: registry
-        value: forgejo.ardenone.com/ai-code-battle
+        value: ronaldraygun
       - name: namespace
         value: ai-code-battle
       - name: bot_port
@@ -58,7 +58,7 @@ spec:
       emptyDir: {}
     - name: docker-config
       secret:
-        secretName: forgejo-registry
+        secretName: docker-hub-registry
         items:
           - key: .dockerconfigjson
             path: config.json
@@ -246,7 +246,7 @@ spec:
 
     - name: build-and-push
       script:
-        image: gcr.io/kaniko-project/executor:latest
+        image: gcr.io/kaniko-project/executor:v1.23.2
         command: [kaniko]
         args:
           - --context=/workspace/bot
@@ -337,7 +337,7 @@ spec:
               spec:
                 containers:
                   - name: bot
-                    image: ${REGISTRY}/${BOT_NAME}:latest
+                    image: ${REGISTRY}/${BOT_NAME}:gen-${GENERATION}
                     env:
                       - name: BOT_PORT
                         value: "${PORT}"

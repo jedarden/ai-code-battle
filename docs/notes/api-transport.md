@@ -59,14 +59,28 @@ fell to the SPA fallback (**200 `text/html`**, `POST /api/register` a bare
 **Fix:** declarative-config `1d37a701` (2026-09-26) corrects the
 `git-repo`/`repo` parameters of `acb-site-pages-build` and both templates in
 `acb-build.yml` to `git.ardenone.com/jedarden/ai-code-battle`; ArgoCD synced
-iad-ci and the live templates verify free of the bogus host. Deliberately
-**not** fixed here (dormant image CI, follow-up material): the `registry`
-parameter in `acb-build.yml`, the kaniko destinations/cache-repo in
-`acb-images-build`, `acb-enrichment-build`, `acb-site-build` and
-`acb-build-site`, and the image references in this repo's `manifests/` still
-carry `forgejo.ardenone.com/ai-code-battle/*`. `acb-bots-build` never had
-the bogus host (its unrelated `build-farmer` failures are a separate
-history). No rotation of `forgejo-webhook-token` was needed or performed.
+iad-ci and the live templates verify free of the bogus host. **Registry-side
+sweep complete** (bead aicodeba-51921aa5, declarative-config `b7204551`,
+2026-09-26): the `registry` parameter and kaniko destinations/cache-repo of
+the dormant image templates (`acb-build.yml`'s `acb-build-images` and
+`acb-build-site`, `acb-images-build`, `acb-enrichment-build`,
+`acb-site-build`) now point at Docker Hub `ronaldraygun/*` with the shared
+`docker-hub-registry` kaniko secret and `ronaldraygun/cache`; the
+`git-repo` parameters of `acb-images-build`/`acb-site-build` carry the
+correct clone URL; verified applied live in iad-ci — zero
+`forgejo.ardenone.com` refs across all five templates after ArgoCD synced
+`b7204551`. The one deployment the digest-pinning sweep had missed,
+`acb-enrichment`, is pinned to `ronaldraygun/acb-enrichment@sha256:33622d8c`
+(tag `f0f8d48`, verified present on Docker Hub) in both
+`manifests/acb-enrichment-deployment.yml` and the rs-manager ArgoCD copy,
+with its image-list annotation and pull secret moved off the dead registry.
+Still dormant by design, recorded for completeness: the rs-manager
+`acb-build.yml`/`acb-eventsensor.yml` CI copies (that cluster runs no Argo
+Workflows — nothing applies them) and the `acb-evolved-bot-deploy` staging
+template (deployed nowhere since the apexalgo-iad era; refs corrected, but
+it is a deletion candidate). `acb-bots-build` never had the bogus host (its
+unrelated `build-farmer` failures are a separate history). No rotation of
+`forgejo-webhook-token` was needed or performed.
 
 **Verified live 2026-09-26 ~06:00Z:** the re-triggered
 `acb-site-pages-build-fq8tb` (dispatched by the push of the root-cause

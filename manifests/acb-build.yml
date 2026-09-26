@@ -15,29 +15,47 @@ metadata:
   labels:
     app: acb-ci
 spec:
+  # Backstop against a run that hangs before its pod ever starts (unbound
+  # PVC, unschedulable, missing secret). Per-step activeDeadlineSeconds does
+  # not cover that case: on 2026-08-07 five needle-ci runs sat Running for
+  # 8h against a 3600s step limit. ttlStrategy only reaps COMPLETED runs, so
+  # without a workflow-level cap they are never terminated and never GCd.
+  # Basis: sum of per-step deadlines x attempts = 2520s, +50% headroom.
+  activeDeadlineSeconds: 7200
   entrypoint: build-all
   serviceAccountName: argo-workflow
   arguments:
     parameters:
       - name: repo
-        value: https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git
+        value: https://git.ardenone.com/jedarden/ai-code-battle.git
       - name: branch
-        value: master
+        value: main
       - name: sha
         # Short commit SHA, supplied by the Argo Events sensor
       - name: registry
-        value: forgejo.ardenone.com/ai-code-battle
+        value: ronaldraygun
   volumes:
     - name: workspace
       emptyDir: {}
     - name: docker-config
       secret:
-        secretName: forgejo-registry
+        secretName: docker-hub-registry
         items:
           - key: .dockerconfigjson
             path: config.json
   templates:
     - name: build-all
+      # Same cap, same reason as acb-bots-build (see 2c56608c). This dag has 23
+      # kaniko-build tasks and each requests 1 CPU / 2Gi, so unbounded it asks for
+      # 23 CPU / 46Gi at once — over 1.5x the entire cluster (15.00 CPU / 26.08Gi,
+      # per k8s/iad-ci/CLAUDE.md) before any other workflow is considered.
+      #
+      # Confirmed cluster-wide on 2026-08-06: needle-ci sat Pending for 78 minutes
+      # and burned its whole 2h deadline without running a single test while ACB
+      # kaniko pods held every node it was allowed on. Oversubscribing nodes past
+      # their real memory is also the likely cause of kaniko's own exit-code-1
+      # failures.
+      parallelism: 3
       dag:
         tasks:
           - name: clone
@@ -328,7 +346,7 @@ spec:
           limits:
             cpu: 500m
             memory: 256Mi
-        activeDeadlineSeconds: 120
+      activeDeadlineSeconds: 120
 
     - name: run-tests
       script:
@@ -350,9 +368,9 @@ spec:
             cpu: 1000m
             memory: 1Gi
           limits:
-            cpu: 4000m
+            cpu: 3500m
             memory: 4Gi
-        activeDeadlineSeconds: 600
+      activeDeadlineSeconds: 600
 
     - name: kaniko-build
       inputs:
@@ -361,7 +379,7 @@ spec:
           - name: dockerfile
           - name: context
       container:
-        image: gcr.io/kaniko-project/executor:latest
+        image: gcr.io/kaniko-project/executor:v1.23.2
         args:
           - --context=/workspace/src/{{inputs.parameters.context}}
           - --dockerfile=/workspace/src/{{inputs.parameters.dockerfile}}
@@ -369,6 +387,7 @@ spec:
           - --destination={{workflow.parameters.registry}}/{{inputs.parameters.image}}:latest
           - --cache=true
           - --cache-ttl=72h
+          - --cache-repo=ronaldraygun/cache
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -379,9 +398,9 @@ spec:
             cpu: 1000m
             memory: 2Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
-        activeDeadlineSeconds: 1800
+            cpu: 3500m
+            memory: 6Gi
+      activeDeadlineSeconds: 1800
 
 ---
 # build-site: builds the web SPA and pushes a container image artifact.
@@ -396,23 +415,30 @@ metadata:
   labels:
     app: acb-ci
 spec:
+  # Backstop against a run that hangs before its pod ever starts (unbound
+  # PVC, unschedulable, missing secret). Per-step activeDeadlineSeconds does
+  # not cover that case: on 2026-08-07 five needle-ci runs sat Running for
+  # 8h against a 3600s step limit. ttlStrategy only reaps COMPLETED runs, so
+  # without a workflow-level cap they are never terminated and never GCd.
+  # Basis: sum of per-step deadlines x attempts = 1080s, +50% headroom.
+  activeDeadlineSeconds: 7200
   entrypoint: build-site
   serviceAccountName: argo-workflow
   arguments:
     parameters:
       - name: repo
-        value: https://forgejo.ardenone.com/ai-code-battle/ai-code-battle.git
+        value: https://git.ardenone.com/jedarden/ai-code-battle.git
       - name: branch
-        value: master
+        value: main
       - name: sha
       - name: registry
-        value: forgejo.ardenone.com/ai-code-battle
+        value: ronaldraygun
   volumes:
     - name: workspace
       emptyDir: {}
     - name: docker-config
       secret:
-        secretName: forgejo-registry
+        secretName: docker-hub-registry
         items:
           - key: .dockerconfigjson
             path: config.json
@@ -458,7 +484,7 @@ spec:
           limits:
             cpu: 500m
             memory: 256Mi
-        activeDeadlineSeconds: 120
+      activeDeadlineSeconds: 120
 
     - name: npm-build
       script:
@@ -481,7 +507,7 @@ spec:
           limits:
             cpu: 2000m
             memory: 2Gi
-        activeDeadlineSeconds: 300
+      activeDeadlineSeconds: 300
 
     - name: prepare-image-context
       script:
@@ -492,10 +518,7 @@ spec:
           mkdir -p /workspace/image
           cp -r /workspace/src/web/dist /workspace/image/dist
 
-          cat > /workspace/image/Dockerfile <<'DFEOF'
-FROM alpine:3.21
-COPY dist /app/dist
-DFEOF
+          printf 'FROM alpine:3.21\nCOPY dist /app/dist\n' > /workspace/image/Dockerfile
 
           echo "Site image context ready:"
           ls -la /workspace/image/
@@ -510,11 +533,11 @@ DFEOF
           limits:
             cpu: 500m
             memory: 128Mi
-        activeDeadlineSeconds: 60
+      activeDeadlineSeconds: 60
 
     - name: push-site-image
       container:
-        image: gcr.io/kaniko-project/executor:latest
+        image: gcr.io/kaniko-project/executor:v1.23.2
         args:
           - --context=/workspace/image
           - --dockerfile=/workspace/image/Dockerfile
@@ -533,4 +556,4 @@ DFEOF
           limits:
             cpu: 2000m
             memory: 2Gi
-        activeDeadlineSeconds: 600
+      activeDeadlineSeconds: 600
