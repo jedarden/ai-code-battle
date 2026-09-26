@@ -14,8 +14,17 @@
  *     the pre-aicodeba-84d1d61b state — this script fails loudly so that
  *     cannot be missed. Match-tier routes must answer 503 JSON with code
  *     "match_tier_offline" while acb-api is undeployed; the community reads
- *     must be live. All probes are read-only or refused-with-503 — nothing
- *     is written to the community store.
+ *     must be live. Default probes are read-only or refused-with-503 —
+ *     nothing is written to the community store.
+ *
+ *  C. Live write-path probe — opt-in via ACB_WRITE_PROBE=1. Exercises the
+ *     LIVE community routes end-to-end (bead aicodeba-046e3747): replay
+ *     feedback POST → GET → upvote (plus its per-voter idempotency) and map
+ *     vote POST → GET → vote switch. Everything is written under a
+ *     `smoke-probe-write-<timestamp>` match/map id, a namespace no page ever
+ *     renders (feedback and tallies are keyed per-match/per-map and the SPA
+ *     only asks for real ids), so the probe leaves nothing user-visible
+ *     behind and there is no delete route to clean up with.
  *
  * Override the origin with ACB_ORIGIN (e.g. a local `wrangler pages dev`).
  */
@@ -148,6 +157,101 @@ async function expectJson(name, route, method, body, verify) {
   }
 }
 
+// ─── Part C: live write-path probe (opt-in) ──────────────────────────────────
+
+function logCheck(name, ok, message) {
+  logTest(name, ok, message);
+  if (ok) passed++; else failed++;
+}
+
+/**
+ * Round-trip the LIVE community write routes against the origin. Runs only
+ * with ACB_WRITE_PROBE=1 — see the header for why this cannot pollute
+ * anything a visitor sees.
+ */
+async function probeWritePaths() {
+  log('\n--- C. Live write-path probe (ACB_WRITE_PROBE=1) ---\n', colors.cyan);
+  if (process.env.ACB_WRITE_PROBE !== '1') {
+    logInfo('skipped — set ACB_WRITE_PROBE=1 to exercise the community write routes');
+    return;
+  }
+
+  // Timestamped ids keep re-runs independent; both pass the server's
+  // isId() pattern ([A-Za-z0-9_.:-]{1,128}).
+  const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const probeId = `smoke-probe-write-${stamp}`;
+  const voterId = `smoke-probe-voter-${stamp}`;
+  const body =
+    'Automated transport write-probe from web/test-api-workflows.js. ' +
+    'This entry lives under a probe match id no replay page ever loads.';
+  let feedbackId = null;
+
+  logInfo(`probe namespace: match/map id "${probeId}"`);
+
+  // 1. Replay feedback POST → 201 recorded with an id.
+  let res = await fetchProbe('/api/feedback', 'POST', {
+    match_id: probeId, turn: 0, type: 'idea', body, author: 'acb smoke probe',
+  });
+  logCheck(
+    'feedback POST recorded',
+    res.status === 201 && res.json?.status === 'recorded' && typeof res.json?.feedback_id === 'string',
+    res.status === 201 ? `201, feedback_id ${res.json?.feedback_id}` : `${res.status} ${JSON.stringify(res.json)}`,
+  );
+  feedbackId = res.json?.feedback_id;
+
+  // 2. Feedback GET shows the entry with zero upvotes.
+  res = await fetchProbe(`/api/feedback/${probeId}`, 'GET', null);
+  const entry = Array.isArray(res.json?.feedback)
+    ? res.json.feedback.find((f) => f.feedback_id === feedbackId)
+    : null;
+  logCheck(
+    'feedback GET round-trips the entry',
+    res.status === 200 && entry !== undefined && entry !== null && entry.upvotes === 0,
+    entry ? `found ${feedbackId}, upvotes ${entry.upvotes}` : `${res.status}, entry missing`,
+  );
+
+  // 3. Upvote recorded, then idempotent for the same voter.
+  if (feedbackId) {
+    res = await fetchProbe(`/api/feedback/${feedbackId}/upvote`, 'POST', { voter_id: voterId });
+    logCheck('feedback upvote recorded', res.status === 200 && res.json?.status === 'recorded',
+      `${res.status} ${JSON.stringify(res.json)}`);
+
+    res = await fetchProbe(`/api/feedback/${feedbackId}/upvote`, 'POST', { voter_id: voterId });
+    logCheck('feedback upvote idempotent per voter',
+      res.status === 200 && res.json?.status === 'already_upvoted',
+      `${res.status} ${JSON.stringify(res.json)}`);
+  } else {
+    logCheck('feedback upvote recorded', false, 'no feedback_id from the POST — skipping');
+    logCheck('feedback upvote idempotent per voter', false, 'no feedback_id from the POST — skipping');
+  }
+
+  // 4. GET reflects exactly one upvote.
+  res = await fetchProbe(`/api/feedback/${probeId}`, 'GET', null);
+  const upvoted = Array.isArray(res.json?.feedback)
+    ? res.json.feedback.find((f) => f.feedback_id === feedbackId)
+    : null;
+  logCheck('feedback GET reflects the upvote',
+    res.status === 200 && upvoted?.upvotes === 1,
+    upvoted ? `upvotes ${upvoted.upvotes}` : `${res.status}, entry missing`);
+
+  // 5. Map vote POST → tallied; GET reads it back with my_vote.
+  res = await fetchProbe('/api/vote/map', 'POST', { map_id: probeId, voter_id: voterId, vote: 1 });
+  logCheck('map vote POST recorded',
+    res.status === 200 && res.json?.vote === 1 && res.json?.net_votes === 1,
+    `${res.status} ${JSON.stringify(res.json)}`);
+
+  res = await fetchProbe(`/api/vote/map/${probeId}?voter_id=${encodeURIComponent(voterId)}`, 'GET', null);
+  logCheck('map vote GET reads the tally back',
+    res.status === 200 && res.json?.net_votes === 1 && res.json?.my_vote === 1,
+    `${res.status} ${JSON.stringify(res.json)}`);
+
+  // 6. Same voter switching to -1 overwrites rather than adding a voter.
+  res = await fetchProbe('/api/vote/map', 'POST', { map_id: probeId, voter_id: voterId, vote: -1 });
+  logCheck('map vote switch overwrites per voter',
+    res.status === 200 && res.json?.vote === -1 && res.json?.net_votes === -1,
+    `${res.status} ${JSON.stringify(res.json)}`);
+}
+
 async function main() {
   log('\n=== SPA→API Workflows Smoke (Pages Function transport) ===\n', colors.cyan);
   logInfo(`live origin: ${origin} (override with ACB_ORIGIN)`);
@@ -220,6 +324,8 @@ async function main() {
     failed++;
     logTest('SPA still served at /', false, `unexpected: ${home.status} ${home.contentType}`);
   }
+
+  await probeWritePaths();
 
   log('');
   if (failed > 0) {
