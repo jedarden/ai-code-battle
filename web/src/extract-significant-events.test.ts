@@ -8,6 +8,12 @@ import {
   getEventSummary,
   type SignificantEvent,
 } from './extract-significant-events';
+import {
+  EVENT_TYPE_REGISTRY,
+  UNKNOWN_EVENT_TYPE,
+  getEventTypeDescriptor,
+  isKnownEventType,
+} from './components/event-type-registry';
 import type { Replay, ReplayTurn, GameEvent, Position } from './types';
 
 describe('extractSignificantEvents', () => {
@@ -121,6 +127,99 @@ describe('extractSignificantEvents', () => {
     expect(captureEvent!.emoji).toBe('🏰');
   });
 
+  it('should extract combat events from zone_death events', () => {
+    const position: Position = { row: 4, col: 4 };
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        {
+          turn: 30,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [10, 20],
+          energy_held: [5, 15],
+          events: [
+            {
+              type: 'zone_death',
+              turn: 30,
+              details: {
+                bot_id: 7,
+                owner: 0,
+                position,
+              },
+            },
+          ],
+        },
+      ],
+      result: {
+        winner: 1,
+        reason: 'dominance',
+        turns: 31,
+        scores: [10, 20],
+        energy: [5, 15],
+        bots_alive: [2, 2],
+      },
+    } as Replay;
+
+    const events = extractSignificantEvents(replay);
+    const combatEvents = events.filter(e => e.type === 'combat');
+    expect(combatEvents.length).toBeGreaterThan(0);
+    expect(combatEvents[0].turn).toBe(30);
+    expect(combatEvents[0].description).toContain('AlphaBot');
+    expect(combatEvents[0].description).toContain('eliminated by zone');
+    expect(combatEvents[0].emoji).toBe('⚔️');
+    expect(combatEvents[0].botId).toBe(7);
+  });
+
+  it('should extract core capture events from core_destroyed events', () => {
+    const position: Position = { row: 8, col: 2 };
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        {
+          turn: 40,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [20, 10],
+          energy_held: [15, 5],
+          events: [
+            {
+              type: 'core_destroyed',
+              turn: 40,
+              details: {
+                position,
+              },
+            },
+          ],
+        },
+      ],
+      result: {
+        winner: 0,
+        reason: 'dominance',
+        turns: 41,
+        scores: [20, 10],
+        energy: [15, 5],
+        bots_alive: [2, 2],
+      },
+    } as Replay;
+
+    const events = extractSignificantEvents(replay);
+    const coreEvents = events.filter(e => e.type === 'core_capture');
+    expect(coreEvents.length).toBeGreaterThan(0);
+    const destroyedEvent = coreEvents.find(e => e.description === 'Core destroyed');
+    expect(destroyedEvent).toBeDefined();
+    expect(destroyedEvent!.turn).toBe(40);
+    expect(destroyedEvent!.emoji).toBe('💥');
+  });
+
   it('should detect mass death events', () => {
     const replay: Partial<Replay> = {
       players: [
@@ -231,6 +330,54 @@ describe('extractSignificantEvents', () => {
     expect(energyEvents.length).toBeGreaterThan(0);
     expect(energyEvents[0].description).toContain('50');
     expect(energyEvents[0].emoji).toBe('💎');
+  });
+
+  it('should extract an energy milestone from an energy collection surge', () => {
+    // Three collections in one turn counts as a surge; two do not. Both turns
+    // sit below the 50-energy threshold so the surge path is the only source
+    // of energy_milestone events in this replay.
+    const collection = (turn: number, botId: number): GameEvent => ({
+      type: 'energy_collected',
+      turn,
+      details: { bot_id: botId, owner: 0, amount: 5 },
+    });
+    const turnAt = (turn: number, collections: GameEvent[]): ReplayTurn => ({
+      turn,
+      bots: [],
+      cores: [],
+      energy: [],
+      scores: [10, 20],
+      energy_held: [10, 5],
+      events: collections,
+    });
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        turnAt(10, [collection(10, 1), collection(10, 2), collection(10, 3)]),
+        turnAt(11, [collection(11, 1), collection(11, 2)]),
+      ],
+      result: {
+        winner: 1,
+        reason: 'dominance',
+        turns: 12,
+        scores: [10, 20],
+        energy: [10, 5],
+        bots_alive: [2, 2],
+      },
+    } as Replay;
+
+    const events = extractSignificantEvents(replay);
+    const surgeEvents = events.filter(e => e.type === 'energy_milestone');
+    expect(surgeEvents.length).toBeGreaterThanOrEqual(1);
+    for (const event of surgeEvents) {
+      expect(event.turn).toBe(10);
+      expect(event.description).toContain('AlphaBot');
+      expect(event.description).toContain('collects energy surge');
+      expect(event.emoji).toBe('💎');
+    }
   });
 
   it('should detect spawn wave events', () => {
@@ -365,6 +512,98 @@ describe('extractSignificantEvents', () => {
     for (let i = 1; i < events.length; i++) {
       expect(events[i].turn).toBeGreaterThanOrEqual(events[i - 1].turn);
     }
+  });
+
+  it('should only emit registry-known types, covering every registry type', () => {
+    // The registry and the extractor are two independent maps over the same
+    // union: the ribbon renders whatever the extractor emits through
+    // getEventTypeDescriptor, so a type emitted but not registered would fall
+    // to the unknown-type fallback, and a registered type no extraction path
+    // can reach would be dead presentation config. This replay drives every
+    // extraction branch — including the aliases (zone_death → combat,
+    // core_destroyed → core_capture, the energy collection surge) — so both
+    // directions of that mapping are pinned in one pass.
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        { turn: 0, bots: [], cores: [], energy: [], scores: [0, 0], energy_held: [0, 0] },
+        {
+          turn: 5,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [0, 0],
+          energy_held: [0, 0],
+          events: [
+            { type: 'bot_spawned', turn: 5, details: { bot_id: 5, owner: 0, position: { row: 1, col: 1 } } },
+          ],
+        },
+        {
+          turn: 10,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [10, 5],
+          energy_held: [10, 5],
+          events: [
+            { type: 'core_captured', turn: 10, details: { old_owner: 1, new_owner: 0, position: { row: 3, col: 7 } } },
+          ],
+        },
+        {
+          turn: 15,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [10, 5],
+          energy_held: [10, 5],
+          events: [
+            { type: 'energy_collected', turn: 15, details: { bot_id: 1, owner: 1, amount: 5 } },
+            { type: 'energy_collected', turn: 15, details: { bot_id: 2, owner: 1, amount: 5 } },
+            { type: 'energy_collected', turn: 15, details: { bot_id: 3, owner: 1, amount: 5 } },
+          ],
+        },
+        { turn: 20, bots: [], cores: [], energy: [], scores: [10, 20], energy_held: [10, 15] },
+        {
+          turn: 25,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [10, 20],
+          energy_held: [10, 15],
+          events: [
+            { type: 'bot_died', turn: 25, details: { bot_id: 1, owner: 0, position: { row: 0, col: 0 } } },
+            { type: 'bot_died', turn: 25, details: { bot_id: 2, owner: 1, position: { row: 0, col: 0 } } },
+            { type: 'bot_died', turn: 25, details: { bot_id: 3, owner: 0, position: { row: 0, col: 0 } } },
+          ],
+        },
+      ],
+      result: {
+        winner: 1,
+        reason: 'dominance',
+        turns: 26,
+        scores: [10, 20],
+        energy: [10, 15],
+        bots_alive: [0, 2],
+      },
+    } as Replay;
+
+    const events = extractSignificantEvents(replay);
+
+    // Direction 1: every emitted type resolves to its registry entry, never
+    // to the unknown-type fallback — extraction output is render-safe.
+    for (const event of events) {
+      expect(isKnownEventType(event.type), `extractor emitted unregistered type: ${event.type}`).toBe(true);
+      expect(getEventTypeDescriptor(event.type)).toBe(EVENT_TYPE_REGISTRY[event.type]);
+      expect(getEventTypeDescriptor(event.type)).not.toBe(UNKNOWN_EVENT_TYPE);
+    }
+
+    // Direction 2: the coverage is exhaustive — every registry type is
+    // reachable from some extraction path, and this replay reaches all of them.
+    const seen = new Set(events.map(e => e.type));
+    expect([...seen].sort()).toEqual(Object.keys(EVENT_TYPE_REGISTRY).sort());
   });
 });
 
