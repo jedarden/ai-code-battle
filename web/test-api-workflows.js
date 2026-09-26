@@ -12,10 +12,13 @@
  *     Pages Function's JSON (docs/notes/api-transport.md). Anything that
  *     answers text/html is the SPA fallback, i.e. the transport regressed to
  *     the pre-aicodeba-84d1d61b state — this script fails loudly so that
- *     cannot be missed. Match-tier routes must answer 503 JSON with code
- *     "match_tier_offline" while acb-api is undeployed; the community reads
- *     must be live. Default probes are read-only or refused-with-503 —
- *     nothing is written to the community store.
+ *     cannot be missed. Every documented match-tier route (register,
+ *     rotate-key, predict, predictions/open, predictions/history) must answer
+ *     the 503 "match_tier_offline" envelope while acb-api is undeployed; the
+ *     community reads must be live. Default probes are read-only or
+ *     refused-with-503 — the match-tier branch short-circuits before any
+ *     body is read or anything is stored, so nothing is written to the
+ *     community store.
  *
  *  C. Live write-path probe — opt-in via ACB_WRITE_PROBE=1. Exercises the
  *     LIVE community routes end-to-end (bead aicodeba-046e3747): replay
@@ -27,6 +30,9 @@
  *     behind and there is no delete route to clean up with.
  *
  * Override the origin with ACB_ORIGIN (e.g. a local `wrangler pages dev`).
+ * Set ACB_SKIP_BUILD_CHECK=1 to gate the origin only when no local build is
+ * present (scripts/verify-deployment.sh does this; the post-deploy CI gate
+ * deliberately does not — there the fresh dist is the point).
  */
 
 import fs from 'fs';
@@ -157,6 +163,23 @@ async function expectJson(name, route, method, body, verify) {
   }
 }
 
+/**
+ * Every documented match-tier route must answer the honest offline envelope:
+ * 503 JSON with code "match_tier_offline" and a user-facing message (the
+ * capability table in docs/notes/api-transport.md). The router short-circuits
+ * these before the body is read or the rate limiter/storage run, so probing
+ * them is free and writes nothing — and each one proves that route is owned
+ * by the function, not the SPA fallback.
+ */
+function expectMatchTierOffline(name, route, method, body) {
+  return expectJson(name, route, method, body, (json, status) => {
+    if (status !== 503) return `expected 503, got ${status}`;
+    if (json.code !== 'match_tier_offline') return `expected code "match_tier_offline", got ${JSON.stringify(json.code)}`;
+    if (typeof json.error !== 'string' || !json.error) return 'user-facing error message missing';
+    return null;
+  });
+}
+
 // ─── Part C: live write-path probe (opt-in) ──────────────────────────────────
 
 function logCheck(name, ok, message) {
@@ -256,7 +279,11 @@ async function main() {
   log('\n=== SPA→API Workflows Smoke (Pages Function transport) ===\n', colors.cyan);
   logInfo(`live origin: ${origin} (override with ACB_ORIGIN)`);
 
-  checkBundle();
+  if (process.env.ACB_SKIP_BUILD_CHECK === '1') {
+    logInfo('Part A skipped — ACB_SKIP_BUILD_CHECK=1 (origin-only mode)');
+  } else {
+    checkBundle();
+  }
 
   log('\n--- B. Live origin transport (/api answers JSON) ---\n', colors.cyan);
 
@@ -301,18 +328,32 @@ async function main() {
     },
   );
 
-  // Match-tier routes answer the honest offline envelope (no write happens).
-  await expectJson(
+  // Every documented match-tier route answers the honest offline envelope
+  // (no write happens — the router refuses these before reading a body).
+  await expectMatchTierOffline(
     'register answers match_tier_offline',
     '/api/register',
     'POST',
     { name: 'smoke-probe-84d1d61b', endpoint_url: 'https://example.com/move', owner_id: 'smoke-probe' },
-    (json, status) => {
-      if (status !== 503) return `expected 503, got ${status}`;
-      if (json.code !== 'match_tier_offline') return `expected code "match_tier_offline", got ${JSON.stringify(json.code)}`;
-      if (typeof json.error !== 'string' || !json.error) return 'user-facing error message missing';
-      return null;
-    },
+  );
+  await expectMatchTierOffline(
+    'rotate-key answers match_tier_offline',
+    '/api/rotate-key',
+    'POST',
+    { key_id: 'smoke-probe-84d1d61b' },
+  );
+  await expectMatchTierOffline(
+    'predict answers match_tier_offline',
+    '/api/predict',
+    'POST',
+    { match_id: 'smoke-probe-84d1d61b' },
+  );
+  await expectMatchTierOffline('predictions/open answers match_tier_offline', '/api/predictions/open', 'GET', null);
+  await expectMatchTierOffline(
+    'predictions/history answers match_tier_offline',
+    '/api/predictions/history',
+    'GET',
+    null,
   );
 
   // The SPA itself is still served normally.

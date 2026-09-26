@@ -258,3 +258,32 @@ passing as a 200. Round-trip writes land under an
 `acb-e2e-probe-<timestamp>-<rand>` match/map id no page ever renders (same
 namespace argument as the write probe above); the 503-aware flows are green
 without acb-api — that is their designed answer.
+
+### Release gate — a deploy is not done until the function answers (bead aicodeba-9e883051)
+
+The smoke is also the release gate, at two layers, both hard-failing on any
+SPA-fallback answer:
+
+- **Deploy pipeline** — `acb-site-pages-build` (declarative-config
+  `k8s/iad-ci/argo-workflows/acb-site-pages-build-workflowtemplate.yml`,
+  gate added in `3fc3cc55`, 2026-09-26) runs the full smoke
+  (`node test-api-workflows.js` — build markers in the dist just shipped,
+  health, community reads, and **all five** documented match-tier 503
+  routes: register, rotate-key, predict, predictions/open,
+  predictions/history) as a post-deploy step, after polling `/api/health`
+  for edge propagation (90 s cap). A transport regression now fails the
+  deploy run itself instead of shipping silently — the failure mode the
+  2026-08-28 → 2026-09-26 outage ran for weeks unnoticed.
+- **Manual verification** — `scripts/verify-deployment.sh` runs the same
+  smoke against the deployed origin (origin-only mode: the smoke skips the
+  local-build markers under `ACB_SKIP_BUILD_CHECK=1`) and exits non-zero on
+  any regression; it is the only hard-failing check in that script. Its
+  pre-transport checks (`aicodebattle.com` apex, `api.aicodebattle.com`
+  K8s health) were stale — the apex is NXDOMAIN (see
+  `canonical-public-domain.md`) and the K8s API host has answered nothing
+  since the compute-tier descope, which is exactly why the SPA fallback
+  could go unnoticed.
+
+The match-tier 503 probes cost nothing and write nothing: the router
+refuses those routes before any body is read, rate-limited, or stored, so
+proving all five are function-owned is free on every deploy.
