@@ -58,18 +58,33 @@ import map, is exactly the silent-failure state the standard warns about.
    no demo props — so the UI is the path; see the spec header.)
 
 Layer 4 runs with `npm run test:browser` (desktop project; needs the nix
-Chromium on NixOS — see `web/playwright.config.ts`). Live verdict, re-run
-2026-09-27 against commit `96e9583` from a clean `git archive` extraction
-(bead `aicodeba-11b6f07f`, second attempt): layers 1–3 green (3/3 jsdom,
-8/8 fixture, 6/6 wiring), layer 4 **red**, unchanged — all three built
-pages still mount the toolbar, but each throws uncaught pageerrors,
-failing the spec's tripwire (`agentation-pages-mount.spec.ts:141`): embed
+Chromium on NixOS — see `web/playwright.config.ts`).
+
+**Final verdict 2026-09-27 (bead `aicodeba-4fb184a8`): layer 4 is green on
+every committed tree; the 2026-09-26/27 red records are retracted as an
+audit artifact, not a tree defect.** Those records (beads
+`aicodeba-11b6f07f` / `aicodeba-88d11430`) reported all three built pages
+mounting the toolbar but throwing uncaught pageerrors — embed
 `null.addEventListener` + TDZ `F8`, index `null.getContext` + TDZ `F8`,
-replay `null.addEventListener` (serial mode aborts after embed, so index
-and replay were confirmed with isolated `--grep` runs). Identical to the
-`dec7648` inventory, and the throw still reproduces at `2fa0d27`, so the
-earlier "4/4 passed at 2fa0d27" line was never true of a committed tree.
-Fix: `aicodeba-88d11430`.
+replay `null.addEventListener` — from entry chunk `main-XjMtku3y.js`. That
+chunk cannot be produced by any committed tree: with the pinned toolchain
+every committed tree emits a 3-line minified `main` (`main-ZyLcA4yJ`, the
+hash production serves) with react inside the `agentation` chunk, while the
+inventory cites positions up to `:4977` in `main` — an unminified
+~5000-line entry chunk, i.e. a build in which the `manualChunks` split and
+minification never ran. No committed config produces that shape
+(`vite build --minify false` yields `main-Di1Bk8nm`, 337 lines), and
+`web/package-lock.json` is byte-identical across `dec7648..HEAD` and fully
+integrity-pinned, so `npm ci` cannot vary the inputs either. Re-running the
+red runs' own protocol (git-archive extraction, `npm ci`, nix Chromium)
+proves it: at `96e9583` — the exact commit twice recorded red — layer 4
+passes 4/4, and at HEAD `e7cbf69` 7/7, with the full stack green (9/9
+vitest layers 1+3, 8/8 fixture, 7/7 built pages, live 3 passed + 3
+skipped). The red runs therefore built something other than the committed
+tree — in-flight workspace edits, the same contamination that produced the
+earlier false "4/4 passed" record. The throwing bundle never reached
+production (the live origin serves `main-ZyLcA4yJ`; layer 5 green).
+`aicodeba-88d11430` has no code defect left to fix.
 
 Live verdict 2026-09-27 (bead `aicodeba-199a231a`): 7/7 desktop tests green —
 per page beyond the mount, the identify tests now drive the real annotate
