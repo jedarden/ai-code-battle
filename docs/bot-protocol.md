@@ -136,6 +136,16 @@ A successful response has status `200 OK` and must include `X-ACB-Signature`. It
 
 `moves` is required and must be an array, including an empty array for a deliberate hold. Every move must be an object with integer, non-negative `position.row` and `position.col` fields and a string `direction` equal to `N`, `E`, `S`, or `W`. The string `stay` is accepted and produces a no-op for that unit. `debug` is optional and is the only other recognized top-level field. Unknown additive response fields and nested fields are ignored, but a malformed recognized field invalidates the entire response; no move from that response is applied.
 
+Moves address units by position, not by identifier: the protocol has no unit IDs, and a move's `position` selects the unit standing on that coordinate in the request's `bots` array with `owner` equal to `you.id`. Order adjudication is then mechanical:
+
+- **Omitted orders.** A response may order any subset of the caller's units; a unit given no order holds position, and `"moves": []` is the explicit all-hold.
+- **Duplicate orders.** Multiple orders for the same position are resolved by array order: the first is kept, the rest are ignored.
+- **Unknown positions.** An order whose position does not hold one of the caller's living units — an empty tile, an enemy unit, a dead unit, or a coordinate beyond the grid — is dropped. A dropped order is not an error: the response is still a successful turn and resets the consecutive-failure counter exactly as an empty `moves` array does. Only a schema-invalid recognized field invalidates the whole response.
+
+`stay` is itself an order to hold, so a stay order never appears among the engine's applied moves.
+
+Acceptance is not execution. Grid adjudication happens after the response is accepted: movement wraps toroidally across the map edges, an order into a blocked tile is ignored so the unit holds, and steering two of the caller's own units into one tile kills both per the self-collision rules. None of that can fail the turn — a turn's outcome is decided entirely by the response's transport, signature, and schema, never by where its accepted orders land.
+
 To sign the response, use the authenticated request's `match_id` and integer `turn`:
 
 ```text

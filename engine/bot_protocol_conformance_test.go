@@ -758,6 +758,111 @@ func TestBotProtocolConformance_ResponseSchemaAndNoOp(t *testing.T) {
 	}
 }
 
+// TestBotProtocolConformance_MoveOrderAdjudication pins the order-level
+// rules documented in docs/bot-protocol.md "Turn Response": units are
+// addressed by position (there are no unit IDs), omitted orders hold,
+// duplicates resolve first-wins, and orders for unknown positions are
+// dropped without turning the turn into a failure.
+func TestBotProtocolConformance_MoveOrderAdjudication(t *testing.T) {
+	const secret = "conformance-adjudication-secret"
+
+	state := func() *VisibleState {
+		s := &VisibleState{
+			MatchID: "m_adjudication",
+			Turn:    21,
+			Config:  DefaultConfig(),
+			Bots: []VisibleBot{
+				{Position: Position{Row: 5, Col: 5}, Owner: 0},
+				{Position: Position{Row: 6, Col: 5}, Owner: 0},
+				{Position: Position{Row: 10, Col: 10}, Owner: 1},
+			},
+			Energy: []Position{},
+			Cores:  []VisibleCore{},
+			Walls:  []Position{},
+			Dead:   []VisibleBot{},
+			Zone:   &ZoneBounds{Center: Position{Row: 20, Col: 20}, Radius: 20},
+		}
+		s.You.ID = 0
+		return s
+	}
+
+	tests := []struct {
+		name      string
+		body      string
+		wantMoves int
+		wantDir   Direction
+		wantPos   Position
+	}{
+		{
+			name:      "unowned position dropped, owned order kept",
+			body:      `{"moves":[{"position":{"row":0,"col":0},"direction":"N"},{"position":{"row":5,"col":5},"direction":"N"}]}`,
+			wantMoves: 1, wantDir: DirN, wantPos: Position{Row: 5, Col: 5},
+		},
+		{
+			name:      "enemy position dropped",
+			body:      `{"moves":[{"position":{"row":10,"col":10},"direction":"S"},{"position":{"row":5,"col":5},"direction":"E"}]}`,
+			wantMoves: 1, wantDir: DirE, wantPos: Position{Row: 5, Col: 5},
+		},
+		{
+			name:      "off-grid position dropped",
+			body:      `{"moves":[{"position":{"row":999,"col":999},"direction":"W"},{"position":{"row":6,"col":5},"direction":"S"}]}`,
+			wantMoves: 1, wantDir: DirS, wantPos: Position{Row: 6, Col: 5},
+		},
+		{
+			name:      "duplicate position keeps first order",
+			body:      `{"moves":[{"position":{"row":5,"col":5},"direction":"N"},{"position":{"row":5,"col":5},"direction":"S"},{"position":{"row":5,"col":5},"direction":"E"}]}`,
+			wantMoves: 1, wantDir: DirN, wantPos: Position{Row: 5, Col: 5},
+		},
+		{
+			name:      "subset order leaves the unordered unit holding",
+			body:      `{"moves":[{"position":{"row":6,"col":5},"direction":"E"}]}`,
+			wantMoves: 1, wantDir: DirE, wantPos: Position{Row: 6, Col: 5},
+		},
+		{
+			name:      "all orders dropped is still a successful hold",
+			body:      `{"moves":[{"position":{"row":10,"col":10},"direction":"N"},{"position":{"row":999,"col":0},"direction":"W"}]}`,
+			wantMoves: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := []byte(test.body)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				turn, err := strconv.Atoi(r.Header.Get("X-ACB-Turn"))
+				if err != nil {
+					t.Errorf("X-ACB-Turn is not an integer: %v", err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-ACB-Signature", SignResponse(secret, r.Header.Get("X-ACB-Match-Id"), turn, body))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(body)
+			}))
+			t.Cleanup(server.Close)
+
+			bot := NewHTTPBot(server.URL, AuthConfig{BotID: "b_adjudication", Secret: secret, MatchID: "m_adjudication"})
+			moves, err := bot.GetMoves(state())
+			if err != nil {
+				t.Fatalf("GetMoves() rejected a schema-valid response: %v", err)
+			}
+			if len(moves) != test.wantMoves {
+				t.Fatalf("GetMoves() returned %d moves, want %d", len(moves), test.wantMoves)
+			}
+			if test.wantMoves == 1 {
+				if got := moves[0]; got.Position != test.wantPos || got.Direction != test.wantDir {
+					t.Errorf("surviving move = %v %v, want %v %v", got.Position, got.Direction, test.wantPos, test.wantDir)
+				}
+			}
+			if bot.failCount != 0 {
+				t.Errorf("failCount = %d, want 0: dropped orders must not advance the failure counter", bot.failCount)
+			}
+			if bot.IsCrashed() {
+				t.Error("dropped orders marked the bot inactive")
+			}
+		})
+	}
+}
+
 func TestBotProtocolConformance_RejectedRequestNeverExecutes(t *testing.T) {
 	const secret = "conformance-gate-secret"
 
