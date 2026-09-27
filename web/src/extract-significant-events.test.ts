@@ -605,6 +605,171 @@ describe('extractSignificantEvents', () => {
     const seen = new Set(events.map(e => e.type));
     expect([...seen].sort()).toEqual(Object.keys(EVENT_TYPE_REGISTRY).sort());
   });
+
+  it('should skip a null turn without losing the neighbouring events', () => {
+    // Replay data crossing a serialization boundary can carry a null turn;
+    // the extractor must step over it and keep processing the rest of the
+    // timeline instead of crashing or dropping everything after it.
+    const replay = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        null,
+        {
+          turn: 1,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [10, 5],
+          energy_held: [5, 2],
+          events: [
+            { type: 'bot_spawned', turn: 1, details: { bot_id: 2, owner: 1, position: { row: 2, col: 2 } } },
+          ],
+        },
+      ],
+      result: { winner: 0, reason: 'dominance', turns: 2, scores: [10, 5], energy: [5, 2], bots_alive: [2, 1] },
+    } as unknown as Replay;
+
+    const events = extractSignificantEvents(replay);
+    expect(events.some(e => e.type === 'spawn_wave')).toBe(true);
+    expect(events.some(e => e.type === 'critical_moment')).toBe(true);
+  });
+
+  it('should not report a momentum shift until a leader is established, and a tie must not flip it', () => {
+    // getCurrentLeader returns null for a turn with no scores at all or with
+    // fewer than two entries, and the first readable turn establishes the
+    // baseline rather than "changing" the lead. The strictly-greater score
+    // comparison also means a tie keeps the earlier leader — only a real
+    // overtaking fires the shift.
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        { turn: 0, bots: [], cores: [], energy: [], energy_held: [0, 0] },          // no scores field
+        { turn: 1, bots: [], cores: [], energy: [], scores: [10], energy_held: [0, 0] }, // too short to read
+        { turn: 2, bots: [], cores: [], energy: [], scores: [10, 5], energy_held: [0, 0] }, // leader 0
+        { turn: 3, bots: [], cores: [], energy: [], scores: [7, 7], energy_held: [0, 0] },  // tie keeps leader 0
+        { turn: 4, bots: [], cores: [], energy: [], scores: [7, 8], energy_held: [0, 0] },  // real shift
+      ],
+    } as Replay;
+
+    const events = extractSignificantEvents(replay);
+    const shifts = events.filter(e => e.type === 'momentum_shift');
+    expect(shifts).toHaveLength(1);
+    expect(shifts[0].turn).toBe(4);
+    expect(shifts[0].description).toBe('BetaBot takes lead from AlphaBot');
+  });
+
+  it('should not track lead changes when trackLeadChanges is disabled', () => {
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        { turn: 0, bots: [], cores: [], energy: [], scores: [10, 5], energy_held: [0, 0] },
+        { turn: 1, bots: [], cores: [], energy: [], scores: [5, 10], energy_held: [0, 0] },
+      ],
+    } as Replay;
+
+    const events = extractSignificantEvents(replay, { trackLeadChanges: false });
+    expect(events.filter(e => e.type === 'momentum_shift')).toHaveLength(0);
+  });
+
+  it('should skip energy milestones when energy_held is absent or below every threshold', () => {
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        { turn: 0, bots: [], cores: [], energy: [], scores: [0, 0], energy_held: [10, 20] }, // below 50/100/150
+        { turn: 1, bots: [], cores: [], energy: [], scores: [0, 0] },                        // no energy_held field
+      ],
+    } as Replay;
+
+    const events = extractSignificantEvents(replay);
+    expect(events.filter(e => e.type === 'energy_milestone')).toHaveLength(0);
+  });
+
+  it('should honor a custom energyMilestones config', () => {
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        // Below every default threshold, so only the override can fire.
+        { turn: 0, bots: [], cores: [], energy: [], scores: [0, 0], energy_held: [10, 20] },
+      ],
+    } as Replay;
+
+    const events = extractSignificantEvents(replay, { energyMilestones: [15] });
+    const milestones = events.filter(e => e.type === 'energy_milestone');
+    expect(milestones).toHaveLength(1);
+    expect(milestones[0].playerId).toBe(1);
+    expect(milestones[0].description).toBe('BetaBot reaches 15 energy');
+  });
+
+  it('should honor a lowered massDeathThreshold and dedupe the spike to one event', () => {
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        {
+          turn: 0,
+          bots: [],
+          cores: [],
+          energy: [],
+          scores: [10, 20],
+          energy_held: [5, 15],
+          events: [
+            { type: 'bot_died', turn: 0, details: { bot_id: 1, owner: 0, position: { row: 0, col: 0 } } },
+            { type: 'bot_died', turn: 0, details: { bot_id: 2, owner: 1, position: { row: 0, col: 0 } } },
+          ],
+        },
+        { turn: 1, bots: [], cores: [], energy: [], scores: [10, 20], energy_held: [5, 15] },
+        { turn: 2, bots: [], cores: [], energy: [], scores: [10, 20], energy_held: [5, 15] },
+      ],
+    } as Replay;
+
+    // Two deaths stay below the default threshold of 3.
+    const defaults = extractSignificantEvents(replay);
+    expect(defaults.filter(e => e.type === 'mass_death')).toHaveLength(0);
+
+    // Lowered to 2, the spike fires once, attributed to the peak turn — the
+    // later windows in the rolling 3-turn span must not re-add a duplicate.
+    const lowered = extractSignificantEvents(replay, { massDeathThreshold: 2 });
+    const mass = lowered.filter(e => e.type === 'mass_death');
+    expect(mass).toHaveLength(1);
+    expect(mass[0].turn).toBe(0);
+    expect(mass[0].description).toBe('2 bots eliminated');
+  });
+
+  it('should describe a draw (negative winner) without attributing a player', () => {
+    const replay: Partial<Replay> = {
+      players: [
+        { id: 0, name: 'AlphaBot' },
+        { id: 1, name: 'BetaBot' },
+      ],
+      turns: [
+        { turn: 0, bots: [], cores: [], energy: [], scores: [5, 5], energy_held: [0, 0] },
+      ],
+      result: { winner: -1, reason: 'timeout', turns: 1, scores: [5, 5], energy: [0, 0], bots_alive: [2, 2] },
+    } as Replay;
+
+    const events = extractSignificantEvents(replay);
+    const ends = events.filter(e => e.type === 'critical_moment');
+    expect(ends).toHaveLength(1);
+    expect(ends[0].description).toBe('Game ends: Unknown wins by timeout');
+    expect(ends[0].playerId).toBeUndefined();
+  });
 });
 
 describe('getEventsInRange', () => {
