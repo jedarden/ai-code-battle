@@ -46,10 +46,16 @@ import map, is exactly the silent-failure state the standard warns about.
    it loads. Enumerates the directory at run time — a new page is audited
    automatically, no list to update.
 4. `web/layout-tests/agentation-pages-mount.spec.ts` — **the real built
-   pages mount**: vite-builds the actual inputs, serves them to headless
-   Chromium over route fulfillment, asserts `#agentation-root` + a visible
-   `[data-agentation-toolbar="true"]` on each, and tripwires when the build
-   emits a page the spec doesn't know.
+   pages mount and identify**: vite-builds the actual inputs, serves them to
+   headless Chromium over route fulfillment, asserts `#agentation-root` + a
+   visible `[data-agentation-toolbar="true"]` on each, tripwires when the
+   build emits a page the spec doesn't know, and — per page — drives the
+   toolbar's real annotate flow (Ctrl+Shift+F, click the page's own DOM,
+   comment in the popup) and proves the identify pipeline from the toolbar's
+   own store: the stored annotation's `elementPath` resolves back inside the
+   clicked element with a non-zero bounding box, and a marker renders.
+   (Demo mode is not drivable on the built pages — `initAgentation` passes
+   no demo props — so the UI is the path; see the spec header.)
 
 Layer 4 runs with `npm run test:browser` (desktop project; needs the nix
 Chromium on NixOS — see `web/playwright.config.ts`). Live verdict, re-run
@@ -64,6 +70,16 @@ and replay were confirmed with isolated `--grep` runs). Identical to the
 `dec7648` inventory, and the throw still reproduces at `2fa0d27`, so the
 earlier "4/4 passed at 2fa0d27" line was never true of a committed tree.
 Fix: `aicodeba-88d11430`.
+
+Live verdict 2026-09-27 (bead `aicodeba-199a231a`): 7/7 desktop tests green —
+per page beyond the mount, the identify tests now drive the real annotate
+flow (Ctrl+Shift+F → click the page's own DOM → comment in the popup) and
+read the toolbar's own store: the stored annotation's `elementPath` resolves
+back inside the clicked element with a non-zero bounding box and a rendered
+marker. Click targets: `index.html` → `nav`, `embed.html` →
+`.embed-container` (the harness 404s every API path, so embed sits in its
+error-overlay state — that overlay is the app DOM the flow identifies),
+`replay.html` → `.canvas-wrapper`.
 
 ## Adding a page
 

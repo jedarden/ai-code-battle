@@ -23,6 +23,15 @@
 // agentation-coverage.md records the full audited page list). It loads
 // /src/main.ts — the same entry module replay.html mounts and this spec
 // verifies in built form.
+//
+// Mounting alone is the layer-3 fixture's proof transplanted onto real
+// bundles. The identify half of the standard is proven here too, per page:
+// the toolbar's own annotate flow (Ctrl+Shift+F, click the page, comment in
+// the popup) runs its identify pipeline against the app's real DOM. On the
+// built pages initAgentation owns the mount and passes no demo props, so
+// demo mode (agentation-probe.ts) is not drivable there — driving the real
+// toolbar UI is, and it is the stronger proof: nothing is stubbed, the
+// pipeline that runs is the one a human triggers.
 
 import { expect, test } from '@playwright/test';
 import { build } from 'vite';
@@ -138,6 +147,108 @@ for (const page_ of PAGES) {
     expect(
       pageErrors,
       `${page_} must mount without throwing: ${pageErrors.join(' | ')}`
+    ).toEqual([]);
+  });
+}
+
+// Where the annotate-flow test clicks on each page: one stable element of
+// the page's own DOM (static chrome where present, the app's load-failure
+// state where the API is mocked away — the mount audit 404s every /api and
+// /data path, so embed shows its error overlay and index/replay render
+// around their empty data). The flow identifies the deepest element under
+// the pointer, so the target is a container and the assertion accepts the
+// identified element itself or any descendant. A page joining PAGES above
+// needs an entry here or its identify test fails on an undefined selector.
+const IDENTIFY_TARGETS: Record<string, string> = {
+  'index.html': 'nav',
+  'embed.html': '.embed-container',
+  'replay.html': '.canvas-wrapper',
+};
+
+// The comment typed into the popup; the store is matched on it. Fresh per
+// test — each Playwright test gets its own context, so its localStorage
+// starts empty and nothing from another page can leak in.
+const IDENTIFY_NOTE = 'pages-mount identify audit';
+
+type IdentifiedAnnotation = {
+  comment?: string;
+  element?: string;
+  elementPath?: string;
+  boundingBox?: { width: number; height: number };
+};
+
+for (const page_ of PAGES) {
+  test(`${page_} identifies an element of the app's own DOM through the toolbar's annotate flow`, async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', e => pageErrors.push(e.message));
+    await serveDist(page);
+    await page.goto(`${PAGE_ORIGIN}/${page_}`, { waitUntil: 'load' });
+    await expect(page.locator('#agentation-root')).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.locator('[data-agentation-toolbar="true"]')).toBeVisible();
+
+    // Annotate mode is the toolbar's own toggle (Ctrl/Cmd+Shift+F); a click
+    // while it is active makes the toolbar identify the element under the
+    // pointer and open its popup. This is the pipeline the fixture spec
+    // drives in demo mode — here nothing is stubbed and the element named
+    // comes out of the page's real bundle and real layout.
+    await page.keyboard.press('Control+Shift+F');
+    await page.click(IDENTIFY_TARGETS[page_]);
+
+    const popup = page.locator('[data-annotation-popup="true"]');
+    await expect(popup).toBeVisible();
+    // The popup auto-focuses its textarea and submits on Enter.
+    await popup.locator('textarea').fill(IDENTIFY_NOTE);
+    await popup.locator('textarea').press('Enter');
+
+    // The toolbar persists accepted annotations under its own key
+    // (feedback-annotations-<pathname>): waiting on the store proves the
+    // identify pipeline ran, and the shape proves what it identified.
+    const handle = await page.waitForFunction(
+      note => {
+        const stored = localStorage.getItem(
+          `feedback-annotations-${location.pathname}`
+        );
+        if (!stored) return null;
+        return (
+          (JSON.parse(stored) as IdentifiedAnnotation[]).find(
+            a => a.comment === note
+          ) ?? null
+        );
+      },
+      IDENTIFY_NOTE,
+      { timeout: 10_000 }
+    );
+    const ann = (await handle.jsonValue()) as IdentifiedAnnotation;
+
+    expect(ann.element, 'the annotation must name the identified element').toBeTruthy();
+    expect(ann.elementPath, 'the annotation must carry the identified path').toBeTruthy();
+
+    // The identification is only useful if the path turns back into the
+    // element — inside the container that was clicked.
+    const targetSelector = IDENTIFY_TARGETS[page_];
+    const inTarget = await page.evaluate(
+      ({ path, targetSelector }) => {
+        const el = document.querySelector(path);
+        const target = document.querySelector(targetSelector);
+        return el !== null && target !== null && (el === target || target.contains(el));
+      },
+      { path: ann.elementPath!, targetSelector }
+    );
+    expect(
+      inTarget,
+      `annotation path "${ann.elementPath}" must resolve inside ${targetSelector}`
+    ).toBe(true);
+
+    // Real layout only — jsdom's zeros can never pass this.
+    expect(ann.boundingBox?.width ?? 0).toBeGreaterThan(0);
+    expect(ann.boundingBox?.height ?? 0).toBeGreaterThan(0);
+
+    // The toolbar's own state accepted the annotation — it renders a marker.
+    await expect(page.locator('[data-annotation-marker]').first()).toBeVisible();
+
+    expect(
+      pageErrors,
+      `${page_} must run the annotate flow without throwing: ${pageErrors.join(' | ')}`
     ).toEqual([]);
   });
 }
