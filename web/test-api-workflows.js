@@ -24,7 +24,14 @@
  *     community reads must be live. Default probes are read-only or
  *     refused-with-503 — the match-tier branch short-circuits before any
  *     body is read or anything is stored, so nothing is written to the
- *     community store.
+ *     community store. The deployed side of the method matrix and the live
+ *     validation refusals are pinned here too (bead aicodeba-e945a359):
+ *     undocumented verbs must stay function-owned JSON (the SPA fallback's
+ *     signatures are their negation — 200 text/html on a GET, a bare
+ *     static-layer 405 on a POST), and shape-invalid write probes must
+ *     answer their exact 400 strings. Verb refusals never run a handler and
+ *     the 400s fire before the rate limiter or any storage write, so every
+ *     one of these probes is read-only whatever the answer.
  *
  *  C. Live write-path probe — opt-in via ACB_WRITE_PROBE=1. Exercises the
  *     LIVE community routes end-to-end (bead aicodeba-046e3747): replay
@@ -590,6 +597,79 @@ async function main() {
     (json, status) => {
       if (status !== 404) return `expected 404, got ${status}`;
       if (json.error !== 'not found') return `expected error "not found", got ${JSON.stringify(json.error)}`;
+      return null;
+    },
+  );
+
+  // The deployed side of the method matrix (bead aicodeba-e945a359). The
+  // handler-level table lives in api-backend.test.ts and the same matrix
+  // runs through the exported onRequest in api-function-adapter.test.ts,
+  // but both are offline — this pins the verb dimension on the live origin,
+  // where only the platform routing layer stands between the probe and the
+  // function. Every documented route must refuse its undocumented verbs as
+  // function-owned JSON: the 404 fall-through, plus the one structural
+  // exception — GET on an upvote path syntactically matches the sibling
+  // read route, whose id validator refuses the slash with a 400. Refusal is
+  // decided by the verb alone — no handler runs, the body is never read,
+  // nothing is stored — so these probes are read-only whatever the answer,
+  // and the verb-probe POSTs carry no body, so even a regression that let
+  // the verb through would refuse on the empty body before any write. The
+  // SPA fallback's signatures are the negation (docs/notes/api-transport.md):
+  // 200 text/html on a GET, a bare non-JSON 405 from the static layer on a
+  // POST — either one here is the transport regressed.
+  const notFound = (json, status) => {
+    if (status !== 404) return `expected 404, got ${status}`;
+    if (json.error !== 'not found') return `expected error "not found", got ${JSON.stringify(json.error)}`;
+    return null;
+  };
+  await expectJson('POST /api/health refused as JSON 404 (undocumented verb)', '/api/health', 'POST', null, notFound);
+  await expectJson('GET /api/vote/map refused as JSON 404 (undocumented verb)', '/api/vote/map', 'GET', null, notFound);
+  await expectJson(
+    'DELETE /api/predictions/open refused as JSON 404 (verb precedes the match-tier branch)',
+    '/api/predictions/open',
+    'DELETE',
+    null,
+    notFound,
+  );
+  await expectJson(
+    'GET /api/feedback/{id}/upvote answers the 400 structural exception',
+    '/api/feedback/smoke-probe-e945a359/upvote',
+    'GET',
+    null,
+    (json, status) => {
+      if (status !== 400) return `expected 400, got ${status}`;
+      if (json.error !== 'invalid match ID') return `expected error "invalid match ID", got ${JSON.stringify(json.error)}`;
+      return null;
+    },
+  );
+
+  // Live validation refusals: each shape error is rejected before the rate
+  // limiter runs and before anything is stored (the handler validates
+  // first), so probing them writes nothing — and each answer must be the
+  // exact function-owned 400, never the SPA fallback. The ids pass
+  // isStorageId so the vote probe reaches the vote-value check rather than
+  // stopping at the id check, pinning the deeper refusal.
+  await expectJson(
+    'POST /api/feedback invalid shape answers JSON 400',
+    '/api/feedback',
+    'POST',
+    { type: 'insight' },
+    (json, status) => {
+      if (status !== 400) return `expected 400, got ${status}`;
+      if (json.error !== 'match_id, type, and body are required') {
+        return `expected error "match_id, type, and body are required", got ${JSON.stringify(json.error)}`;
+      }
+      return null;
+    },
+  );
+  await expectJson(
+    'POST /api/vote/map invalid vote answers JSON 400',
+    '/api/vote/map',
+    'POST',
+    { map_id: 'smoke-probe-e945a359', voter_id: 'smoke-probe-e945a359', vote: 5 },
+    (json, status) => {
+      if (status !== 400) return `expected 400, got ${status}`;
+      if (json.error !== 'vote must be +1 or -1') return `expected error "vote must be +1 or -1", got ${JSON.stringify(json.error)}`;
       return null;
     },
   );

@@ -330,7 +330,15 @@ health + capabilities, one map tally, one feedback read, all five match-tier
 refusals (register, rotate-key, predict, predictions/open, predictions/history),
 an unknown `/api` path — which must answer JSON 404, pinning the deployed
 catch-all (`functions/api/[[path]].ts`) at the platform routing layer, the one
-seam no offline test sees — and the SPA at `/`. Part E (bead
+seam no offline test sees — and the SPA at `/`. Since bead aicodeba-e945a359
+it also pins the deployed side of the method matrix and the live validation
+refusals: undocumented verbs on probed routes must stay function-owned JSON
+(the 404 fall-through, `DELETE /predictions/open` proving the verb check
+precedes the match-tier branch, and the `GET …/upvote` → 400
+`invalid match ID` structural exception), and shape-invalid write probes
+(missing feedback fields, a vote of `5`) must answer their exact 400 strings
+— both refused before the rate limiter or any storage write, so these probes
+are read-only whatever the origin answers. Part E (bead
 aicodeba-a0c15607) pins the same platform-routing seam for the other mount
 and the isolation between the two: `/r2/replays/<missing>.json.gz` and the
 bare `/r2/` root must answer the r2 function's `text/plain` seam (the
