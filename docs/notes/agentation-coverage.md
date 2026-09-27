@@ -52,14 +52,18 @@ import map, is exactly the silent-failure state the standard warns about.
    emits a page the spec doesn't know.
 
 Layer 4 runs with `npm run test:browser` (desktop project; needs the nix
-Chromium on NixOS — see `web/playwright.config.ts`). Live verdict, run
-2026-09-26 against commit `dec7648` from a clean `git archive` extraction
-(bead `aicodeba-11b6f07f`): layers 1–3 green (3/3 jsdom, 8/8 fixture,
-6/6 wiring), layer 4 **red** — all three built pages still mount the
-toolbar, but each throws uncaught pageerrors, failing the spec's tripwire
-(`agentation-pages-mount.spec.ts:141`). The same throw reproduces at
-`2fa0d27`, so the earlier "4/4 passed at 2fa0d27" line was never true of
-a committed tree. Fix: `aicodeba-88d11430`.
+Chromium on NixOS — see `web/playwright.config.ts`). Live verdict, re-run
+2026-09-27 against commit `96e9583` from a clean `git archive` extraction
+(bead `aicodeba-11b6f07f`, second attempt): layers 1–3 green (3/3 jsdom,
+8/8 fixture, 6/6 wiring), layer 4 **red**, unchanged — all three built
+pages still mount the toolbar, but each throws uncaught pageerrors,
+failing the spec's tripwire (`agentation-pages-mount.spec.ts:141`): embed
+`null.addEventListener` + TDZ `F8`, index `null.getContext` + TDZ `F8`,
+replay `null.addEventListener` (serial mode aborts after embed, so index
+and replay were confirmed with isolated `--grep` runs). Identical to the
+`dec7648` inventory, and the throw still reproduces at `2fa0d27`, so the
+earlier "4/4 passed at 2fa0d27" line was never true of a committed tree.
+Fix: `aicodeba-88d11430`.
 
 ## Adding a page
 
