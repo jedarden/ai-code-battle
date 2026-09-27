@@ -253,10 +253,14 @@ ACB_ORIGIN=http://127.0.0.1:8788 npm run test:api-workflows   # wrangler pages d
 
 `web/test-api-workflows.js` is read-only against the origin. Part A asserts
 the built bundle still carries the transport contract markers; part B probes
-health + capabilities, one map tally, one feedback read, and one refused
-register. It is the arbiter of which state the origin is in (see Deployment
-state above): it fails loudly while `/api` answers anything but JSON — which
-is currently the deploy signal, not a code bug.
+health + capabilities, one map tally, one feedback read, all five match-tier
+refusals (register, rotate-key, predict, predictions/open, predictions/history),
+an unknown `/api` path — which must answer JSON 404, pinning the deployed
+catch-all (`functions/api/[[path]].ts`) at the platform routing layer, the one
+seam no offline test sees — and the SPA at `/`. It is the arbiter of which
+state the origin is in (see Deployment state above): it fails loudly while
+`/api` answers anything but JSON — which is currently the deploy signal, not a
+code bug.
 
 ### Live end-to-end flows (needs the network; opt-in like the smoke)
 

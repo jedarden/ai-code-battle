@@ -356,6 +356,26 @@ async function main() {
     null,
   );
 
+  // An unknown /api path must still be answered by the function — a JSON 404,
+  // never the SPA fallback. The offline suites pin the handler's router
+  // (JSON 404 for unknown routes); this pins the deployed side of that seam:
+  // functions/api/[[path]].ts is a Pages catch-all, so every /api/* path is
+  // handed to the handler at the platform routing layer, which no offline
+  // test sees. If that catch-all ever stops intercepting (renamed away from
+  // [[path]], a shadowing route, a routing regression), this starts answering
+  // 200 text/html and the smoke fails loudly.
+  await expectJson(
+    'unknown /api path answers JSON 404 (not the SPA fallback)',
+    '/api/not-a-route-4a9e0c6a',
+    'GET',
+    null,
+    (json, status) => {
+      if (status !== 404) return `expected 404, got ${status}`;
+      if (json.error !== 'not found') return `expected error "not found", got ${JSON.stringify(json.error)}`;
+      return null;
+    },
+  );
+
   // The SPA itself is still served normally.
   const home = await fetchProbe('/', 'GET', null);
   if (home.status === 200 && home.contentType.includes('text/html')) {
