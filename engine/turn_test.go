@@ -656,6 +656,42 @@ func TestExecuteSpawnSkipsEnemyAndInactiveCores(t *testing.T) {
 	}
 }
 
+// TestExecuteSpawnSkipsEnemyOccupiedCores pins that occupancy blocks the
+// automatic Spawn phase regardless of the occupant's owner: an enemy bot
+// parked on your active core makes it occupied, so no second bot spawns
+// there and no energy is spent on it (README "Spawn": active, *unoccupied*
+// Cores).
+func TestExecuteSpawnSkipsEnemyOccupiedCores(t *testing.T) {
+	gs := newTestGameState()
+	p0 := gs.AddPlayer()
+	p1 := gs.AddPlayer()
+
+	blockCore := gs.AddCore(p0.ID, Position{5, 5})
+	freeCore := gs.AddCore(p0.ID, Position{10, 10})
+	blocker := gs.SpawnBot(p1.ID, blockCore.Position)
+
+	gs.Players[p0.ID].Energy = gs.Config.SpawnCost * 2
+
+	gs.executeSpawns()
+
+	bots := gs.GetPlayerBots(p0.ID)
+	if len(bots) != 1 {
+		t.Fatalf("player 0 bot count = %d, want 1 (enemy-occupied core must not spawn)", len(bots))
+	}
+	if bots[0].Position != freeCore.Position {
+		t.Errorf("spawn at %v, want only the unoccupied core at %v", bots[0].Position, freeCore.Position)
+	}
+	if got := gs.Players[p0.ID].Energy; got != gs.Config.SpawnCost {
+		t.Errorf("energy = %d, want %d (exactly one spawn)", got, gs.Config.SpawnCost)
+	}
+	if blockCore.LastSpawnedTurn != 0 {
+		t.Errorf("blocked core LastSpawnedTurn = %d, want 0", blockCore.LastSpawnedTurn)
+	}
+	if !blocker.Alive || blocker.Position != blockCore.Position {
+		t.Errorf("enemy blocker disturbed: alive=%v pos=%v", blocker.Alive, blocker.Position)
+	}
+}
+
 func TestAutomaticSpawns_ActiveUnoccupiedCoresAndEnergyAccounting(t *testing.T) {
 	gs := newTestGameState()
 	gs.Config.SpawnCost = 5
