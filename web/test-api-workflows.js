@@ -29,6 +29,14 @@
  *     only asks for real ids), so the probe leaves nothing user-visible
  *     behind and there is no delete route to clean up with.
  *
+ *  D. Published replay retrieval — every match the bundled index advertises
+ *     must be retrievable from the deployed origin as real replay JSON
+ *     (bead aicodeba-26fa5fce). A 200 alone proves nothing: a missing deploy
+ *     asset falls through to the SPA shell and answers 200 text/html, which
+ *     is exactly how the published replays silently rotted to unretrievable.
+ *     Each probe therefore asserts 200, not-text/html, gzip bytes, and a
+ *     decoded replay with turns — the viewer's own decode path.
+ *
  * Override the origin with ACB_ORIGIN (e.g. a local `wrangler pages dev`).
  * Set ACB_SKIP_BUILD_CHECK=1 to gate the origin only when no local build is
  * present (scripts/verify-deployment.sh does this; the post-deploy CI gate
@@ -275,6 +283,101 @@ async function probeWritePaths() {
     `${res.status} ${JSON.stringify(res.json)}`);
 }
 
+// ─── Part D: published replay retrieval (the SPA-fallback mask) ──────────────
+
+// The match index published with the deploy advertises matches; the SPA's only
+// replay source is the bundled asset /data/replays/<id>.json.gz
+// (web/src/lib/replay-data.ts REPLAY_BASE — B2 is the cold archive, R2 the
+// /r2 function, and the viewer fetches neither). A status-200 probe is not
+// enough: a missing deploy asset falls through to the SPA shell and answers
+// 200 text/html, which is exactly how every advertised replay silently rotted
+// to unretrievable while status checks stayed green (bead aicodeba-26fa5fce).
+// So each advertised replay must answer 200, must NOT answer text/html, and
+// must decode to replay JSON with a non-empty turns array — the same decode
+// path the viewer runs (replay-data.ts: manual gunzip unless the transport
+// already set Content-Encoding).
+async function probePublishedReplays() {
+  log('\n--- D. Published replay retrieval (no SPA-fallback mask) ---\n', colors.cyan);
+
+  const indexPath = path.join(__dirname, 'public', 'data', 'matches', 'index.json');
+  if (!fs.existsSync(indexPath)) {
+    logInfo('no published match index — nothing advertised, nothing to retrieve');
+    return;
+  }
+  const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  const matches = index.matches || [];
+  if (matches.length === 0) {
+    logInfo('match index is empty — nothing advertised, nothing to retrieve');
+    return;
+  }
+
+  // Bound the smoke: the first entries the index advertises.
+  const probed = matches.slice(0, 8);
+
+  for (const match of probed) {
+    const url = `${origin}/data/replays/${match.id}.json.gz`;
+    try {
+      const res = await fetch(url);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.status !== 200) {
+        failed++;
+        logTest(`replay retrievable: ${match.id}`, false, `HTTP ${res.status} ${contentType} — published replay not retrievable: ${url}`);
+        continue;
+      }
+      if (contentType.includes('text/html')) {
+        failed++;
+        logTest(`replay retrievable: ${match.id}`, false, `200 text/html — the SPA fallback masked a missing deploy asset: ${url}`);
+        continue;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      const transportDecoded = ['gzip', 'x-gzip', 'deflate', 'br', 'zstd']
+        .includes((res.headers.get('content-encoding') || '').toLowerCase());
+      let text;
+      if (!transportDecoded) {
+        if (buf.length < 2 || buf[0] !== 0x1f || buf[1] !== 0x8b) {
+          failed++;
+          logTest(`replay retrievable: ${match.id}`, false, `200 ${contentType} but body is not gzip (${buf.length} bytes) — ${url}`);
+          continue;
+        }
+        const stream = new Response(buf).body.pipeThrough(new DecompressionStream('gzip'));
+        text = await new Response(stream).text();
+      } else {
+        text = buf.toString('utf8');
+      }
+      let replay;
+      try {
+        replay = JSON.parse(text);
+      } catch (e) {
+        failed++;
+        logTest(`replay retrievable: ${match.id}`, false, `replay body does not parse as JSON: ${e.message} — ${url}`);
+        continue;
+      }
+      if (!Array.isArray(replay.turns) || replay.turns.length === 0) {
+        failed++;
+        logTest(`replay retrievable: ${match.id}`, false, `replay JSON has no turns array (keys: ${Object.keys(replay).slice(0, 6).join(', ')}) — ${url}`);
+        continue;
+      }
+      passed++;
+      logTest(`replay retrievable: ${match.id}`, true, `200 ${contentType}, ${replay.turns.length} turns of real replay JSON`);
+    } catch (e) {
+      failed++;
+      logTest(`replay retrievable: ${match.id}`, false, `${e?.message || e} — ${url}`);
+    }
+  }
+
+  // Informational only: the R2 Pages Function path. The acb-data bucket is
+  // empty pending operator-issued R2 credentials (R2_ACCESS_KEY_SOURCE.md —
+  // both the stored S3 keys and the account API token are dead), so a 404
+  // text/plain here is the function answering over a live seam, not a
+  // regression; a 200 text/html would be the fallback and worth a closer look.
+  const r2 = await fetchProbe(`/r2/replays/${probed[0].id}.json.gz`, 'GET', null);
+  if (r2.status === 200 && !r2.contentType.includes('text/html')) {
+    logInfo(`R2 function serves ${probed[0].id} too (${r2.status} ${r2.contentType})`);
+  } else {
+    logInfo(`R2 bucket has no ${probed[0].id} (${r2.status} ${r2.contentType}) — function seam live, bucket empty pending R2 credentials`);
+  }
+}
+
 async function main() {
   log('\n=== SPA→API Workflows Smoke (Pages Function transport) ===\n', colors.cyan);
   logInfo(`live origin: ${origin} (override with ACB_ORIGIN)`);
@@ -387,6 +490,8 @@ async function main() {
   }
 
   await probeWritePaths();
+
+  await probePublishedReplays();
 
   log('');
   if (failed > 0) {

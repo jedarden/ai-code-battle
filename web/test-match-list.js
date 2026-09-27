@@ -187,17 +187,32 @@ async function main() {
 
     // Probe live sources for the replay bytes: the bundled Pages asset and the
     // R2 Pages Function (/r2/<key>). A text/html response means the Pages SPA
-    // fallback answered because no such asset is in the deploy; missing
-    // test-only replays warn rather than fail the harness.
+    // fallback answered because no such asset is in the deploy.
+    // The bundled asset is the SPA's only replay source
+    // (web/src/lib/replay-data.ts REPLAY_BASE), so for it a 200-non-HTML is
+    // required: 200 text/html is the fallback masking a missing deploy asset
+    // and any other answer is equally unretrievable — both fail the harness
+    // (aicodeba-26fa5fce: the index advertised 8 matches whose replay URLs
+    // all answered the SPA shell). The R2 source stays informational while
+    // the acb-data bucket waits on operator-issued credentials.
     const sources = [
-      ['Pages asset', `${origin}${expectedUrl}`],
-      ['R2 function', `${origin}/r2/replays/${firstMatch.id}.json.gz`],
+      ['Pages asset', `${origin}${expectedUrl}`, true],
+      ['R2 function', `${origin}/r2/replays/${firstMatch.id}.json.gz`, false],
     ];
-    for (const [label, url] of sources) {
+    for (const [label, url, required] of sources) {
       const { status, contentType } = await fetchStatus(url);
       if (status === 200 && !contentType.includes('text/html')) {
         logTest(`Replay reachable (${label})`, true, `${status} ${contentType}`);
         passed++;
+      } else if (required) {
+        failed++;
+        logTest(
+          `Replay reachable (${label})`,
+          false,
+          `${status} ${contentType || '(no content-type)'} — published replay not retrievable` +
+            (contentType.includes('text/html') ? ' (SPA fallback masked a missing deploy asset)' : '') +
+            `: ${url}`,
+        );
       } else if (status === 200) {
         logWarn(`${label} served the SPA fallback for ${firstMatch.id} (not in this deploy): ${url}`);
         warned++;
