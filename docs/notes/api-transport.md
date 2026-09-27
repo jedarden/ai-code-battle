@@ -127,6 +127,54 @@ handler answer is constructed against the client-facing types (`satisfies`
 checks against `api-types.ts` and `types.ts`), so a shape change fails the
 tsc gate on both sides instead of drifting from the Go server at runtime.
 
+## Route and method matrix (bead aicodeba-92bd4385)
+
+The capability table above says which flows are live; this is the full
+route × verb contract the function answers. The router matches path and
+verb exactly, so an undocumented verb never reaches a handler: it falls
+through to the JSON 404 (`{"error":"not found"}`). Trailing slashes are
+stripped before matching (`/api/health/` is health). The one structural
+exception is part of the contract: `GET /api/feedback/{id}/upvote`
+syntactically matches the sibling read route `GET /api/feedback/{match_id}`,
+whose ID validator refuses the slash — a 400 `invalid match ID`, still
+function-owned JSON, still no write.
+
+| Route (below `/api`) | Verb | Documented answer | Any other verb |
+|---|---|---|---|
+| `/health` | GET | 200 `{status, capabilities}` | 404 JSON `not found` |
+| `/vote/map` | POST | 200 tally (400/413/422/429/503 on refusal) | 404 JSON `not found` |
+| `/vote/map/{map_id}` | GET | 200 tally (+`my_vote` for the caller) | 404 JSON `not found` |
+| `/feedback` | POST | 201 recorded (400/413/422/429/503 on refusal) | 404 JSON `not found` |
+| `/feedback/{match_id}` | GET | 200 feedback list (400 invalid ID) | 404 JSON `not found` |
+| `/feedback/{feedback_id}/upvote` | POST | 200 recorded / `already_upvoted` (404 unknown ID) | GET → 400 `invalid match ID`; else 404 JSON `not found` |
+| `/register` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
+| `/rotate-key` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
+| `/predict` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
+| `/predictions/open` | GET | 503 `match_tier_offline` | 404 JSON `not found` |
+| `/predictions/history` | GET | 503 `match_tier_offline` | 404 JSON `not found` |
+| anything else under `/api/*` | any | 404 JSON `{error:"not found"}` | — |
+
+Method facts the table compresses:
+
+- **The verb must match exactly — `OPTIONS` and `HEAD` included.** There is
+  no CORS preflight handling (the transport is same-origin by design), and
+  `HEAD /api/health` is *not* health: both fall through to the JSON 404
+  like any other undocumented verb.
+- **Every answer in the table is `application/json`** — the founding
+  contract. The SPA fallback's signatures are the negation, both recorded
+  from the pre-function origin: `200 text/html` on a GET, a bare
+  static-layer `405` on a POST. Either one on an `/api` path means the
+  function is missing from the deploy.
+- **Wrong-verb POST probes carry a valid-shaped body** in the tests, to
+  prove refusal is decided by the verb alone — the body is never read,
+  validated, or stored.
+- **Pinned at three layers:** the per-route table with refusal statuses at
+  the handler (`api-backend.test.ts`, bead aicodeba-8632c428), the same
+  matrix through the deployed adapter `onRequest`
+  (`api-function-adapter.test.ts`, bead aicodeba-92bd4385), and — read-only
+  against the live origin — the health, match-tier, and unknown-path probes
+  of `web/test-api-workflows.js` part B.
+
 ## Storage design (community tier)
 
 State lives in the already-bound `ACB_BUCKET` R2 bucket (`acb-data`,
@@ -234,7 +282,13 @@ query string proven to survive, the handed env proven to answer, and the
 JSON content-type contract re-asserted over every adapter-reachable answer
 class — including mount isolation (bead aicodeba-a0c15607): an `/api` path
 shaped like an `/r2` key (`/api/r2/replays/…`) stays with the `/api`
-function's JSON 404, never the `/r2` function's text/plain seam.
+function's JSON 404, never the `/r2` function's text/plain seam. The route
+and method matrix above runs through the adapter too (bead
+aicodeba-92bd4385): every documented route's undocumented verbs are
+refused as function-owned JSON through the exported `onRequest`, the one
+`GET …/upvote` → 400 exception included, with nothing written — the same
+table `api-backend.test.ts` pins one layer down, proven across the wiring
+the Pages runtime actually invokes.
 `web/tsconfig.json` includes `web/functions/**` (runtime globals via
 `functions/pages-runtime.d.ts`, minimal stand-ins for the uninstalled
 `@cloudflare/workers-types`), so the adapter file the deploy actually ships
@@ -267,7 +321,11 @@ ACB_ORIGIN=http://127.0.0.1:8788 npm run test:api-workflows   # wrangler pages d
 ```
 
 `web/test-api-workflows.js` is read-only against the origin. Part A asserts
-the built bundle still carries the transport contract markers; part B probes
+the built site still carries the transport contract: the SPA bundle markers
+and — since bead aicodeba-92bd4385 — the function bundle itself, both
+catch-alls present beside `dist/` with their wiring markers, so the silent
+`cwd()/functions` skip fails the smoke before the deploy it would rot;
+part B probes
 health + capabilities, one map tally, one feedback read, all five match-tier
 refusals (register, rotate-key, predict, predictions/open, predictions/history),
 an unknown `/api` path — which must answer JSON 404, pinning the deployed
@@ -317,7 +375,8 @@ SPA-fallback answer:
 - **Deploy pipeline** — `acb-site-pages-build` (declarative-config
   `k8s/iad-ci/argo-workflows/acb-site-pages-build-workflowtemplate.yml`,
   gate added in `3fc3cc55`, 2026-09-26) runs the full smoke
-  (`node test-api-workflows.js` — build markers in the dist just shipped,
+  (`node test-api-workflows.js` — the dist just shipped carries the SPA
+  markers and the function bundle (part A),
   health, community reads, and **all five** documented match-tier 503
   routes: register, rotate-key, predict, predictions/open,
   predictions/history) as a post-deploy step, after polling `/api/health`

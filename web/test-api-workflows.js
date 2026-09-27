@@ -4,9 +4,15 @@
  *
  * Two halves:
  *
- *  A. Local build markers — the production bundle (dist/assets/*.js) must
- *     carry the transport contract markers. Run `npm run build` first; a
- *     stale dist fails here, which is the point.
+ *  A. Built site carries the transport contract — the production bundle
+ *     (dist/assets/*.js) must carry the transport contract markers, and the
+ *     function bundle (web/functions/) must sit beside it with both
+ *     catch-alls present and wired (bead aicodeba-92bd4385): wrangler
+ *     resolves the Pages Functions directory as <cwd>/functions at deploy
+ *     time and silently skips the bundle when it is missing, so a catch-all
+ *     absent here means the deploy about to happen ships the SPA alone.
+ *     Run `npm run build` first; a stale dist fails here, which is the
+ *     point.
  *
  *  B. Live origin transport — the deployed site must answer /api/* with the
  *     Pages Function's JSON (docs/notes/api-transport.md). Anything that
@@ -89,7 +95,7 @@ let failed = 0;
 // ─── Part A: built bundle carries the transport contract ─────────────────────
 
 function checkBundle() {
-  log('\n--- A. Local build markers (dist/assets) ---\n', colors.cyan);
+  log('\n--- A. Built site carries the transport contract (dist/ + functions/) ---\n', colors.cyan);
 
   if (!fs.existsSync(assetsDir)) {
     logTest('dist/assets exists', false, 'not found — run `npm run build` in web/ first');
@@ -104,6 +110,41 @@ function checkBundle() {
     return;
   }
   logTest('dist/assets JS chunks', true, `${files.length} chunk(s)`);
+
+  // The SPA bundle alone is not the deploy unit: wrangler resolves the
+  // Pages Functions directory as <cwd>/functions — relative to the process
+  // working directory, not to the assets dir it ships — and silently skips
+  // the Functions bundle when that directory is missing (deploy-packaging
+  // .test.ts guards the same rule offline; scripts/deploy-pages.sh trips
+  // on it before deploying). Parts B–E prove the origin's answers after
+  // the fact; this proves the site ABOUT to be deployed contains the
+  // function bundle before anything ships (bead aicodeba-92bd4385). Each
+  // catch-all is checked for its wiring marker, not mere existence: an
+  // empty or stubbed file would pass an existsSync check and still not be
+  // the function the transport contract ships.
+  const functionsDir = path.join(__dirname, 'functions');
+  const catchAlls = [
+    ['functions/api/[[path]].ts', path.join(functionsDir, 'api', '[[path]].ts'), 'handleApiRequest'],
+    ['functions/r2/[[path]].ts', path.join(functionsDir, 'r2', '[[path]].ts'), 'ACB_BUCKET'],
+  ];
+  for (const [name, file, marker] of catchAlls) {
+    if (!fs.existsSync(file)) {
+      failed++;
+      logTest(name, false,
+        'missing — wrangler resolves <cwd>/functions and silently skips the Functions bundle ' +
+        'when it is absent; run the deploy (and this smoke) from web/ or every /api and /r2 ' +
+        'route falls back to the SPA');
+      continue;
+    }
+    if (fs.readFileSync(file, 'utf8').includes(marker)) {
+      passed++;
+      logTest(name, true, `present beside dist/ (wiring marker "${marker}" found)`);
+    } else {
+      failed++;
+      logTest(name, false,
+        `"${marker}" missing from the catch-all — not the function bundle the transport contract ships`);
+    }
+  }
 
   const bundle = files
     .map(f => fs.readFileSync(path.join(assetsDir, f), 'utf8'))

@@ -284,6 +284,65 @@ describe('the match tier stays honestly offline under /api', () => {
   });
 });
 
+// ─── The method matrix survives the adapter (bead aicodeba-92bd4385) ────────
+//
+// api-backend.test.ts pins the per-route method-isolation table at the
+// handler level (bead aicodeba-8632c428); this drives the same matrix
+// through the exported onRequest — the wiring the Pages runtime actually
+// invokes — so a verb mangled anywhere in the deployed chain (the Request
+// the platform hands the function, not just the handler behind it) fails
+// here too. The documented-verb half of the matrix is the describes above:
+// every route's real answer through /api is already pinned end to end. The
+// pre-function static layer answered GET /api/* with the SPA's 200
+// text/html and POST with a bare 405, so any answer below that is not
+// function-owned JSON is exactly the SPA-fallback regression this
+// transport exists against.
+
+describe('the method matrix survives the adapter — undocumented verbs stay function-owned JSON', () => {
+  // Same table as the handler-level one: [route, [wrong verb, the status it
+  // must get]]. The one structural exception repeats too — GET
+  // /feedback/{id}/upvote syntactically matches the sibling read route,
+  // whose id validator refuses the slash (400 `invalid match ID`), still
+  // function-owned JSON, still no write. Wrong-verb POST probes carry a
+  // valid-shaped body to prove refusal is decided by the verb alone: the
+  // body is never read, validated, or stored.
+  const cases: [route: string, wrong: [method: string, status: number][]][] = [
+    ['/api/health', [['POST', 404], ['OPTIONS', 404], ['HEAD', 404]]],
+    ['/api/vote/map', [['GET', 404], ['PUT', 404]]],
+    ['/api/vote/map/map-1', [['POST', 404], ['DELETE', 404]]],
+    ['/api/feedback', [['GET', 404], ['PUT', 404]]],
+    ['/api/feedback/match-1', [['POST', 404], ['DELETE', 404]]],
+    ['/api/feedback/fb_1/upvote', [['GET', 400], ['PUT', 404]]],
+    ['/api/register', [['GET', 404], ['DELETE', 404]]],
+    ['/api/rotate-key', [['GET', 404], ['PUT', 404]]],
+    ['/api/predict', [['GET', 404], ['DELETE', 404]]],
+    ['/api/predictions/open', [['POST', 404], ['DELETE', 404]]],
+    ['/api/predictions/history', [['POST', 404], ['PUT', 404]]],
+  ];
+
+  it.each(cases)('%s refuses its undocumented verbs as JSON', async (route, wrong) => {
+    for (const [method, status] of wrong) {
+      const res = await call(route, {
+        method,
+        // A Request with a body is illegal for GET/HEAD/OPTIONS; the verb
+        // probe is what matters there, not the payload.
+        body: method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+          ? undefined
+          : { map_id: 'am-map', voter_id: 'am-voter', vote: 1 },
+        ip: `am-${route}-${method}`.replace(/[^a-zA-Z0-9.-]/g, ''),
+      });
+      expect(res.status).toBe(status);
+      expect(res.contentType).toContain('application/json');
+      if (status === 404) expect(res.json).toEqual({ error: 'not found' });
+    }
+
+    // No probe reached a write path: nothing landed in the handed env.
+    for (const key of ['community/map-votes.json', 'community/replay-feedback.json', 'community/site-feedback.json']) {
+      expect(await bucket.get(key)).toBeNull();
+    }
+  });
+});
+
 // ─── The founding contract: every answer is JSON ────────────────────────────
 
 describe('every /api answer keeps application/json — never text/html', () => {
