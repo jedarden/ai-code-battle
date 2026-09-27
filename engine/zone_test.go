@@ -658,3 +658,187 @@ func TestZoneDisabledMatchHasNoZoneActivity(t *testing.T) {
 		}
 	}
 }
+
+// TestZoneConfigDocumentedPlayerCountDifferences pins the §3.7.1 zone table
+// as ConfigForPlayers materializes it: both tiers share ZoneStartTurn=10,
+// ZoneShrinkInterval=1 and ZoneShrinkStep=1 (the zone starts on the same turn
+// everywhere and shrinks exactly one tile per turn — never faster than a bot
+// can move), and they differ only in ZoneMinRadius (2 for 2-player, 1 for
+// 3+ player) and AttackRadius2 (25 vs 12).
+func TestZoneConfigDocumentedPlayerCountDifferences(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		numPlayers    int
+		wantMinRadius int
+		wantAttack2   int
+	}{
+		{"2-player", 2, 2, 25},
+		{"3-player", 3, 1, 12},
+		{"4-player", 4, 1, 12},
+		{"6-player", 6, 1, 12},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ConfigForPlayers(tt.numPlayers, 1)
+
+			if !cfg.ZoneEnabled {
+				t.Error("ZoneEnabled = false, want true for every player count")
+			}
+			if cfg.ZoneStartTurn != 10 {
+				t.Errorf("ZoneStartTurn = %d, want 10 (same start turn for both tiers)", cfg.ZoneStartTurn)
+			}
+			if cfg.ZoneShrinkInterval != 1 {
+				t.Errorf("ZoneShrinkInterval = %d, want 1 (shrinks every turn)", cfg.ZoneShrinkInterval)
+			}
+			if cfg.ZoneShrinkStep != 1 {
+				t.Errorf("ZoneShrinkStep = %d, want 1 (zone must not outrun bot movement)", cfg.ZoneShrinkStep)
+			}
+			if cfg.ZoneMinRadius != tt.wantMinRadius {
+				t.Errorf("ZoneMinRadius = %d, want %d", cfg.ZoneMinRadius, tt.wantMinRadius)
+			}
+			if cfg.AttackRadius2 != tt.wantAttack2 {
+				t.Errorf("AttackRadius2 = %d, want %d", cfg.AttackRadius2, tt.wantAttack2)
+			}
+		})
+	}
+}
+
+// TestZoneDocumentedContactGuaranteeAtMinimumRadius pins the §3.7.1 rationale
+// end to end on the real per-player-count configs: two bots standing at
+// opposite edges of the final (minimum-radius) zone sit exactly on the zone
+// boundary — so the zone itself cannot kill them — and are within attack
+// range of each other, which is what forces the final confrontation.
+func TestZoneDocumentedContactGuaranteeAtMinimumRadius(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		numPlayers int
+	}{
+		{"2-player", 2},
+		{"3-player", 3},
+		{"4-player", 4},
+		{"6-player", 6},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ConfigForPlayers(tt.numPlayers, 1)
+			gs := NewGameState(cfg, rand.New(rand.NewSource(3)))
+			for range tt.numPlayers {
+				gs.AddPlayer()
+			}
+
+			// The zone is anchored at the map center; pin that default so the
+			// bot placement below and the engine's boundary check agree by
+			// construction even if the center initialization ever moves.
+			center := Position{Row: cfg.Rows / 2, Col: cfg.Cols / 2}
+			if gs.ZoneCenter != center {
+				t.Fatalf("NewGameState ZoneCenter = %v, want the map center %v (the final zone must stay anchored)",
+					gs.ZoneCenter, center)
+			}
+
+			// Clamp the zone to its documented minimum, as the shrink loop
+			// would leave it after enough shrink turns.
+			gs.ZoneActive = true
+			gs.ZoneRadius = cfg.ZoneMinRadius
+
+			// Two bots of the same owner at opposite edges of the final zone:
+			// exactly minRadius from the center along the column axis, so each
+			// sits ON the boundary (d² == radius²). Same owner, so combat can
+			// never interfere with the zone verdict.
+			west := gs.SpawnBot(gs.Players[0].ID, Position{Row: center.Row, Col: center.Col - cfg.ZoneMinRadius})
+			east := gs.SpawnBot(gs.Players[0].ID, Position{Row: center.Row, Col: center.Col + cfg.ZoneMinRadius})
+
+			gs.ExecuteTurn()
+
+			if gs.ZoneRadius != cfg.ZoneMinRadius {
+				t.Errorf("ZoneRadius = %d, want %d (minimum radius must hold)", gs.ZoneRadius, cfg.ZoneMinRadius)
+			}
+			for _, b := range []*Bot{west, east} {
+				if !b.Alive {
+					t.Fatalf("bot at %v (d² %d) died at minimum radius %d, want alive (boundary is safe)",
+						b.Position, gs.Grid.Distance2(b.Position, gs.ZoneCenter), cfg.ZoneMinRadius)
+				}
+			}
+			if deaths := findZoneDeaths(gs); len(deaths) != 0 {
+				t.Fatalf("got %d zone_death events, want 0 (opposite boundary edges are inside the final zone)", len(deaths))
+			}
+
+			// The documented contact guarantee: bots at opposite edges of the
+			// final zone are within attack range, so the match must end in a
+			// fight rather than a standoff.
+			if mutual := gs.Grid.Distance2(west.Position, east.Position); mutual > cfg.AttackRadius2 {
+				t.Errorf("opposite zone edges are d² %d apart, want <= AttackRadius2 %d (final zone must force contact)",
+					mutual, cfg.AttackRadius2)
+			}
+		})
+	}
+}
+
+// TestZoneShrinkPathForRealConfigs drives the zone from activation to its
+// floor using the actual ConfigForPlayers values for every player count:
+// pre-activation radius stays at min(Rows,Cols)/2, activation snaps to 90% of
+// the half-side (18 on the 40×40 2-player map — anchored against the §3.7.1
+// table), the radius then drops one tile per turn from ZoneStartTurn+1 and
+// bottoms out exactly at the documented ZoneMinRadius, where it holds. A
+// single bot parked at the zone center soaks the whole path, so the timing
+// contract is observed with no zone kills and no combat in the way.
+func TestZoneShrinkPathForRealConfigs(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		numPlayers int
+	}{
+		{"2-player", 2},
+		{"3-player", 3},
+		{"4-player", 4},
+		{"6-player", 6},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ConfigForPlayers(tt.numPlayers, 1)
+			gs := NewGameState(cfg, rand.New(rand.NewSource(5)))
+			for range tt.numPlayers {
+				gs.AddPlayer()
+			}
+
+			soaker := gs.SpawnBot(gs.Players[0].ID, Position{Row: cfg.Rows / 2, Col: cfg.Cols / 2})
+
+			preActivation := min(cfg.Rows, cfg.Cols) / 2
+			snapped := (min(cfg.Rows, cfg.Cols) / 2 * 90) / 100
+			if tt.numPlayers == 2 {
+				if preActivation != 20 || snapped != 18 {
+					t.Fatalf("2-player anchor moved: preActivation = %d, snapped = %d, want 20/18", preActivation, snapped)
+				}
+			}
+
+			// Drive well past the clamp: activation snap, full descent, then
+			// three extra turns parked on the minimum.
+			lastTurn := cfg.ZoneStartTurn + (snapped - cfg.ZoneMinRadius) + 3
+			for turn := 1; turn <= lastTurn; turn++ {
+				if turn == cfg.ZoneStartTurn {
+					// Activation, as match.go performs it before the turn runs.
+					gs.ZoneActive = true
+					gs.setInitialZoneRadius()
+				}
+				gs.ExecuteTurn()
+
+				want := preActivation
+				switch {
+				case turn == cfg.ZoneStartTurn:
+					want = snapped // activation snaps, never shrinks
+				case turn > cfg.ZoneStartTurn:
+					want = max(cfg.ZoneMinRadius, snapped-(turn-cfg.ZoneStartTurn))
+				}
+				if gs.ZoneRadius != want {
+					t.Fatalf("after turn %d: ZoneRadius = %d, want %d", turn, gs.ZoneRadius, want)
+				}
+			}
+
+			if gs.ZoneRadius != cfg.ZoneMinRadius {
+				t.Errorf("final ZoneRadius = %d, want exactly the documented minimum %d",
+					gs.ZoneRadius, cfg.ZoneMinRadius)
+			}
+			if !soaker.Alive {
+				t.Fatal("center soaker died, want alive for the whole descent (d² 0 is always inside)")
+			}
+			if deaths := findZoneDeaths(gs); len(deaths) != 0 {
+				t.Errorf("got %d zone_death events, want 0 (a centered bot must outsoak the entire shrink)", len(deaths))
+			}
+		})
+	}
+}
