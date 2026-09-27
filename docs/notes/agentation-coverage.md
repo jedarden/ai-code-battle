@@ -96,6 +96,39 @@ marker. Click targets: `index.html` → `nav`, `embed.html` →
 error-overlay state — that overlay is the app DOM the flow identifies),
 `replay.html` → `.canvas-wrapper`.
 
+## Continuous enforcement
+
+Since 2026-09-27 the whole browser project (`npm run test:browser`) also
+**gates every push**: `acb-build`'s `run-browser-tests` step in iad-ci runs
+it in real Chromium on the `mcr.microsoft.com/playwright:v1.62.1-noble`
+image (kept tag-aligned with `web/package-lock.json`'s `@playwright/test`),
+in the same step group as the Go/type-check gate and ahead of the image
+builds. Wiring:
+`declarative-config/k8s/iad-ci/argo-workflows/acb-build-workflowtemplate.yml`
+(bead `aicodeba-d047a9a8`), so layer 4's per-page mount tripwire and the
+rest of the rendered-layout harness can no longer silently regress between
+local runs. `ACB_LIVE_ORIGIN` stays unset there, so layer 5 keeps skipping
+itself in CI.
+
+Wiring the gate surfaced two starvation hazards the local nix-Chromium run
+never hits, both fixed the same day:
+
+- The pages-mount `beforeAll` passed `240_000` as a second argument to
+  `test.beforeAll`, which playwright drops on the floor — `beforeAll` takes
+  `(title, hookFunction)`, so the hook ran at the 30s default and the vite
+  build below dies whenever workers are CPU-starved (a busy shared box, or
+  a CI pod). The hook now widens its own deadline with
+  `test.setTimeout(240_000)`, the documented mechanism.
+- Playwright sizes its worker pool from the HOST's core count, blind to a
+  cgroup CPU limit — the first live gate run (`acb-build-tfgxt`,
+  2026-09-27, exit 1) failed under exactly that starvation: ~7 workers
+  against the pod's 2-CPU limit, on a cluster busy with four other acb
+  runs. The same suite passes 107/0 in the same pinned image at an
+  uncontended 2-CPU quota, so nothing in the tree was red. The CI
+  invocation now caps workers (`npm run test:browser -- --workers=2`),
+  which also measured faster than the host-sized pool there (23s vs 47s,
+  107 passed / 0 failed, both `--cpus=2`).
+
 ## Production
 
 The four layers above all run against repo artifacts; nothing they do can

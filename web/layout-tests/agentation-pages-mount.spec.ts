@@ -80,6 +80,13 @@ test.describe.configure({ mode: 'serial' });
 let distDir: string;
 
 test.beforeAll(async ({}, testInfo) => {
+  // test.beforeAll takes no timeout argument — a second argument there is
+  // silently dropped and the hook runs at the 30s default. This is the
+  // documented way to widen the hook's own deadline, and it matters: the
+  // build below grinds far past 30s when workers are CPU-starved (a busy
+  // shared box, or a 2-CPU CI pod, where playwright still sizes its worker
+  // pool from the HOST's core count).
+  test.setTimeout(240_000);
   test.skip(
     testInfo.project.name !== 'desktop',
     'the mount audit builds once and has no viewport-dependent assertions'
@@ -95,7 +102,7 @@ test.beforeAll(async ({}, testInfo) => {
     logLevel: 'error',
     build: { outDir: distDir, emptyOutDir: true },
   });
-}, 240_000);
+});
 
 test.afterAll(() => {
   if (distDir) rmSync(distDir, { recursive: true, force: true });
