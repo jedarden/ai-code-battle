@@ -46,14 +46,31 @@ cd ..
 echo -e "${GREEN}✓ Build complete${NC}"
 echo ""
 
-# Deploy to Pages
+# Deploy to Pages.
+# Wrangler resolves the Pages Functions directory as <cwd>/functions — relative
+# to the process working directory, NOT to the assets directory being shipped —
+# and silently skips the Functions bundle when that directory is missing
+# (workers-sdk packages/wrangler/src/api/pages/deploy.ts). Deploying web/dist
+# from the repo root therefore ships frontend-only: every /api and /r2 route
+# falls through to the SPA fallback with no warning. Run the deploy from web/,
+# where dist/ and functions/ are siblings — the same shape the CI deploy uses
+# (declarative-config k8s/iad-ci/argo-workflows/acb-site-pages-build
+# -workflowtemplate.yml). Pinned by web/src/lib/deploy-packaging.test.ts.
+if [ ! -f "web/functions/api/[[path]].ts" ]; then
+    echo -e "${RED}ERROR: web/functions/api/[[path]].ts is missing${NC}"
+    echo "The /api Pages Function would be silently dropped from this deploy."
+    exit 1
+fi
 echo -e "${BLUE}Deploying to Cloudflare Pages...${NC}"
-wrangler pages deploy web/dist --project-name=ai-code-battle --commit-dirty=true
+(cd web && wrangler pages deploy dist --project-name=ai-code-battle --commit-dirty=true)
 echo ""
 
 echo -e "${GREEN}=== Deployment Complete! ===${NC}"
 echo ""
 echo "Site URLs:"
 echo "  - Pages URL: https://ai-code-battle.pages.dev"
-echo "  - Custom domain: https://aicodebattle.com (if configured)"
+echo ""
+# The canonical origin is the pages.dev host only (docs/notes/canonical-public-domain.md).
+echo "A deploy is not done until the deployed function answers (release gate):"
+echo "  scripts/verify-deployment.sh"
 echo ""

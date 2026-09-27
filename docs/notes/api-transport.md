@@ -313,6 +313,36 @@ The match-tier 503 probes cost nothing and write nothing: the router
 refuses those routes before any body is read, rate-limited, or stored, so
 proving all five are function-owned is free on every deploy.
 
+### Deploy packaging — functions ship with the frontend (bead aicodeba-87095e9a)
+
+The release gate above judges the deploy after it happened. The packaging
+rule that decides whether there is a function to judge at all lives one
+level down: wrangler resolves the Pages Functions directory as
+`cwd()/functions` — relative to the process working directory, not to the
+assets directory being shipped — and **silently skips** the Functions
+bundle when that directory is missing (workers-sdk
+`packages/wrangler/src/api/pages/deploy.ts`). A `wrangler pages deploy
+web/dist` run from the repo root therefore ships the SPA alone: every
+`/api` route falls back to text/html with no warning, and the next smoke
+run is the first thing that notices. `scripts/deploy-pages.sh` did exactly
+that until 2026-09-27.
+
+Both deploy paths now run wrangler from `web/`, where `dist/` and
+`functions/` are siblings so `cwd()/functions` resolves:
+
+- CI — `acb-site-pages-build` (`cd web && npx wrangler pages deploy dist`),
+  which is why production has served the function all along.
+- Manual — `scripts/deploy-pages.sh` now deploys from a `web/` subshell and
+  trips before deploying when `web/functions/api/[[path]].ts` is missing.
+
+`web/src/lib/deploy-packaging.test.ts` pins the packaging offline at the
+default gate: the catch-alls exist beside the shipped assets dir,
+`web/wrangler.toml` keeps `pages_build_output_dir` web-relative, the
+manual script's deploy line runs from `web/` against `dist`, and this
+section keeps saying so. `web/wrangler.toml` and the root `wrangler.toml`
+are two views of the same project (web-relative and repo-relative
+respectively); only the web-relative one is the deploy's cwd contract.
+
 ## Docs honesty for the static tier (bead aicodeba-4be62ac3, 2026-09-26)
 
 `web/src/pages/docs-api.ts` is the user-facing index of what this deploy
