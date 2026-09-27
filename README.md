@@ -148,6 +148,14 @@ the normal win conditions. The replay contains a `bot_inactive` event on the
 threshold turn, and `result.crashed` is `true` for that player. The inactive bot is
 not treated as eliminated merely because it stopped responding.
 
+The budget itself is not a fixed constant: it arrives in every `/turn` request as
+`config.turn_timeout` (integer nanoseconds; the full contract is in
+`docs/bot-protocol.md`). Read it each turn instead of hardcoding a deadline, and
+treat an absent field as the 3-second default above. The clock starts when the
+engine begins waiting for your response. A response that misses the deadline is
+discarded even if it arrives a moment later — it is never applied to the turn it
+missed, nor credited to the next one.
+
 **Response body** (JSON move orders):
 
 ```json

@@ -170,3 +170,83 @@ func TestGetMoves_ConfigBudgetBeatsOption(t *testing.T) {
 		t.Error("in-time bot should keep its moves")
 	}
 }
+
+// TestGetMoves_DeadlineSitsAtConfiguredBudget pins where the enforcement line
+// sits: a response just inside the configured budget is credited, the same
+// kind of response just outside it is discarded. The exact tie — a response
+// landing on the deadline to the nanosecond — is settled by Go's select
+// between two ready cases and is deliberately not pinned; what is pinned is
+// that the line is the configured value itself, not that value plus slop.
+func TestGetMoves_DeadlineSitsAtConfiguredBudget(t *testing.T) {
+	cfg := ConfigForPlayers(2, 1)
+	cfg.TurnTimeout = time.Second
+	gs := testTurnTimeoutState(t, cfg)
+
+	mr := NewMatchRunner(cfg)
+	mr.AddBot(&slowBot{delay: 800 * time.Millisecond}, "just-inside")
+	mr.AddBot(&slowBot{delay: 1200 * time.Millisecond}, "just-outside")
+
+	moves := mr.getMovesFromBots(gs)
+
+	if _, ok := moves[0]; !ok {
+		t.Error("a response 200ms inside the budget must be credited")
+	}
+	if _, ok := moves[1]; ok {
+		t.Error("a response 200ms past the budget must be discarded")
+	}
+	if got := mr.failureStreak[0]; got != 0 {
+		t.Errorf("just-inside bot failure streak = %d, want 0", got)
+	}
+	if got := mr.failureStreak[1]; got != 1 {
+		t.Errorf("just-outside bot failure streak = %d, want 1 (one timed-out turn)", got)
+	}
+	if mr.inactive[1] {
+		t.Error("a single timed-out turn must not mark the bot inactive")
+	}
+}
+
+// onceSlowBot sleeps on every GetMoves call until its delay is changed,
+// standing in for a bot that misses one deadline and then recovers.
+type onceSlowBot struct {
+	delay time.Duration
+}
+
+func (b *onceSlowBot) GetMoves(state *VisibleState) ([]Move, error) {
+	time.Sleep(b.delay)
+	return []Move{{Direction: DirNone}}, nil
+}
+
+// TestGetMoves_LateResponseNeverCreditedLater pins the other half of the
+// discard contract: a response that misses turn N's deadline must not be
+// credited to turn N+1 when it finally lands. Each turn waits on its own
+// buffered channel, so the stale response drains into a channel nobody reads.
+func TestGetMoves_LateResponseNeverCreditedLater(t *testing.T) {
+	cfg := ConfigForPlayers(2, 1)
+	cfg.TurnTimeout = 100 * time.Millisecond
+	gs := testTurnTimeoutState(t, cfg)
+
+	recovered := &onceSlowBot{delay: 300 * time.Millisecond}
+	mr := NewMatchRunner(cfg)
+	mr.AddBot(recovered, "recovers")
+	mr.AddBot(&slowBot{delay: 0}, "steady")
+
+	first := mr.getMovesFromBots(gs)
+	if _, ok := first[0]; ok {
+		t.Error("turn 1: a response past the deadline must be discarded")
+	}
+	if _, ok := first[1]; !ok {
+		t.Error("turn 1: the in-time bot must be credited")
+	}
+
+	recovered.delay = 0 // the bot has recovered by turn 2
+	second := mr.getMovesFromBots(gs)
+	if _, ok := second[0]; !ok {
+		t.Error("turn 2: the recovered bot must be credited")
+	}
+	if len(second) != 2 {
+		t.Errorf("turn 2 credited %d responses, want exactly 2", len(second))
+	}
+	if got := mr.failureStreak[0]; got != 0 {
+		t.Errorf("recovered bot failure streak = %d, want 0 (success resets the count)", got)
+	}
+}
