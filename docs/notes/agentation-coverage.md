@@ -81,6 +81,27 @@ marker. Click targets: `index.html` → `nav`, `embed.html` →
 error-overlay state — that overlay is the app DOM the flow identifies),
 `replay.html` → `.canvas-wrapper`.
 
+## Production
+
+The four layers above all run against repo artifacts; nothing they do can
+see a deployment regression. `web/layout-tests/agentation-live-mount.spec.ts`
+is the fifth layer — headless Chromium against the deployed origin, run with
+`npm run test:agentation-live` (live-only, skipped unless `ACB_LIVE_ORIGIN`
+is set; override it to audit a Pages preview before promotion). Per route —
+`/`, `/replay`, `/embed` — it asserts the response is text/html, the served
+document carries its own vite entry chunk in a script tag (a route this
+origin does not deploy does not 404: Cloudflare Pages answers with a 200
+text/html SPA fallback serving index.html, whose toolbar mounts and would
+pass a mount-only check), and `#agentation-root` plus a visible
+`[data-agentation-toolbar="true"]` mount after load. Verdicts are recorded
+on the bead that runs them.
+
+Production verdict 2026-09-27 (bead `aicodeba-71824b16`): **all three routes
+mount** — 3 passed, 3 skipped (phone project), exit 0, against
+`https://ai-code-battle.pages.dev` serving entry chunks `main-ZyLcA4yJ.js`,
+`replay-U4tqtRgK.js`, `embed-DiOqgewn.js` (agentation chunk
+`agentation-blICokqV.js`). No fix bead filed; nothing failed.
+
 ## Adding a page
 
 1. Wire `initAgentation()` in its entry module (async import is the

@@ -16,7 +16,8 @@
     "test:api-workflows": "node test-api-workflows.js",
     "test:e2e-api": "vitest run --config vitest.e2e.config.ts",
     "test:browser": "playwright test",
-    "test:browser:install": "playwright install chromium"
+    "test:browser:install": "playwright install chromium",
+    "test:agentation-live": "ACB_LIVE_ORIGIN=\"${ACB_LIVE_ORIGIN:-https://ai-code-battle.pages.dev}\" playwright test agentation-live-mount"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
