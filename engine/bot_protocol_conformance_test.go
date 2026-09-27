@@ -298,6 +298,90 @@ func TestBotProtocolConformance_SignedTurnRequest(t *testing.T) {
 	}
 }
 
+// TestBotProtocolConformance_EngineEmitsCanonicalSpellings pins the wire
+// spellings docs/bot-protocol.md requires of the engine: X-ACB-Turn and
+// X-ACB-Timestamp carry canonical base-10 (no sign, whitespace, or leading
+// zero), and the identity headers agree with the signed body values. Turn 0
+// is spelled "0", never "" or "00"; a multi-digit turn rules out padding —
+// either regression would hand a conformant bot a request it must reject.
+func TestBotProtocolConformance_EngineEmitsCanonicalSpellings(t *testing.T) {
+	const (
+		secret  = "conformance-spelling-secret"
+		botID   = "b_spelling"
+		matchID = "m_spelling"
+	)
+
+	responseBody := []byte(`{"moves":[]}`)
+	for _, turn := range []int{0, 7, 499} {
+		t.Run("turn_"+strconv.Itoa(turn), func(t *testing.T) {
+			observed := make(chan botProtocolConformanceObservation, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read request body: %v", err)
+				}
+				observed <- botProtocolConformanceObservation{headers: r.Header.Clone(), body: body}
+				headerTurn, err := strconv.Atoi(r.Header.Get("X-ACB-Turn"))
+				if err != nil {
+					t.Errorf("X-ACB-Turn is not an integer: %v", err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-ACB-Signature", SignResponse(secret, r.Header.Get("X-ACB-Match-Id"), headerTurn, responseBody))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(responseBody)
+			}))
+			t.Cleanup(server.Close)
+
+			bot := NewHTTPBot(server.URL, AuthConfig{BotID: botID, Secret: secret, MatchID: matchID})
+			if _, err := bot.GetMoves(botProtocolConformanceState(matchID, turn)); err != nil {
+				t.Fatalf("GetMoves() error = %v", err)
+			}
+			request := <-observed
+
+			if got, want := request.headers.Get("X-ACB-Turn"), strconv.Itoa(turn); got != want {
+				t.Errorf("X-ACB-Turn = %q, want the canonical base-10 spelling %q", got, want)
+			}
+			assertCanonicalBase10(t, "X-ACB-Timestamp", request.headers.Get("X-ACB-Timestamp"))
+
+			var identity struct {
+				MatchID string `json:"match_id"`
+				Turn    int    `json:"turn"`
+			}
+			if err := json.Unmarshal(request.body, &identity); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			if got := request.headers.Get("X-ACB-Match-Id"); got != matchID {
+				t.Errorf("X-ACB-Match-Id = %q, want %q", got, matchID)
+			}
+			if identity.MatchID != matchID {
+				t.Errorf("body match_id = %q, want %q matching X-ACB-Match-Id", identity.MatchID, matchID)
+			}
+			if identity.Turn != turn {
+				t.Errorf("body turn = %d, want %d matching X-ACB-Turn", identity.Turn, turn)
+			}
+		})
+	}
+}
+
+// assertCanonicalBase10 requires the doc's canonical base-10 spelling: digits
+// only, no sign or whitespace, and no leading zero except "0" itself.
+func assertCanonicalBase10(t *testing.T, header, value string) {
+	t.Helper()
+	if value == "0" {
+		return
+	}
+	if value == "" || value[0] < '1' || value[0] > '9' {
+		t.Errorf("%s = %q, want canonical base-10 (no sign, whitespace, or leading zero)", header, value)
+		return
+	}
+	for i := 1; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			t.Errorf("%s = %q, want canonical base-10 digits only", header, value)
+			return
+		}
+	}
+}
+
 // TestBotProtocolConformance_TurnTimeoutDurationVersusTimestampInstant pins
 // the unit distinction docs/bot-protocol.md draws within one signed request:
 // config.turn_timeout is a duration encoded as an integer number of
@@ -900,6 +984,153 @@ func TestBotProtocolConformance_RejectedRequestNeverExecutes(t *testing.T) {
 		{name: "wrong nested type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
 			body = rewrite(body, func(object map[string]interface{}) {
 				object["you"].(map[string]interface{})["energy"] = "high"
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		// The rest of the omission matrix: every required top-level field
+		// removed one at a time from an otherwise authenticated body. Missing
+		// config, the empty body, and the enabled-zone omission are pinned
+		// above; match_id and walls join the sweep in the golden matrix.
+		{name: "missing body turn", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "turn") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing you", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "you") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing bots", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "bots") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing energy", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "energy") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing cores", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "cores") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing walls", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "walls") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "missing dead", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { delete(object, "dead") })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		// Wrong JSON type for every required top-level field: each is a
+		// documented schema violation on an authenticated body.
+		{name: "match id wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["match_id"] = 7 })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "turn wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["turn"] = "7" })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "config wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["config"] = "cfg" })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "you wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["you"] = []interface{}{} })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "bots wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["bots"] = map[string]interface{}{} })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "energy wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["energy"] = map[string]interface{}{} })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "cores wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["cores"] = "none" })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "walls wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["walls"] = true })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "dead wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["dead"] = 0 })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "zone wrong type", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) { object["zone"] = []interface{}{} })
+			resign(headers, body, timestamp)
+			return body
+		}},
+		// Unknown fields at every documented nesting level: the doc declares
+		// a request malformed when it "contains an unknown field", not merely
+		// at the top level.
+		{name: "unknown bots element field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["bots"].([]interface{})[0].(map[string]interface{})["loyalty"] = "high"
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "unknown bots position field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["bots"].([]interface{})[0].(map[string]interface{})["position"].(map[string]interface{})["altitude"] = 1
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "unknown energy element field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["energy"] = []interface{}{map[string]interface{}{"row": 1, "col": 2, "weight": 1}}
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "unknown cores element field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["cores"] = []interface{}{map[string]interface{}{
+					"position": map[string]interface{}{"row": 5, "col": 5}, "owner": 0, "active": true, "heat": 1,
+				}}
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "unknown walls element field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["walls"] = []interface{}{map[string]interface{}{"row": 10, "col": 10, "crumbling": false}}
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "unknown dead element field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["dead"] = []interface{}{map[string]interface{}{
+					"position": map[string]interface{}{"row": 3, "col": 4}, "owner": 1, "cause": "combat",
+				}}
+			})
+			resign(headers, body, timestamp)
+			return body
+		}},
+		{name: "unknown zone center field", wantStatus: http.StatusBadRequest, method: http.MethodPost, contentType: "application/json", mutate: func(headers map[string]string, body []byte, timestamp int64) []byte {
+			body = rewrite(body, func(object map[string]interface{}) {
+				object["zone"].(map[string]interface{})["center"].(map[string]interface{})["elevation"] = 3
 			})
 			resign(headers, body, timestamp)
 			return body

@@ -224,6 +224,21 @@ var knownConfig = map[string]bool{
 
 var requiredTopLevel = []string{"match_id", "turn", "config", "you", "bots", "energy", "cores", "walls", "dead"}
 
+// objectHasUnknownKey reports whether value is an object carrying a key
+// outside allowed. Non-objects are left to the type detector.
+func objectHasUnknownKey(value interface{}, allowed map[string]bool) bool {
+	object, ok := value.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	for key := range object {
+		if !allowed[key] {
+			return true
+		}
+	}
+	return false
+}
+
 func bodyHasUnknownField(body []byte) bool {
 	var state map[string]interface{}
 	if err := json.Unmarshal(body, &state); err != nil {
@@ -250,6 +265,41 @@ func bodyHasUnknownField(body []byte) bool {
 			}
 		}
 	}
+	if zone, ok := state["zone"].(map[string]interface{}); ok {
+		if objectHasUnknownKey(zone["center"], map[string]bool{"row": true, "col": true}) {
+			return true
+		}
+	}
+	// Array elements: bot-like arrays carry position/owner (plus active for
+	// cores), the point arrays carry row/col directly, and every position
+	// object carries only row/col.
+	knownElements := map[string]map[string]bool{
+		"bots":   {"position": true, "owner": true},
+		"cores":  {"position": true, "owner": true, "active": true},
+		"dead":   {"position": true, "owner": true},
+		"energy": {"row": true, "col": true},
+		"walls":  {"row": true, "col": true},
+	}
+	for field, allowed := range knownElements {
+		elements, ok := state[field].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, element := range elements {
+			elementMap, ok := element.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for key, value := range elementMap {
+				if !allowed[key] {
+					return true
+				}
+				if key == "position" && objectHasUnknownKey(value, map[string]bool{"row": true, "col": true}) {
+					return true
+				}
+			}
+		}
+	}
 	return false
 }
 
@@ -266,16 +316,47 @@ func bodyMissingRequired(body []byte) bool {
 	return false
 }
 
-func bodyTurnWrongType(body []byte) bool {
+// bodyRequiredFieldWrongType reports whether any required top-level field is
+// present with the wrong JSON type: match_id a string, turn a number, config
+// and you and zone objects, and the bots/energy/cores/walls/dead arrays.
+func bodyRequiredFieldWrongType(body []byte) bool {
 	var state map[string]json.RawMessage
 	if err := json.Unmarshal(body, &state); err != nil {
 		return false
 	}
-	raw, ok := state["turn"]
-	if !ok {
-		return false
+	if raw, ok := state["match_id"]; ok {
+		var matchID string
+		if json.Unmarshal(raw, &matchID) != nil {
+			return true
+		}
 	}
-	return json.Unmarshal(raw, new(int)) != nil
+	if raw, ok := state["turn"]; ok {
+		var turn int
+		if json.Unmarshal(raw, &turn) != nil {
+			return true
+		}
+	}
+	for _, field := range []string{"config", "you", "zone"} {
+		raw, ok := state[field]
+		if !ok {
+			continue
+		}
+		var object map[string]interface{}
+		if json.Unmarshal(raw, &object) != nil || object == nil {
+			return true
+		}
+	}
+	for _, field := range []string{"bots", "energy", "cores", "walls", "dead"} {
+		raw, ok := state[field]
+		if !ok {
+			continue
+		}
+		var array []interface{}
+		if json.Unmarshal(raw, &array) != nil || array == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func headerNonCanonical(value string) bool { return !canonicalBase10(value) }
@@ -303,15 +384,27 @@ func TestSuiteDetectsNonConformance(t *testing.T) {
 		want    []string
 	}{
 		{
-			name: "accepts unknown fields",
+			name: "accepts schema-invalid bodies",
 			handler: mutantHandler(secret, func(_ *http.Request, body []byte) bool {
-				return bodyHasUnknownField(body) || bodyMissingRequired(body) || bodyTurnWrongType(body)
+				return bodyHasUnknownField(body) || bodyMissingRequired(body) || bodyRequiredFieldWrongType(body)
 			}),
 			want: []string{
 				"reject_unknown_top_level_field", "reject_unknown_config_field",
 				"reject_unknown_you_field", "reject_unknown_zone_field",
+				"reject_unknown_bots_element_field", "reject_unknown_bots_position_field",
+				"reject_unknown_energy_element_field", "reject_unknown_cores_element_field",
+				"reject_unknown_walls_element_field", "reject_unknown_dead_element_field",
+				"reject_unknown_zone_center_field",
 				"reject_missing_required_field_walls", "reject_missing_body_match_id",
-				"reject_wrong_type_turn",
+				"reject_missing_required_field_config", "reject_missing_required_field_turn",
+				"reject_missing_required_field_you", "reject_missing_required_field_bots",
+				"reject_missing_required_field_energy", "reject_missing_required_field_cores",
+				"reject_missing_required_field_dead",
+				"reject_wrong_type_turn", "reject_wrong_type_match_id",
+				"reject_wrong_type_config", "reject_wrong_type_you",
+				"reject_wrong_type_bots", "reject_wrong_type_energy",
+				"reject_wrong_type_cores", "reject_wrong_type_walls",
+				"reject_wrong_type_dead", "reject_wrong_type_zone",
 			},
 		},
 		{

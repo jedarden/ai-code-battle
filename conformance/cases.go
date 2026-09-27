@@ -102,6 +102,12 @@ func zone(state map[string]interface{}) map[string]interface{} {
 	return state["zone"].(map[string]interface{})
 }
 
+// firstBotElement returns the single bots array element the base fixture
+// carries, so mutations can reach into its nested position object.
+func firstBotElement(state map[string]interface{}) map[string]interface{} {
+	return state["bots"].([]interface{})[0].(map[string]interface{})
+}
+
 func buildBody(mutation stateMutation) []byte {
 	var state map[string]interface{}
 	if err := json.Unmarshal(baseStateJSON, &state); err != nil {
@@ -371,6 +377,105 @@ func BuildCases(secret string, now time.Time) []Case {
 		Case{Name: "reject_body_not_an_object", ContentType: "application/json", Headers: authHeaders(secret, matchID, turnStr, fresh, notAnObject, nil), Body: notAnObject, WantStatus: http.StatusBadRequest},
 		Case{Name: "reject_two_json_values", ContentType: "application/json", Headers: authHeaders(secret, matchID, turnStr, fresh, twoValues, nil), Body: twoValues, WantStatus: http.StatusBadRequest},
 	)
+
+	// The rest of the omission matrix: every required top-level field removed
+	// one at a time from an otherwise authenticated body. walls and match_id
+	// omissions are pinned above; the engine's own gate additionally pins the
+	// empty body and the enabled-zone omission.
+	for _, missing := range []struct{ field, label string }{
+		{"config", "config"},
+		{"turn", "turn"},
+		{"you", "you"},
+		{"bots", "bots"},
+		{"energy", "energy"},
+		{"cores", "cores"},
+		{"dead", "dead"},
+	} {
+		body := buildBody(deleteTop(missing.field))
+		cases = append(cases, Case{
+			Name:        "reject_missing_required_field_" + missing.label,
+			ContentType: "application/json",
+			Headers:     authHeaders(secret, matchID, turnStr, fresh, body, nil),
+			Body:        body,
+			WantStatus:  http.StatusBadRequest,
+		})
+	}
+
+	// Wrong JSON type for every remaining required top-level field (turn as a
+	// string is pinned above). Each is a documented schema violation on an
+	// authenticated body, so the bot must answer 400 and never execute.
+	wrongTypes := []struct {
+		field string
+		value interface{}
+	}{
+		{"match_id", 7},
+		{"config", "cfg"},
+		{"you", []interface{}{}},
+		{"bots", map[string]interface{}{}},
+		{"energy", map[string]interface{}{}},
+		{"cores", "none"},
+		{"walls", true},
+		{"dead", 0},
+		{"zone", []interface{}{}},
+	}
+	for _, wrong := range wrongTypes {
+		body := buildBody(func(state map[string]interface{}) {
+			topLevel(state)[wrong.field] = wrong.value
+		})
+		cases = append(cases, Case{
+			Name:        "reject_wrong_type_" + wrong.field,
+			ContentType: "application/json",
+			Headers:     authHeaders(secret, matchID, turnStr, fresh, body, nil),
+			Body:        body,
+			WantStatus:  http.StatusBadRequest,
+		})
+	}
+
+	// Unknown fields at every documented nesting level: inside the
+	// bots/energy/cores/walls/dead array elements, inside an element's
+	// position object, and inside the nested zone.center. The doc declares a
+	// request malformed when it "contains an unknown field", not merely at
+	// the top level.
+	unknownNested := []struct {
+		label    string
+		mutation stateMutation
+	}{
+		{"bots_element", func(state map[string]interface{}) {
+			firstBotElement(state)["loyalty"] = "high"
+		}},
+		{"bots_position", func(state map[string]interface{}) {
+			firstBotElement(state)["position"].(map[string]interface{})["altitude"] = 1
+		}},
+		{"energy_element", func(state map[string]interface{}) {
+			state["energy"] = []interface{}{map[string]interface{}{"row": 20, "col": 25, "weight": 1}}
+		}},
+		{"cores_element", func(state map[string]interface{}) {
+			state["cores"] = []interface{}{map[string]interface{}{
+				"position": map[string]interface{}{"row": 5, "col": 5}, "owner": 0, "active": true, "heat": 1,
+			}}
+		}},
+		{"walls_element", func(state map[string]interface{}) {
+			state["walls"] = []interface{}{map[string]interface{}{"row": 10, "col": 10, "crumbling": false}}
+		}},
+		{"dead_element", func(state map[string]interface{}) {
+			state["dead"] = []interface{}{map[string]interface{}{
+				"position": map[string]interface{}{"row": 3, "col": 4}, "owner": 1, "cause": "combat",
+			}}
+		}},
+		{"zone_center", func(state map[string]interface{}) {
+			zone(state)["center"].(map[string]interface{})["elevation"] = 3
+		}},
+	}
+	for _, unknown := range unknownNested {
+		body := buildBody(unknown.mutation)
+		cases = append(cases, Case{
+			Name:        "reject_unknown_" + unknown.label + "_field",
+			ContentType: "application/json",
+			Headers:     authHeaders(secret, matchID, turnStr, fresh, body, nil),
+			Body:        body,
+			WantStatus:  http.StatusBadRequest,
+		})
+	}
 
 	// Health: direct 200, no redirect, no auth headers.
 	cases = append(cases, Case{
