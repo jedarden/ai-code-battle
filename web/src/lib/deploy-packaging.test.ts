@@ -52,8 +52,12 @@ describe('Pages deploy packaging (functions ship with the frontend)', () => {
     // <cwd>/functions resolves to web/functions. A repo-root
     // `pages deploy web/dist` silently ships no Functions at all.
     expect(script).toMatch(/cd\s+web\b[^\n]*&&[^\n]*wrangler[^\n]*pages\s+deploy\s+dist\b/);
-    // And it must trip before deploying if the catch-all is missing.
+    // And it must trip before deploying if either catch-all is missing —
+    // the /api transport and the /r2 replay seam ship from the same
+    // directory and are skipped by the same silent-skip rule (bead
+    // aicodeba-a0c15607).
     expect(script).toContain('web/functions/api/[[path]].ts');
+    expect(script).toContain('web/functions/r2/[[path]].ts');
   });
 
   it('the transport decision record documents the packaging rule', () => {

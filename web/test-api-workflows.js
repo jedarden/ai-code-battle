@@ -37,6 +37,17 @@
  *     Each probe therefore asserts 200, not-text/html, gzip bytes, and a
  *     decoded replay with turns — the viewer's own decode path.
  *
+ *  E. /api ↔ /r2 route isolation (bead aicodeba-a0c15607) — the origin ships
+ *     two Pages Function mounts, and each must own exactly its own subtree at
+ *     the platform routing layer, the one seam no offline test sees. /r2/*
+ *     must be answered by the r2 function (text/plain seam answers while the
+ *     bucket is empty, or real object metadata on a hit) — never text/html
+ *     (the SPA fallback, i.e. the r2 catch-all missing from the deploy) and
+ *     never the /api function's JSON envelopes. Conversely an r2-shaped path
+ *     under /api must stay with the /api function's JSON 404. Every probe is
+ *     a GET against a key nothing serves or stores, so it is read-only
+ *     whatever the bucket's state.
+ *
  * Override the origin with ACB_ORIGIN (e.g. a local `wrangler pages dev`).
  * Set ACB_SKIP_BUILD_CHECK=1 to gate the origin only when no local build is
  * present (scripts/verify-deployment.sh does this; the post-deploy CI gate
@@ -364,18 +375,81 @@ async function probePublishedReplays() {
       logTest(`replay retrievable: ${match.id}`, false, `${e?.message || e} — ${url}`);
     }
   }
+}
 
-  // Informational only: the R2 Pages Function path. The acb-data bucket is
-  // empty pending operator-issued R2 credentials (R2_ACCESS_KEY_SOURCE.md —
-  // both the stored S3 keys and the account API token are dead), so a 404
-  // text/plain here is the function answering over a live seam, not a
-  // regression; a 200 text/html would be the fallback and worth a closer look.
-  const r2 = await fetchProbe(`/r2/replays/${probed[0].id}.json.gz`, 'GET', null);
-  if (r2.status === 200 && !r2.contentType.includes('text/html')) {
-    logInfo(`R2 function serves ${probed[0].id} too (${r2.status} ${r2.contentType})`);
-  } else {
-    logInfo(`R2 bucket has no ${probed[0].id} (${r2.status} ${r2.contentType}) — function seam live, bucket empty pending R2 credentials`);
+// ─── Part E: /api ↔ /r2 route isolation ──────────────────────────────────────
+
+/**
+ * /r2/* must always be answered by the r2 function. Its signatures are a
+ * text/plain answer (404 "Not Found" on a missing key, 503 "R2 binding not
+ * configured" on a missing binding — the acb-data bucket is empty pending
+ * operator-issued R2 credentials, R2_ACCESS_KEY_SOURCE.md, so that is the
+ * expected live seam today) or a real object's own metadata on a hit.
+ *
+ *   - text/html anywhere is the SPA fallback, i.e. the r2 catch-all is
+ *     missing from the deploy — the same silent-skip packaging rot
+ *     deploy-packaging.test.ts guards offline, now gated on the live origin.
+ *   - a JSON body is the /api function bleeding across the mount boundary.
+ *     Safe to assert only because every probe below hits a key nothing
+ *     stores: the /r2 function can answer JSON only by serving a stored
+ *     object, and no writer ever creates these keys.
+ */
+async function expectR2Seam(name, route) {
+  const { status, contentType, json } = await fetchProbe(route, 'GET', null);
+  logInfo(`probed GET ${origin}${route} → ${status} ${contentType}`);
+
+  let problem = null;
+  if (contentType.includes('text/html')) {
+    problem = `answered ${status} text/html — the SPA fallback is answering /r2, i.e. ` +
+      'web/functions/r2/ is missing from the deploy (the same silent-skip packaging ' +
+      'rot the /api catch-all guard exists for)';
+  } else if (json !== null) {
+    problem = `answered ${status} ${contentType} with a JSON body — the /api function is ` +
+      'answering inside /r2; the two function mounts are not isolated';
+  } else if ((status === 404 || status === 503) && !contentType.includes('text/plain')) {
+    problem = `${status} answered ${contentType} — expected the r2 function's text/plain seam`;
   }
+
+  if (problem) {
+    failed++;
+    logTest(name, false, problem);
+  } else {
+    passed++;
+    logTest(name, true, `${status} ${contentType || '(no content-type)'} — r2 function owns it`);
+  }
+}
+
+async function probeRouteIsolation() {
+  log('\n--- E. /api ↔ /r2 route isolation ---\n', colors.cyan);
+
+  // 1. The r2 catch-all owns /r2/* — a missing replay key answers the
+  //    function's text/plain 404, never the SPA fallback.
+  await expectR2Seam(
+    'r2 catch-all owns /r2/* (not the SPA fallback)',
+    '/r2/replays/route-isolation-probe-a0c15607.json.gz',
+  );
+
+  // 2. The bare /r2/ root (an empty object key) is still the function's.
+  await expectR2Seam('bare /r2/ root answers the r2 function', '/r2/');
+
+  // 3. No cross-serve /r2 → /api: an api-shaped path under /r2 is a bucket
+  //    key lookup, never the /api function's health envelope.
+  await expectR2Seam('/r2/api/health is not the /api function', '/r2/api/health');
+
+  // 4. No cross-serve /api → /r2: an r2-shaped path under /api stays with
+  //    the /api function's JSON 404 — the r2 function's text/plain seam must
+  //    not answer inside /api.
+  await expectJson(
+    '/api path shaped like an /r2 key stays with the /api function',
+    '/api/r2/replays/route-isolation-probe-a0c15607.json.gz',
+    'GET',
+    null,
+    (json, status) => {
+      if (status !== 404) return `expected 404, got ${status}`;
+      if (json.error !== 'not found') return `expected error "not found", got ${JSON.stringify(json.error)}`;
+      return null;
+    },
+  );
 }
 
 async function main() {
@@ -492,6 +566,8 @@ async function main() {
   await probeWritePaths();
 
   await probePublishedReplays();
+
+  await probeRouteIsolation();
 
   log('');
   if (failed > 0) {

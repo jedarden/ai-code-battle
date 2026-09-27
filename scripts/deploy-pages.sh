@@ -56,9 +56,11 @@ echo ""
 # where dist/ and functions/ are siblings — the same shape the CI deploy uses
 # (declarative-config k8s/iad-ci/argo-workflows/acb-site-pages-build
 # -workflowtemplate.yml). Pinned by web/src/lib/deploy-packaging.test.ts.
-if [ ! -f "web/functions/api/[[path]].ts" ]; then
-    echo -e "${RED}ERROR: web/functions/api/[[path]].ts is missing${NC}"
-    echo "The /api Pages Function would be silently dropped from this deploy."
+if [ ! -f "web/functions/api/[[path]].ts" ] || [ ! -f "web/functions/r2/[[path]].ts" ]; then
+    echo -e "${RED}ERROR: a Pages Function catch-all is missing from web/functions/${NC}"
+    echo "Both web/functions/api/[[path]].ts and web/functions/r2/[[path]].ts must exist;"
+    echo "whichever is missing would be silently dropped from this deploy, and its"
+    echo "routes (/api/* or /r2/*) would fall through to the SPA fallback."
     exit 1
 fi
 echo -e "${BLUE}Deploying to Cloudflare Pages...${NC}"

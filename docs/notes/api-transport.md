@@ -232,10 +232,25 @@ runner, same in-memory bucket): every documented route answered through
 `/api/*`, the strip proven one-time (`/api/api/health` is not health), the
 query string proven to survive, the handed env proven to answer, and the
 JSON content-type contract re-asserted over every adapter-reachable answer
-class. `web/tsconfig.json` includes `web/functions/**` (runtime globals via
+class — including mount isolation (bead aicodeba-a0c15607): an `/api` path
+shaped like an `/r2` key (`/api/r2/replays/…`) stays with the `/api`
+function's JSON 404, never the `/r2` function's text/plain seam.
+`web/tsconfig.json` includes `web/functions/**` (runtime globals via
 `functions/pages-runtime.d.ts`, minimal stand-ins for the uninstalled
 `@cloudflare/workers-types`), so the adapter file the deploy actually ships
 is inside the tsc gate too.
+
+The other mount — `functions/r2/[[path]].ts`, the replay bucket's seam on
+the Pages origin — is pinned the same way by
+`src/lib/r2-function-adapter.test.ts` (node environment: the `.gz`
+contract streams through `DecompressionStream`): `/r2/api/health` is a
+bucket key lookup, never the `/api` function's JSON health envelope; the
+empty-bucket seam answers `404 text/plain` and the bare `/r2/` root
+refuses before the binding is consulted; a missing binding answers `503
+text/plain`; a stored object round-trips with its R2 metadata
+(content type, `Cache-Control`, CORS); and a `.gz` object is decompressed
+inside the worker — the CDN strips `Content-Encoding` from worker
+responses, so the body must arrive plain.
 
 The client and page halves (kill switch, `MatchTierOfflineError` rendering,
 HTML-fallback backstops) live in `web/src/api-transport.test.ts`,
@@ -257,7 +272,17 @@ health + capabilities, one map tally, one feedback read, all five match-tier
 refusals (register, rotate-key, predict, predictions/open, predictions/history),
 an unknown `/api` path — which must answer JSON 404, pinning the deployed
 catch-all (`functions/api/[[path]].ts`) at the platform routing layer, the one
-seam no offline test sees — and the SPA at `/`. It is the arbiter of which
+seam no offline test sees — and the SPA at `/`. Part E (bead
+aicodeba-a0c15607) pins the same platform-routing seam for the other mount
+and the isolation between the two: `/r2/replays/<missing>.json.gz` and the
+bare `/r2/` root must answer the r2 function's `text/plain` seam (the
+acb-data bucket is empty pending operator-issued R2 credentials, so that is
+its live signature) — `text/html` would be the SPA fallback, i.e. the r2
+catch-all missing from the deploy; `/r2/api/health` must never answer the
+`/api` function's JSON envelope; and `/api/r2/replays/<missing>.json.gz`
+must stay with the `/api` function's JSON 404. Every part-E probe is a GET
+against a key nothing serves or stores, so it is read-only whatever the
+bucket's state. It is the arbiter of which
 state the origin is in (see Deployment state above): it fails loudly while
 `/api` answers anything but JSON — which is currently the deploy signal, not a
 code bug.
@@ -333,7 +358,10 @@ Both deploy paths now run wrangler from `web/`, where `dist/` and
 - CI — `acb-site-pages-build` (`cd web && npx wrangler pages deploy dist`),
   which is why production has served the function all along.
 - Manual — `scripts/deploy-pages.sh` now deploys from a `web/` subshell and
-  trips before deploying when `web/functions/api/[[path]].ts` is missing.
+  trips before deploying when either catch-all is missing
+  (`web/functions/api/[[path]].ts` **or** `web/functions/r2/[[path]].ts` —
+  the /r2 replay seam ships from the same directory and is skipped by the
+  same silent-skip rule; bead aicodeba-a0c15607).
 
 `web/src/lib/deploy-packaging.test.ts` pins the packaging offline at the
 default gate: the catch-alls exist beside the shipped assets dir,

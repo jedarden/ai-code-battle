@@ -152,6 +152,19 @@ describe('the /api prefix is stripped exactly once', () => {
     expect(res.contentType).toContain('application/json');
   });
 
+  it('an /api path shaped like an /r2 key stays with the /api function', async () => {
+    // Mount isolation between the two Pages Function catch-alls (bead
+    // aicodeba-a0c15607): every /api/* path is this adapter's, including
+    // ones that look like r2 object keys — the /r2 function's text/plain
+    // seam must never answer inside /api. The deployed side of the same
+    // seam is gated live by part E of web/test-api-workflows.js.
+    const res = await call('/api/r2/replays/route-isolation-probe-a0c15607.json.gz');
+    expect(res.status).toBe(404);
+    expect(res.json).toEqual({ error: 'not found' });
+    expect(res.contentType).toContain('application/json');
+    expect(res.contentType).not.toContain('text/plain');
+  });
+
   it('the strip is case-sensitive: /API/health is not health', async () => {
     const res = await call('/API/health');
     expect(res.status).toBe(404);

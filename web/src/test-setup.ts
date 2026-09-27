@@ -13,18 +13,22 @@ if (typeof document !== 'undefined' && !document.body) {
 }
 
 // Mock matchMedia for accessibility features in replay.ts
-// Must be set up before tests import modules that use it
-const matchMediaMock = vi.fn().mockImplementation((query: string) => ({
-  matches: false,
-  media: query,
-  onchange: null,
-  addListener: vi.fn(),
-  removeListener: vi.fn(),
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  dispatchEvent: vi.fn(),
-}));
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: matchMediaMock,
-});
+// Must be set up before tests import modules that use it. Skipped under a
+// node-environment file (e.g. r2-function-adapter.test.ts, which streams
+// through DecompressionStream) — there is no window to stub there.
+if (typeof window !== 'undefined') {
+  const matchMediaMock = vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: matchMediaMock,
+  });
+}
