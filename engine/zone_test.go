@@ -15,6 +15,8 @@ import (
 //     toroidal distance² from ZoneCenter is strictly greater than
 //     ZoneRadius²; zone kills emit one zone_death each, decrement the owner's
 //     bot count, and award no score to anyone
+//   - phase ordering: combat resolves before zone damage, and zone damage
+//     resolves before capture
 //   - toroidal boundary behavior: the kill check judges the wrapped position,
 //     so a bot that moves across the map seam is judged at where it wrapped to
 
@@ -326,6 +328,98 @@ func TestZoneDamageOutsideSafeZone(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestZonePhaseOrdering pins the two interactions that distinguish zone
+// damage from the neighboring phases. Combat deaths must not be reclassified
+// as zone deaths, and a bot killed by the zone must not capture a core later
+// in the same turn.
+func TestZonePhaseOrdering(t *testing.T) {
+	t.Run("combat resolves before zone damage", func(t *testing.T) {
+		gs := newZoneTestState(1, 1000, 1, 1)
+		gs.Config.AttackRadius2 = 1
+		gs.ZoneActive = true
+		gs.ZoneRadius = 4
+
+		p0 := gs.Players[0]
+		p1 := gs.Players[1]
+		// p0Target is outside the zone but is outnumbered by the two p1
+		// attackers. p1AttackerOutside is also outside the zone; if zone
+		// damage ran first, no combat_death could be emitted for p0Target.
+		p0Target := gs.SpawnBot(p0.ID, Position{Row: 10, Col: 5})
+		p1AttackerOutside := gs.SpawnBot(p1.ID, Position{Row: 10, Col: 4})
+		p1AttackerBoundary := gs.SpawnBot(p1.ID, Position{Row: 10, Col: 6})
+		gs.SpawnBot(p0.ID, Position{Row: 10, Col: 10})
+		gs.SpawnBot(p1.ID, Position{Row: 10, Col: 14})
+
+		if result := gs.ExecuteTurn(); result != nil {
+			t.Fatalf("ExecuteTurn() result = %+v, want match to continue", result)
+		}
+		if p0Target.Alive {
+			t.Fatal("outnumbered target survived; combat should run before zone damage")
+		}
+		if !p1AttackerBoundary.Alive {
+			t.Fatal("boundary attacker died; distance equal to the radius must be safe")
+		}
+
+		var combatTarget, zoneOutside bool
+		for _, event := range gs.Events {
+			switch event.Type {
+			case EventCombatDeath:
+				if id, ok := event.Details.(map[string]interface{})["bot_id"].(int); ok && id == p0Target.ID {
+					combatTarget = true
+				}
+			case EventZoneDeath:
+				if id, ok := zoneDeathDetails(t, event)["bot_id"].(int); ok && id == p1AttackerOutside.ID {
+					zoneOutside = true
+				}
+			}
+		}
+		if !combatTarget {
+			t.Errorf("events = %+v, want combat_death for outnumbered target %d", gs.Events, p0Target.ID)
+		}
+		if !zoneOutside {
+			t.Errorf("events = %+v, want zone_death for outside attacker %d", gs.Events, p1AttackerOutside.ID)
+		}
+	})
+
+	t.Run("zone damage resolves before capture", func(t *testing.T) {
+		gs := newZoneTestState(1, 1000, 1, 1)
+		gs.Config.AttackRadius2 = 1
+		gs.ZoneActive = true
+		gs.ZoneRadius = 4
+
+		p0 := gs.Players[0]
+		p1 := gs.Players[1]
+		corePosition := Position{Row: 10, Col: 5} // outside radius 4
+		core := gs.AddCore(p0.ID, corePosition)
+		attacker := gs.SpawnBot(p1.ID, corePosition)
+		gs.SpawnBot(p0.ID, Position{Row: 10, Col: 10})
+		gs.SpawnBot(p1.ID, Position{Row: 10, Col: 14})
+
+		if result := gs.ExecuteTurn(); result != nil {
+			t.Fatalf("ExecuteTurn() result = %+v, want match to continue", result)
+		}
+		if attacker.Alive {
+			t.Fatal("outside-zone attacker survived, want zone damage")
+		}
+		if !core.Active {
+			t.Fatal("core was captured after its attacker died to zone damage")
+		}
+
+		for _, event := range gs.Events {
+			if event.Type == EventCoreCaptured {
+				t.Fatalf("unexpected core_captured event after zone death: %+v", event)
+			}
+		}
+		deaths := findZoneDeaths(gs)
+		if len(deaths) != 1 {
+			t.Fatalf("got %d zone_death events, want exactly one", len(deaths))
+		}
+		if id, ok := zoneDeathDetails(t, deaths[0])["bot_id"].(int); !ok || id != attacker.ID {
+			t.Errorf("zone_death bot_id = %v, want %d", zoneDeathDetails(t, deaths[0])["bot_id"], attacker.ID)
+		}
+	})
 }
 
 // TestZoneToroidalBoundary pins that the zone kill check judges bots at their
