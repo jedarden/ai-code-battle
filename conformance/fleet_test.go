@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,30 @@ func TestTargetsRegistryCoversWorkspace(t *testing.T) {
 	}
 }
 
+// fleetSelection resolves an ACB_CONFORMANCE_FLEET spec — "all" or a
+// comma-separated target list — against the registry.
+func fleetSelection(spec string) (map[string]bool, error) {
+	all := map[string]bool{}
+	for _, target := range Targets() {
+		all[target.Name] = true
+	}
+	want := map[string]bool{}
+	for _, name := range strings.Split(spec, ",") {
+		name = strings.TrimSpace(name)
+		if name == "all" {
+			for n := range all {
+				want[n] = true
+			}
+			continue
+		}
+		if !all[name] {
+			return nil, fmt.Errorf("unknown target %q (see Targets())", name)
+		}
+		want[name] = true
+	}
+	return want, nil
+}
+
 // TestFleetConformance boots every registered target against the full golden
 // case table. It is opt-in — the sweep builds and boots real bots across six
 // toolchains and does not belong in the default gate:
@@ -60,28 +85,13 @@ func TestFleetConformance(t *testing.T) {
 		t.Skip("fleet sweep is opt-in: set ACB_CONFORMANCE_FLEET=all (or a comma-separated target list)")
 	}
 
+	want, err := fleetSelection(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root, err := RepoRoot()
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
-	}
-
-	all := map[string]bool{}
-	for _, target := range Targets() {
-		all[target.Name] = true
-	}
-	want := map[string]bool{}
-	for _, name := range strings.Split(spec, ",") {
-		name = strings.TrimSpace(name)
-		if name == "all" {
-			for n := range all {
-				want[n] = true
-			}
-			continue
-		}
-		if !all[name] {
-			t.Fatalf("unknown target %q (see Targets())", name)
-		}
-		want[name] = true
 	}
 
 	for _, target := range Targets() {

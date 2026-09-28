@@ -68,6 +68,25 @@ func BootTarget(ctx context.Context, root string, t Target, secret string) (*Ins
 	if skip := t.DescribeSkips(); skip != "" {
 		return nil, fmt.Errorf("target not runnable here: %s", skip)
 	}
+	dir, run, err := prepareRun(ctx, root, t)
+	if err != nil {
+		return nil, err
+	}
+	env := append(os.Environ(), fmt.Sprintf("%s=%s", t.EnvVarNames.Secret, secret))
+	inst, err := startInstance(ctx, t, dir, run, env)
+	if err != nil {
+		return nil, err
+	}
+	if err := inst.awaitHealthy(ctx, 30*time.Second); err != nil {
+		inst.Stop()
+		return nil, fmt.Errorf("boot %s: %w", t.Name, err)
+	}
+	return inst, nil
+}
+
+// prepareRun performs the target's build step (if any) and resolves the
+// final run argv, locating a cargo binary the build produced.
+func prepareRun(ctx context.Context, root string, t Target) (string, []string, error) {
 	dir := filepath.Join(root, t.Dir())
 
 	if len(t.Build) > 0 {
@@ -81,45 +100,97 @@ func BootTarget(ctx context.Context, root string, t Target, secret string) (*Ins
 		build.Dir = dir
 		build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
 		if out, err := build.CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("build %s: %v\n%s", t.Name, err, tail(out, 4000))
+			return "", nil, fmt.Errorf("build %s: %v\n%s", t.Name, err, tail(out, 4000))
 		}
 	}
 
 	if t.Binary != "" {
 		bin, err := resolveCargoBinary(dir, t.Binary)
 		if err != nil {
-			return nil, fmt.Errorf("locate %s binary: %w", t.Name, err)
+			return "", nil, fmt.Errorf("locate %s binary: %w", t.Name, err)
 		}
 		t.Run = []string{bin}
 	}
+	return dir, t.Run, nil
+}
 
+// startInstance launches run in dir with env plus the target's port variable
+// and returns the tracked instance without waiting for health.
+func startInstance(ctx context.Context, t Target, dir string, run, env []string) (*Instance, error) {
 	port, err := freePort()
 	if err != nil {
 		return nil, fmt.Errorf("allocate port: %w", err)
 	}
-
 	runCtx, cancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(runCtx, t.Run[0], t.Run[1:]...)
+	cmd := exec.CommandContext(runCtx, run[0], run[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("%s=%d", t.EnvVarNames.Port, port),
-		fmt.Sprintf("%s=%s", t.EnvVarNames.Secret, secret),
-	)
+	cmd.Env = append(env, fmt.Sprintf("%s=%d", t.EnvVarNames.Port, port))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
 	if err := cmd.Start(); err != nil {
 		cancel()
 		return nil, fmt.Errorf("start %s: %w", t.Name, err)
 	}
-
 	inst := &Instance{cmd: cmd, Port: port, cancel: cancel, done: make(chan error, 1)}
 	go func() { inst.done <- cmd.Wait() }()
-
-	if err := inst.awaitHealthy(ctx, 30*time.Second); err != nil {
-		inst.Stop()
-		return nil, fmt.Errorf("boot %s: %w", t.Name, err)
-	}
 	return inst, nil
+}
+
+// BootTargetWithoutSecret boots the target for the missing-secret check.
+// The build step still runs — the provisioning contract is about runtime
+// behavior, not buildability — but the process starts with both documented
+// secret spellings scrubbed from the environment and neither injected.
+// Unlike BootTarget it does not await health: a conformant bot exits at boot
+// instead of serving. The caller owns the instance and must Stop it.
+func BootTargetWithoutSecret(ctx context.Context, root string, t Target) (*Instance, error) {
+	if skip := t.DescribeSkips(); skip != "" {
+		return nil, fmt.Errorf("target not runnable here: %s", skip)
+	}
+	dir, run, err := prepareRun(ctx, root, t)
+	if err != nil {
+		return nil, err
+	}
+	return startInstance(ctx, t, dir, run, secretFreeEnv())
+}
+
+// secretFreeEnv returns os.Environ() with both documented secret spellings
+// removed, so a target booted from it holds no credential at all — not one
+// inherited from the surrounding process by accident.
+func secretFreeEnv() []string {
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "BOT_SECRET=") || strings.HasPrefix(kv, "SHARED_SECRET=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
+}
+
+// failFastTimeout bounds how long a target may keep running when booted
+// without its secret. Conformant bots exit in milliseconds; the bound only
+// has to absorb slow process startup on a loaded box.
+const failFastTimeout = 10 * time.Second
+
+// CheckMissingSecretFailFast boots the target with no secret in its
+// environment and holds it to the provisioning contract of
+// docs/bot-protocol.md: a bot that boots without its secret must fail fast
+// and refuse to serve /turn. A process that exits on its own within
+// failFastTimeout conforms; one still running past the bound is answering
+// health checks without a credential, and the returned error says so.
+func CheckMissingSecretFailFast(ctx context.Context, root string, t Target) error {
+	inst, err := BootTargetWithoutSecret(ctx, root, t)
+	if err != nil {
+		return err
+	}
+	defer inst.Stop()
+	select {
+	case <-inst.done:
+		return nil // exited on its own: fail-fast confirmed
+	case <-time.After(failFastTimeout):
+		return fmt.Errorf("%s was still serving after %s with no secret in its environment; docs/bot-protocol.md requires a bot to fail fast at boot and refuse to serve /turn", t.Name, failFastTimeout)
+	case <-ctx.Done():
+		return fmt.Errorf("check %s: %w", t.Name, ctx.Err())
+	}
 }
 
 func (i *Instance) awaitHealthy(ctx context.Context, timeout time.Duration) error {
