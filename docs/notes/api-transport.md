@@ -253,6 +253,13 @@ case the documents can grow to is a few hundred KiB regardless of traffic.
   with a proxy. The routes, shapes, and clients stay as-is. Deferring until
   then is the recorded decision ("Match-tier contract decision" in
   `public-api-descope.md`), and its revival triggers live there too.
+  The service's startup applies `ensureSchema` only (`cmd/acb-api/main.go`);
+  the `migrations/*.sql` files are a separate step nothing runs for you, and
+  skipping them breaks a match-tier route: without
+  `migrations/0002_add_predictable_flag.sql`, every `POST /api/predict`
+  past the match-exists check answers 500 (`column "predictable" does not
+  exist`). Verified 2026-09-28 against the production schema in a throwaway
+  database (aicodeba-7f5b3b0e).
 
 ## Testing
 

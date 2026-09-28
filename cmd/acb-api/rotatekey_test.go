@@ -71,7 +71,10 @@ func insertTestBot(t *testing.T, db *sql.DB, encKey, botID, name, status string)
 		encrypted = secret
 	}
 
-	_, err = db.Exec(`INSERT INTO bots (bot_id, name, shared_secret, status) VALUES ($1, $2, $3, $4)
+	// owner and endpoint_url are NOT NULL without defaults in the production
+	// schema (db.go schemaSQL), so supply them explicitly — the minimal
+	// in-test bots table accepts them too.
+	_, err = db.Exec(`INSERT INTO bots (bot_id, name, owner, endpoint_url, shared_secret, status) VALUES ($1, $2, 'test', 'http://localhost:8080', $3, $4)
 		ON CONFLICT (bot_id) DO UPDATE SET shared_secret = $3, status = $4`,
 		botID, name, encrypted, status)
 	if err != nil {
