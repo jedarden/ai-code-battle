@@ -108,14 +108,11 @@ rest:
 | Replay feedback (annotations) | `POST /api/feedback`, `GET /api/feedback/{match_id}`, `POST /api/feedback/{id}/upvote` | **LIVE** |
 | Agentation site feedback | `POST /api/feedback` (body carries `markdown`) | **LIVE** |
 | Map voting | `POST /api/vote/map`, `GET /api/vote/map/{map_id}` | **LIVE** |
-| Bot credential lifecycle | `POST /api/register`, `POST /api/rotate-key`, `POST /api/revoke-key` | JSON proxy response when `ACB_API_ORIGIN` is configured; otherwise **503** `match_tier_offline` |
-| Predictions | `GET /api/predictions/open`, `GET /api/predictions/history`, `POST /api/predict` | JSON proxy response when `ACB_API_ORIGIN` is configured; otherwise **503** `match_tier_offline` |
+| Bot credential lifecycle | `POST /api/register`, `POST /api/rotate-key`, `POST /api/revoke-key` | JSON proxy response through configured acb-api; **503** `match_tier_offline` only when no origin is configured, or `match_tier_unavailable` when the configured backend cannot be reached |
+| Predictions | `GET /api/predictions/open`, `GET /api/predictions/history`, `POST /api/predict` | JSON proxy response through configured acb-api; the same explicit 503 fallback states apply |
 
-The match-tier flows need acb-api's PostgreSQL/Valkey backend, which is not
-deployed anywhere (compute tier decommissioned 2026-07-21; the deferral is
-the recorded decision — see "Match-tier contract decision" in
-`public-api-descope.md`, bead aicodeba-a0052569). Those routes answer
-Without a configured backend they answer **503 JSON with code
+The match-tier flows use acb-api's PostgreSQL/Valkey backend. Without a
+configured backend they answer **503 JSON with code
 `match_tier_offline`** so the SPA renders its unavailable states from the
 server's answer instead of a compile-time flag. When `ACB_API_ORIGIN` points
 at a Pages-reachable acb-api deployment, the same function proxies those
@@ -155,12 +152,12 @@ it is itself a documented route.
 | `/feedback` | POST | 201 recorded (400/413/422/429/503 on refusal) | 404 JSON `not found` |
 | `/feedback/{match_id}` | GET | 200 feedback list (400 invalid ID) | 404 JSON `not found` |
 | `/feedback/{feedback_id}/upvote` | POST | 200 recorded / `already_upvoted` (400 invalid feedback ID / 404 unknown ID) | GET → 400 `invalid match ID`; else 404 JSON `not found` |
-| `/register` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
-| `/rotate-key` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
-| `/revoke-key` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
-| `/predict` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
-| `/predictions/open` | GET | 503 `match_tier_offline` | 404 JSON `not found` |
-| `/predictions/history` | GET | 503 `match_tier_offline` | 404 JSON `not found` |
+| `/register` | POST | proxied acb-api response (or explicit 503 fallback) | 404 JSON `not found` |
+| `/rotate-key` | POST | proxied acb-api response (or explicit 503 fallback) | 404 JSON `not found` |
+| `/revoke-key` | POST | proxied acb-api response (or explicit 503 fallback) | 404 JSON `not found` |
+| `/predict` | POST | proxied acb-api response (or explicit 503 fallback) | 404 JSON `not found` |
+| `/predictions/open` | GET | proxied acb-api response (or explicit 503 fallback) | 404 JSON `not found` |
+| `/predictions/history` | GET | proxied acb-api response (or explicit 503 fallback) | 404 JSON `not found` |
 | anything else under `/api/*` | any | 404 JSON `{error:"not found"}` | — |
 
 Method facts the table compresses:

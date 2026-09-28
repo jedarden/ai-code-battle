@@ -1,10 +1,10 @@
-// API response types matching the Worker API and index builder
+// API response types matching the Pages transport and index builder.
 
 // The `/api` client functions below target the same-origin Pages Function
-// transport (web/functions/api/, see lib/api-transport.ts). Match-tier
-// routes answer 503 with code "match_tier_offline" until acb-api is
-// deployed; those surface as MatchTierOfflineError so pages can render
-// their unavailable states from the server's answer.
+// transport (web/functions/api/, see lib/api-transport.ts). Match-tier routes
+// are proxied to acb-api; if that backend is not configured or ready, the
+// explicit 503 response surfaces as MatchTierOfflineError instead of letting
+// an SPA fallback look like a successful API response.
 import {
   requireApiTransport,
   MatchTierOfflineError,

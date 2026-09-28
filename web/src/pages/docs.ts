@@ -87,22 +87,21 @@ export function renderDocsPage(): void {
         <section>
           <h2>Register Your Bot</h2>
           <p>Registration is a match-tier flow of the platform API (<code>POST /api/register</code>,
-          served same-origin under <code>/api/*</code> on this site). The <code>acb-api</code> service
-          that backs the match tier is not deployed yet, so the endpoint answers <strong>503</strong>
-          with JSON code <code>match_tier_offline</code> and self-serve registration is closed for
-          now. The request shape is frozen to the service contract:</p>
+          served same-origin under <code>/api/*</code> on this site). The Pages transport forwards
+          it to the restored <code>acb-api</code> service and reports a JSON 503 only while that
+          backend is unavailable. The request shape is:</p>
           <pre><code>{
   "name": "my-bot",
   "endpoint_url": "https://my-bot.example.com",
   "owner": "your-name",
   "description": "My awesome bot"
 }</code></pre>
-          <p>Once the tier is live, the response contains your <code>bot_id</code> and <code>shared_secret</code>. Save the secret — it's shown only once.</p>
+          <p>The response contains your <code>bot_id</code> and <code>shared_secret</code>. Save the secret — it's shown only once.</p>
         </section>
 
         <section>
           <h2>Data &amp; API</h2>
-          <p>All match data (leaderboards, replays, bot profiles) is exposed as static JSON files served from CDN. Interactive endpoints under <code>/api/*</code> — replay feedback and map voting — are served by this site as same-origin JSON; match-tier flows (registration, predictions) currently answer 503 <code>match_tier_offline</code>.</p>
+          <p>All match data (leaderboards, replays, bot profiles) is exposed as static JSON files served from CDN. Interactive endpoints under <code>/api/*</code> — replay feedback, map voting, registration, credential lifecycle, and predictions — are served as same-origin JSON through Pages Functions.</p>
           <p><a href="#/compete/docs/api" class="btn secondary">View API Reference</a></p>
         </section>
       </div>

@@ -8,12 +8,11 @@
 // R2 bucket. See src/lib/api-backend.ts for the server contract and
 // docs/notes/api-transport.md for the decision record.
 //
-// The function implements what storage alone can support — community
-// feedback, replay annotations, and map voting — and answers the match-tier
-// routes (registration, key rotation, credential revocation, predictions) with 503 JSON,
-// code "match_tier_offline", because acb-api's PostgreSQL/Valkey backend is
-// not deployed anywhere (compute tier decommissioned 2026-07-21; revival is a
-// documented operator decision).
+// The function serves community feedback, replay annotations, and map voting
+// from R2, and proxies the match-tier routes (registration, key rotation,
+// credential revocation, and predictions) to acb-api when ACB_API_ORIGIN is
+// configured. A missing or unavailable backend still produces an explicit
+// JSON 503 rather than allowing the SPA HTML fallback to masquerade as an API.
 //
 // Availability is server-driven, in two layers:
 //   - API_TRANSPORT_ENABLED is the compile-time kill switch. False restores
@@ -21,11 +20,11 @@
 //     pages render their unavailable states). It is true because a real
 //     transport now exists; web/test-api-workflows.js live-probes the origin
 //     and fails loudly if /api ever stops answering with JSON.
-//   - At runtime the function's answers decide per-flow availability: the
-//     match-tier routes answer 503 JSON with code "match_tier_offline"
-//     (detected by matchTierOfflineMessage below), and GET /api/health
-//     reports the live capability set for operators and the live probe.
-//     A revived compute tier flips those answers — no client change needed.
+//   - At runtime the function's answers decide per-flow availability: a
+//     missing match-tier backend answers 503 JSON with code
+//     "match_tier_offline" (detected by matchTierOfflineMessage below), while
+//     an unavailable configured backend answers match_tier_unavailable. GET
+//     /api/health reports the live capability set for operators and probes.
 
 export const API_TRANSPORT_ENABLED = true;
 
@@ -43,9 +42,8 @@ export class ApiTransportUnavailableError extends Error {
 }
 
 /**
- * Thrown when the transport is up but the server reports the flow depends on
- * the match tier (acb-api + PostgreSQL + workers), which is not deployed.
- * Carries the server's user-facing message.
+ * Thrown when the transport is up but the server reports that the configured
+ * match tier is offline. Carries the server's user-facing message.
  */
 export class MatchTierOfflineError extends Error {
   readonly code = 'match_tier_offline';

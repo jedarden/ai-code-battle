@@ -16,13 +16,10 @@
 // (disambiguated by the presence of `markdown` in the body).
 //
 // The match-tier flows — bot registration, key rotation, credential
-// revocation, and predictions —
-// need acb-api's PostgreSQL/Valkey backend, which is not deployed anywhere
-// (compute tier decommissioned 2026-07-21; revival is a documented operator
-// decision). Those routes answer 503 JSON with code "match_tier_offline" so
-// the SPA renders its unavailable states from the server's answer instead of
-// a compile-time flag. When acb-api is revived and exposed, this function
-// becomes a thin proxy for those routes and no client change is needed.
+// revocation, and predictions — need acb-api's PostgreSQL/Valkey backend.
+// When ACB_API_ORIGIN is configured this function is a thin JSON proxy; when
+// it is absent the routes answer the explicit 503 match_tier_offline envelope
+// so the SPA renders its unavailable states from the server's answer.
 //
 // Request/response shapes mirror cmd/acb-api/server.go so the SPA clients in
 // api-types.ts / components/annotation.ts work against either backend. The
@@ -68,8 +65,8 @@ export interface ApiEnv {
   /**
    * Public, Pages-reachable origin for the match-tier API. The binding is
    * optional so a site deploy can still serve the community tier while the
-   * compute tier is being restored; unset means the explicit JSON offline
-   * response below.
+   * compute tier is exposed; unset means the explicit JSON offline response
+   * below.
    */
   ACB_API_ORIGIN?: string;
 }

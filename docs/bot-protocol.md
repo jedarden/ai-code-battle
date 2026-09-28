@@ -33,7 +33,7 @@ The platform validates the body (missing `name`, `owner`, or `endpoint_url` is `
 
 The registration response is the only delivery of the secret. There is no read-back endpoint: the platform stores the secret encrypted (see Storage) and can never display it again. Record it at registration time, or rotate to a replacement later.
 
-On the current deployment the match-tier routes — registration, rotation, revocation, predictions — answer `503 match_tier_offline` until the `acb-api` backend is redeployed (see `docs/notes/api-transport.md`), and registration is arranged out-of-band with the match coordinator. The workflow in this section is the contract those routes restore.
+The Pages transport proxies these routes to `acb-api` when its public origin is configured. If that backend is unavailable, the transport returns an explicit JSON `503` rather than an SPA response; the workflow in this section is the contract those routes implement.
 
 ### Delivery
 

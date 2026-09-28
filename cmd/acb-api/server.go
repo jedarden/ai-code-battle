@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -136,8 +137,32 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+func writeNoStoreJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, v)
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// decryptStoredSecret is deliberately fail-closed. A ciphertext that cannot
+// be opened with the configured key is not a legacy plaintext credential: it
+// is an unavailable credential store and must never become an authentication
+// success by comparing the ciphertext itself.
+func (s *Server) decryptStoredSecret(ciphertext string) (string, error) {
+	if s.cfg.EncryptionKey == "" {
+		return ciphertext, nil
+	}
+	return decryptSecret(ciphertext, s.cfg.EncryptionKey)
+}
+
+func (s *Server) storedSecretMatches(ciphertext, supplied string) (bool, error) {
+	stored, err := s.decryptStoredSecret(ciphertext)
+	if err != nil {
+		return false, err
+	}
+	return subtle.ConstantTimeCompare([]byte(stored), []byte(supplied)) == 1, nil
 }
 
 // handleRegister handles POST /api/register
@@ -160,9 +185,19 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate required fields
-	if req.Name == "" || req.Owner == "" || req.EndpointURL == "" {
+	// Validate required fields before touching the database or generating a
+	// credential. The database columns are bounded, so reject oversized input
+	// as a client error instead of surfacing a database failure as a 500.
+	req.Name = strings.TrimSpace(req.Name)
+	req.Owner = strings.TrimSpace(req.Owner)
+	req.EndpointURL = strings.TrimSpace(req.EndpointURL)
+	if req.Name == "" || req.Owner == "" || req.EndpointURL == "" ||
+		len(req.Name) > 32 || len(req.Owner) > 128 {
 		writeError(w, http.StatusBadRequest, "name, owner, and endpoint_url are required")
+		return
+	}
+	if s.db == nil {
+		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
 
@@ -181,14 +216,21 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate bot ID and shared secret
+	// Validate bot is reachable by sending a health check
+	if err := s.validateBotEndpoint(ctx, req.EndpointURL); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("bot endpoint validation failed: %v", err))
+		return
+	}
+
+	// Mint and encrypt only after the health probe succeeds. The plaintext is
+	// returned exactly once below and is never persisted when registration is
+	// rejected.
 	botID, err := generateID("b_", 6)
 	if err != nil {
 		log.Printf("failed to generate bot ID: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to generate bot ID")
 		return
 	}
-
 	sharedSecret, err := generateSecret()
 	if err != nil {
 		log.Printf("failed to generate secret: %v", err)
@@ -196,7 +238,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Encrypt the shared secret
+	// Encrypt the shared secret. Without a configured key the documented local
+	// development fallback stores plaintext; production manifests inject
+	// ACB_ENCRYPTION_KEY.
 	var encryptedSecret string
 	if s.cfg.EncryptionKey != "" {
 		encryptedSecret, err = encryptSecret(sharedSecret, s.cfg.EncryptionKey)
@@ -206,14 +250,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		// If no encryption key configured, store plaintext (not recommended for production)
 		encryptedSecret = sharedSecret
-	}
-
-	// Validate bot is reachable by sending a health check
-	if err := s.validateBotEndpoint(ctx, req.EndpointURL); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("bot endpoint validation failed: %v", err))
-		return
 	}
 
 	// Insert bot into database
@@ -229,7 +266,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("registered bot %s (name=%s, owner=%s)", botID, req.Name, req.Owner)
 
-	writeJSON(w, http.StatusCreated, map[string]string{
+	writeNoStoreJSON(w, http.StatusCreated, map[string]string{
 		"bot_id":        botID,
 		"shared_secret": sharedSecret,
 	})
@@ -237,12 +274,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 // validateBotEndpoint checks if the bot endpoint is reachable
 func (s *Server) validateBotEndpoint(ctx context.Context, endpointURL string) error {
-	// Remove trailing slash for consistency
-	endpointURL = strings.TrimRight(endpointURL, "/")
+	parsed, err := url.Parse(strings.TrimSpace(endpointURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("invalid endpoint URL")
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/health"
+	healthURL := parsed.String()
 
-	// Try to GET /health endpoint with a timeout
-	healthURL := endpointURL + "/health"
-	client := &http.Client{Timeout: time.Duration(s.cfg.BotTimeoutSecs) * time.Second}
+	// Try to GET /health endpoint with a timeout. Keep a safe default for
+	// servers constructed directly in tests rather than through loadConfig.
+	timeout := s.cfg.BotTimeoutSecs
+	if timeout <= 0 {
+		timeout = 5
+	}
+	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
@@ -359,8 +404,8 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 			sharedSecret, err = decryptSecret(encryptedSecret, s.cfg.EncryptionKey)
 			if err != nil {
 				log.Printf("failed to decrypt secret for bot %s: %v", botID, err)
-				// Fall back to treating it as plaintext
-				sharedSecret = encryptedSecret
+				writeError(w, http.StatusInternalServerError, "credential storage unavailable")
+				return
 			}
 		} else {
 			sharedSecret = encryptedSecret
@@ -630,13 +675,11 @@ func (s *Server) filterReplayDebug(ctx context.Context, matchID string, data []b
 	ownerSlots := make(map[int]bool)
 	if apiKey := strings.TrimPrefix(authHeader, "Bearer "); apiKey != "" && authHeader != apiKey {
 		for _, p := range participants {
-			secret := p.EncryptedSecret
-			if s.cfg.EncryptionKey != "" {
-				if decrypted, err := decryptSecret(p.EncryptedSecret, s.cfg.EncryptionKey); err == nil {
-					secret = decrypted
-				}
+			secret, err := s.decryptStoredSecret(p.EncryptedSecret)
+			if err != nil {
+				continue
 			}
-			if secret == apiKey {
+			if subtle.ConstantTimeCompare([]byte(secret), []byte(apiKey)) == 1 {
 				ownerSlots[p.PlayerSlot] = true
 			}
 		}
@@ -974,18 +1017,13 @@ func (s *Server) handleBotPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decrypt stored secret for comparison
-	var storedSecret string
-	if s.cfg.EncryptionKey != "" {
-		storedSecret, err = decryptSecret(encryptedSecret, s.cfg.EncryptionKey)
-		if err != nil {
-			storedSecret = encryptedSecret
-		}
-	} else {
-		storedSecret = encryptedSecret
+	matched, err := s.storedSecretMatches(encryptedSecret, req.APISecret)
+	if err != nil {
+		log.Printf("failed to decrypt bot %s credential: %v", botID, err)
+		writeError(w, http.StatusInternalServerError, "credential storage unavailable")
+		return
 	}
-
-	if storedSecret != req.APISecret {
+	if !matched {
 		writeError(w, http.StatusUnauthorized, "invalid api_secret")
 		return
 	}
@@ -1028,6 +1066,10 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bot_id and shared_secret are required")
 		return
 	}
+	if s.db == nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -1047,18 +1089,13 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decrypt stored secret for comparison
-	var storedSecret string
-	if s.cfg.EncryptionKey != "" {
-		storedSecret, err = decryptSecret(encryptedSecret, s.cfg.EncryptionKey)
-		if err != nil {
-			storedSecret = encryptedSecret
-		}
-	} else {
-		storedSecret = encryptedSecret
+	matched, err := s.storedSecretMatches(encryptedSecret, req.Secret)
+	if err != nil {
+		log.Printf("failed to decrypt bot %s credential: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "credential storage unavailable")
+		return
 	}
-
-	if subtle.ConstantTimeCompare([]byte(storedSecret), []byte(req.Secret)) != 1 {
+	if !matched {
 		writeError(w, http.StatusUnauthorized, "invalid shared_secret")
 		return
 	}
@@ -1128,7 +1165,7 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["shared_secret"] = newSecret
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeNoStoreJSON(w, http.StatusOK, resp)
 }
 
 // handleRevokeKey handles POST /api/revoke-key.
@@ -1184,22 +1221,18 @@ func (s *Server) handleRevokeKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if currentStatus == "retired" {
-		writeError(w, http.StatusConflict, "bot is already retired")
+	matched, err := s.storedSecretMatches(encryptedSecret, req.Secret)
+	if err != nil {
+		log.Printf("failed to decrypt bot %s credential: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "credential storage unavailable")
 		return
 	}
-
-	var storedSecret string
-	if s.cfg.EncryptionKey != "" {
-		storedSecret, err = decryptSecret(encryptedSecret, s.cfg.EncryptionKey)
-		if err != nil {
-			storedSecret = encryptedSecret
-		}
-	} else {
-		storedSecret = encryptedSecret
-	}
-	if subtle.ConstantTimeCompare([]byte(storedSecret), []byte(req.Secret)) != 1 {
+	if !matched {
 		writeError(w, http.StatusUnauthorized, "invalid shared_secret")
+		return
+	}
+	if currentStatus == "retired" {
+		writeError(w, http.StatusConflict, "bot is already retired")
 		return
 	}
 
@@ -1238,7 +1271,7 @@ func (s *Server) handleRevokeKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	writeNoStoreJSON(w, http.StatusOK, map[string]string{
 		"bot_id": req.BotID,
 		"status": "retired",
 	})
@@ -2095,19 +2128,15 @@ func (s *Server) handleRequestEnrichment(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 
-		// Decrypt and compare
-		var storedSecret string
-		if s.cfg.EncryptionKey != "" {
-			storedSecret, err = decryptSecret(encrypted, s.cfg.EncryptionKey)
-			if err != nil {
-				// If decryption fails, try treating it as plaintext
-				storedSecret = encrypted
-			}
-		} else {
-			storedSecret = encrypted
+		// Decrypt and compare. A credential that cannot be opened with the
+		// configured key is never treated as plaintext.
+		matched, matchErr := s.storedSecretMatches(encrypted, req.Secret)
+		if matchErr != nil {
+			log.Printf("[ENRICHMENT] failed to decrypt credential for bot %s: %v", id, matchErr)
+			continue
 		}
 
-		if storedSecret == req.Secret {
+		if matched {
 			botID = id
 			found = true
 			break

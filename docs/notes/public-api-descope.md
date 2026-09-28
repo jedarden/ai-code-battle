@@ -120,6 +120,24 @@ frozen, and answered 503 `match_tier_offline` by
 `web/functions/api/[[path]].ts`** — transport state owned by
 [api-transport.md](api-transport.md).
 
+## Match-tier restoration (2026-09-28)
+
+The deferral above is superseded by bead `aicodeba-ad8c89a9`. The match-tier
+contract is being restored: `cmd/acb-api` now owns registration, credential
+rotation, revocation, and prediction behavior again, and the Pages Function
+proxies the six documented routes when `ACB_API_ORIGIN` is configured. The
+production Pages configuration points at the acb-api ingress
+`https://api.ai-code-battle.ardenone.com`.
+
+The source-level restoration includes strict endpoint validation and direct
+`GET /health` probing with redirects refused, one-time secret delivery with
+`Cache-Control: no-store`, AES-256-GCM storage under `ACB_ENCRYPTION_KEY`,
+fail-closed credential decryption, atomic revocation, and adapter-level
+through-transport tests. A live deployment still requires the GitOps acb-api
+workload and a resolving Pages-reachable ingress; the configured hostname was
+not resolvable during the 2026-09-28 verification and therefore must not be
+reported as live until that external deployment step succeeds.
+
 ## Static-data endpoint decision (2026-09-26)
 
 **Decision Date:** 2026-09-26

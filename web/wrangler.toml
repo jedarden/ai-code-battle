@@ -1,6 +1,11 @@
 name = "ai-code-battle"
 pages_build_output_dir = "dist"
 
+# Public, Pages-reachable acb-api ingress for the match-tier proxy. Local
+# tests omit this variable to exercise the explicit offline response.
+[vars]
+ACB_API_ORIGIN = "https://api.ai-code-battle.ardenone.com"
+
 [[r2_buckets]]
 binding = "ACB_BUCKET"
 bucket_name = "acb-data"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aicodebattle/acb/ratelimit"
@@ -128,5 +129,46 @@ func TestValidateBotEndpointRejectsRedirect(t *testing.T) {
 	}
 	if path := <-requests; path != "/health" {
 		t.Fatalf("health request path = %q, want /health", path)
+	}
+}
+
+func TestValidateBotEndpointAppendsHealthToPath(t *testing.T) {
+	requests := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	endpoint := server.URL + "/bot/"
+	if err := newTestServer().validateBotEndpoint(context.Background(), endpoint); err != nil {
+		t.Fatalf("validateBotEndpoint() = %v, want success", err)
+	}
+	if got := <-requests; got != "/bot/health" {
+		t.Fatalf("health request path = %q, want /bot/health", got)
+	}
+}
+
+func TestValidateBotEndpointRejectsUnsupportedURL(t *testing.T) {
+	if err := newTestServer().validateBotEndpoint(context.Background(), "ftp://example.test/bot"); err == nil {
+		t.Fatal("validateBotEndpoint() accepted an unsupported URL scheme")
+	}
+}
+
+func TestStoredSecretMatchesFailsClosedOnDecryptError(t *testing.T) {
+	key := strings.Repeat("ab", 32)
+	wrongKey := strings.Repeat("cd", 32)
+	ciphertext, err := encryptSecret("plaintext-secret", key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &Server{cfg: Config{EncryptionKey: wrongKey}}
+	matched, err := srv.storedSecretMatches(ciphertext, ciphertext)
+	if err == nil {
+		t.Fatal("storedSecretMatches() accepted ciphertext as plaintext")
+	}
+	if matched {
+		t.Fatal("storedSecretMatches() reported a match after decryption failed")
 	}
 }
