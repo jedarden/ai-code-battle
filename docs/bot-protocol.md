@@ -2,6 +2,66 @@
 
 This document is the normative byte-level contract for the engine-to-bot HTTP protocol. The engine produces requests and consumes responses; bots implement the two endpoints and authenticate the exact request bytes they receive.
 
+## Credential Lifecycle
+
+The protocol authenticates two parties who already hold a shared secret; it defines no registration endpoint of its own. Credentials are minted once at registration, delivered once, and rotated or revoked through the platform API. This section documents that workflow; the sections below remain the byte-level contract.
+
+### Identity and material
+
+- A registered bot holds exactly one credential pair: a bot identifier and a shared secret.
+- The bot identifier is minted at registration as `b_` followed by 12 lowercase hexadecimal characters (6 random bytes), for example `b_4e8c1d2f9a03`. It travels verbatim in `X-ACB-Bot-Id` and is public: it appears in match records, replays, and the leaderboard.
+- The shared secret is 256 bits of CSPRNG output rendered as 64 lowercase hexadecimal characters (`engine.GenerateSecret` in this repository, `generateSecret` in `cmd/acb-api`). It is the sole authenticator. Every signature in this document is keyed by it and nothing else about a bot's identity participates in verification: `X-ACB-Bot-Id` is not covered by any signature, so a verifier that wants identifier hygiene must check the header itself. Possession of the secret is what verification attests.
+
+### Registration
+
+`POST /api/register` with a JSON body:
+
+```json
+{
+  "name": "my-bot",
+  "owner": "my-handle",
+  "endpoint_url": "https://my-bot.example:8080",
+  "debug_public": false
+}
+```
+
+The platform validates the body (missing `name`, `owner`, or `endpoint_url` is `400`), rejects an already-taken `name` with `409`, and probes the endpoint exactly as the engine will: `GET {endpoint_url}/health` must return `200 OK` under the health contract defined above, or registration fails with `400`. On success it mints the identifier and secret, stores the secret, and answers `201 Created`:
+
+```json
+{ "bot_id": "b_4e8c1d2f9a03", "shared_secret": "<64 lowercase hex characters>" }
+```
+
+The registration response is the only delivery of the secret. There is no read-back endpoint: the platform stores the secret encrypted (see Storage) and can never display it again. Record it at registration time, or rotate to a replacement later.
+
+On the current deployment the match-tier routes — registration, rotation, predictions — answer `503 match_tier_offline` until the `acb-api` backend is redeployed (see `docs/notes/api-transport.md`), and registration is arranged out-of-band with the match coordinator. The workflow in this section is the contract those routes restore.
+
+### Delivery
+
+The secret moves exactly once, from the registration (or rotation) response to the bot operator. It never travels over the turn protocol: requests and responses carry only derived signatures. A secret must not be committed to a repository, pasted into a ticket, or written to a log, and no conformant bot echoes its key material in error output.
+
+### Storage
+
+- **Bot side**, the secret lives in the process environment, read once at boot and never baked into an image layer or a commit. Strategy bots and most starter templates read `BOT_SECRET`; the Go, Python, and Rust starters historically read `SHARED_SECRET`. The spellings mean the same value, and the conformance harness (`conformance/targets.go`) injects whichever spelling a target reads. A bot that boots without its secret must fail fast and refuse to serve `/turn`.
+- **Platform side**, the secret is stored AES-256-GCM encrypted under a 32-byte key supplied to the API and the match worker through the environment (`ACB_ENCRYPTION_KEY`; 64 hex or 44 base64 characters). The worker decrypts a match's secrets in memory when the match starts and uses nothing else for the match's lifetime — an in-flight match always completes under the credentials it started with. Running the platform without an encryption key stores plaintext; that is a development configuration only.
+
+### Rotation
+
+`POST /api/rotate-key` authenticates with the current secret and returns a replacement:
+
+```json
+{ "bot_id": "b_4e8c1d2f9a03", "shared_secret": "<current secret>" }
+```
+
+A `200` response carries `{ "bot_id": "...", "shared_secret": "<new secret>" }`; the current secret being wrong is `401`, an unknown bot is `404`. Rotate on any suspicion of exposure, on operator change, or on a fixed schedule. The procedure is: rotate, update the bot's environment, restart the bot — in that order, between matches. In the window between rotating and restarting, the two sides hold different secrets: the engine's requests fail the bot's verification and the bot's responses fail the platform's, and the protocol scores both as failed turns (see Invalid Responses). Nothing narrows that window except performing the rotation when no match is scheduled.
+
+### Revocation
+
+Revocation is a rotation with `"retire": true`: the stored secret is replaced one last time — invalidating whatever the bot still holds — and the bot's status becomes `retired`. A retired bot can no longer authenticate the rotation endpoint and is excluded from scheduling surfaces that select on active status. Its stale credential authenticates nothing: requests it cannot verify fail as authentication failures (`401` per the Turn Request section), and its responses fail the platform's response verification. Either direction scores failed turns, and ten consecutive failures mark a bot inactive for the rest of a match. Revocation binds new matches immediately; a match already in flight completes under the snapshot taken at its start.
+
+### Local development
+
+Local development needs no registration: the author is both parties, so any non-empty secret works. `SHARED_SECRET=test` in starter quick-starts is a placeholder chosen for the example, not a credential, and a locally chosen secret never reaches the platform. To exercise the real machinery against a bot under development, run it through the conformance harness: it boots the target with its own documented suite key and drives the byte-level contract of this document. Test suites in this repository generate secrets at runtime with `engine.GenerateSecret(rand.Reader)` and assert on verification outcomes, never on secret values; no test embeds key material.
+
 ## Transport
 
 - The engine uses `GET /health` without authentication.
