@@ -186,7 +186,7 @@ describe('registration flow (match-tier 503 is the designed answer)', () => {
       body: JSON.stringify({
         name: 'E2E_Probe_Bot',
         endpoint_url: 'https://example.com/move',
-        owner_id: PROBE_VOTER_ID,
+        owner: PROBE_VOTER_ID,
       }),
     });
     expect(probe.status).toBe(503);

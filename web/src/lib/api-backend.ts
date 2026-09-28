@@ -64,6 +64,13 @@ export interface CommunityBucket {
 
 export interface ApiEnv {
   ACB_BUCKET: CommunityBucket;
+  /**
+   * Public, Pages-reachable origin for the match-tier API. The binding is
+   * optional so a site deploy can still serve the community tier while the
+   * compute tier is being restored; unset means the explicit JSON offline
+   * response below.
+   */
+  ACB_API_ORIGIN?: string;
 }
 
 // ─── R2 document keys and bounds ────────────────────────────────────────────
@@ -336,6 +343,11 @@ function toPublicFeedback(entries: ReplayFeedbackEntry[]): Omit<ReplayFeedbackEn
 
 async function handleHealth(env: ApiEnv): Promise<Response> {
   const capabilities: ApiCapabilities = { ...MATCH_TIER_CAPABILITIES };
+  if (await matchTierReady(env)) {
+    capabilities.register = true;
+    capabilities.rotate_key = true;
+    capabilities.predictions = true;
+  }
   // Reflect real storage health: an unreachable bucket flips the live
   // capabilities off so the SPA degrades instead of erroring mid-submit.
   try {
@@ -345,6 +357,101 @@ async function handleHealth(env: ApiEnv): Promise<Response> {
     capabilities.map_votes = false;
   }
   return json({ status: 'ok', capabilities } satisfies ApiHealthResponse);
+}
+
+// ─── Match-tier proxy ───────────────────────────────────────────────────────
+
+const MATCH_TIER_TIMEOUT_MS = 2_000;
+
+function matchTierOrigin(env: ApiEnv): URL | null {
+  const raw = env.ACB_API_ORIGIN?.trim();
+  if (!raw) return null;
+  try {
+    const origin = new URL(raw.endsWith('/') ? raw : raw + '/');
+    if (origin.protocol !== 'http:' && origin.protocol !== 'https:') return null;
+    return origin;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMatchTier(
+  env: ApiEnv,
+  path: string,
+  init: RequestInit = {},
+): Promise<Response | null> {
+  const origin = matchTierOrigin(env);
+  if (!origin) return null;
+
+  const url = new URL(path.replace(/^\//, ''), origin);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MATCH_TIER_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function matchTierReady(env: ApiEnv): Promise<boolean> {
+  const response = await fetchMatchTier(env, '/ready', { method: 'GET' });
+  if (response === null || response.status !== 200) return false;
+  return (response.headers.get('content-type') ?? '').includes('application/json');
+}
+
+function matchTierUnavailable(): Response {
+  return writeError(
+    503,
+    'match-tier API is unavailable; retry shortly',
+    'match_tier_unavailable',
+  );
+}
+
+/**
+ * Forward a documented match-tier request to acb-api when it is exposed to
+ * Pages. The proxy deliberately accepts only JSON responses. If an ingress
+ * or an upstream error page returns HTML, it is converted to a JSON 503 so a
+ * missing backend can never be mistaken for the SPA fallback.
+ */
+async function proxyMatchTier(request: Request, env: ApiEnv, route: string): Promise<Response> {
+  const origin = matchTierOrigin(env);
+  if (!origin) return matchTierOffline(route === '/register' ? 'Bot registration'
+    : route === '/rotate-key' ? 'API key rotation'
+      : route.startsWith('/predictions/') ? 'Predictions' : 'Match predictions');
+
+  const incomingURL = new URL(request.url);
+  const upstreamURL = new URL(`api${route}`, origin);
+  upstreamURL.search = incomingURL.search;
+
+  const headers = new Headers(request.headers);
+  // These are edge/request-specific and must not be copied to another origin.
+  headers.delete('host');
+  headers.delete('content-length');
+  headers.delete('cf-ray');
+  headers.delete('cf-connecting-ip');
+  const clientIP = request.headers.get('CF-Connecting-IP');
+  if (clientIP && !headers.has('X-Forwarded-For')) headers.set('X-Forwarded-For', clientIP);
+
+  const method = request.method.toUpperCase();
+  const upstream = await fetchMatchTier(env, upstreamURL.pathname + upstreamURL.search, {
+    method,
+    headers,
+    body: method === 'GET' || method === 'HEAD' ? undefined : request.body,
+  });
+  if (upstream === null) return matchTierUnavailable();
+
+  const contentType = upstream.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) return matchTierUnavailable();
+
+  return new Response(await upstream.text(), {
+    status: upstream.status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    },
+  });
 }
 
 async function handleGetMapVotes(env: ApiEnv, mapId: string, voterId: string | null): Promise<Response> {
@@ -640,13 +747,14 @@ export async function handleApiRequest(request: Request, env: ApiEnv, path: stri
       return await handleGetFeedback(env, route.slice('/feedback/'.length));
     }
 
-    // Match-tier routes: honest 503 JSON until acb-api is deployed and exposed.
+    // Match-tier routes: proxy when acb-api is exposed, otherwise return the
+    // honest JSON offline envelope. Method matching stays ahead of this branch
+    // so undocumented verbs can never reach the upstream service.
     if ((route === '/register' || route === '/rotate-key' || route === '/predict') && method === 'POST') {
-      return matchTierOffline(route === '/register' ? 'Bot registration'
-        : route === '/rotate-key' ? 'API key rotation' : 'Match predictions');
+      return await proxyMatchTier(request, env, route);
     }
     if ((route === '/predictions/open' || route === '/predictions/history') && method === 'GET') {
-      return matchTierOffline('Predictions');
+      return await proxyMatchTier(request, env, route);
     }
 
     return writeError(404, 'not found');

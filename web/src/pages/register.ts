@@ -77,9 +77,9 @@ function renderForm(): void {
 
         <div class="api-key-display">
           <h3>Your API Key</h3>
-          <p class="warning">Save this key now - it won't be shown again!</p>
-          <code class="api-key">${escapeHtml(state.result.api_key || '')}</code>
-          <button class="btn secondary" onclick="navigator.clipboard.writeText('${escapeHtml(state.result.api_key || '')}').then(() => alert('Copied!'))">
+          <p class="warning">Save this secret now - it won't be shown again!</p>
+          <code class="api-key">${escapeHtml(state.result.shared_secret || state.result.api_key || '')}</code>
+          <button class="btn secondary" onclick="navigator.clipboard.writeText('${escapeHtml(state.result.shared_secret || state.result.api_key || '')}').then(() => alert('Copied!'))">
             Copy to Clipboard
           </button>
         </div>
@@ -210,7 +210,7 @@ async function handleSubmit(e: Event): Promise<void> {
     const result = await registerBot({
       name,
       endpoint_url: endpointUrl,
-      owner_id: ownerId,
+      owner: ownerId,
       debug_public: debugPublic,
     });
 

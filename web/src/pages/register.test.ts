@@ -92,14 +92,14 @@ describe('renderRegisterPage with the transport live', () => {
 
   it('shows a success-shaped answer as success', async () => {
     globalThis.fetch = vi.fn(async () =>
-      jsonResponse({ success: true, bot_id: 'bot-123', api_key: 'acb_key_1' }),
+      jsonResponse({ bot_id: 'bot-123', shared_secret: 'acb_secret_1' }, 201),
     );
     renderRegisterPage();
 
     await fillAndSubmit();
     await waitFor('the success view', () => document.querySelector('.register-success') !== null);
 
-    expect(document.querySelector('.api-key')!.textContent).toBe('acb_key_1');
+    expect(document.querySelector('.api-key')!.textContent).toBe('acb_secret_1');
   });
 
   it('degrades honestly if /api ever regresses to the SPA HTML fallback', async () => {

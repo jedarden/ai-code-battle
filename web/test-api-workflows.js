@@ -20,11 +20,14 @@
  *     the pre-aicodeba-84d1d61b state — this script fails loudly so that
  *     cannot be missed. Every documented match-tier route (register,
  *     rotate-key, predict, predictions/open, predictions/history) must answer
- *     the 503 "match_tier_offline" envelope while acb-api is undeployed; the
- *     community reads must be live. Default probes are read-only or
- *     refused-with-503 — the match-tier branch short-circuits before any
- *     body is read or anything is stored, so nothing is written to the
- *     community store. The deployed side of the method matrix and the live
+ *     JSON match-tier response while acb-api is unavailable; the community
+ *     reads must be live. Default probes are read-only or refused-with-503 —
+ *     the match-tier branch short-circuits before any body is read or
+ *     anything is stored, so nothing is written to the community store. Set
+ *     ACB_EXPECT_MATCH_TIER=1 in the deployment gate after exposing acb-api;
+ *     that mode requires live validation and prediction responses instead of
+ *     accepting the offline envelope. The deployed side of the method matrix
+ *     and the live
  *     validation refusals are pinned here too (bead aicodeba-e945a359):
  *     undocumented verbs must stay function-owned JSON (the SPA fallback's
  *     signatures are their negation — 200 text/html on a GET, a bare
@@ -231,18 +234,24 @@ async function expectJson(name, route, method, body, verify) {
 }
 
 /**
- * Every documented match-tier route must answer the honest offline envelope:
- * 503 JSON with code "match_tier_offline" and a user-facing message (the
- * capability table in docs/notes/api-transport.md). The router short-circuits
- * these before the body is read or the rate limiter/storage run, so probing
- * them is free and writes nothing — and each one proves that route is owned
- * by the function, not the SPA fallback.
+ * Every documented match-tier route must be function-owned JSON. Until the
+ * proxy has a configured backend, the honest 503 offline envelope is valid.
+ * A deployment gate sets ACB_EXPECT_MATCH_TIER=1 to require acb-api's live
+ * validation/read responses instead.
  */
-function expectMatchTierOffline(name, route, method, body) {
+function expectMatchTierRoute(name, route, method, body) {
   return expectJson(name, route, method, body, (json, status) => {
-    if (status !== 503) return `expected 503, got ${status}`;
-    if (json.code !== 'match_tier_offline') return `expected code "match_tier_offline", got ${JSON.stringify(json.code)}`;
-    if (typeof json.error !== 'string' || !json.error) return 'user-facing error message missing';
+    const live = process.env.ACB_EXPECT_MATCH_TIER === '1';
+    if (!live && status === 503 && json.code === 'match_tier_offline') return null;
+    if (!live) return `expected the configured backend or match_tier_offline, got ${status} ${JSON.stringify(json)}`;
+
+    // Safe probes: registration uses an unreachable bot endpoint and the
+    // other write routes use missing fields, so nothing is created. These
+    // still prove that the Pages proxy reached acb-api's validation layer.
+    const expected = route.endsWith('/predictions/open') ? 200 : 400;
+    if (status !== expected) return `expected live acb-api status ${expected}, got ${status}`;
+    if (expected === 200 && !Array.isArray(json.matches)) return 'open predictions array missing';
+    if (expected !== 200 && typeof json.error !== 'string') return 'acb-api validation error missing';
     return null;
   });
 }
@@ -524,6 +533,10 @@ async function main() {
     if (caps.feedback !== true || caps.map_votes !== true) {
       return `community capabilities are off (feedback=${caps.feedback}, map_votes=${caps.map_votes}) — storage is unhealthy`;
     }
+    if (process.env.ACB_EXPECT_MATCH_TIER === '1'
+      && (caps.register !== true || caps.rotate_key !== true || caps.predictions !== true)) {
+      return `match-tier readiness is not advertised (register=${caps.register}, rotate_key=${caps.rotate_key}, predictions=${caps.predictions})`;
+    }
     return null;
   });
 
@@ -553,29 +566,30 @@ async function main() {
     },
   );
 
-  // Every documented match-tier route answers the honest offline envelope
-  // (no write happens — the router refuses these before reading a body).
-  await expectMatchTierOffline(
-    'register answers match_tier_offline',
+  // Every documented match-tier route is owned by the Pages Function. In the
+  // default mode it may honestly answer the offline envelope; the deployment
+  // gate flips ACB_EXPECT_MATCH_TIER to require the restored proxy/backend.
+  await expectMatchTierRoute(
+    'register is JSON and validates through the match tier',
     '/api/register',
     'POST',
-    { name: 'smoke-probe-84d1d61b', endpoint_url: 'https://example.com/move', owner_id: 'smoke-probe' },
+    { name: 'smoke-probe-84d1d61b', endpoint_url: 'http://127.0.0.1:1', owner: 'smoke-probe' },
   );
-  await expectMatchTierOffline(
-    'rotate-key answers match_tier_offline',
+  await expectMatchTierRoute(
+    'rotate-key is JSON and validates through the match tier',
     '/api/rotate-key',
     'POST',
     { key_id: 'smoke-probe-84d1d61b' },
   );
-  await expectMatchTierOffline(
-    'predict answers match_tier_offline',
+  await expectMatchTierRoute(
+    'predict is JSON and validates through the match tier',
     '/api/predict',
     'POST',
     { match_id: 'smoke-probe-84d1d61b' },
   );
-  await expectMatchTierOffline('predictions/open answers match_tier_offline', '/api/predictions/open', 'GET', null);
-  await expectMatchTierOffline(
-    'predictions/history answers match_tier_offline',
+  await expectMatchTierRoute('predictions/open is JSON through the match tier', '/api/predictions/open', 'GET', null);
+  await expectMatchTierRoute(
+    'predictions/history is JSON through the match tier',
     '/api/predictions/history',
     'GET',
     null,

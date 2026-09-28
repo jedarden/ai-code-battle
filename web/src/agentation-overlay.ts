@@ -16,6 +16,9 @@ import { API_TRANSPORT_ENABLED } from './lib/api-transport'
 const STORAGE_KEY = 'acb:agentation:feedback'
 const MAX_STORED = 50
 
+let agentationRoot: ReactDOM.Root | null = null
+let agentationContainer: HTMLDivElement | null = null
+
 function handleSubmit(markdown: string, annotations: Annotation[]): void {
   console.log('[agentation] Feedback submitted')
 
@@ -48,8 +51,10 @@ export function initAgentation(): void {
   const container = document.createElement('div')
   container.id = 'agentation-root'
   document.body.appendChild(container)
+  agentationContainer = container
 
   const root = ReactDOM.createRoot(container)
+  agentationRoot = root
   // Cast through ElementType so createElement accepts the props without JSX support
   root.render(
     React.createElement(Agentation as React.ElementType, {
@@ -57,4 +62,12 @@ export function initAgentation(): void {
       copyToClipboard: true,
     })
   )
+}
+
+/** Unmount the overlay cleanly when a host (or a test DOM) is torn down. */
+export function disposeAgentation(): void {
+  agentationRoot?.unmount()
+  agentationRoot = null
+  agentationContainer?.remove()
+  agentationContainer = null
 }

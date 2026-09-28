@@ -108,17 +108,20 @@ rest:
 | Replay feedback (annotations) | `POST /api/feedback`, `GET /api/feedback/{match_id}`, `POST /api/feedback/{id}/upvote` | **LIVE** |
 | Agentation site feedback | `POST /api/feedback` (body carries `markdown`) | **LIVE** |
 | Map voting | `POST /api/vote/map`, `GET /api/vote/map/{map_id}` | **LIVE** |
-| Bot registration / key rotation | `POST /api/register`, `POST /api/rotate-key` | **503** `match_tier_offline` |
-| Predictions | `GET /api/predictions/open`, `GET /api/predictions/history`, `POST /api/predict` | **503** `match_tier_offline` |
+| Bot registration / key rotation | `POST /api/register`, `POST /api/rotate-key` | JSON proxy response when `ACB_API_ORIGIN` is configured; otherwise **503** `match_tier_offline` |
+| Predictions | `GET /api/predictions/open`, `GET /api/predictions/history`, `POST /api/predict` | JSON proxy response when `ACB_API_ORIGIN` is configured; otherwise **503** `match_tier_offline` |
 
 The match-tier flows need acb-api's PostgreSQL/Valkey backend, which is not
 deployed anywhere (compute tier decommissioned 2026-07-21; the deferral is
 the recorded decision — see "Match-tier contract decision" in
 `public-api-descope.md`, bead aicodeba-a0052569). Those routes answer
-**503 JSON with code `match_tier_offline`** so the SPA renders its
-unavailable states from the server's answer instead of a compile-time flag.
-When acb-api is revived and exposed, the function becomes a thin proxy for
-those routes and **no client change is needed**.
+Without a configured backend they answer **503 JSON with code
+`match_tier_offline`** so the SPA renders its unavailable states from the
+server's answer instead of a compile-time flag. When `ACB_API_ORIGIN` points
+at a Pages-reachable acb-api deployment, the same function proxies those
+routes and **no client change is needed**. Upstream HTML or network failures
+are normalized to JSON `503 match_tier_unavailable`; the SPA fallback can
+never masquerade as an API response.
 
 Request/response shapes mirror `cmd/acb-api/server.go` so the SPA clients in
 `web/src/api-types.ts` and `web/src/components/annotation.ts` work against
@@ -248,11 +251,11 @@ case the documents can grow to is a few hundred KiB regardless of traffic.
   to the descope-era expectation (fail unless `/api` answers the SPA
   fallback); that contract is dead and the flip is the deploy signal.
 - **Reviving the match tier:** deploy acb-api with its databases, expose it
-  to the function (same-zone service or a Pages-compatible route), then
-  replace the `matchTierOffline()` branch in `web/src/lib/api-backend.ts`
-  with a proxy. The routes, shapes, and clients stay as-is. Deferring until
-  then is the recorded decision ("Match-tier contract decision" in
-  `public-api-descope.md`), and its revival triggers live there too.
+  to the function (same-zone service or a Pages-compatible route), and set
+  the Pages `ACB_API_ORIGIN` variable. The proxy and client shapes are
+  already implemented in `web/src/lib/api-backend.ts`; the release smoke can
+  be promoted from the offline contract to live validation with
+  `ACB_EXPECT_MATCH_TIER=1`.
   The service's startup applies `ensureSchema` only (`cmd/acb-api/main.go`);
   the `migrations/*.sql` files are a separate step nothing runs for you, and
   skipping them breaks a match-tier route: without
@@ -339,7 +342,8 @@ catch-alls present beside `dist/` with their wiring markers, so the silent
 `cwd()/functions` skip fails the smoke before the deploy it would rot;
 part B probes
 health + capabilities, one map tally, one feedback read, all five match-tier
-refusals (register, rotate-key, predict, predictions/open, predictions/history),
+JSON routes (offline refusals by default, or live validation/read responses
+with `ACB_EXPECT_MATCH_TIER=1`),
 an unknown `/api` path — which must answer JSON 404, pinning the deployed
 catch-all (`functions/api/[[path]].ts`) at the platform routing layer, the one
 seam no offline test sees — and the SPA at `/`. Since bead aicodeba-e945a359

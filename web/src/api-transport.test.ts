@@ -116,25 +116,30 @@ describe('matchTierOfflineMessage', () => {
 describe('client functions against the live transport', () => {
   it('registerBot posts and parses a JSON answer', async () => {
     mockFetch(
-      [['/api/register', () => jsonResponse({ success: true, bot_id: 'bot-1', api_key: 'key' })]],
+      [['/api/register', () => jsonResponse({ bot_id: 'bot-1', shared_secret: 'secret-1' }, 201)]],
       htmlFallback,
     );
 
-    const result = await registerBot({ name: 'x', endpoint_url: 'https://x', owner_id: 'o' });
+    const result = await registerBot({ name: 'x', endpoint_url: 'https://x', owner: 'o' });
 
     expect(result.success).toBe(true);
+    expect(result.bot_id).toBe('bot-1');
+    expect(result.shared_secret).toBe('secret-1');
+    expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({ owner: 'o' });
     expect(calls[0]?.url).toContain('/api/register');
   });
 
   it('rotateApiKey posts to /api/rotate-key', async () => {
     mockFetch(
-      [['/api/rotate-key', () => jsonResponse({ success: true, api_key: 'new-key' })]],
+      [['/api/rotate-key', () => jsonResponse({ bot_id: 'bot-1', shared_secret: 'new-key' })]],
       htmlFallback,
     );
 
     const result = await rotateApiKey('bot-1', 'current-key');
 
     expect(result.success).toBe(true);
+    expect(result.shared_secret).toBe('new-key');
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ bot_id: 'bot-1', shared_secret: 'current-key' });
     expect(calls[0]?.url).toContain('/api/rotate-key');
   });
 
@@ -210,7 +215,7 @@ describe('HTML-fallback backstop', () => {
   it('registerBot reports failure instead of parsing HTML as JSON', async () => {
     mockFetch([], htmlFallback);
 
-    const result = await registerBot({ name: 'x', endpoint_url: 'https://x', owner_id: 'o' });
+    const result = await registerBot({ name: 'x', endpoint_url: 'https://x', owner: 'o' });
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('non-JSON');

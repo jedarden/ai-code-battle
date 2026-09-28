@@ -116,15 +116,20 @@ export interface MatchIndex {
 export interface RegisterRequest {
   name: string;
   endpoint_url: string;
-  owner_id: string;
+  /** Matches cmd/acb-api's registration contract. */
+  owner: string;
   debug_public?: boolean;
 }
 
 export interface RegisterResponse {
   success: boolean;
   bot_id?: string;
+  /** Delivered exactly once by registration or rotation. */
+  shared_secret?: string;
+  /** Kept as a read-compatibility alias for older API deployments. */
   api_key?: string;
   error?: string;
+  code?: string;
 }
 
 // Evolution dashboard types (re-exported from types.ts for convenience)
@@ -266,7 +271,23 @@ export async function registerBot(request: RegisterRequest): Promise<RegisterRes
   if (!isJsonResponse(response)) {
     return { success: false, error: `Registration failed: unexpected non-JSON response (${response.status})` };
   }
-  return response.json();
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body || typeof body !== 'object') {
+    return { success: false, error: `Registration failed: invalid JSON response (${response.status})` };
+  }
+  if (!response.ok) {
+    return {
+      success: false,
+      error: typeof body.error === 'string' ? body.error : `Registration failed: ${response.status}`,
+      code: typeof body.code === 'string' ? body.code : undefined,
+    };
+  }
+  return {
+    success: true,
+    bot_id: typeof body.bot_id === 'string' ? body.bot_id : undefined,
+    shared_secret: typeof body.shared_secret === 'string' ? body.shared_secret : undefined,
+    api_key: typeof body.api_key === 'string' ? body.api_key : undefined,
+  };
 }
 
 // Evolution live data is bundled into the Pages deploy under /data/ by the index builder.
@@ -300,16 +321,29 @@ export async function rotateApiKey(botId: string, currentKey: string): Promise<R
   requireApiTransport('API key rotation');
   const response = await fetch(`${API_BASE}/rotate-key`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${currentKey}`,
-    },
-    body: JSON.stringify({ bot_id: botId }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bot_id: botId, shared_secret: currentKey }),
   });
   if (!isJsonResponse(response)) {
     return { success: false, error: `Key rotation failed: unexpected non-JSON response (${response.status})` };
   }
-  return response.json();
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body || typeof body !== 'object') {
+    return { success: false, error: `Key rotation failed: invalid JSON response (${response.status})` };
+  }
+  if (!response.ok) {
+    return {
+      success: false,
+      error: typeof body.error === 'string' ? body.error : `Key rotation failed: ${response.status}`,
+      code: typeof body.code === 'string' ? body.code : undefined,
+    };
+  }
+  return {
+    success: true,
+    bot_id: typeof body.bot_id === 'string' ? body.bot_id : undefined,
+    shared_secret: typeof body.shared_secret === 'string' ? body.shared_secret : undefined,
+    api_key: typeof body.api_key === 'string' ? body.api_key : undefined,
+  };
 }
 
 // Playlist types

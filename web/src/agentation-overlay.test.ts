@@ -7,9 +7,9 @@
 // silent failure mode the standard warns about), and initAgentation is
 // idempotent since both the app shell startup and page loaders may call it.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act } from '@testing-library/react';
-import { initAgentation } from './agentation-overlay';
+import { disposeAgentation, initAgentation } from './agentation-overlay';
 
 async function mount(): Promise<void> {
   await act(async () => {
@@ -22,6 +22,12 @@ async function mount(): Promise<void> {
 }
 
 beforeEach(() => {
+  disposeAgentation();
+  document.body.innerHTML = '';
+});
+
+afterEach(() => {
+  disposeAgentation();
   document.body.innerHTML = '';
 });
 
