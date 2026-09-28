@@ -147,11 +147,11 @@ it is itself a documented route.
 | Route (below `/api`) | Verb | Documented answer | Any other verb |
 |---|---|---|---|
 | `/health` | GET | 200 `{status, capabilities}` | 404 JSON `not found` |
-| `/vote/map` | POST | 200 tally (400/413/422/429/503 on refusal) | 404 JSON `not found` |
+| `/vote/map` | POST | 200 tally (400/413/429/503 on refusal — no 422: spam screening covers the two feedback flavors only) | 404 JSON `not found` |
 | `/vote/map/{map_id}` | GET | 200 tally (+`my_vote` for the caller) (400 invalid map ID) | 404 JSON `not found` |
 | `/feedback` | POST | 201 recorded (400/413/422/429/503 on refusal) | 404 JSON `not found` |
 | `/feedback/{match_id}` | GET | 200 feedback list (400 invalid ID) | 404 JSON `not found` |
-| `/feedback/{feedback_id}/upvote` | POST | 200 recorded / `already_upvoted` (404 unknown ID) | GET → 400 `invalid match ID`; else 404 JSON `not found` |
+| `/feedback/{feedback_id}/upvote` | POST | 200 recorded / `already_upvoted` (400 invalid feedback ID / 404 unknown ID) | GET → 400 `invalid match ID`; else 404 JSON `not found` |
 | `/register` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
 | `/rotate-key` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
 | `/predict` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
