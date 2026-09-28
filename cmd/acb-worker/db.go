@@ -809,6 +809,7 @@ type CompletedMatchForRecalc struct {
 type MatchParticipantForRecalc struct {
 	BotID      string
 	PlayerSlot int
+	Score      *int
 }
 
 // ResetAllRatings resets all bot ratings to Glicko-2 default values.
@@ -855,7 +856,7 @@ func (c *DBClient) GetAllCompletedMatches(ctx context.Context) ([]CompletedMatch
 	// For each match, get participants
 	for i := range matches {
 		partRows, err := c.db.QueryContext(ctx, `
-			SELECT bot_id, player_slot
+			SELECT bot_id, player_slot, score
 			FROM match_participants
 			WHERE match_id = $1
 			ORDER BY player_slot
@@ -867,7 +868,7 @@ func (c *DBClient) GetAllCompletedMatches(ctx context.Context) ([]CompletedMatch
 		var participants []MatchParticipantForRecalc
 		for partRows.Next() {
 			var p MatchParticipantForRecalc
-			err := partRows.Scan(&p.BotID, &p.PlayerSlot)
+			err := partRows.Scan(&p.BotID, &p.PlayerSlot, &p.Score)
 			if err != nil {
 				partRows.Close()
 				return nil, fmt.Errorf("failed to scan participant: %w", err)

@@ -166,6 +166,9 @@ func updateSingleRating(r Glicko2Rating, opps []opponent) Glicko2Rating {
 //   - 0.0 if scores[i] < scores[j]
 func UpdateRatings(ratings []Glicko2Rating, scores []float64) []Glicko2Rating {
 	n := len(ratings)
+	if len(scores) != n {
+		return nil
+	}
 	if n < 2 {
 		return ratings
 	}

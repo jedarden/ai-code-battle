@@ -214,6 +214,73 @@ func TestComputeRatingUpdatesLengthMismatch(t *testing.T) {
 	}
 }
 
+func TestUpdateRatingsRejectsMismatchedScores(t *testing.T) {
+	ratings := []Glicko2Rating{
+		{Mu: 1500, Phi: 350, Sigma: 0.06},
+		{Mu: 1500, Phi: 350, Sigma: 0.06},
+	}
+	if got := UpdateRatings(ratings, []float64{1}); got != nil {
+		t.Fatalf("UpdateRatings mismatch = %v, want nil", got)
+	}
+}
+
+func TestRatingScoresPreservesPlacementsAndTies(t *testing.T) {
+	ids := []string{"winner", "middle", "loser"}
+	if got, want := ratingScores(ids, map[string]int{"winner": 3, "middle": 2, "loser": 1}, "winner"), []float64{3, 2, 1}; !equalFloatSlices(got, want) {
+		t.Fatalf("placement scores = %v, want %v", got, want)
+	}
+	if got, want := ratingScores(ids, map[string]int{"winner": 3, "middle": 3, "loser": 1}, "winner"), []float64{3, 3, 1}; !equalFloatSlices(got, want) {
+		t.Fatalf("tied placement scores = %v, want %v", got, want)
+	}
+	if got, want := ratingScores(ids, nil, "winner"), []float64{1, 0, 0}; !equalFloatSlices(got, want) {
+		t.Fatalf("legacy winner fallback = %v, want %v", got, want)
+	}
+	if got, want := ratingScores(ids, nil, "missing"), []float64{0.5, 0.5, 0.5}; !equalFloatSlices(got, want) {
+		t.Fatalf("invalid winner fallback = %v, want %v", got, want)
+	}
+}
+
+func TestComputeRatingUpdatesUsesPlacementsAndTies(t *testing.T) {
+	participants := []DBParticipant{
+		{BotID: "a", RatingMuBefore: 1500, RatingPhiBefore: 350, RatingSigmaBefore: 0.06},
+		{BotID: "b", RatingMuBefore: 1500, RatingPhiBefore: 350, RatingSigmaBefore: 0.06},
+		{BotID: "c", RatingMuBefore: 1500, RatingPhiBefore: 350, RatingSigmaBefore: 0.06},
+	}
+	claim := &JobClaimData{Participants: participants}
+
+	updates := (&Worker{}).computeRatingUpdates(claim, &MatchResult{
+		WinnerID: "a",
+		Scores:   map[string]int{"a": 3, "b": 2, "c": 1},
+	})
+	if len(updates) != len(participants) {
+		t.Fatalf("placement updates = %d, want %d", len(updates), len(participants))
+	}
+	if !(updates[0].Mu > updates[1].Mu && updates[1].Mu > updates[2].Mu) {
+		t.Fatalf("placement ratings = [%v, %v, %v], want strict ordering", updates[0].Mu, updates[1].Mu, updates[2].Mu)
+	}
+
+	updates = (&Worker{}).computeRatingUpdates(claim, &MatchResult{
+		WinnerID: "a", // A declared winner does not break an equal-score tie.
+		Scores:   map[string]int{"a": 3, "b": 3, "c": 1},
+	})
+	assertClose(t, "tied player mu", updates[0].Mu, updates[1].Mu, refTol)
+	if updates[0].Mu <= updates[2].Mu || updates[1].Mu <= updates[2].Mu {
+		t.Fatalf("tied placement ratings = [%v, %v, %v], want tied players above loser", updates[0].Mu, updates[1].Mu, updates[2].Mu)
+	}
+}
+
+func equalFloatSlices(got, want []float64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestComputeRatingUpdatesFields(t *testing.T) {
 	before := []Glicko2Rating{{Mu: 1500, Phi: 350, Sigma: 0.06}, {Mu: 1500, Phi: 350, Sigma: 0.06}}
 	updates := ComputeRatingUpdates([]string{"winner", "loser"}, before, []float64{1.0, 0.0})

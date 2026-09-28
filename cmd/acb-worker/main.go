@@ -633,7 +633,7 @@ func (w *Worker) uploadThumbnail(ctx context.Context, matchID string, replay *en
 
 // computeRatingUpdates computes Glicko-2 rating updates for match participants.
 func (w *Worker) computeRatingUpdates(claimData *JobClaimData, result *MatchResult) []RatingUpdate {
-	if len(claimData.Participants) < 2 {
+	if claimData == nil || result == nil || len(claimData.Participants) < 2 {
 		return nil
 	}
 
@@ -649,20 +649,61 @@ func (w *Worker) computeRatingUpdates(claimData *JobClaimData, result *MatchResu
 			Phi:   p.RatingPhiBefore,
 			Sigma: p.RatingSigmaBefore,
 		}
-		// Use winner identity for pairwise Glicko-2 scoring.
-		// Raw game scores (captures) are often tied, so we use the declared
-		// winner as the discriminator: winner=1.0, others=0.0, draw=0.5.
-		if result.WinnerID == "" {
-			scores[i] = 0.5
-		} else if result.WinnerID == p.BotID {
-			scores[i] = 1.0
-		} else {
-			scores[i] = 0.0
-		}
 	}
+
+	// Match scores define the pairwise outcomes: equal scores are draws,
+	// including ties below a declared winner. The winner-only fallback keeps
+	// older result rows (which predate score persistence) rateable.
+	scores = ratingScores(botIDs, result.Scores, result.WinnerID)
 
 	// Compute rating updates
 	return ComputeRatingUpdates(botIDs, ratings, scores)
+}
+
+// ratingScores converts a match result into the per-player scores consumed by
+// UpdateRatings. A complete Scores map is authoritative, because it preserves
+// multi-player placements and ties. If an older result has no complete score
+// map, WinnerID supplies a two-outcome fallback; an otherwise unresolved match
+// is treated as a draw for every participant.
+func ratingScores(botIDs []string, matchScores map[string]int, winnerID string) []float64 {
+	scores := make([]float64, len(botIDs))
+	complete := len(matchScores) > 0
+	if complete {
+		for _, botID := range botIDs {
+			if _, ok := matchScores[botID]; !ok {
+				complete = false
+				break
+			}
+		}
+	}
+
+	if complete {
+		for i, botID := range botIDs {
+			scores[i] = float64(matchScores[botID])
+		}
+		return scores
+	}
+
+	if winnerID == "" {
+		for i := range scores {
+			scores[i] = 0.5
+		}
+		return scores
+	}
+
+	winnerFound := false
+	for i, botID := range botIDs {
+		if botID == winnerID {
+			scores[i] = 1.0
+			winnerFound = true
+		}
+	}
+	if !winnerFound {
+		for i := range scores {
+			scores[i] = 0.5
+		}
+	}
+	return scores
 }
 
 // recalcRatings recalculates all Glicko-2 ratings from scratch by replaying
@@ -718,18 +759,25 @@ func recalcRatings(ctx context.Context, db *DBClient, logger *log.Logger, verbos
 		for i, p := range match.Participants {
 			botIDs[i] = p.BotID
 			ratings[i] = currentRatings[p.BotID]
-
-			// Determine score based on match result
-			// If winner is a player slot, convert to bot_id and score accordingly
-			if match.Winner == nil {
-				// Draw or no winner
-				scores[i] = 0.5
-			} else if match.WinnerBotID != nil && *match.WinnerBotID == p.BotID {
-				scores[i] = 1.0
-			} else {
-				scores[i] = 0.0
-			}
 		}
+
+		matchScores := make(map[string]int, n)
+		hasAllScores := true
+		for _, p := range match.Participants {
+			if p.Score == nil {
+				hasAllScores = false
+				break
+			}
+			matchScores[p.BotID] = *p.Score
+		}
+		if !hasAllScores {
+			matchScores = nil
+		}
+		winnerID := ""
+		if match.WinnerBotID != nil {
+			winnerID = *match.WinnerBotID
+		}
+		scores = ratingScores(botIDs, matchScores, winnerID)
 
 		// Compute new ratings using Glicko-2
 		newRatings := UpdateRatings(ratings, scores)
