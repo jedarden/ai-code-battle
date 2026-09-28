@@ -31,10 +31,10 @@ import (
 // run exactly once against the shared test database.
 var predictionSchemaOnce sync.Once
 
-// setupPredictionSchema applies the production schema and the predictable
-// migration (migrations/0002) that the /api/predict handler depends on —
-// schemaSQL never adds the column itself, a real deployment gets it from the
-// migration runner.
+// setupPredictionSchema applies the production schema and the idempotent
+// predictable migration (migrations/0002) used by deployment tooling. The
+// API bootstrap also creates this column so a fresh service cannot expose a
+// prediction route that fails against its own schema.
 func setupPredictionSchema(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var schemaErr error
@@ -307,6 +307,7 @@ func TestOpenPredictions(t *testing.T) {
 	insertPredictionBot(t, db, "b_alpha", "Alpha")
 	insertPredictionBot(t, db, "b_beta", "Beta")
 	insertMatch(t, db, "m_view", "pending", true, "b_alpha", "b_beta")
+	insertMatch(t, db, "m_not_predictable", "pending", false, "b_alpha", "b_beta")
 	insertMatch(t, db, "m_done", "complete", true, "b_alpha", "b_beta")
 
 	// fan1 picked alpha in the open match.
@@ -348,6 +349,8 @@ func TestOpenPredictions(t *testing.T) {
 			view = &resp.Matches[i]
 		case "m_done":
 			t.Error("completed match m_done listed as open for predictions")
+		case "m_not_predictable":
+			t.Error("unflagged match m_not_predictable listed as open for predictions")
 		}
 	}
 	if view == nil {

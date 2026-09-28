@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS matches (
     condition     VARCHAR(32),
     turn_count    INTEGER,
     scores_json   JSONB,
+    predictable   BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at  TIMESTAMPTZ
 );
@@ -268,9 +269,18 @@ CREATE TABLE IF NOT EXISTS matches (
     condition     VARCHAR(32),
     turn_count    INTEGER,
     scores_json   JSONB,
+    predictable   BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at  TIMESTAMPTZ
 );
+
+-- The standalone migrations are applied by deployment tooling, but acb-api
+-- must also be safe to start against a restored database. Prediction routes
+-- query this column, so make the bootstrap self-sufficient for both a fresh
+-- database and a database created before the prediction migration landed.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS predictable BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_matches_predictable
+    ON matches(predictable, created_at) WHERE predictable = TRUE;
 
 CREATE TABLE IF NOT EXISTS match_participants (
     match_id          VARCHAR(32) NOT NULL REFERENCES matches(match_id),

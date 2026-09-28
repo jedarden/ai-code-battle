@@ -3,7 +3,7 @@ package main
 // Registration route tests (aicodeba-7f5b3b0e).
 //
 // handleRegister is the contract docs/bot-protocol.md "Register Your Bot"
-// documents: 400 for a malformed body or missing name/owner/endpoint_url,
+// documents: 400 for a malformed body or invalid/missing name/owner/endpoint_url,
 // 409 for an already-taken name, a live GET {endpoint_url}/health probe that
 // must answer 200 before the bot is accepted, and a single 201 delivery of
 // bot_id + shared_secret with the secret stored encrypted. The service runs
@@ -79,6 +79,16 @@ func TestRegister_MissingFields(t *testing.T) {
 		var resp map[string]string
 		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 			t.Errorf("register %s: response not error JSON: %v", body, err)
+		}
+	}
+}
+
+func TestRegister_InvalidBotName(t *testing.T) {
+	srv := &Server{cfg: Config{BotTimeoutSecs: 5}, regLimiter: newTestRegLimiter()}
+	for _, name := range []string{"ab", "bot_name", "bot name", strings.Repeat("a", 33)} {
+		w := postRegister(t, srv, `{"name":"`+name+`","owner":"o","endpoint_url":"http://127.0.0.1:1"}`)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("name %q: status = %d, want 400; body = %s", name, w.Code, w.Body.String())
 		}
 	}
 }

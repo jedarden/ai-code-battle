@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -191,8 +192,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Owner = strings.TrimSpace(req.Owner)
 	req.EndpointURL = strings.TrimSpace(req.EndpointURL)
-	if req.Name == "" || req.Owner == "" || req.EndpointURL == "" ||
-		len(req.Name) > 32 || len(req.Owner) > 128 {
+	if !validBotName(req.Name) || req.Owner == "" || req.EndpointURL == "" || len(req.Owner) > 128 {
 		writeError(w, http.StatusBadRequest, "name, owner, and endpoint_url are required")
 		return
 	}
@@ -254,13 +254,25 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Insert bot into database
-	_, err = s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO bots (bot_id, name, owner, endpoint_url, shared_secret, status, debug_public)
 		VALUES ($1, $2, $3, $4, $5, 'active', $6)
+		ON CONFLICT (name) DO NOTHING
 	`, botID, req.Name, req.Owner, req.EndpointURL, encryptedSecret, req.DebugPublic)
 	if err != nil {
 		log.Printf("failed to insert bot: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to register bot")
+		return
+	}
+	if inserted, err := result.RowsAffected(); err != nil {
+		log.Printf("failed to inspect bot registration result: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to register bot")
+		return
+	} else if inserted == 0 {
+		// The preflight check above improves the common path, while the
+		// database constraint handles two registrations racing on the same
+		// name. Do not turn that legitimate conflict into a 500.
+		writeError(w, http.StatusConflict, fmt.Sprintf("bot name '%s' is already taken", req.Name))
 		return
 	}
 
@@ -270,6 +282,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		"bot_id":        botID,
 		"shared_secret": sharedSecret,
 	})
+}
+
+var botNamePattern = regexp.MustCompile(`^[A-Za-z0-9-]{3,32}$`)
+
+func validBotName(name string) bool {
+	return botNamePattern.MatchString(name)
 }
 
 // validateBotEndpoint checks if the bot endpoint is reachable
@@ -1525,6 +1543,7 @@ func (s *Server) handleOpenPredictions(w http.ResponseWriter, r *http.Request) {
 		JOIN match_participants mp ON m.match_id = mp.match_id
 		JOIN bots b ON mp.bot_id = b.bot_id
 		WHERE m.status = 'pending'
+		  AND m.predictable = TRUE
 		  AND NOT EXISTS (`+seriesgate.Blocking("m.match_id")+`)
 		GROUP BY m.match_id, m.created_at
 		ORDER BY m.created_at ASC

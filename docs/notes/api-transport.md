@@ -254,13 +254,11 @@ case the documents can grow to is a few hundred KiB regardless of traffic.
   already implemented in `web/src/lib/api-backend.ts`; the release smoke can
   be promoted from the offline contract to live validation with
   `ACB_EXPECT_MATCH_TIER=1`.
-  The service's startup applies `ensureSchema` only (`cmd/acb-api/main.go`);
-  the `migrations/*.sql` files are a separate step nothing runs for you, and
-  skipping them breaks a match-tier route: without
-  `migrations/0002_add_predictable_flag.sql`, every `POST /api/predict`
-  past the match-exists check answers 500 (`column "predictable" does not
-  exist`). Verified 2026-09-28 against the production schema in a throwaway
-  database (aicodeba-7f5b3b0e).
+  The service's startup runs `ensureSchema` (`cmd/acb-api/main.go`), including
+  the prediction `predictable` column and index. The standalone migration
+  `migrations/0002_add_predictable_flag.sql` is idempotent too, so operators
+  can continue applying the migration set separately without making a valid
+  prediction request fail against a freshly bootstrapped service.
 
 ## Testing
 

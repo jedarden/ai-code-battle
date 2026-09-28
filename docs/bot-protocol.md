@@ -25,7 +25,7 @@ The protocol authenticates two parties who already hold a shared secret; it defi
 }
 ```
 
-The platform validates the body (missing `name`, `owner`, or `endpoint_url` is `400`), rejects an already-taken `name` with `409`, and probes the endpoint exactly as the engine will: `GET {endpoint_url}/health` must return `200 OK` under the health contract defined above, or registration fails with `400`. On success it mints the identifier and secret, stores the secret, and answers `201 Created`:
+The platform validates the body (`name` must be 3–32 alphanumeric characters or hyphens; `owner` and `endpoint_url` are required, with oversized values rejected as `400`), rejects an already-taken `name` with `409`, and probes the endpoint exactly as the engine will: `GET {endpoint_url}/health` must return `200 OK` under the health contract defined above, or registration fails with `400`. On success it mints the identifier and secret, stores the secret, and answers `201 Created`:
 
 ```json
 { "bot_id": "b_4e8c1d2f9a03", "shared_secret": "<64 lowercase hex characters>" }

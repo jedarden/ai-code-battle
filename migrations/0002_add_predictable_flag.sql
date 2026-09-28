@@ -5,5 +5,5 @@
 -- - It's a series match
 -- - An evolved bot faces a top-10 human-written bot
 
-ALTER TABLE matches ADD COLUMN predictable BOOLEAN NOT NULL DEFAULT FALSE;
-CREATE INDEX idx_matches_predictable ON matches(predictable, created_at) WHERE predictable = TRUE;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS predictable BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_matches_predictable ON matches(predictable, created_at) WHERE predictable = TRUE;
