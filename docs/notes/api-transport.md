@@ -108,7 +108,7 @@ rest:
 | Replay feedback (annotations) | `POST /api/feedback`, `GET /api/feedback/{match_id}`, `POST /api/feedback/{id}/upvote` | **LIVE** |
 | Agentation site feedback | `POST /api/feedback` (body carries `markdown`) | **LIVE** |
 | Map voting | `POST /api/vote/map`, `GET /api/vote/map/{map_id}` | **LIVE** |
-| Bot registration / key rotation | `POST /api/register`, `POST /api/rotate-key` | JSON proxy response when `ACB_API_ORIGIN` is configured; otherwise **503** `match_tier_offline` |
+| Bot credential lifecycle | `POST /api/register`, `POST /api/rotate-key`, `POST /api/revoke-key` | JSON proxy response when `ACB_API_ORIGIN` is configured; otherwise **503** `match_tier_offline` |
 | Predictions | `GET /api/predictions/open`, `GET /api/predictions/history`, `POST /api/predict` | JSON proxy response when `ACB_API_ORIGIN` is configured; otherwise **503** `match_tier_offline` |
 
 The match-tier flows need acb-api's PostgreSQL/Valkey backend, which is not
@@ -157,6 +157,7 @@ it is itself a documented route.
 | `/feedback/{feedback_id}/upvote` | POST | 200 recorded / `already_upvoted` (400 invalid feedback ID / 404 unknown ID) | GET → 400 `invalid match ID`; else 404 JSON `not found` |
 | `/register` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
 | `/rotate-key` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
+| `/revoke-key` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
 | `/predict` | POST | 503 `match_tier_offline` | 404 JSON `not found` |
 | `/predictions/open` | GET | 503 `match_tier_offline` | 404 JSON `not found` |
 | `/predictions/history` | GET | 503 `match_tier_offline` | 404 JSON `not found` |
@@ -341,7 +342,7 @@ and — since bead aicodeba-92bd4385 — the function bundle itself, both
 catch-alls present beside `dist/` with their wiring markers, so the silent
 `cwd()/functions` skip fails the smoke before the deploy it would rot;
 part B probes
-health + capabilities, one map tally, one feedback read, all five match-tier
+health + capabilities, one map tally, one feedback read, all six match-tier
 JSON routes (offline refusals by default, or live validation/read responses
 with `ACB_EXPECT_MATCH_TIER=1`),
 an unknown `/api` path — which must answer JSON 404, pinning the deployed
@@ -401,8 +402,8 @@ SPA-fallback answer:
   gate added in `3fc3cc55`, 2026-09-26) runs the full smoke
   (`node test-api-workflows.js` — the dist just shipped carries the SPA
   markers and the function bundle (part A),
-  health, community reads, and **all five** documented match-tier 503
-  routes: register, rotate-key, predict, predictions/open,
+  health, community reads, and **all six** documented match-tier 503
+  routes: register, rotate-key, revoke-key, predict, predictions/open,
   predictions/history) as a post-deploy step, after polling `/api/health`
   for edge propagation (90 s cap). A transport regression now fails the
   deploy run itself instead of shipping silently — the failure mode the
@@ -419,7 +420,7 @@ SPA-fallback answer:
 
 The match-tier 503 probes cost nothing and write nothing: the router
 refuses those routes before any body is read, rate-limited, or stored, so
-proving all five are function-owned is free on every deploy.
+proving all six are function-owned is free on every deploy.
 
 ### Deploy packaging — functions ship with the frontend (bead aicodeba-87095e9a)
 

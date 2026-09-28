@@ -216,6 +216,9 @@ func TestRotateKey_Retire(t *testing.T) {
 	if resp["status"] != "retired" {
 		t.Errorf("response status = %v, want 'retired'", resp["status"])
 	}
+	if _, ok := resp["shared_secret"]; ok {
+		t.Error("retirement must not return a replacement shared_secret")
+	}
 
 	// Verify DB status
 	var dbStatus string
@@ -225,6 +228,18 @@ func TestRotateKey_Retire(t *testing.T) {
 	}
 	if dbStatus != "retired" {
 		t.Errorf("db status = %q, want 'retired'", dbStatus)
+	}
+
+	// The credential supplied to the retirement request is invalidated too.
+	body2, _ := json.Marshal(map[string]string{
+		"bot_id":        botID,
+		"shared_secret": secret,
+	})
+	req2 := httptest.NewRequest("POST", "/api/rotate-key", bytes.NewReader(body2))
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusUnauthorized {
+		t.Errorf("retired credential should be rejected after retire: status = %d, want 401", w2.Code)
 	}
 }
 

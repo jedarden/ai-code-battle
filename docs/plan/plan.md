@@ -85,7 +85,7 @@ but **not deployed anywhere** — the compute tier it belongs to was
 decommissioned 2026-07-21. The live interactive endpoints are the same-origin
 `/api/*` Cloudflare Pages Function (community feedback/voting and map voting
 run there today; see `docs/notes/api-transport.md`), while the match-tier
-routes (registration, key rotation, predictions) answer a designed 503
+routes (registration, key rotation, credential revocation, predictions) answer a designed 503
 `match_tier_offline` envelope from that same function. Deferring the match
 tier until an operator revives acb-api is the recorded decision in
 `docs/notes/public-api-descope.md` ("Match-tier contract decision"). Public
@@ -290,7 +290,7 @@ const meta = await fetch(`${PAGES}/r2/matches/${matchId}.json`).then(r => r.json
 | **Bot Containers** | Deployments + Services (ai-code-battle ns) | Strategy bots (x21) + evolved bots (0-50) — HTTP servers called by workers during matches via cluster-internal Service DNS. |
 | **Evolver** | Deployment (ai-code-battle ns) | Evolution pipeline — reads lineage/meta from PostgreSQL, generates candidates, writes evolution data to PostgreSQL. |
 | **Index Builder** | Deployment (ai-code-battle ns) | Sleep-loop (15 min cycle). Reads PostgreSQL, generates JSON indexes, deploys to Pages. Self-restarts every 4h. |
-| **Go API (`acb-api`)** | Deployment (ai-code-battle ns) | HTTP-facing dynamic endpoints: bot registration, key rotation, status, predictions, feedback/voting, map voting, enrichment requests, and match-result ingestion from workers. The static read path stays on Pages. |
+| **Go API (`acb-api`)** | Deployment (ai-code-battle ns) | HTTP-facing dynamic endpoints: bot registration, key rotation, credential revocation, status, predictions, feedback/voting, map voting, enrichment requests, and match-result ingestion from workers. The static read path stays on Pages. |
 | **ArgoCD** | Cluster (argocd ns) | GitOps: syncs all K8s manifests from git. All deployments are declarative. |
 | **Argo Workflows** | Cluster (argo ns) | CI pipelines: builds container images, pushes to Docker Hub (ronaldraygun/acb-*), builds static site. |
 
@@ -1234,6 +1234,7 @@ GET  /health, /ready
 POST   /api/register            → register a new bot
 PATCH  /api/bot/{id}            → update bot metadata
 POST   /api/rotate-key          → rotate a bot's shared secret
+POST   /api/revoke-key          → revoke a bot's credential and retire it
 
 # Reads (bots, status, replays)
 GET  /api/bots                  → list bots
@@ -1274,7 +1275,7 @@ cluster-internal (no external API calls needed).
 The `/api/job/{id}` result endpoint is called by match workers within the
 cluster. Workers authenticate with a shared API key stored in a SealedSecret
 and mounted as an environment variable. External-facing endpoints
-(`/api/register`, `/api/rotate-key`, `/api/status`, predictions, feedback,
+(`/api/register`, `/api/rotate-key`, `/api/revoke-key`, `/api/status`, predictions, feedback,
 map voting) are public, with HMAC shared-secret auth where a bot identity is
 required and rate limiting / spam filtering on user-submitted input.
 
@@ -1542,7 +1543,7 @@ password storage.
 **Bot status lifecycle:**
 ```
 PENDING -> ACTIVE -> INACTIVE (health check failed)
-                  -> RETIRED (by owner via /api/rotate-key with retire flag)
+                  -> RETIRED (by owner via /api/revoke-key)
 ```
 
 Only `ACTIVE` bots participate in matchmaking. The health checker ticker
@@ -1646,7 +1647,7 @@ Key principles:
   Dynamic and interactive operations go through JSON APIs: the community
   flows (replay/site feedback, map voting) are live on the same-origin
   `/api/*` Pages Function (`docs/notes/api-transport.md`), while the match
-  tier (registration, key rotation, predictions) is deferred — its routes
+  tier (registration, key rotation, credential revocation, predictions) is deferred — its routes
   answer 503 `match_tier_offline` from that function until the `acb-api`
   service is revived (`docs/notes/public-api-descope.md`).
   The API is built but not deployed (see `cmd/acb-api/`); the core match
@@ -1745,7 +1746,7 @@ Images are built locally or via CI and pushed to Docker Hub for deployment.
 
 | Image | Base | Purpose | K8s Resource |
 |-------|------|---------|--------------|
-| `acb-api` | Go binary on Alpine | HTTP-facing API only — registration, key rotation, status, job-result ingestion, predictions, feedback/voting, map voting, enrichment requests (§8.2). No tickers. | Deployment (1 replica) |
+| `acb-api` | Go binary on Alpine | HTTP-facing API only — registration, key rotation, credential revocation, status, job-result ingestion, predictions, feedback/voting, map voting, enrichment requests (§8.2). No tickers. | Deployment (1 replica) |
 | `acb-matchmaker` | Go binary on Alpine | Internal scheduler — seven goroutine tickers: matchmaking, health checks, stale-job reaping, series scheduling, season reset, featured series, map-fairness audit (§8.2.1) | Deployment (1 replica) |
 | `acb-worker` | Go binary on Alpine | Match execution, B2 upload | Deployment (2-10 replicas) |
 | `acb-evolver` | Go binary on Alpine | LLM bot evolution pipeline (init-schema, seed, validate, evaluate, promote) | Deployment (1 replica) |
@@ -2602,7 +2603,7 @@ ai-code-battle/
 
 | Image | Source | Base | Purpose | K8s Resource |
 |-------|--------|------|---------|--------------|
-| `acb-api` | `cmd/acb-api/` | Go on Alpine | HTTP-facing API only — registration, key rotation, status, job-result ingestion, predictions, feedback/voting, map voting, enrichment requests (§8.2). No tickers. | Deployment (1 replica) |
+| `acb-api` | `cmd/acb-api/` | Go on Alpine | HTTP-facing API only — registration, key rotation, credential revocation, status, job-result ingestion, predictions, feedback/voting, map voting, enrichment requests (§8.2). No tickers. | Deployment (1 replica) |
 | `acb-matchmaker` | `cmd/acb-matchmaker/` | Go on Alpine | Internal scheduler — seven goroutine tickers: matchmaking, health checks, stale-job reaping, series scheduling, season reset, featured series, map-fairness audit (§8.2.1) | Deployment (1 replica) |
 | `acb-worker` | `cmd/acb-worker/` | Go on Alpine | Match execution, B2 upload, Glicko-2 update | Deployment (2-10 replicas) |
 | `acb-evolver` | `cmd/acb-evolver/` | Go on Alpine | LLM bot evolution pipeline (init-schema, seed, validate, evaluate, promote) | Deployment (1 replica) |

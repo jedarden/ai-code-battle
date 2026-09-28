@@ -133,6 +133,7 @@ describe('the /api prefix is stripped exactly once', () => {
       capabilities: {
         register: false,
         rotate_key: false,
+        revoke_key: false,
         predictions: false,
         feedback: true,
         map_votes: true,
@@ -272,6 +273,7 @@ describe('the match tier stays honestly offline under /api', () => {
   it.each([
     ['POST', '/api/register'],
     ['POST', '/api/rotate-key'],
+    ['POST', '/api/revoke-key'],
     ['POST', '/api/predict'],
     ['GET', '/api/predictions/open'],
     ['GET', '/api/predictions/history'],
@@ -315,6 +317,7 @@ describe('the method matrix survives the adapter — undocumented verbs stay fun
     ['/api/feedback/fb_1/upvote', [['GET', 400], ['PUT', 404]]],
     ['/api/register', [['GET', 404], ['DELETE', 404]]],
     ['/api/rotate-key', [['GET', 404], ['PUT', 404]]],
+    ['/api/revoke-key', [['GET', 404], ['PUT', 404]]],
     ['/api/predict', [['GET', 404], ['DELETE', 404]]],
     ['/api/predictions/open', [['POST', 404], ['DELETE', 404]]],
     ['/api/predictions/history', [['POST', 404], ['PUT', 404]]],

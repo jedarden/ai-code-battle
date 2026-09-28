@@ -231,7 +231,7 @@ const sections: Section[] = [
   },
   {
     title: 'Interactive API (Same-Origin)',
-    description: 'State-changing endpoints served by this site itself as JSON under /api/* (a Pages Function backed by R2 — see docs/notes/api-transport.md for the transport decision). Replay feedback and map voting are live; match-tier endpoints (bot registration, API key rotation, predictions) proxy to acb-api when ACB_API_ORIGIN is configured and otherwise answer 503 with JSON code "match_tier_offline". Everything is rate-limited per IP and caps request bodies at 32 KiB.',
+    description: 'State-changing endpoints served by this site itself as JSON under /api/* (a Pages Function backed by R2 — see docs/notes/api-transport.md for the transport decision). Replay feedback and map voting are live; match-tier endpoints (bot registration, API key rotation, credential revocation, predictions) proxy to acb-api when ACB_API_ORIGIN is configured and otherwise answer 503 with JSON code "match_tier_offline". Everything is rate-limited per IP and caps request bodies at 32 KiB.',
     endpoints: [
       {
         method: 'GET',
@@ -243,6 +243,7 @@ const sections: Section[] = [
   "capabilities": {
     "register": false,
     "rotate_key": false,
+    "revoke_key": false,
     "predictions": false,
     "feedback": true,
     "map_votes": true
@@ -302,6 +303,12 @@ const sections: Section[] = [
         method: 'POST',
         path: '/api/register',
         description: 'Match tier — proxied to acb-api when configured; otherwise answers 503 {"error": "...", "code": "match_tier_offline"}. Request: {name, owner, endpoint_url, debug_public?}. The service probes endpoint_url + /health before creating the bot and delivers shared_secret exactly once.',
+        cache: 'no cache (dynamic)',
+      },
+      {
+        method: 'POST',
+        path: '/api/revoke-key',
+        description: 'Match tier — permanently retires a bot. Request: {bot_id, shared_secret}. A successful response is {bot_id, status: "retired"}; no replacement credential is returned, and the supplied credential is invalid immediately after the transaction commits.',
         cache: 'no cache (dynamic)',
       },
       {

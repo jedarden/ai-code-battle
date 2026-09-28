@@ -53,8 +53,8 @@ User-facing documentation advertised a public API endpoint that does not exist:
 
 **Decision Date:** 2026-09-26
 **Bead:** aicodeba-a0052569
-**Decision:** DEFER. The five match-tier routes (`POST /api/register`,
-`POST /api/rotate-key`, `POST /api/predict`, `GET /api/predictions/open`,
+**Decision:** DEFER. The six match-tier routes (`POST /api/register`,
+`POST /api/rotate-key`, `POST /api/revoke-key`, `POST /api/predict`, `GET /api/predictions/open`,
 `GET /api/predictions/history`) keep their clients, pages, documentation, and
 designed 503 `match_tier_offline` envelope exactly as shipped. Restoring
 acb-api and its databases is **rejected for now**; ripping the routes out is
@@ -94,7 +94,7 @@ and nothing currently consumes it:
   [api-transport.md](api-transport.md) already specifies ("Reviving the
   match tier").
 - **The offline contract is the designed answer, not a debris state.** The
-  function's router refuses all five routes before any body read, rate
+  function's router refuses all six routes before any body read, rate
   limit, or storage write (verified in `web/src/lib/api-backend.ts`
   `handleApiRequest` — free at runtime), `GET /api/health` publishes the
   capability set so the state is observable, the SPA renders its unavailable

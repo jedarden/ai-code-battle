@@ -33,7 +33,7 @@ The platform validates the body (missing `name`, `owner`, or `endpoint_url` is `
 
 The registration response is the only delivery of the secret. There is no read-back endpoint: the platform stores the secret encrypted (see Storage) and can never display it again. Record it at registration time, or rotate to a replacement later.
 
-On the current deployment the match-tier routes — registration, rotation, predictions — answer `503 match_tier_offline` until the `acb-api` backend is redeployed (see `docs/notes/api-transport.md`), and registration is arranged out-of-band with the match coordinator. The workflow in this section is the contract those routes restore.
+On the current deployment the match-tier routes — registration, rotation, revocation, predictions — answer `503 match_tier_offline` until the `acb-api` backend is redeployed (see `docs/notes/api-transport.md`), and registration is arranged out-of-band with the match coordinator. The workflow in this section is the contract those routes restore.
 
 ### Delivery
 
@@ -52,11 +52,37 @@ The secret moves exactly once, from the registration (or rotation) response to t
 { "bot_id": "b_4e8c1d2f9a03", "shared_secret": "<current secret>" }
 ```
 
-A `200` response carries `{ "bot_id": "...", "shared_secret": "<new secret>" }`; the current secret being wrong is `401`, an unknown bot is `404`. Rotate on any suspicion of exposure, on operator change, or on a fixed schedule. The procedure is: rotate, update the bot's environment, restart the bot — in that order, between matches. In the window between rotating and restarting, the two sides hold different secrets: the engine's requests fail the bot's verification and the bot's responses fail the platform's, and the protocol scores both as failed turns (see Invalid Responses). Nothing narrows that window except performing the rotation when no match is scheduled.
+A `200` response carries `{ "bot_id": "...", "shared_secret": "<new secret>" }`; the current secret being wrong is `401`, and an unknown bot is `404`. Rotation replaces the stored credential but leaves the bot active. Rotate on any suspicion of exposure, on operator change, or on a fixed schedule. The procedure is: rotate, update the bot's environment, restart the bot — in that order, between matches. In the window between rotating and restarting, the two sides hold different secrets: the engine's requests fail the bot's verification and the bot's responses fail the platform's, and the protocol scores both as failed turns (see Invalid Responses). Nothing narrows that window except performing the rotation when no match is scheduled.
 
 ### Revocation
 
-Revocation is a rotation with `"retire": true`: the stored secret is replaced one last time — invalidating whatever the bot still holds — and the bot's status becomes `retired`. A retired bot can no longer authenticate the rotation endpoint and is excluded from scheduling surfaces that select on active status. Its stale credential authenticates nothing: requests it cannot verify fail as authentication failures (`401` per the Turn Request section), and its responses fail the platform's response verification. Either direction scores failed turns, and ten consecutive failures mark a bot inactive for the rest of a match. Revocation binds new matches immediately; a match already in flight completes under the snapshot taken at its start.
+`POST /api/revoke-key` permanently retires a bot and invalidates its credential:
+
+```json
+{ "bot_id": "b_4e8c1d2f9a03", "shared_secret": "<current secret>" }
+```
+
+The current secret is required. A successful request returns `200 OK` with
+`{ "bot_id": "...", "status": "retired" }`; it never returns another
+credential. An unknown bot is `404`, a wrong or already-invalid credential is
+`401`, and a bot already in `retired` state is `409`.
+
+Revocation is committed atomically: the platform replaces the encrypted
+stored value with a fresh random value that is not delivered to anyone, sets
+the bot status to `retired`, and excludes it from future scheduling. The
+credential supplied to the request therefore stops authenticating platform
+operations immediately after the commit. It also cannot authenticate a turn:
+the bot's stale request signatures fail verification and responses signed with
+the stale value fail platform verification. Either direction scores failed
+turns, and ten consecutive failures mark a bot inactive for the rest of a
+match. A match worker that already obtained a credential snapshot before the
+revocation may finish that in-flight match; all new job claims and API
+authentication use the revoked state.
+
+The historical `retire: true` request flag on `/api/rotate-key` remains
+accepted for compatibility, but it follows these same revocation semantics
+and does not return a replacement secret. New clients must use
+`/api/revoke-key`.
 
 ### Local development
 

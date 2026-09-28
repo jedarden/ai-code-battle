@@ -346,6 +346,42 @@ export async function rotateApiKey(botId: string, currentKey: string): Promise<R
   };
 }
 
+export interface RevokeResponse {
+  success: boolean;
+  bot_id?: string;
+  status?: 'retired';
+  error?: string;
+  code?: string;
+}
+
+export async function revokeApiKey(botId: string, currentKey: string): Promise<RevokeResponse> {
+  requireApiTransport('API credential revocation');
+  const response = await fetch(`${API_BASE}/revoke-key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bot_id: botId, shared_secret: currentKey }),
+  });
+  if (!isJsonResponse(response)) {
+    return { success: false, error: `Credential revocation failed: unexpected non-JSON response (${response.status})` };
+  }
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body || typeof body !== 'object') {
+    return { success: false, error: `Credential revocation failed: invalid JSON response (${response.status})` };
+  }
+  if (!response.ok) {
+    return {
+      success: false,
+      error: typeof body.error === 'string' ? body.error : `Credential revocation failed: ${response.status}`,
+      code: typeof body.code === 'string' ? body.code : undefined,
+    };
+  }
+  return {
+    success: true,
+    bot_id: typeof body.bot_id === 'string' ? body.bot_id : undefined,
+    status: body.status === 'retired' ? 'retired' : undefined,
+  };
+}
+
 // Playlist types
 
 export type PlaylistCategory =
@@ -667,6 +703,7 @@ export interface MapVotesResponse {
 export interface ApiCapabilities {
   register: boolean;
   rotate_key: boolean;
+  revoke_key: boolean;
   predictions: boolean;
   feedback: boolean;
   map_votes: boolean;

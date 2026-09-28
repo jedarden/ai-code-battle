@@ -15,7 +15,8 @@
 // plus the agentation overlay's site feedback, which shares POST /api/feedback
 // (disambiguated by the presence of `markdown` in the body).
 //
-// The match-tier flows — bot registration, key rotation, and predictions —
+// The match-tier flows — bot registration, key rotation, credential
+// revocation, and predictions —
 // need acb-api's PostgreSQL/Valkey backend, which is not deployed anywhere
 // (compute tier decommissioned 2026-07-21; revival is a documented operator
 // decision). Those routes answer 503 JSON with code "match_tier_offline" so
@@ -92,6 +93,7 @@ const MAX_VOTERS_PER_MAP = 5000; // dedupe set cap per map
 const MATCH_TIER_CAPABILITIES: ApiCapabilities = {
   register: false,
   rotate_key: false,
+  revoke_key: false,
   predictions: false,
   feedback: true,
   map_votes: true,
@@ -346,6 +348,7 @@ async function handleHealth(env: ApiEnv): Promise<Response> {
   if (await matchTierReady(env)) {
     capabilities.register = true;
     capabilities.rotate_key = true;
+    capabilities.revoke_key = true;
     capabilities.predictions = true;
   }
   // Reflect real storage health: an unreachable bucket flips the live
@@ -419,6 +422,7 @@ async function proxyMatchTier(request: Request, env: ApiEnv, route: string): Pro
   const origin = matchTierOrigin(env);
   if (!origin) return matchTierOffline(route === '/register' ? 'Bot registration'
     : route === '/rotate-key' ? 'API key rotation'
+      : route === '/revoke-key' ? 'API credential revocation'
       : route.startsWith('/predictions/') ? 'Predictions' : 'Match predictions');
 
   const incomingURL = new URL(request.url);
@@ -750,7 +754,7 @@ export async function handleApiRequest(request: Request, env: ApiEnv, path: stri
     // Match-tier routes: proxy when acb-api is exposed, otherwise return the
     // honest JSON offline envelope. Method matching stays ahead of this branch
     // so undocumented verbs can never reach the upstream service.
-    if ((route === '/register' || route === '/rotate-key' || route === '/predict') && method === 'POST') {
+    if ((route === '/register' || route === '/rotate-key' || route === '/revoke-key' || route === '/predict') && method === 'POST') {
       return await proxyMatchTier(request, env, route);
     }
     if ((route === '/predictions/open' || route === '/predictions/history') && method === 'GET') {

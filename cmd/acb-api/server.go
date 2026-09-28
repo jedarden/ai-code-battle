@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -54,6 +55,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	// Bot key rotation + optional retirement — §8.5
 	mux.HandleFunc("POST /api/rotate-key", s.handleRotateKey)
+	// Bot credential revocation — permanently retires the bot and invalidates
+	// the credential immediately.
+	mux.HandleFunc("POST /api/revoke-key", s.handleRevokeKey)
 
 	// Job coordination (for workers — authenticated, no public rate limit)
 	mux.HandleFunc("GET /api/job", s.handleGetJob)
@@ -1054,7 +1058,7 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		storedSecret = encryptedSecret
 	}
 
-	if storedSecret != req.Secret {
+	if subtle.ConstantTimeCompare([]byte(storedSecret), []byte(req.Secret)) != 1 {
 		writeError(w, http.StatusUnauthorized, "invalid shared_secret")
 		return
 	}
@@ -1086,14 +1090,18 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		encryptedNew = newSecret
 	}
 
-	// Update the bot: always rotate the secret; optionally set status to retired
+	// Update the bot: always rotate the secret; optionally set status to retired.
+	// Guard the write with the status check so a rotation that authenticated
+	// before a concurrent revocation cannot publish a usable post-revocation
+	// credential or resurrect the retired record.
+	var updateResult sql.Result
 	if req.Retire {
-		_, err = s.db.ExecContext(ctx,
-			`UPDATE bots SET shared_secret = $1, status = 'retired', last_active = NOW() WHERE bot_id = $2`,
+		updateResult, err = s.db.ExecContext(ctx,
+			`UPDATE bots SET shared_secret = $1, status = 'retired', last_active = NOW() WHERE bot_id = $2 AND status <> 'retired'`,
 			encryptedNew, req.BotID)
 	} else {
-		_, err = s.db.ExecContext(ctx,
-			`UPDATE bots SET shared_secret = $1, last_active = NOW() WHERE bot_id = $2`,
+		updateResult, err = s.db.ExecContext(ctx,
+			`UPDATE bots SET shared_secret = $1, last_active = NOW() WHERE bot_id = $2 AND status <> 'retired'`,
 			encryptedNew, req.BotID)
 	}
 	if err != nil {
@@ -1101,17 +1109,139 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update bot")
 		return
 	}
+	if rows, err := updateResult.RowsAffected(); err != nil {
+		log.Printf("failed to inspect update for bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "failed to update bot")
+		return
+	} else if rows == 0 {
+		writeError(w, http.StatusConflict, "bot is retired")
+		return
+	}
 
 	log.Printf("rotated key for bot %s (retire=%v)", req.BotID, req.Retire)
 
 	resp := map[string]interface{}{
-		"bot_id":        req.BotID,
-		"shared_secret": newSecret,
+		"bot_id": req.BotID,
 	}
 	if req.Retire {
 		resp["status"] = "retired"
+	} else {
+		resp["shared_secret"] = newSecret
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleRevokeKey handles POST /api/revoke-key.
+// It authenticates with the current shared secret, permanently retires the
+// bot, and replaces the stored secret with a fresh value that is never
+// returned. This makes the supplied credential unusable immediately while
+// preserving the encrypted-secret storage invariant for workers.
+func (s *Server) handleRevokeKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		BotID  string `json:"bot_id"`
+		Secret string `json:"shared_secret"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.BotID == "" || req.Secret == "" {
+		writeError(w, http.StatusBadRequest, "bot_id and shared_secret are required")
+		return
+	}
+	if s.db == nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("database error starting credential revocation for bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer tx.Rollback()
+
+	var encryptedSecret string
+	var currentStatus string
+	err = tx.QueryRowContext(ctx,
+		`SELECT shared_secret, status FROM bots WHERE bot_id = $1 FOR UPDATE`, req.BotID,
+	).Scan(&encryptedSecret, &currentStatus)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "bot not found")
+		return
+	} else if err != nil {
+		log.Printf("database error getting bot %s for revocation: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	if currentStatus == "retired" {
+		writeError(w, http.StatusConflict, "bot is already retired")
+		return
+	}
+
+	var storedSecret string
+	if s.cfg.EncryptionKey != "" {
+		storedSecret, err = decryptSecret(encryptedSecret, s.cfg.EncryptionKey)
+		if err != nil {
+			storedSecret = encryptedSecret
+		}
+	} else {
+		storedSecret = encryptedSecret
+	}
+	if subtle.ConstantTimeCompare([]byte(storedSecret), []byte(req.Secret)) != 1 {
+		writeError(w, http.StatusUnauthorized, "invalid shared_secret")
+		return
+	}
+
+	// Keep a non-empty encrypted value in the row because workers and legacy
+	// readers expect shared_secret to remain NOT NULL. The replacement is
+	// intentionally never delivered to the caller, so the old credential is
+	// invalid as soon as this transaction commits.
+	revokedSecret, err := generateSecret()
+	if err != nil {
+		log.Printf("failed to generate revoked secret for bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "failed to revoke credential")
+		return
+	}
+	var encryptedRevoked string
+	if s.cfg.EncryptionKey != "" {
+		encryptedRevoked, err = encryptSecret(revokedSecret, s.cfg.EncryptionKey)
+		if err != nil {
+			log.Printf("failed to encrypt revoked secret for bot %s: %v", req.BotID, err)
+			writeError(w, http.StatusInternalServerError, "failed to revoke credential")
+			return
+		}
+	} else {
+		encryptedRevoked = revokedSecret
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE bots SET shared_secret = $1, status = 'retired', last_active = NOW() WHERE bot_id = $2`,
+		encryptedRevoked, req.BotID); err != nil {
+		log.Printf("failed to revoke credential for bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "failed to revoke credential")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("failed to commit credential revocation for bot %s: %v", req.BotID, err)
+		writeError(w, http.StatusInternalServerError, "failed to revoke credential")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"bot_id": req.BotID,
+		"status": "retired",
+	})
 }
 
 // handleListBots handles GET /api/bots

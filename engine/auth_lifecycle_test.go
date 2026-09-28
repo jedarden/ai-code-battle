@@ -237,3 +237,36 @@ func TestCredentialLifecycleRevokedCredential(t *testing.T) {
 		t.Fatal("a foreign bot's secret must not verify this bot's response")
 	}
 }
+
+// TestCredentialLifecycleRevocationHasNoUsableReplacement verifies the
+// revocation-specific contract: the platform may replace its stored value to
+// preserve the database invariant, but that replacement is never delivered to
+// the bot. A bot still holding the revoked secret therefore fails in both
+// directions immediately.
+func TestCredentialLifecycleRevocationHasNoUsableReplacement(t *testing.T) {
+	botID, heldByBot := mintCredential(t)
+	_, undisclosedPlatformSecret := mintCredential(t)
+	matchID := "m_lifecycle_revocation"
+	turn := 13
+	body, err := json.Marshal(botProtocolConformanceState(matchID, turn))
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
+	timestamp := time.Now().Unix()
+	auth := RequestAuth{
+		MatchID:   matchID,
+		Turn:      turn,
+		Timestamp: timestamp,
+		BotID:     botID,
+		Signature: SignRequest(undisclosedPlatformSecret, matchID, turn, timestamp, body),
+	}
+	if err := VerifyRequest(heldByBot, auth, body); err == nil {
+		t.Fatal("a bot holding a revoked credential must reject the platform's undisclosed replacement")
+	}
+
+	responseBody := []byte(`{"moves":[]}`)
+	if err := VerifyResponse(undisclosedPlatformSecret, matchID, turn,
+		SignResponse(heldByBot, matchID, turn, responseBody), responseBody); err == nil {
+		t.Fatal("the engine must reject a response signed with the revoked credential")
+	}
+}

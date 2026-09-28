@@ -10,7 +10,7 @@
 //
 // The function implements what storage alone can support — community
 // feedback, replay annotations, and map voting — and answers the match-tier
-// routes (registration, key rotation, predictions) with 503 JSON,
+// routes (registration, key rotation, credential revocation, predictions) with 503 JSON,
 // code "match_tier_offline", because acb-api's PostgreSQL/Valkey backend is
 // not deployed anywhere (compute tier decommissioned 2026-07-21; revival is a
 // documented operator decision).

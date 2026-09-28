@@ -19,7 +19,7 @@
  *     answers text/html is the SPA fallback, i.e. the transport regressed to
  *     the pre-aicodeba-84d1d61b state — this script fails loudly so that
  *     cannot be missed. Every documented match-tier route (register,
- *     rotate-key, predict, predictions/open, predictions/history) must answer
+ *     rotate-key, revoke-key, predict, predictions/open, predictions/history) must answer
  *     JSON match-tier response while acb-api is unavailable; the community
  *     reads must be live. Default probes are read-only or refused-with-503 —
  *     the match-tier branch short-circuits before any body is read or
@@ -527,15 +527,15 @@ async function main() {
     if (json.status !== 'ok') return `expected status "ok", got ${JSON.stringify(json.status)}`;
     const caps = json.capabilities;
     if (!caps || typeof caps !== 'object') return 'capabilities object missing';
-    for (const key of ['register', 'rotate_key', 'predictions', 'feedback', 'map_votes']) {
+    for (const key of ['register', 'rotate_key', 'revoke_key', 'predictions', 'feedback', 'map_votes']) {
       if (typeof caps[key] !== 'boolean') return `capability "${key}" is not a boolean`;
     }
     if (caps.feedback !== true || caps.map_votes !== true) {
       return `community capabilities are off (feedback=${caps.feedback}, map_votes=${caps.map_votes}) — storage is unhealthy`;
     }
     if (process.env.ACB_EXPECT_MATCH_TIER === '1'
-      && (caps.register !== true || caps.rotate_key !== true || caps.predictions !== true)) {
-      return `match-tier readiness is not advertised (register=${caps.register}, rotate_key=${caps.rotate_key}, predictions=${caps.predictions})`;
+      && (caps.register !== true || caps.rotate_key !== true || caps.revoke_key !== true || caps.predictions !== true)) {
+      return `match-tier readiness is not advertised (register=${caps.register}, rotate_key=${caps.rotate_key}, revoke_key=${caps.revoke_key}, predictions=${caps.predictions})`;
     }
     return null;
   });
@@ -580,6 +580,12 @@ async function main() {
     '/api/rotate-key',
     'POST',
     { key_id: 'smoke-probe-84d1d61b' },
+  );
+  await expectMatchTierRoute(
+    'revoke-key is JSON and validates through the match tier',
+    '/api/revoke-key',
+    'POST',
+    { bot_id: 'smoke-probe-84d1d61b', shared_secret: 'smoke-probe-secret' },
   );
   await expectMatchTierRoute(
     'predict is JSON and validates through the match tier',

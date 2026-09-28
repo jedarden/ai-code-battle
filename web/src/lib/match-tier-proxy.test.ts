@@ -92,6 +92,7 @@ describe('match-tier Pages proxy', () => {
 
   it.each([
     ['/rotate-key', 200, { bot_id: 'b_1', shared_secret: 'new-secret' }],
+    ['/revoke-key', 200, { bot_id: 'b_1', status: 'retired' }],
     ['/predict', 201, { id: 7, match_id: 'm_1', predicted: 'b_1', predictor: 'fan_1' }],
     ['/predictions/open?predictor_id=fan_1', 200, { matches: [] }],
     ['/predictions/history?predictor_id=fan_1', 200, { predictions: [] }],
@@ -113,6 +114,7 @@ describe('match-tier Pages proxy', () => {
       capabilities: {
         register: true,
         rotate_key: true,
+        revoke_key: true,
         predictions: true,
         feedback: true,
         map_votes: true,
@@ -125,7 +127,7 @@ describe('match-tier Pages proxy', () => {
     });
     const notReady = await call('/health');
     expect(notReady.body).toMatchObject({
-      capabilities: { register: false, rotate_key: false, predictions: false },
+      capabilities: { register: false, rotate_key: false, revoke_key: false, predictions: false },
     });
   });
 

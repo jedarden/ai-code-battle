@@ -136,6 +136,7 @@ describe('GET /health', () => {
     expect(res.json.capabilities).toEqual({
       register: false,
       rotate_key: false,
+      revoke_key: false,
       predictions: false,
       feedback: true,
       map_votes: true,
@@ -150,6 +151,7 @@ describe('GET /health', () => {
     expect(res.json.capabilities).toEqual({
       register: false,
       rotate_key: false,
+      revoke_key: false,
       predictions: false,
       feedback: false,
       map_votes: false,
@@ -649,6 +651,7 @@ describe('match-tier routes answer an honest 503', () => {
   const cases: [string, string][] = [
     ['/register', 'POST'],
     ['/rotate-key', 'POST'],
+    ['/revoke-key', 'POST'],
     ['/predict', 'POST'],
     ['/predictions/open', 'GET'],
     ['/predictions/history', 'GET'],
@@ -711,6 +714,7 @@ describe('method isolation — an undocumented verb never reaches its route hand
     ['/feedback/fb_1/upvote', 'POST', [['GET', 400], ['PUT', 404]]],
     ['/register', 'POST', [['GET', 404], ['DELETE', 404]]],
     ['/rotate-key', 'POST', [['GET', 404], ['PUT', 404]]],
+    ['/revoke-key', 'POST', [['GET', 404], ['PUT', 404]]],
     ['/predict', 'POST', [['GET', 404], ['DELETE', 404]]],
     ['/predictions/open', 'GET', [['POST', 404], ['DELETE', 404]]],
     ['/predictions/history', 'GET', [['POST', 404], ['PUT', 404]]],

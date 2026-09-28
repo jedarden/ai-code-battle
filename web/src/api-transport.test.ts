@@ -19,6 +19,7 @@ import {
 import {
   registerBot,
   rotateApiKey,
+  revokeApiKey,
   fetchPredictionHistory,
   fetchOpenPredictions,
   submitPrediction,
@@ -141,6 +142,19 @@ describe('client functions against the live transport', () => {
     expect(result.shared_secret).toBe('new-key');
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ bot_id: 'bot-1', shared_secret: 'current-key' });
     expect(calls[0]?.url).toContain('/api/rotate-key');
+  });
+
+  it('revokeApiKey posts to /api/revoke-key without accepting a replacement', async () => {
+    mockFetch(
+      [['/api/revoke-key', () => jsonResponse({ bot_id: 'bot-1', status: 'retired' })]],
+      htmlFallback,
+    );
+
+    const result = await revokeApiKey('bot-1', 'current-key');
+
+    expect(result).toEqual({ success: true, bot_id: 'bot-1', status: 'retired' });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ bot_id: 'bot-1', shared_secret: 'current-key' });
+    expect(calls[0]?.url).toContain('/api/revoke-key');
   });
 
   it('map voting round-trips and mints a stable voter id', async () => {
