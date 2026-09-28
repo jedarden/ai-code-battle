@@ -98,7 +98,11 @@ func prepareRun(ctx context.Context, root string, t Target) (string, []string, e
 		}
 		build := exec.CommandContext(buildCtx, t.Build[0], t.Build[1:]...)
 		build.Dir = dir
-		build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
+		// The conformance suite also runs from git archives during the
+		// definition-of-done gate. Those extracts intentionally have no .git
+		// directory, so Go's default VCS stamping would make an otherwise
+		// reproducible startup check fail before the bot is booted.
+		build.Env = append(os.Environ(), "GOFLAGS=-mod=mod -buildvcs=false")
 		if out, err := build.CombinedOutput(); err != nil {
 			return "", nil, fmt.Errorf("build %s: %v\n%s", t.Name, err, tail(out, 4000))
 		}
