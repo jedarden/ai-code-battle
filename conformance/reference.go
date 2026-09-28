@@ -17,8 +17,19 @@ import (
 // signature verification, and strict schema enforcement. The suite must pass
 // cleanly against it (TestSuiteAgainstReference) and the engine's own signer
 // must agree with it (TestGoldenVectors). It is also usable as a local
-// stand-in bot when exercising the harness itself.
+// stand-in bot when exercising the harness itself. The unbound form accepts
+// any non-empty bot ID because the wire MAC deliberately does not cover that
+// header; use ReferenceBotHandlerForBotID when the caller has separately
+// provisioned an expected identifier and wants to enforce identity hygiene.
 func ReferenceBotHandler(secret string) http.Handler {
+	return ReferenceBotHandlerForBotID(secret, "")
+}
+
+// ReferenceBotHandlerForBotID adds the application-level bot-identity check
+// described by the credential lifecycle documentation. Bot IDs are public and
+// are intentionally not part of the HMAC payload, so a verifier that knows the
+// registered ID must compare it independently of signature verification.
+func ReferenceBotHandlerForBotID(secret, expectedBotID string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			if r.Method != http.MethodGet {
@@ -58,6 +69,10 @@ func ReferenceBotHandler(secret string) http.Handler {
 		botID := r.Header.Get("X-ACB-Bot-Id")
 		signature := r.Header.Get("X-ACB-Signature")
 		if matchID == "" || turnStr == "" || timestamp == "" || botID == "" || signature == "" {
+			http.Error(w, "invalid authentication", http.StatusUnauthorized)
+			return
+		}
+		if expectedBotID != "" && botID != expectedBotID {
 			http.Error(w, "invalid authentication", http.StatusUnauthorized)
 			return
 		}
