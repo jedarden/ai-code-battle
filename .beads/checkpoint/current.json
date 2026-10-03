@@ -1,37 +1,28 @@
 {
   "active_root": {
-    "path": "objects/f569a6563d9aa96aee6cde5070e6422c8b5c9e594b5abef2473a77acc7a3fa8f.jsonl",
-    "sha256": "f569a6563d9aa96aee6cde5070e6422c8b5c9e594b5abef2473a77acc7a3fa8f"
+    "path": "objects/42b256c19b3462a575cddf9d5f343d520aef13f5ac96712d3d51af32b71a1a37.jsonl",
+    "sha256": "42b256c19b3462a575cddf9d5f343d520aef13f5ac96712d3d51af32b71a1a37"
   },
   "added_paths": [
-    "current.json",
-    "forensic.jsonl",
-    "objects/f569a6563d9aa96aee6cde5070e6422c8b5c9e594b5abef2473a77acc7a3fa8f.jsonl"
+    "objects/42b256c19b3462a575cddf9d5f343d520aef13f5ac96712d3d51af32b71a1a37.jsonl"
   ],
   "attempt_outcome_count": 288,
-  "created_at": "2026-10-03T11:53:56.140652828Z",
+  "created_at": "2026-10-03T11:57:54.774546687Z",
   "deleted_paths": [
-    "objects/c693d3e97cddff97adf5ed6ed683efdd6fd810554ff837aadaea7b6669468ce9.jsonl"
+    "objects/f569a6563d9aa96aee6cde5070e6422c8b5c9e594b5abef2473a77acc7a3fa8f.jsonl"
   ],
-  "event_count": 7801,
-  "generation_id": "gen-f28233b5debc0eace142db245e490967",
+  "event_count": 7803,
+  "generation_id": "gen-12eae501397d8b6dc3ad4cf9496a9f33",
   "issue_count": 719,
   "mode": "monolithic",
-  "previous_generation_reset": true,
   "receipt_count": 3,
-  "redaction_epoch_id": "0b1ac9c482756084f2c963035174c9d52c43c20a74c0d726f5e27bd02d2b25ce",
   "redaction_record_count": 20,
-  "replaced_paths": [],
-  "schema_version": 1,
-  "snapshot_sequence": 7801,
-  "store_uuid": "a776f3dc-810b-90ef-7af3-2262d139d5d9",
-  "superseded_generations": [
-    "gen-0f65f974cd124a37a3c64cb7c56201dd",
-    "gen-3c27dd02928e15fba869ec3cbf91447d",
-    "gen-5177ae5dedd679b0a3da9d7346b78d00",
-    "gen-9256f2a807a9451533355a79a3983d98",
-    "gen-c509b41d39692a57a9cd9b3fe33e1b74",
-    "gen-c639a727368fa459eeb4aeb6ec657163"
+  "replaced_paths": [
+    "current.json",
+    "forensic.jsonl"
   ],
-  "total_record_count": 8831
+  "schema_version": 1,
+  "snapshot_sequence": 7803,
+  "store_uuid": "a776f3dc-810b-90ef-7af3-2262d139d5d9",
+  "total_record_count": 8833
 }
