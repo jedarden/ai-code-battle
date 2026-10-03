@@ -1,28 +1,37 @@
 {
   "active_root": {
-    "path": "objects/d61b3613e0276f36d5923c2f4b37ea1c3bed47786ab7ed9703585ca4e652bf4e.jsonl",
-    "sha256": "d61b3613e0276f36d5923c2f4b37ea1c3bed47786ab7ed9703585ca4e652bf4e"
+    "path": "objects/f569a6563d9aa96aee6cde5070e6422c8b5c9e594b5abef2473a77acc7a3fa8f.jsonl",
+    "sha256": "f569a6563d9aa96aee6cde5070e6422c8b5c9e594b5abef2473a77acc7a3fa8f"
   },
   "added_paths": [
-    "objects/d61b3613e0276f36d5923c2f4b37ea1c3bed47786ab7ed9703585ca4e652bf4e.jsonl"
-  ],
-  "attempt_outcome_count": 255,
-  "created_at": "2026-09-28T03:43:13.345144615Z",
-  "deleted_paths": [
-    "objects/b1596c65bdc3335a1228e3bb42e5604a54ab2cc7d5a28526782243eacb1e0147.jsonl"
-  ],
-  "event_count": 7502,
-  "generation_id": "gen-9196c45455502f281fdddfcedb4702ae",
-  "issue_count": 704,
-  "mode": "monolithic",
-  "receipt_count": 3,
-  "redaction_record_count": 0,
-  "replaced_paths": [
     "current.json",
-    "forensic.jsonl"
+    "forensic.jsonl",
+    "objects/f569a6563d9aa96aee6cde5070e6422c8b5c9e594b5abef2473a77acc7a3fa8f.jsonl"
   ],
+  "attempt_outcome_count": 288,
+  "created_at": "2026-10-03T11:53:56.140652828Z",
+  "deleted_paths": [
+    "objects/c693d3e97cddff97adf5ed6ed683efdd6fd810554ff837aadaea7b6669468ce9.jsonl"
+  ],
+  "event_count": 7801,
+  "generation_id": "gen-f28233b5debc0eace142db245e490967",
+  "issue_count": 719,
+  "mode": "monolithic",
+  "previous_generation_reset": true,
+  "receipt_count": 3,
+  "redaction_epoch_id": "0b1ac9c482756084f2c963035174c9d52c43c20a74c0d726f5e27bd02d2b25ce",
+  "redaction_record_count": 20,
+  "replaced_paths": [],
   "schema_version": 1,
-  "snapshot_sequence": 7502,
+  "snapshot_sequence": 7801,
   "store_uuid": "a776f3dc-810b-90ef-7af3-2262d139d5d9",
-  "total_record_count": 8464
+  "superseded_generations": [
+    "gen-0f65f974cd124a37a3c64cb7c56201dd",
+    "gen-3c27dd02928e15fba869ec3cbf91447d",
+    "gen-5177ae5dedd679b0a3da9d7346b78d00",
+    "gen-9256f2a807a9451533355a79a3983d98",
+    "gen-c509b41d39692a57a9cd9b3fe33e1b74",
+    "gen-c639a727368fa459eeb4aeb6ec657163"
+  ],
+  "total_record_count": 8831
 }
