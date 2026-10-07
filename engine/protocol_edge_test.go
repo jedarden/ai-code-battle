@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -127,6 +129,28 @@ func (s *protocolEdgeServer) requests() []protocolEdgeRequest {
 	out := make([]protocolEdgeRequest, len(s.reqs))
 	copy(out, s.reqs)
 	return out
+}
+
+// waitForRequests waits for handlers belonging to requests already issued by
+// the client. A timed-out client request can still be queued before the test
+// server records it, especially when the full suite is under load.
+func (s *protocolEdgeServer) waitForRequests(t *testing.T, want int) {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if got := len(s.requests()); got >= want {
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("server saw %d requests after waiting for %d", len(s.requests()), want)
+		case <-ticker.C:
+		}
+	}
 }
 
 // edgeTestState builds a minimal two-bot visible state for edge tests.
@@ -646,23 +670,33 @@ func TestProtocolEdge_EngineRequestSignaturesMatchReadme(t *testing.T) {
 // tenth stops HTTP traffic entirely (units hold without disconnecting peers).
 func TestProtocolEdge_TenConsecutiveTimeoutsMarkCrashed(t *testing.T) {
 	secret := "edge-crash-secret"
+	const (
+		serverDelay  = 2 * time.Second
+		clientBudget = 500 * time.Millisecond
+	)
 
 	s := newProtocolEdgeServer(t, secret, func(state *VisibleState, call int) protocolEdgeAction {
-		return protocolEdgeAction{delay: 200 * time.Millisecond} // always over the 50ms client budget
+		return protocolEdgeAction{delay: serverDelay} // always over the client budget
 	})
 	bot := NewHTTPBot(s.URL(), AuthConfig{BotID: "b_edge", Secret: secret, MatchID: "m_edge"},
-		WithHTTPTimeout(50*time.Millisecond))
+		WithHTTPTimeout(clientBudget))
 
 	state := edgeTestState("m_edge", 1)
 
 	for i := 1; i <= 9; i++ {
 		if _, err := bot.GetMoves(state); err == nil {
 			t.Fatalf("failure %d: expected timeout error", i)
+		} else {
+			var timeoutErr net.Error
+			if !errors.As(err, &timeoutErr) || !timeoutErr.Timeout() {
+				t.Fatalf("failure %d: expected timeout error, got %v", i, err)
+			}
 		}
 		if bot.IsCrashed() {
 			t.Fatalf("bot crashed after %d failures, want crash only at 10", i)
 		}
 	}
+	s.waitForRequests(t, 9)
 	if got := len(s.requests()); got != 9 {
 		t.Errorf("server saw %d requests after 9 failures, want 9 (bot still polled)", got)
 	}
@@ -670,10 +704,16 @@ func TestProtocolEdge_TenConsecutiveTimeoutsMarkCrashed(t *testing.T) {
 	// Tenth consecutive failure crosses the threshold.
 	if _, err := bot.GetMoves(state); err == nil {
 		t.Fatal("expected timeout error on 10th failure")
+	} else {
+		var timeoutErr net.Error
+		if !errors.As(err, &timeoutErr) || !timeoutErr.Timeout() {
+			t.Fatalf("10th failure: expected timeout error, got %v", err)
+		}
 	}
 	if !bot.IsCrashed() {
 		t.Fatal("bot should be crashed after 10 consecutive failures")
 	}
+	s.waitForRequests(t, 10)
 
 	// Crashed bot holds silently: empty moves, no error, and no further HTTP traffic.
 	before := len(s.requests())
