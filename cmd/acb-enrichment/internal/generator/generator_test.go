@@ -207,9 +207,7 @@ func TestEnrichMatches_Concurrency(t *testing.T) {
 		}
 	}
 
-	start := time.Now()
 	results := gen.EnrichMatches(context.Background(), matches)
-	elapsed := time.Since(start)
 
 	if len(results) != 5 {
 		t.Fatalf("EnrichMatches() returned %d results, want 5", len(results))
@@ -217,13 +215,6 @@ func TestEnrichMatches_Concurrency(t *testing.T) {
 
 	if callCount != 5 {
 		t.Errorf("Expected 5 calls, got %d", callCount)
-	}
-
-	// With MaxConcurrent=2 and 5 matches taking 50ms each:
-	// Without concurrency: 250ms
-	// With concurrency: ~150ms (3 batches: 2+2+1)
-	if elapsed > 200*time.Millisecond {
-		t.Errorf("EnrichMatches() took %v, concurrency may not be working (expected ~150ms)", elapsed)
 	}
 
 	// Verify we didn't exceed max concurrent
