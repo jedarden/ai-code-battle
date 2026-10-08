@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -44,6 +45,34 @@ func credentialLifecycleEndpoint(t *testing.T) *httptest.Server {
 	}))
 }
 
+func setupCredentialReadbackSchema(t *testing.T, db *sql.DB) {
+	t.Helper()
+	// The profile route reads these columns and its win/loss query joins these
+	// tables. Keep the small credential fixture sufficient for successful
+	// public reads so a 500 cannot make the no-readback assertion pass.
+	if _, err := db.Exec(`ALTER TABLE bots
+		ADD COLUMN IF NOT EXISTS island VARCHAR(16),
+		ADD COLUMN IF NOT EXISTS generation INTEGER,
+		ADD COLUMN IF NOT EXISTS parent_ids JSONB`); err != nil {
+		t.Fatalf("extend bots table for profile readback: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS matches (
+		match_id VARCHAR(32) PRIMARY KEY,
+		winner INTEGER,
+		status VARCHAR(16) NOT NULL DEFAULT 'pending'
+	)`); err != nil {
+		t.Fatalf("create matches table for profile readback: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS match_participants (
+		match_id VARCHAR(32) NOT NULL,
+		bot_id VARCHAR(16) NOT NULL,
+		player_slot INTEGER NOT NULL,
+		PRIMARY KEY (match_id, bot_id)
+	)`); err != nil {
+		t.Fatalf("create match_participants table for profile readback: %v", err)
+	}
+}
+
 func decodeCredentialResponse(t *testing.T, response *httptest.ResponseRecorder) (string, string) {
 	t.Helper()
 	var body struct {
@@ -60,6 +89,7 @@ func TestCredentialLifecycle_RegisterDeliveryIsOneTimeAndNeverLogged(t *testing.
 	db := openTestDBAPI(t)
 	defer db.Close()
 	setupRotateKeySchema(t, db)
+	setupCredentialReadbackSchema(t, db)
 
 	encryptionKey := credentialLifecycleEncryptionKey(t)
 	backend := credentialLifecycleEndpoint(t)
@@ -119,6 +149,9 @@ func TestCredentialLifecycle_RegisterDeliveryIsOneTimeAndNeverLogged(t *testing.
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		readback := httptest.NewRecorder()
 		mux.ServeHTTP(readback, request)
+		if readback.Code != http.StatusOK {
+			t.Errorf("%s status = %d, want 200; body = %s", path, readback.Code, readback.Body.String())
+		}
 		if strings.Contains(readback.Body.String(), secret) || strings.Contains(readback.Body.String(), stored) {
 			t.Errorf("%s returned credential material", path)
 		}
@@ -129,6 +162,92 @@ func TestCredentialLifecycle_RegisterDeliveryIsOneTimeAndNeverLogged(t *testing.
 	}
 	if strings.Contains(logs.String(), secret) {
 		t.Fatal("registration log output contains the delivered secret")
+	}
+}
+
+func TestCredentialLifecycle_RotationStoresEncryptedSecretAndNeverLogsIt(t *testing.T) {
+	db := openTestDBAPI(t)
+	defer db.Close()
+	setupRotateKeySchema(t, db)
+
+	encryptionKey := credentialLifecycleEncryptionKey(t)
+	botID, err := generateID("b_", 6)
+	if err != nil {
+		t.Fatalf("generate bot ID: %v", err)
+	}
+	oldSecret := insertTestBot(t, db, encryptionKey, botID, credentialLifecycleName("RotateBot"), "active")
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM bots WHERE bot_id = $1`, botID) })
+
+	srv := &Server{cfg: Config{EncryptionKey: encryptionKey}, db: db}
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	var logs bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previousWriter) })
+
+	body, err := json.Marshal(map[string]string{"bot_id": botID, "shared_secret": oldSecret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/rotate-key", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("rotation status = %d, want 200", response.Code)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("rotation Cache-Control = %q, want no-store", got)
+	}
+	if strings.Contains(response.Body.String(), oldSecret) {
+		t.Fatal("rotation response returned the superseded secret")
+	}
+
+	var rotated struct {
+		BotID        string `json:"bot_id"`
+		SharedSecret string `json:"shared_secret"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&rotated); err != nil {
+		t.Fatalf("decode rotation response: %v", err)
+	}
+	if rotated.BotID != botID || len(rotated.SharedSecret) != 64 || rotated.SharedSecret == oldSecret {
+		t.Fatalf("rotation returned invalid credential metadata: bot ID matches=%t, secret length=%d, secret changed=%t",
+			rotated.BotID == botID, len(rotated.SharedSecret), rotated.SharedSecret != oldSecret)
+	}
+	if count := strings.Count(response.Body.String(), rotated.SharedSecret); count != 1 {
+		t.Errorf("rotation response contains its new secret %d times, want exactly once", count)
+	}
+
+	var stored string
+	if err := db.QueryRow(`SELECT shared_secret FROM bots WHERE bot_id = $1`, botID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == rotated.SharedSecret {
+		t.Fatal("rotation persisted the delivered secret in plaintext")
+	}
+	if decrypted, err := decryptSecret(stored, encryptionKey); err != nil {
+		t.Fatalf("decrypt stored rotated secret: %v", err)
+	} else if decrypted != rotated.SharedSecret {
+		t.Fatal("encrypted rotated secret does not round-trip to the delivered value")
+	}
+
+	if strings.Contains(logs.String(), oldSecret) || strings.Contains(logs.String(), rotated.SharedSecret) {
+		t.Fatal("rotation log output contains credential material")
+	}
+
+	oldCredentialBody, err := json.Marshal(map[string]string{"bot_id": botID, "shared_secret": oldSecret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCredentialRequest := httptest.NewRequest(http.MethodPost, "/api/rotate-key", bytes.NewReader(oldCredentialBody))
+	oldCredentialResponse := httptest.NewRecorder()
+	mux.ServeHTTP(oldCredentialResponse, oldCredentialRequest)
+	if oldCredentialResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("superseded credential rotation status = %d, want 401", oldCredentialResponse.Code)
+	}
+	if strings.Contains(oldCredentialResponse.Body.String(), rotated.SharedSecret) || strings.Contains(logs.String(), rotated.SharedSecret) {
+		t.Fatal("a post-rotation response or log disclosed the newly issued credential")
 	}
 }
 
