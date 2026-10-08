@@ -1,0 +1,74 @@
+# Separate push listener for the expensive, path-filtered language fleet gate.
+# The established acb-build and bot-image triggers stay independent.
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: ai-code-battle-bot-protocol-conformance-sensor
+  namespace: argo-events
+spec:
+  template:
+    container:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+  eventBusName: default
+  fetchTimeout: 3s
+  dependencies:
+    - name: acb-push-protocol-watch
+      eventSourceName: forgejo-webhooks
+      eventName: ai-code-battle
+      filters:
+        data:
+          - path: header.X-Forgejo-Event
+            type: string
+            value:
+              - push
+          - path: body.ref
+            type: string
+            value:
+              - refs/heads/main
+  triggers:
+    - template:
+        name: acb-bot-protocol-conformance-trigger
+        argoWorkflow:
+          operation: submit
+          parameters:
+            - src:
+                dependencyName: acb-push-protocol-watch
+                dataKey: body.before
+              dest: spec.arguments.parameters.2.value
+            - src:
+                dependencyName: acb-push-protocol-watch
+                dataKey: body.after
+              dest: spec.arguments.parameters.3.value
+            - src:
+                dependencyName: acb-push-protocol-watch
+                dataKey: body.after
+              dest: metadata.annotations.commit_sha
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: acb-bot-protocol-conformance-
+                namespace: argo-workflows
+                annotations:
+                  commit_sha: sensor-must-supply-commit-sha
+              spec:
+                workflowTemplateRef:
+                  name: acb-bot-protocol-conformance-gate
+                arguments:
+                  parameters:
+                    - name: git-repo
+                      value: git.ardenone.com/jedarden/ai-code-battle
+                    - name: branch
+                      value: main
+                    - name: commit-before
+                      value: sensor-must-supply-commit-before
+                    - name: commit-sha
+                      value: sensor-must-supply-commit-sha
+      conditions: acb-push-protocol-watch

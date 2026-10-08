@@ -69,6 +69,34 @@ func fleetSelection(spec string) (map[string]bool, error) {
 	return want, nil
 }
 
+// skipUnavailableTarget keeps local fleet runs useful when a developer has
+// only some language toolchains installed. CI sets ACB_CONFORMANCE_REQUIRE_ALL
+// so a missing or misconfigured runtime fails the gate instead of silently
+// reducing its language coverage.
+func skipUnavailableTarget(t *testing.T, target Target) bool {
+	t.Helper()
+	if reason := target.DescribeSkips(); reason != "" {
+		if os.Getenv("ACB_CONFORMANCE_REQUIRE_ALL") == "1" {
+			t.Fatalf("required conformance target %s is unavailable: %s", target.Name, reason)
+		}
+		t.Skipf("not runnable here: %s", reason)
+		return true
+	}
+	return false
+}
+
+func requestedFleet(t *testing.T) string {
+	t.Helper()
+	spec := os.Getenv("ACB_CONFORMANCE_FLEET")
+	if spec == "" || testing.Short() {
+		if os.Getenv("ACB_CONFORMANCE_REQUIRE_ALL") == "1" {
+			t.Fatal("strict conformance mode requires ACB_CONFORMANCE_FLEET and cannot run with -short")
+		}
+		t.Skip("fleet sweep is opt-in: set ACB_CONFORMANCE_FLEET=all (or a comma-separated target list)")
+	}
+	return spec
+}
+
 // TestFleetConformance boots every registered target against the full golden
 // case table. It is opt-in — the sweep builds and boots real bots across six
 // toolchains and does not belong in the default gate:
@@ -80,10 +108,7 @@ func fleetSelection(spec string) (map[string]bool, error) {
 // missing from the environment are reported as skipped, never silently
 // dropped.
 func TestFleetConformance(t *testing.T) {
-	spec := os.Getenv("ACB_CONFORMANCE_FLEET")
-	if spec == "" || testing.Short() {
-		t.Skip("fleet sweep is opt-in: set ACB_CONFORMANCE_FLEET=all (or a comma-separated target list)")
-	}
+	spec := requestedFleet(t)
 
 	want, err := fleetSelection(spec)
 	if err != nil {
@@ -100,8 +125,8 @@ func TestFleetConformance(t *testing.T) {
 		}
 		target := target
 		t.Run(target.Name, func(t *testing.T) {
-			if skip := target.DescribeSkips(); skip != "" {
-				t.Skipf("not runnable here: %s", skip)
+			if skipUnavailableTarget(t, target) {
+				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 			defer cancel()

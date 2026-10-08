@@ -2,7 +2,6 @@ package conformance
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 )
@@ -24,8 +23,8 @@ func TestMissingSecretFailFast(t *testing.T) {
 		}
 		target := target
 		t.Run(target.Name, func(t *testing.T) {
-			if skip := target.DescribeSkips(); skip != "" {
-				t.Skipf("not runnable here: %s", skip)
+			if skipUnavailableTarget(t, target) {
+				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -45,10 +44,7 @@ func TestMissingSecretFailFast(t *testing.T) {
 //
 //	ACB_CONFORMANCE_FLEET=all go test ./conformance/ -run TestFleetMissingSecretFailFast -v -timeout 60m
 func TestFleetMissingSecretFailFast(t *testing.T) {
-	spec := os.Getenv("ACB_CONFORMANCE_FLEET")
-	if spec == "" || testing.Short() {
-		t.Skip("fleet sweep is opt-in: set ACB_CONFORMANCE_FLEET=all (or a comma-separated target list)")
-	}
+	spec := requestedFleet(t)
 	want, err := fleetSelection(spec)
 	if err != nil {
 		t.Fatal(err)

@@ -168,6 +168,39 @@ func TestSuiteAgainstReference(t *testing.T) {
 	}
 }
 
+// TestSuiteRejectsSpawnOrders keeps the strategy-bot contract honest even
+// though the engine safely ignores unknown additive response fields. A bot
+// must not claim it can choose when or where to spawn: that phase belongs to
+// the engine, and the documented response contains moves only.
+func TestSuiteRejectsSpawnOrders(t *testing.T) {
+	const secret = DefaultConformanceSecret
+	requestBody := buildBody(func(map[string]interface{}) {})
+	turn := strconv.Itoa(ConformanceTurn)
+	timestamp := canonicalTimestamp(time.Now())
+	for _, field := range []string{"spawn", "spawns"} {
+		t.Run(field, func(t *testing.T) {
+			responseBody := []byte(`{"moves":[],"` + field + `":[]}`)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-ACB-Signature", signPayload(secret, CanonicalResponsePayload(ConformanceMatchID, ConformanceTurn, responseBody)))
+				_, _ = w.Write(responseBody)
+			})
+			server := httptest.NewServer(handler)
+			t.Cleanup(server.Close)
+			result := RunCase(t.Context(), SuiteClient(5*time.Second), server.URL, secret, Case{
+				Name:        "spawn order is outside the response contract",
+				ContentType: "application/json",
+				Headers:     authHeaders(secret, ConformanceMatchID, turn, timestamp, requestBody, nil),
+				Body:        requestBody,
+				Signed:      true,
+			})
+			if result.Pass || !strings.Contains(result.Detail, "spawn order") {
+				t.Fatalf("spawn-order response result = %+v, want a schema rejection", result)
+			}
+		})
+	}
+}
+
 // laxResponse writes the 200/moves/signed reply a non-strict bot would,
 // signing the response with the parsed integer turn the way a real acceptor
 // canonicalizes before signing.

@@ -1,0 +1,150 @@
+# Cross-language bot protocol conformance gate.
+# Sync to: declarative-config/k8s/iad-ci/argo-workflows/acb-bot-protocol-conformance-gate-workflowtemplate.yml
+# Runs the full target registry only when a push changes the protocol, harness,
+# or a bot/starter implementation. The push-range check lives in the workflow
+# because Argo Events filters cannot glob over the Forgejo commits arrays.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: acb-bot-protocol-conformance-gate
+  namespace: argo-workflows
+  labels:
+    app: acb-bot-protocol-conformance-gate
+spec:
+  synchronization:
+    semaphores:
+      - configMapKeyRef:
+          name: repo-ci-semaphores
+          key: ai-code-battle
+  activeDeadlineSeconds: 14400
+  entrypoint: protocol-gate
+  serviceAccountName: argo-workflow
+  podGC:
+    strategy: OnPodCompletion
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
+  arguments:
+    parameters:
+      - name: git-repo
+        value: git.ardenone.com/jedarden/ai-code-battle
+      - name: branch
+        value: main
+      - name: commit-before
+        value: ""
+      - name: commit-sha
+        value: ""
+  templates:
+    - name: protocol-gate
+      activeDeadlineSeconds: 10800
+      container:
+        image: node:22.15.0-bookworm
+        command: [sh, -c]
+        args:
+          - |
+            set -eu
+            BEFORE='{{workflow.parameters.commit-before}}'
+            AFTER='{{workflow.parameters.commit-sha}}'
+            BRANCH='{{workflow.parameters.branch}}'
+
+            cat >/tmp/git-askpass <<'EOF'
+            #!/bin/sh
+            case "$1" in
+              *Username*) echo "x-token" ;;
+              *Password*) printf '%s\n' "$GIT_TOKEN" ;;
+            esac
+            EOF
+            chmod 700 /tmp/git-askpass
+            export GIT_ASKPASS=/tmp/git-askpass GIT_TERMINAL_PROMPT=0
+            git clone --quiet --depth 1 --branch "$BRANCH" \
+              "https://{{workflow.parameters.git-repo}}.git" /src
+            cd /src
+            git fetch --quiet --depth=64 origin "$BRANCH"
+            if [ -n "$AFTER" ]; then
+              git fetch --quiet --depth=64 origin "$AFTER" || true
+            else
+              AFTER="$(git rev-parse "origin/$BRANCH")"
+            fi
+            if [ -n "$BEFORE" ] && ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              git fetch --quiet --depth=64 origin "$BEFORE" || true
+            fi
+            unset GIT_TOKEN GIT_ASKPASS GIT_TERMINAL_PROMPT
+            rm -f /tmp/git-askpass
+
+            git cat-file -e "$AFTER^{commit}"
+            case "$BEFORE" in
+              ""|0000000000000000000000000000000000000000)
+                BEFORE="$(git rev-parse "$AFTER^" 2>/dev/null || true)"
+                ;;
+            esac
+            if [ -n "$BEFORE" ] && ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              BEFORE="$(git rev-parse "$AFTER^" 2>/dev/null || true)"
+            fi
+            git checkout --quiet --detach "$AFTER"
+
+            if [ -n "$BEFORE" ]; then
+              CHANGED="$(git diff --name-only "$BEFORE" "$AFTER")"
+            else
+              CHANGED="$(git ls-tree -r --name-only "$AFTER")"
+            fi
+            MATCHED="$(printf '%s\n' "$CHANGED" | grep -E '^(bots/|starters/|conformance/|docs/bot-protocol\.md$|go\.mod$|go\.sum$)' || true)"
+            if [ -z "$MATCHED" ]; then
+              echo "No bot protocol, starter, or conformance paths changed; fleet gate skipped."
+              exit 0
+            fi
+            echo "Running bot protocol conformance for changed paths:"
+            printf '%s\n' "$MATCHED"
+
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              build-essential ca-certificates libssl-dev maven openjdk-17-jdk-headless \
+              php-cli python3 pkg-config
+            rm -rf /var/lib/apt/lists/*
+
+            curl -fsSL https://go.dev/dl/go1.25.0.linux-amd64.tar.gz -o /tmp/go.tar.gz
+            tar -C /usr/local -xzf /tmp/go.tar.gz
+            rm /tmp/go.tar.gz
+            export PATH="/usr/local/go/bin:$PATH"
+
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup.sh
+            sh /tmp/rustup.sh -y --profile minimal --default-toolchain 1.89.0
+            export PATH="$HOME/.cargo/bin:$PATH"
+            rm /tmp/rustup.sh
+
+            curl --proto '=https' --tlsv1.2 -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+            bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet --no-path
+            export DOTNET_ROOT=/usr/share/dotnet
+            export PATH="/usr/share/dotnet:$PATH"
+            rm /tmp/dotnet-install.sh
+
+            # Replace the clone shell with a clean environment before tests
+            # start. Bot processes cannot inherit or inspect its Git token.
+            exec env -i \
+              PATH="$PATH" \
+              HOME="$HOME" \
+              LANG=C.UTF-8 \
+              CGO_ENABLED=1 \
+              GOFLAGS=-buildvcs=false \
+              DOTNET_ROOT=/usr/share/dotnet \
+              DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+              DOTNET_NOLOGO=1 \
+              ACB_CONFORMANCE_FLEET=all \
+              ACB_CONFORMANCE_REQUIRE_ALL=1 \
+              go test ./conformance/... \
+                -run '^(TestFleetConformance|TestFleetMissingSecretFailFast)$' \
+                -count=1 -timeout 120m -v
+        env:
+          - name: GIT_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: forgejo-webhook-token
+                key: token
+        resources:
+          requests:
+            cpu: 1500m
+            memory: 3Gi
+            ephemeral-storage: 8Gi
+          limits:
+            cpu: 3000m
+            memory: 5Gi
+            ephemeral-storage: 16Gi

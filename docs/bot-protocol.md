@@ -86,7 +86,7 @@ and does not return a replacement secret. New clients must use
 
 ### Local development
 
-Local development needs no registration: the author is both parties, so any non-empty secret works. `SHARED_SECRET=test` in starter quick-starts is a placeholder chosen for the example, not a credential, and a locally chosen secret never reaches the platform. To exercise the real machinery against a bot under development, run it through the conformance harness: it boots the target with its own documented suite key and drives the byte-level contract of this document. Test suites in this repository generate secrets at runtime with `engine.GenerateSecret(rand.Reader)` and assert on verification outcomes, never on secret values; no test embeds key material.
+Local development needs no registration: the author is both parties, so any non-empty secret works. `SHARED_SECRET=test` in starter quick-starts is a placeholder chosen for the example, not a credential, and a locally chosen secret never reaches the platform. To exercise the real machinery against a bot under development, run it through the conformance harness: it boots the target with a fixed, public test vector and drives the byte-level contract of this document. That value is test data, not a bot credential; CI does not supply production bot secrets to the suite. Tests that exercise credential generation use `engine.GenerateSecret(rand.Reader)` and assert on verification outcomes, never on secret values.
 
 ## Transport
 

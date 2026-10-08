@@ -162,6 +162,18 @@ func checkTurnResponse(res CaseResult, resp *http.Response, raw []byte, secret s
 		res.Detail = "response signature does not verify over the exact response bytes ({match_id}.{turn}.{sha256_hex(raw_body)})"
 		return res
 	}
+	// Spawning is engine-automatic. Although the engine ignores unknown
+	// additive response fields, these named fields are common, misleading
+	// attempts to issue spawn orders and are explicitly outside the bot API.
+	var responseFields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &responseFields); err == nil {
+		for _, field := range []string{"spawn", "spawns"} {
+			if _, found := responseFields[field]; found {
+				res.Detail = fmt.Sprintf("response contains %q spawn order; spawning is engine-automatic", field)
+				return res
+			}
+		}
+	}
 
 	var response struct {
 		Moves *[]json.RawMessage `json:"moves"`

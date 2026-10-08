@@ -93,6 +93,23 @@ themselves on `testing.Short()` (e.g. `engine/integration_test.go`), so:
   EOF
   ```
 
+## Cross-language bot protocol gate
+
+The separate `acb-bot-protocol-conformance-gate` runs the executable suite
+against every registered strategy bot and starter when a push changes
+`bots/`, `starters/`, `conformance/`, `docs/bot-protocol.md`, `go.mod`, or
+`go.sum`. It receives the push's before/after SHAs and diffs the pushed range
+inside the workflow, so ordinary engine or website pushes do not pay for the
+multi-language builds. `ACB_CONFORMANCE_REQUIRE_ALL=1` turns a missing runtime
+into a failure instead of a skipped target.
+
+The runner uses the suite's public test vector only. The Forgejo clone token is
+cleared before the test command starts, and no registered bot receives a
+production credential. The gate's WorkflowTemplate and Sensor are maintained
+in `declarative-config/k8s/iad-ci/argo-workflows/` and
+`declarative-config/k8s/iad-ci/argo-events/` respectively; the corresponding
+source copies are in this repository's `manifests/` directory.
+
 All three templates live in
 `declarative-config/k8s/iad-ci/argo-workflows/`
 (`acb-build-workflowtemplate.yml`,
