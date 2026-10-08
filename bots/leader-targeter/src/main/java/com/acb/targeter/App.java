@@ -2,6 +2,9 @@ package com.acb.targeter;
 
 import io.javalin.Javalin;
 import io.javalin.http.Context;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -25,6 +28,8 @@ import java.util.HexFormat;
 public class App {
     private static final int DEFAULT_PORT = 8085;
     private static final long TIMESTAMP_TOLERANCE_SECONDS = 30;
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private static String SECRET;
     private static final LeaderTargeterStrategy STRATEGY = new LeaderTargeterStrategy();
 
@@ -49,6 +54,11 @@ public class App {
     }
 
     private static void handleTurn(Context ctx) {
+        if (!"application/json".equals(ctx.header("Content-Type"))) {
+            ctx.status(401).result("Invalid content type");
+            return;
+        }
+
         // Extract auth headers
         String matchId = ctx.header("X-ACB-Match-Id");
         String turnStr = ctx.header("X-ACB-Turn");
@@ -73,12 +83,15 @@ public class App {
             return;
         }
 
-        // Parse game state
-        GameState state;
+        JsonNode request;
         try {
-            state = GameState.fromJson(new String(body, StandardCharsets.UTF_8));
+            request = ProtocolSchema.parse(body);
         } catch (Exception e) {
             ctx.status(400).result("Invalid JSON: " + e.getMessage());
+            return;
+        }
+        if (!ProtocolSchema.isValid(request)) {
+            ctx.status(400).result("Invalid request schema");
             return;
         }
 
@@ -89,9 +102,18 @@ public class App {
             ctx.status(401).result("Invalid request identity");
             return;
         }
-        if (turn < 0 || !Integer.toString(turn).equals(turnStr) || state.getTurn() == null
-                || !matchId.equals(state.getMatchId()) || state.getTurn() != turn) {
+        if (turn < 0 || !Integer.toString(turn).equals(turnStr)
+                || !matchId.equals(request.get("match_id").asText())
+                || request.get("turn").intValue() != turn) {
             ctx.status(401).result("Invalid request identity");
+            return;
+        }
+
+        GameState state;
+        try {
+            state = MAPPER.treeToValue(request, GameState.class);
+        } catch (Exception e) {
+            ctx.status(400).result("Invalid game state");
             return;
         }
 
@@ -113,6 +135,7 @@ public class App {
 
     private static boolean verifySignature(String secret, String matchId, String turn,
                                            String timestamp, byte[] body, String signature) {
+        if (!signature.matches("[0-9a-f]{64}")) return false;
         try {
             long timestampSeconds = Long.parseLong(timestamp);
             long now = Instant.now().getEpochSecond();

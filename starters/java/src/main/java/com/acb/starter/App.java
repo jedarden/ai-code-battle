@@ -1,6 +1,8 @@
 package com.acb.starter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -23,7 +25,8 @@ public class App {
     private static final String[] DIRECTIONS = {"N", "E", "S", "W"};
     private static final long TIMESTAMP_TOLERANCE_SECONDS = 30;
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static String secret;
 
@@ -48,6 +51,11 @@ public class App {
     }
 
     private static void handleTurn(Context ctx) {
+        if (!"application/json".equals(ctx.header("Content-Type"))) {
+            ctx.status(401).result("Invalid content type");
+            return;
+        }
+
         String signature = ctx.header("X-ACB-Signature");
         String matchId = ctx.header("X-ACB-Match-Id");
         String turnStr = ctx.header("X-ACB-Turn");
@@ -70,20 +78,34 @@ public class App {
             return;
         }
 
+        final JsonNode request;
         try {
-            GameState state = MAPPER.readValue(body, GameState.class);
-            final int turn;
-            try {
-                turn = Integer.parseInt(turnStr);
-            } catch (NumberFormatException e) {
-                ctx.status(401).result("Invalid request identity");
-                return;
-            }
-            if (turn < 0 || !Integer.toString(turn).equals(turnStr) || state.turn == null
-                    || !matchId.equals(state.match_id) || state.turn != turn) {
-                ctx.status(401).result("Invalid request identity");
-                return;
-            }
+            request = ProtocolSchema.parse(body);
+        } catch (Exception e) {
+            ctx.status(400).result("Invalid JSON");
+            return;
+        }
+        if (!ProtocolSchema.isValid(request)) {
+            ctx.status(400).result("Invalid request schema");
+            return;
+        }
+
+        final int turn;
+        try {
+            turn = Integer.parseInt(turnStr);
+        } catch (NumberFormatException e) {
+            ctx.status(401).result("Invalid request identity");
+            return;
+        }
+        if (turn < 0 || !Integer.toString(turn).equals(turnStr)
+                || !matchId.equals(request.get("match_id").asText())
+                || request.get("turn").intValue() != turn) {
+            ctx.status(401).result("Invalid request identity");
+            return;
+        }
+
+        try {
+            GameState state = MAPPER.treeToValue(request, GameState.class);
 
             if (state.turn == 0) {
                 String seasonId = state.config.season_id != null ? state.config.season_id : "";
@@ -151,6 +173,7 @@ public class App {
 
     static boolean verifySignature(String matchId, String turn, String timestamp,
                                     byte[] body, String signature) {
+        if (!signature.matches("[0-9a-f]{64}")) return false;
         try {
             long timestampSeconds = Long.parseLong(timestamp);
             long now = Instant.now().getEpochSecond();

@@ -33,6 +33,9 @@ var jsonOptions = new JsonSerializerOptions
 
 app.MapPost("/turn", (HttpContext ctx) =>
 {
+    if (ctx.Request.ContentType != "application/json")
+        return Results.Unauthorized();
+
     var signature = ctx.Request.Headers["X-ACB-Signature"].FirstOrDefault() ?? "";
     var matchId = ctx.Request.Headers["X-ACB-Match-Id"].FirstOrDefault() ?? "";
     var turnStr = ctx.Request.Headers["X-ACB-Turn"].FirstOrDefault() ?? "";
@@ -62,14 +65,11 @@ app.MapPost("/turn", (HttpContext ctx) =>
     try
     {
         using var document = JsonDocument.Parse(body);
-        if (document.RootElement.ValueKind != JsonValueKind.Object ||
-            !document.RootElement.TryGetProperty("match_id", out var bodyMatchId) ||
-            bodyMatchId.ValueKind != JsonValueKind.String ||
-            bodyMatchId.GetString() != matchId ||
-            !document.RootElement.TryGetProperty("turn", out var bodyTurn) ||
-            bodyTurn.ValueKind != JsonValueKind.Number ||
-            !bodyTurn.TryGetInt32(out var bodyTurnNumber) ||
-            bodyTurnNumber != turn)
+        var root = document.RootElement;
+        if (!ProtocolSchema.IsValidRequest(root))
+            return Results.BadRequest("Invalid request schema");
+        if (root.GetProperty("match_id").GetString() != matchId ||
+            root.GetProperty("turn").GetInt32() != turn)
             return Results.Unauthorized();
 
         state = JsonSerializer.Deserialize<GameState>(body, jsonOptions);
@@ -95,6 +95,10 @@ app.Run();
 static bool VerifySignature(string secret, string matchId, string turn,
     string timestamp, byte[] body, string signature)
 {
+    if (signature.Length != 64 || signature.Any(c =>
+            !(c is >= '0' and <= '9' or >= 'a' and <= 'f')))
+        return false;
+
     var bodyHash = Sha256Hex(body);
     var signingString = $"{matchId}.{turn}.{timestamp}.{bodyHash}";
     var expected = HmacSha256(secret, signingString);

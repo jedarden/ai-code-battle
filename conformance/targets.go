@@ -87,7 +87,7 @@ func Targets() []Target {
 		{Name: "bots/rusher", Lang: "rust", Build: cargoBuildLocked(), BuildTimeoutHint: cargoBuildTimeout, Binary: "rusher-bot", EnvVarNames: envBot},
 		{Name: "bots/zone-driver", Lang: "rust", Build: cargoBuildLocked(), BuildTimeoutHint: cargoBuildTimeout, Binary: "zone-driver-bot", EnvVarNames: envBot},
 		// C# strategy bots (dotnet publish into the target's own bin/).
-		{Name: "bots/defender", Lang: "csharp", Build: dotnetPublish(), BuildTimeoutHint: dotnetBuildTimeout, Run: []string{"dotnet", filepath.Join("bin", "defender.dll")}, EnvVarNames: envBot},
+		{Name: "bots/defender", Lang: "csharp", Build: dotnetPublish("defender.csproj"), BuildTimeoutHint: dotnetBuildTimeout, Run: []string{"dotnet", filepath.Join("bin", "defender.dll")}, EnvVarNames: envBot},
 		// Java strategy bots (maven shade jar, target/<artifact>-<version>.jar).
 		{Name: "bots/hunter", Lang: "java", Build: mavenPackage(), BuildTimeoutHint: mavenBuildTimeout, Run: []string{"java", "-jar", filepath.Join("target", "hunter-bot-1.0.0.jar")}, EnvVarNames: envBot},
 		{Name: "bots/leader-targeter", Lang: "java", Build: mavenPackage(), BuildTimeoutHint: mavenBuildTimeout, Run: []string{"java", "-jar", filepath.Join("target", "leader-targeter-bot-1.0.0.jar")}, EnvVarNames: envBot},
@@ -100,7 +100,7 @@ func Targets() []Target {
 		{Name: "starters/javascript", Lang: "node", Run: []string{"node", "index.js"}, EnvVarNames: envBot},
 		{Name: "starters/typescript", Lang: "typescript", Build: npmCiBuild(), BuildTimeoutHint: npmBuildTimeout, Run: []string{"node", "dist/index.js"}, EnvVarNames: envBot},
 		{Name: "starters/rust", Lang: "rust", Build: cargoBuildUnlocked(), BuildTimeoutHint: cargoBuildTimeout, Binary: "acb-starter-bot", EnvVarNames: envStarter},
-		{Name: "starters/csharp", Lang: "csharp", Build: dotnetPublish(), BuildTimeoutHint: dotnetBuildTimeout, Run: []string{"dotnet", filepath.Join("bin", "acb-starter-csharp.dll")}, EnvVarNames: envBot},
+		{Name: "starters/csharp", Lang: "csharp", Build: dotnetPublish("acb-starter-csharp.csproj"), BuildTimeoutHint: dotnetBuildTimeout, Run: []string{"dotnet", filepath.Join("bin", "acb-starter-csharp.dll")}, EnvVarNames: envBot},
 		{Name: "starters/java", Lang: "java", Build: mavenPackage(), BuildTimeoutHint: mavenBuildTimeout, Run: []string{"java", "-jar", filepath.Join("target", "starter-bot-1.0.0.jar")}, EnvVarNames: envBot},
 		{Name: "starters/php", Lang: "php", Run: []string{"php", "index.php"}, EnvVarNames: envBot},
 	}
@@ -138,8 +138,8 @@ func mavenPackage() []string {
 	return []string{"mvn", "-q", "-DskipTests", "package"}
 }
 
-func dotnetPublish() []string {
-	return []string{"dotnet", "publish", "-c", "Release", "-o", "bin"}
+func dotnetPublish(project string) []string {
+	return []string{"dotnet", "publish", "-c", "Release", "-o", "bin", project}
 }
 
 // npmCiBuild installs the starter's locked dev dependencies (tsc is not
