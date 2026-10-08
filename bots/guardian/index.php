@@ -236,6 +236,7 @@ function send_response($conn, int $status, string $contentType, string $body, ar
 
     $response = "HTTP/1.1 $status $statusText\r\n";
     $response .= "Content-Type: $contentType\r\n";
+    $response .= "Connection: close\r\n";
     $response .= "Content-Length: " . strlen($body) . "\r\n";
     foreach ($extraHeaders as $header) {
         $response .= "$header\r\n";
