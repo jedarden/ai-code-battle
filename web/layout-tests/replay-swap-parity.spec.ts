@@ -38,26 +38,14 @@
  * after the swap has settled (skeleton.test.ts's "ships the fade the swap
  * runs" holds the shipped CSS text this run depends on).
  *
- * Three comparisons are deliberately narrower than "the whole box":
- *  - the .canvas-wrapper's height: the live wrapper gains #no-replay, whose
- *    .no-replay-message rule pads 60px around the same body-text line the
- *    skeleton stands in for with a bare one-line bar, so the wrapper grows
- *    when the content lands and anything stacked under it moves down with it.
- *    On phone it cannot grow: mobile.css pins the wrapper to an aspect-ratio
- *    square with overflow hidden, which is also why the phone sweep can
- *    compare the sidebar's top. The canvas region inside the wrapper — the
- *    surface the page is for — is compared in full at every width.
- *  - the .replay-sidebar's top at 768px, for the same reason: there the two
- *    columns stack and the live main column is the one that grew, so the
- *    sidebar hangs lower on the live side. Its x and width are what the
- *    layout grid assigns and no content size can move, so they are compared
- *    at every width.
- *  - the .mobile-event-timeline's top, for the same reason one level down:
- *    the ribbon hangs below the canvas wrapper, so wherever the live wrapper
- *    grows (everywhere but phone) the ribbon lands lower on the live side.
- *    Until the ribbon went page-wide (2026-09-25) the container was hidden on
- *    both sides at those widths and the narrowing was moot; its height is
- *    still compared at every width, and on phone its top joins them.
+ * Some comparisons are deliberately narrower than "the whole box":
+ *  - the .canvas-wrapper's height and every block below it: the skeleton's
+ *    no-replay stand-in reserves the live message's 24px line box plus its
+ *    60px top and bottom padding, so the canvas stack stays the same height
+ *    when replayPageMarkup's page-local style arrives.
+ *  - the .replay-sidebar's top and the .mobile-event-timeline's top at every
+ *    width: the shared main-column height is now identical, including in the
+ *    640-900px stacked band where a mismatch would otherwise move both.
  */
 
 import { expect, test } from '@playwright/test';
@@ -163,7 +151,7 @@ const REGIONS: ReadonlyArray<readonly [
   // The video surface: the stand-in tracks the attribute-default canvas's
   // 2:1 box, so the region the page exists for must not move or resize.
   ['canvas region', '.canvas-wrapper > .skeleton-bar', '.canvas-wrapper > canvas', FIELDS],
-  ['canvas wrapper', '.canvas-wrapper', '.canvas-wrapper', ['top', 'left', 'width']],
+  ['canvas wrapper', '.canvas-wrapper', '.canvas-wrapper', FIELDS],
   // The phone chrome, and the two blocks inside it the stand-ins mirror.
   ['mobile controls', '.mobile-replay-controls', '.mobile-replay-controls', FIELDS],
   ['playback bar', '.mobile-playback-bar', '.mobile-playback-bar', FIELDS],
@@ -173,11 +161,7 @@ const REGIONS: ReadonlyArray<readonly [
     '.mobile-replay-controls > input[type="range"]',
     FIELDS,
   ],
-  // The event timeline container: left/width/height only. Its top hangs below
-  // the canvas wrapper, which the live side alone may grow (#no-replay, see
-  // above) — hidden on both sides until the ribbon went page-wide, so this
-  // narrowing only bites from 640px up; on phone the square wrapper pins the
-  // top and the sweep below compares it.
+  // The event timeline container: left/width/height plus its now-stable top.
   [
     'event timeline',
     '.mobile-event-timeline',
@@ -186,8 +170,7 @@ const REGIONS: ReadonlyArray<readonly [
   ],
   // Content-sized live panels over fixed-height stand-ins (see
   // skeletonReplay's derivation notes), so the column's x/width are the
-  // contract; its top joins them at the widths that stack the columns and
-  // keep the two main columns content-identical.
+  // contract; its top is checked separately at every viewport.
   ['sidebar', '.replay-sidebar', '.replay-sidebar', ['left', 'width']],
 ];
 
@@ -302,28 +285,14 @@ test.describe('replay skeleton → content swap parity', () => {
         await measureRegions(page, 'live')
       );
 
-      // Wherever the two sides stack a content-identical main column — phone
-      // (the square wrapper cannot grow) and desktop (the columns sit side by
-      // side, so both tops are the layout's) — the sidebar hangs at the same
-      // y too. The 640-900px stack is the exception; see the header note.
-      if (width === 375 || width === 1280) {
-        const [skeletonSidebar, liveSidebar] = await Promise.all([
-          boxWithinSection(page, '.replay-sidebar', 'skeleton-fixture'),
-          boxWithinSection(page, '.replay-sidebar', 'live-fixture'),
-        ]);
-        within(skeletonSidebar.top, liveSidebar.top, 'sidebar: top');
-      }
-
-      // On phone the square wrapper also pins the event timeline's top (it is
-      // region-compared without one above). At 768/1280 the live wrapper
-      // grows by #no-replay, so nothing below it shares a y across the swap.
-      if (width === 375) {
-        const [skeletonTimeline, liveTimeline] = await Promise.all([
-          boxWithinSection(page, '.mobile-event-timeline', 'skeleton-fixture'),
-          boxWithinSection(page, '.mobile-event-timeline', 'live-fixture'),
-        ]);
-        within(skeletonTimeline.top, liveTimeline.top, 'event timeline: top');
-      }
+      const [skeletonSidebar, liveSidebar, skeletonTimeline, liveTimeline] = await Promise.all([
+        boxWithinSection(page, '.replay-sidebar', 'skeleton-fixture'),
+        boxWithinSection(page, '.replay-sidebar', 'live-fixture'),
+        boxWithinSection(page, '.mobile-event-timeline', 'skeleton-fixture'),
+        boxWithinSection(page, '.mobile-event-timeline', 'live-fixture'),
+      ]);
+      within(skeletonSidebar.top, liveSidebar.top, 'sidebar: top');
+      within(skeletonTimeline.top, liveTimeline.top, 'event timeline: top');
     });
 
     test(`the swap moves nothing between the pre- and post-swap cascades at ${width}px`, async ({ page }) => {
@@ -343,30 +312,14 @@ test.describe('replay skeleton → content swap parity', () => {
       await openReplayFixture(page, buildPostSwapHtml());
       compareRegions(preSwap, await measureRegions(page, 'live'));
 
-      // Same exception as the same-document sweep above: wherever the columns
-      // stack and the main column is content-sized, the live sidebar hangs
-      // lower — its x and width are the layout's and are compared in full.
-      if (width === 375 || width === 1280) {
-        await openReplayFixture(page, buildPreSwapHtml());
-        const preSwapSidebar = await boxWithinSection(page, '.replay-sidebar', 'skeleton-fixture');
-        await openReplayFixture(page, buildPostSwapHtml());
-        const liveSidebar = await boxWithinSection(page, '.replay-sidebar', 'live-fixture');
-        within(preSwapSidebar.top, liveSidebar.top, 'sidebar: top');
-      }
-
-      // Same phone-only timeline-top check as the same-document sweep: the
-      // square wrapper pins it, the content-sized wrapper at 768/1280 cannot.
-      if (width === 375) {
-        await openReplayFixture(page, buildPreSwapHtml());
-        const preSwapTimeline = await boxWithinSection(
-          page,
-          '.mobile-event-timeline',
-          'skeleton-fixture'
-        );
-        await openReplayFixture(page, buildPostSwapHtml());
-        const liveTimeline = await boxWithinSection(page, '.mobile-event-timeline', 'live-fixture');
-        within(preSwapTimeline.top, liveTimeline.top, 'event timeline: top');
-      }
+      await openReplayFixture(page, buildPreSwapHtml());
+      const preSwapSidebar = await boxWithinSection(page, '.replay-sidebar', 'skeleton-fixture');
+      const preSwapTimeline = await boxWithinSection(page, '.mobile-event-timeline', 'skeleton-fixture');
+      await openReplayFixture(page, buildPostSwapHtml());
+      const liveSidebar = await boxWithinSection(page, '.replay-sidebar', 'live-fixture');
+      const liveTimeline = await boxWithinSection(page, '.mobile-event-timeline', 'live-fixture');
+      within(preSwapSidebar.top, liveSidebar.top, 'sidebar: top');
+      within(preSwapTimeline.top, liveTimeline.top, 'event timeline: top');
     });
   }
 });

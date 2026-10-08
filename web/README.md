@@ -31,6 +31,9 @@ geometry (e.g. leaderboard skeleton-vs-live parity) belongs in
 next to a live-classed `.lb-row` / `.mobile-cards` fixture with the app
 stylesheets inlined) and `layout-tests/measure.ts` reads geometry off it.
 
+Skeleton loading and layout-shift coverage is documented in
+[`docs/skeleton-layout-verification.md`](docs/skeleton-layout-verification.md).
+
 ### One-time browser download
 
 ```sh

@@ -321,8 +321,10 @@ export function skeletonReplay(): string {
   //                   canvas is an attribute-default 300×150 element under
   //                   `.canvas-wrapper canvas { width:100%; height:auto }`
   //                   until a replay loads
-  //   no-replay bar   1rem × 1.5 = 24px — the live #no-replay div is a bare
-  //                   block of body text inside the same wrapper
+  //   no-replay bar   1rem × 1.5 + 2 × 60px = 144px — the live
+  //                   #no-replay div carries 60px vertical padding in the
+  //                   page-local rule, so the stand-in reserves that space
+  //                   before the page-local rule arrives with the content
   //   control bars    44px tap-target floor (base.css button group; the real
   //                   controls are .btn.small)
   //   turn-info bar   0.75rem × 1.5 + 2 × var(--space-xs) = 26px — the
@@ -345,7 +347,7 @@ export function skeletonReplay(): string {
           <div class="replay-main">
             <div class="canvas-wrapper">
               ${CanvasSkeleton()}
-              ${Skeleton({ variant: 'bar', width: '180px', height: '24px' })}
+              ${Skeleton({ variant: 'bar', width: '180px', height: '144px' })}
             </div>
             <div class="mobile-replay-controls">
               <div class="mobile-playback-bar">

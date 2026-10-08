@@ -1207,16 +1207,18 @@ describe('skeletonReplay mirrors replayPageMarkup', () => {
     expect(noReplayBar.classList.contains('skeleton-bar')).toBe(true);
   });
 
-  it('sizes the no-replay bar to the body-text line it stands in for', () => {
-    // The live #no-replay div is .no-replay-message: body-sized text (the rule
-    // declares colour, alignment and padding, no font-size), so its line box
-    // is the body metric — the derivation the leaderboard header bars use.
+  it('reserves the live no-replay message height including its padding', () => {
+    // The live #no-replay div is .no-replay-message: body-sized text with
+    // 60px vertical padding. The placeholder must reserve the full 144px
+    // block before replay.ts's page-local style arrives with the content;
+    // reserving only the 24px line box shifts everything below the canvas.
     expect(noReplayRule, '.no-replay-message rule not found in replay.ts').not.toBe('');
     expect(noReplayRule).not.toMatch(/font-size/);
+    expect(noReplayRule).toMatch(/padding:\s*60px\s+20px/);
 
     const noReplayBar = one('.canvas-wrapper', 'skeleton must render the live .canvas-wrapper').children[1];
     expect(parseFloat(decl(noReplayBar.getAttribute('style') ?? '', 'height')))
-      .toBeCloseTo(rootPx * textLineHeight, 6);
+      .toBeCloseTo(rootPx * textLineHeight + 2 * 60, 6);
   });
 
   it('mirrors the playback bar: button-height controls around a text-sized readout', () => {
