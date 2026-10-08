@@ -122,6 +122,7 @@ func TestCredentialLifecycle_RegisterDeliveryIsOneTimeAndNeverLogged(t *testing.
 	if got := response.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("registration Cache-Control = %q, want no-store", got)
 	}
+	responseBody := response.Body.String()
 	botID, secret := decodeCredentialResponse(t, response)
 	if botID == "" || len(secret) != 64 {
 		t.Fatalf("registration returned malformed credential metadata: bot_id present=%t, secret length=%d", botID != "", len(secret))
@@ -157,7 +158,7 @@ func TestCredentialLifecycle_RegisterDeliveryIsOneTimeAndNeverLogged(t *testing.
 		}
 	}
 
-	if count := strings.Count(response.Body.String(), secret); count != 1 {
+	if count := strings.Count(responseBody, secret); count != 1 {
 		t.Errorf("registration response contains the secret %d times, want exactly once", count)
 	}
 	if strings.Contains(logs.String(), secret) {
@@ -200,7 +201,8 @@ func TestCredentialLifecycle_RotationStoresEncryptedSecretAndNeverLogsIt(t *test
 	if got := response.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("rotation Cache-Control = %q, want no-store", got)
 	}
-	if strings.Contains(response.Body.String(), oldSecret) {
+	responseBody := response.Body.String()
+	if strings.Contains(responseBody, oldSecret) {
 		t.Fatal("rotation response returned the superseded secret")
 	}
 
@@ -208,14 +210,14 @@ func TestCredentialLifecycle_RotationStoresEncryptedSecretAndNeverLogsIt(t *test
 		BotID        string `json:"bot_id"`
 		SharedSecret string `json:"shared_secret"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&rotated); err != nil {
+	if err := json.NewDecoder(strings.NewReader(responseBody)).Decode(&rotated); err != nil {
 		t.Fatalf("decode rotation response: %v", err)
 	}
 	if rotated.BotID != botID || len(rotated.SharedSecret) != 64 || rotated.SharedSecret == oldSecret {
 		t.Fatalf("rotation returned invalid credential metadata: bot ID matches=%t, secret length=%d, secret changed=%t",
 			rotated.BotID == botID, len(rotated.SharedSecret), rotated.SharedSecret != oldSecret)
 	}
-	if count := strings.Count(response.Body.String(), rotated.SharedSecret); count != 1 {
+	if count := strings.Count(responseBody, rotated.SharedSecret); count != 1 {
 		t.Errorf("rotation response contains its new secret %d times, want exactly once", count)
 	}
 
