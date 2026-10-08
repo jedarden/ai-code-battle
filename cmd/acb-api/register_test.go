@@ -228,8 +228,8 @@ func TestRegister_Success(t *testing.T) {
 	if !regexp.MustCompile(`^b_[0-9a-f]{12}$`).MatchString(botID) {
 		t.Errorf("bot_id = %q, want b_ + 12 lowercase hex chars", botID)
 	}
-	if len(secret) != 64 {
-		t.Errorf("shared_secret length = %d, want 64", len(secret))
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(secret) {
+		t.Errorf("shared_secret format invalid (length %d), want 64 lowercase hexadecimal characters", len(secret))
 	}
 	if atomic.LoadInt32(&probes) != 1 {
 		t.Errorf("health probe count = %d, want 1", probes)

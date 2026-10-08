@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -213,9 +214,10 @@ func TestCredentialLifecycle_RotationStoresEncryptedSecretAndNeverLogsIt(t *test
 	if err := json.NewDecoder(strings.NewReader(responseBody)).Decode(&rotated); err != nil {
 		t.Fatalf("decode rotation response: %v", err)
 	}
-	if rotated.BotID != botID || len(rotated.SharedSecret) != 64 || rotated.SharedSecret == oldSecret {
-		t.Fatalf("rotation returned invalid credential metadata: bot ID matches=%t, secret length=%d, secret changed=%t",
-			rotated.BotID == botID, len(rotated.SharedSecret), rotated.SharedSecret != oldSecret)
+	rotatedSecretFormatValid := regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(rotated.SharedSecret)
+	if rotated.BotID != botID || !rotatedSecretFormatValid || rotated.SharedSecret == oldSecret {
+		t.Fatalf("rotation returned invalid credential metadata: bot ID matches=%t, secret format valid=%t, secret changed=%t",
+			rotated.BotID == botID, rotatedSecretFormatValid, rotated.SharedSecret != oldSecret)
 	}
 	if count := strings.Count(responseBody, rotated.SharedSecret); count != 1 {
 		t.Errorf("rotation response contains its new secret %d times, want exactly once", count)
@@ -355,7 +357,12 @@ func TestCredentialLifecycle_RevocationResponseAndLogsContainNoSecret(t *testing
 	}
 	if replacement, err := decryptSecret(stored, encryptionKey); err != nil {
 		t.Fatalf("decrypt replacement credential: %v", err)
-	} else if strings.Contains(logs.String(), replacement) {
-		t.Fatal("revocation log output contains the undisclosed replacement credential")
+	} else {
+		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(replacement) || replacement == secret {
+			t.Fatal("revocation did not replace the credential with a new 256-bit hexadecimal secret")
+		}
+		if strings.Contains(logs.String(), replacement) {
+			t.Fatal("revocation log output contains the undisclosed replacement credential")
+		}
 	}
 }

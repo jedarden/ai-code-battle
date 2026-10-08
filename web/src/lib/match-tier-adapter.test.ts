@@ -123,6 +123,49 @@ describe('configured match-tier transport through the Pages adapter', () => {
     expect(String(upstream.mock.calls[0][0])).toContain('/api/');
   });
 
+  it.each([
+    ['/api/register', 400, { error: 'name, owner, and endpoint_url are required' }],
+    ['/api/register', 400, { error: 'bot endpoint validation failed' }],
+    ['/api/register', 409, { error: 'name already taken' }],
+    ['/api/rotate-key', 401, { error: 'invalid shared_secret' }],
+    ['/api/revoke-key', 401, { error: 'invalid shared_secret' }],
+  ])('preserves %s validation failures as JSON', async (path, status, payload) => {
+    upstream.mockImplementationOnce(async () => Response.json(payload, { status }));
+
+    const response = await call(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(response.status).toBe(status);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect(response.headers.get('content-type')).not.toContain('text/html');
+    await expect(response.json()).resolves.toEqual(payload);
+  });
+
+  it.each(['/api/register', '/api/rotate-key', '/api/revoke-key'])(
+    'converts an HTML failure for %s into a JSON API error',
+    async (path) => {
+      upstream.mockImplementationOnce(async () => new Response('<html>gateway error</html>', {
+        status: 502,
+        headers: { 'Content-Type': 'text/html' },
+      }));
+
+      const response = await call(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get('content-type')).toContain('application/json');
+      const body = await response.json();
+      expect(body).toMatchObject({ code: 'match_tier_unavailable' });
+      expect(JSON.stringify(body)).not.toContain('<html>');
+    },
+  );
+
   it('publishes live capabilities only after the upstream readiness probe', async () => {
     const response = await call('/api/health');
 
