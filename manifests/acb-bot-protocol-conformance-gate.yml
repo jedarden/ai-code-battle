@@ -38,7 +38,7 @@ spec:
     - name: protocol-gate
       activeDeadlineSeconds: 10800
       container:
-        image: node:22.15.0-bookworm
+        image: maven:3.9.9-eclipse-temurin-21
         command: [sh, -c]
         args:
           - |
@@ -97,9 +97,12 @@ spec:
 
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              build-essential ca-certificates libssl-dev maven openjdk-17-jdk-headless \
-              php-cli python3 pkg-config
+              build-essential ca-certificates curl git libssl-dev php-cli python3 pkg-config
             rm -rf /var/lib/apt/lists/*
+
+            curl --proto '=https' --tlsv1.2 -fsSL https://nodejs.org/dist/v22.15.0/node-v22.15.0-linux-x64.tar.xz -o /tmp/node.tar.xz
+            tar -C /usr/local -xJf /tmp/node.tar.xz --strip-components=1
+            rm /tmp/node.tar.xz
 
             curl -fsSL https://go.dev/dl/go1.25.0.linux-amd64.tar.gz -o /tmp/go.tar.gz
             tar -C /usr/local -xzf /tmp/go.tar.gz
@@ -112,7 +115,7 @@ spec:
             rm /tmp/rustup.sh
 
             curl --proto '=https' --tlsv1.2 -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-            bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet --no-path
+            bash /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet --no-path
             export DOTNET_ROOT=/usr/share/dotnet
             export PATH="/usr/share/dotnet:$PATH"
             rm /tmp/dotnet-install.sh

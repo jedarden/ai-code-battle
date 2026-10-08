@@ -123,6 +123,11 @@ function get_header(array $headers, string $name): string {
  * Handle turn request
  */
 function handle_turn($conn, string $secret, GuardianStrategy $strategy, array $headers, string $body): void {
+    if (get_header($headers, 'Content-Type') !== 'application/json') {
+        send_response($conn, 401, 'text/plain', 'Invalid content type');
+        return;
+    }
+
     // Extract auth headers
     $matchId = get_header($headers, 'X-ACB-Match-Id');
     $turnStr = get_header($headers, 'X-ACB-Turn');
@@ -149,19 +154,17 @@ function handle_turn($conn, string $secret, GuardianStrategy $strategy, array $h
         return;
     }
 
-    // Parse game state
-    $state = json_decode($body, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
+    // Parse and validate the authenticated body before comparing its identity
+    // or passing it to strategy code. This prevents malformed input from
+    // causing warnings or terminating the server process.
+    $stateObject = json_decode($body);
+    if (json_last_error() !== JSON_ERROR_NONE || !validate_request_schema($stateObject)) {
         send_response($conn, 400, 'text/plain', 'Invalid JSON');
         return;
     }
+    $state = acb_json_value_to_array($stateObject);
 
-    if (!is_array($state) ||
-        !array_key_exists('match_id', $state) ||
-        !is_string($state['match_id']) ||
-        !array_key_exists('turn', $state) ||
-        !is_int($state['turn']) ||
-        $state['match_id'] !== $matchId ||
+    if ($state['match_id'] !== $matchId ||
         $state['turn'] !== $turn
     ) {
         send_response($conn, 401, 'text/plain', 'Invalid request identity');

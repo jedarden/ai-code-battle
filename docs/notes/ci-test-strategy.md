@@ -109,6 +109,9 @@ production credential. The gate's WorkflowTemplate and Sensor are maintained
 in `declarative-config/k8s/iad-ci/argo-workflows/` and
 `declarative-config/k8s/iad-ci/argo-events/` respectively; the corresponding
 source copies are in this repository's `manifests/` directory.
+The toolchain image provides Node 22.15.0, Go 1.25.0, Rust 1.89.0, .NET 9,
+PHP, Python, Maven 3.9.9, and Eclipse Temurin 21 to match the registered
+targets.
 
 All three templates live in
 `declarative-config/k8s/iad-ci/argo-workflows/`

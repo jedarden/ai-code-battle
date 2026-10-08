@@ -3,6 +3,126 @@
  * Game state types for AI Code Battle protocol.
  */
 
+function acb_is_json_object($value): bool {
+    return $value instanceof stdClass;
+}
+
+function acb_has_only_fields($object, array $allowed): bool {
+    foreach ($object as $key => $_) {
+        if (!in_array($key, $allowed, true)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function acb_valid_position($value): bool {
+    return acb_is_json_object($value)
+        && acb_has_only_fields($value, ['row', 'col'])
+        && property_exists($value, 'row') && is_int($value->row)
+        && property_exists($value, 'col') && is_int($value->col);
+}
+
+function acb_valid_element($value, string $shape): bool {
+    if (!acb_is_json_object($value)) {
+        return false;
+    }
+    if ($shape === 'point') {
+        return acb_valid_position($value);
+    }
+    $allowed = $shape === 'core' ? ['position', 'owner', 'active'] : ['position', 'owner'];
+    if (!acb_has_only_fields($value, $allowed)
+        || !property_exists($value, 'position') || !acb_valid_position($value->position)
+        || !property_exists($value, 'owner') || !is_int($value->owner)) {
+        return false;
+    }
+    return $shape !== 'core' || (property_exists($value, 'active') && is_bool($value->active));
+}
+
+function validate_request_schema($state): bool {
+    $required = ['match_id', 'turn', 'config', 'you', 'bots', 'energy', 'cores', 'walls', 'dead'];
+    if (!acb_is_json_object($state) || !acb_has_only_fields($state, array_merge($required, ['zone']))) {
+        return false;
+    }
+    foreach ($required as $key) {
+        if (!property_exists($state, $key)) {
+            return false;
+        }
+    }
+    if (!is_string($state->match_id) || $state->match_id === '' || !is_int($state->turn)) {
+        return false;
+    }
+
+    $config = $state->config;
+    $configRequired = ['rows', 'cols', 'max_turns', 'vision_radius2', 'attack_radius2', 'spawn_cost', 'energy_interval', 'cores_per_player', 'zone_enabled', 'zone_start_turn', 'zone_shrink_interval', 'zone_shrink_step', 'zone_min_radius', 'kill_score'];
+    $configAllowed = array_merge($configRequired, ['map_id', 'season_id', 'rules_version', 'turn_timeout']);
+    if (!acb_is_json_object($config) || !acb_has_only_fields($config, $configAllowed)) {
+        return false;
+    }
+    foreach ($configRequired as $key) {
+        if (!property_exists($config, $key)) {
+            return false;
+        }
+        if ($key === 'zone_enabled' ? !is_bool($config->$key) : !is_int($config->$key)) {
+            return false;
+        }
+    }
+    foreach (['map_id', 'season_id', 'rules_version'] as $key) {
+        if (property_exists($config, $key) && !is_string($config->$key)) {
+            return false;
+        }
+    }
+    if (property_exists($config, 'turn_timeout') && !is_int($config->turn_timeout)) {
+        return false;
+    }
+
+    $you = $state->you;
+    if (!acb_is_json_object($you) || !acb_has_only_fields($you, ['id', 'energy', 'score'])) {
+        return false;
+    }
+    foreach (['id', 'energy', 'score'] as $key) {
+        if (!property_exists($you, $key) || !is_int($you->$key)) {
+            return false;
+        }
+    }
+
+    foreach (['bots' => 'bot', 'dead' => 'bot', 'energy' => 'point', 'walls' => 'point', 'cores' => 'core'] as $key => $shape) {
+        if (!is_array($state->$key)) {
+            return false;
+        }
+        foreach ($state->$key as $element) {
+            if (!acb_valid_element($element, $shape)) {
+                return false;
+            }
+        }
+    }
+
+    if (property_exists($state, 'zone') && $state->zone !== null) {
+        $zone = $state->zone;
+        if (!acb_is_json_object($zone) || !acb_has_only_fields($zone, ['center', 'radius', 'active'])
+            || !property_exists($zone, 'center') || !acb_valid_position($zone->center)
+            || !property_exists($zone, 'radius') || !is_int($zone->radius)
+            || !property_exists($zone, 'active') || !is_bool($zone->active)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function acb_json_value_to_array($value) {
+    if ($value instanceof stdClass) {
+        $result = [];
+        foreach ($value as $key => $child) {
+            $result[$key] = acb_json_value_to_array($child);
+        }
+        return $result;
+    }
+    if (is_array($value)) {
+        return array_map('acb_json_value_to_array', $value);
+    }
+    return $value;
+}
+
 /**
  * Position on the grid
  */
