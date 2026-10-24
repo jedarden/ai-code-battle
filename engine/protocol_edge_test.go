@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"sync"
 	"testing"
@@ -664,22 +665,64 @@ func TestProtocolEdge_EngineRequestSignaturesMatchReadme(t *testing.T) {
 	}
 }
 
+// fakeTimeoutError mirrors the net.Error shape http.Client produces when the
+// client budget lapses mid-request: errors.As finds a net.Error whose
+// Timeout() reports true.
+type fakeTimeoutError struct{}
+
+func (fakeTimeoutError) Error() string {
+	return "fake clock: Client.Timeout exceeded while awaiting headers"
+}
+func (fakeTimeoutError) Timeout() bool { return true }
+func (fakeTimeoutError) Temporary() bool {
+	return true
+}
+
+// fakeTimeoutTransport is a scripted timeout source: it replaces the
+// wall-clock race between a sleeping server and a real client budget — the
+// load flake documented on aicodeba-866d5a34 — with a deterministic outcome.
+// Every request is still carried to the real target server by the base round
+// tripper, synchronously, so server-side request recording is exact by the
+// time RoundTrip returns; the response is then discarded and the call fails
+// with the same error shape the real client produces on a budget overrun.
+type fakeTimeoutTransport struct {
+	base http.RoundTripper
+
+	mu    sync.Mutex
+	calls int
+}
+
+func (t *fakeTimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	t.calls++
+	t.mu.Unlock()
+
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	if resp, err := base.RoundTrip(req); err == nil {
+		resp.Body.Close()
+	}
+	return nil, &url.Error{Op: "Post", URL: req.URL.String(), Err: fakeTimeoutError{}}
+}
+
 // TestProtocolEdge_TenConsecutiveTimeoutsMarkCrashed pins the documented
 // escalation: repeated timeouts may mark the bot crashed — at exactly 10
 // consecutive failures. Nine failures must leave the bot live and polled; the
 // tenth stops HTTP traffic entirely (units hold without disconnecting peers).
+//
+// The timeouts are injected, not elapsed: no server delay races a client
+// budget, so the test no longer scales with box load.
 func TestProtocolEdge_TenConsecutiveTimeoutsMarkCrashed(t *testing.T) {
 	secret := "edge-crash-secret"
-	const (
-		serverDelay  = 2 * time.Second
-		clientBudget = 500 * time.Millisecond
-	)
 
 	s := newProtocolEdgeServer(t, secret, func(state *VisibleState, call int) protocolEdgeAction {
-		return protocolEdgeAction{delay: serverDelay} // always over the client budget
+		return protocolEdgeAction{} // responds immediately; the timeout is scripted client-side
 	})
+	client := &http.Client{Transport: &fakeTimeoutTransport{}}
 	bot := NewHTTPBot(s.URL(), AuthConfig{BotID: "b_edge", Secret: secret, MatchID: "m_edge"},
-		WithHTTPTimeout(clientBudget))
+		WithHTTPClient(client))
 
 	state := edgeTestState("m_edge", 1)
 
