@@ -4,10 +4,13 @@
 > 1. The compute tier it describes (apexalgo-iad K8s) was **decommissioned 2026-07-21**
 >    (`declarative-config` commit `0163324e`). See `notes/bf-1yj.md` to revive.
 > 2. The storage/serving model moved off the Backblaze B2 CDN (Bandwidth-Alliance CNAME
->    `b2.aicodebattle.com`) to **R2 served via Cloudflare Pages Functions at `/r2/*`**, and the
->    canonical public domain is `https://ai-code-battle.pages.dev` (the `aicodebattle.com` zone was
->    never registered). The B2/CDN/DNS steps below are therefore obsolete; see
->    `docs/notes/canonical-public-domain.md` for the current URL patterns.
+>    `b2.aicodebattle.com`) to the Pages origin itself — **replays serve as bundled
+>    `/data/*` assets**; the R2 function at `/r2/*` is a dormant seam (bucket empty,
+>    credential-blocked), and the canonical public domain is
+>    `https://ai-code-battle.pages.dev` (the `aicodebattle.com` zone was never
+>    registered). The B2/CDN/DNS steps below are therefore obsolete; see
+>    `docs/notes/replay-serving.md` and `docs/notes/canonical-public-domain.md` for
+>    the current URL patterns and the decision record.
 
 ## Status: Code Complete, Infrastructure Setup Pending Cloudflare Access
 
@@ -94,29 +97,46 @@ All scripts in `scripts/` directory are ready:
    - Add your registered domain
    - DNS CNAME will be auto-configured
 
-### ⏳ Storage Serving (R2 via Pages Function) — supersedes the B2 CDN
+### ✅ Storage Serving (bundled Pages assets) — the live path
 
-The SPA no longer fetches replays from a CDN subdomain. Replay/match/thumbnail/card data is
-served through the R2 bucket (`acb-data`) via the Cloudflare Pages Function at `/r2/*`
-(`web/functions/r2/[[path]].ts`), reachable at `https://ai-code-battle.pages.dev/r2/*`. No
-separate custom domain or Bandwidth-Alliance CNAME is used.
+The SPA no longer fetches replays from a CDN subdomain. Replay/match/evolution data is
+served as **bundled Pages assets** from the same origin: replay files at
+`/data/replays/{match_id}.json.gz`, the match index at `/data/matches/index.json` — files
+committed under `web/public/data/` that vite copies into the Pages deploy (the index
+builder's `bundleWarmReplays` does the same for pipeline-produced replays). This is the
+only source the viewer fetches (`web/src/lib/replay-data.ts` `REPLAY_BASE`); 8 replays
+have been live on this path since 2026-09-27.
+
+### ⏳ R2 function `/r2/*` — dormant seam, not a serving path
+
+The R2 bucket (`acb-data`) behind the Pages Function at `/r2/*`
+(`web/functions/r2/[[path]].ts`) is reachable at `https://ai-code-battle.pages.dev/r2/*`,
+but the bucket is **empty** — both stored credential legs are dead and an operator must
+mint an R2 API token (a Cloudflare-dashboard action no agent can perform). Until then
+`/r2/replays/<id>.json.gz` answers the function's own `404 text/plain` — the live
+signature of "function deployed, bucket empty". The function is retained deliberately:
+deleting it would turn `/r2/*` into the SPA fallback (200 `text/html`), the failure mode
+documented in `notes/replay-serving.md`, and its `ACB_BUCKET` binding backs the `/api/*`
+community flows. Reactivation needs no code change — see
+[notes/replay-serving.md](notes/replay-serving.md) for the decision record.
 
 Historical note (obsolete): an earlier plan exposed the bucket under a `b2.aicodebattle.com`
 subdomain via Cloudflare's Bandwidth Alliance (zero egress). That subdomain was never created
-(the apex domain is not registered) and the architecture moved to the Pages Function proxy.
+(the apex domain is not registered) and the architecture moved to the Pages origin.
 
 ### ⏳ DNS Configuration
 
 **No DNS records are required** for the current deployment. The canonical domain
-`https://ai-code-battle.pages.dev` is managed by Cloudflare Pages, and storage is served via the
-`/r2/*` Pages Function on that same host — there is no separate R2/B2 subdomain. The `aicodebattle.com`
+`https://ai-code-battle.pages.dev` is managed by Cloudflare Pages, and replays serve as
+bundled assets from that same host — there is no separate R2/B2 subdomain. The `aicodebattle.com`
 zone was never registered, so no records were ever created.
 
 > **If `aicodebattle.com` is registered later** (future consideration only), these are the records you
 > would add in Cloudflare DNS:
 > 1. Main domain (Pages): CNAME `@` → `ai-code-battle.pages.dev` (proxied, auto-configured when
 >    adding the domain as a Pages custom domain).
-> 2. No B2/R2 subdomain is required — storage is fronted by the `/r2/*` Pages Function.
+> 2. No B2/R2 subdomain is required — replays are bundled Pages assets; the dormant `/r2/*`
+>    function, when reactivated, also rides the same host.
 > 3. API subdomain: only if the Go API is re-exposed publicly (it was decommissioned with the
 >    apexalgo-iad cluster on 2026-07-21; see `notes/bf-1yj.md`). Not needed for v1.
 
@@ -135,8 +155,13 @@ Or manually check:
 # SPA should be accessible (canonical domain)
 curl -I https://ai-code-battle.pages.dev
 
-# Replays served via the /r2/* Pages Function (a known replay file)
-curl -I https://ai-code-battle.pages.dev/r2/replays/latest.json.gz
+# Replays — bundled Pages asset (a known replay id from web/public/data/replays/).
+# Verify content-type is application/gzip, never text/html (the SPA-fallback mask).
+curl -I https://ai-code-battle.pages.dev/data/replays/m_test_quick_v1.json.gz
+
+# Diagnostic: the dormant /r2/* seam should answer 404 text/plain (function alive,
+# bucket empty) — text/html here means the SPA fallback swallowed the route.
+curl -I https://ai-code-battle.pages.dev/r2/replays/m_test_quick_v1.json.gz
 
 # API health — N/A for v1. The Go API lived on the now-decommissioned apexalgo-iad cluster
 # (2026-07-21); the api.* subdomain was never registered. See notes/bf-1yj.md to revive.
@@ -149,9 +174,10 @@ curl -I https://ai-code-battle.pages.dev/r2/replays/latest.json.gz
 | Service | URL |
 |---------|-----|
 | SPA (Pages, canonical) | `https://ai-code-battle.pages.dev` |
-| Replays (R2 via Pages Function) | `https://ai-code-battle.pages.dev/r2/replays/{match_id}.json.gz` |
-| Match metadata (R2 via Pages Function) | `https://ai-code-battle.pages.dev/r2/matches/{match_id}.json` |
-| Evolution feed (R2 via Pages Function) | `https://ai-code-battle.pages.dev/r2/evolution/live.json` |
+| Replays (bundled Pages asset) | `https://ai-code-battle.pages.dev/data/replays/{match_id}.json.gz` |
+| Match index (bundled Pages asset) | `https://ai-code-battle.pages.dev/data/matches/index.json` |
+| Evolution feed | `https://ai-code-battle.pages.dev/data/evolution/live.json` — **not currently bundled** (answers the SPA-fallback 200 `text/html`); only `data/evolution/meta.json` ships today. Live.json appears when the evolver pipeline next publishes it |
+| R2 function (dormant seam — 404 text/plain until an operator mints R2 credentials) | `https://ai-code-battle.pages.dev/r2/replays/{match_id}.json.gz` |
 | API (K8s) | decommissioned 2026-07-21 — see `notes/bf-1yj.md` to revive |
 
 ---
@@ -228,6 +254,12 @@ curl -I https://ai-code-battle.pages.dev/r2/replays/latest.json.gz
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+**Live state (2026-10-23):** the left box is the serving path — browsers read
+replays, indexes, and metadata as bundled `/data/*` assets from the Pages
+deploy. The right box (`/r2/*`, bucket `acb-data`) is the dormant seam: the
+bucket is empty pending operator-issued R2 credentials, so it answers its own
+`404 text/plain` and serves nothing. See [notes/replay-serving.md](notes/replay-serving.md).
+
 ---
 
 ## Post-Deployment Tasks
@@ -245,7 +277,7 @@ Once Cloudflare resources are created:
 3. **Verify data flow:**
    - Index builder should start deploying JSON indexes to Pages
    - Match workers should upload replay files to B2
-   - Replays should be accessible at `https://ai-code-battle.pages.dev/r2/*` via the Pages Function
+   - Replays should be accessible as bundled assets at `https://ai-code-battle.pages.dev/data/replays/{match_id}.json.gz` (the dormant `/r2/*` seam answers 404 text/plain until an operator mints R2 credentials)
 
 4. **Monitor:**
    - Check ArgoCD for sync status
@@ -263,7 +295,7 @@ Phase 6 is complete when:
 - [x] CI/CD pipeline working
 - [x] Monitoring and alerting configured
 - [ ] Cloudflare Pages project created and deployed
-- [ ] R2 bucket (`acb-data`) bound to the Pages project and served via `/r2/*` Function
+- [ ] R2 bucket (`acb-data`) bound to the Pages project and served via `/r2/*` Function — partially: the function and binding are deployed, but the bucket is **empty pending operator-issued R2 credentials**; replays serve as bundled `/data/*` assets instead (see [notes/replay-serving.md](notes/replay-serving.md))
 - [ ] No DNS configuration required (canonical domain `ai-code-battle.pages.dev` is Pages-managed)
 - [ ] Platform publicly accessible at `https://ai-code-battle.pages.dev`
 

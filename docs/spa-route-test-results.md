@@ -83,6 +83,8 @@ Note: Parameterized routes tested with placeholder IDs. Routes return valid SPA 
 
 **Note:** These 404s are expected — the B2 bucket is not yet publicly accessible and the index builder is not yet running. Data paths are served from Backblaze B2 (not Cloudflare R2). This is a data availability issue, not a routing issue. See related bead `bf-cmh1` for end-to-end replay viewer testing.
 
+> *(Current state, 2026-10-23: data paths serve as bundled `/data/*` Pages assets — see [notes/replay-serving.md](notes/replay-serving.md). The observations above describe 2026-05-24, not now.)*
+
 ## Test Script
 
 The test script is available at `/home/coding/ai-code-battle/test_routes.sh`. Run with:

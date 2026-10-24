@@ -22,8 +22,10 @@ metadata:
 > the 2026-09-25 public-API descope ([public-api-descope.md](public-api-descope.md)
 > — the deferred-API examples now live in the separate `docs-api.ts` page,
 > which uses the pages.dev origin), and its B2-CDN framing is legacy — replays
-> are served through the R2 Pages Function at `web/functions/r2/[[path]].ts`
-> with the dead `b2.aicodebattle.com` host swept from the codebase. The
+> are served as bundled Pages assets under `/data/replays/`; the R2 Pages
+> Function at `web/functions/r2/[[path]].ts` is a dormant seam (bucket empty,
+> credential-blocked), with the dead `b2.aicodebattle.com` host swept from the
+> codebase. See [replay-serving.md](replay-serving.md). The
 > original record remains in git history if needed.
 
 ## References

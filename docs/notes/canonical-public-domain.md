@@ -9,6 +9,10 @@
 > checklist has been folded into the "Future Work" section below. That note is
 > retained only as a pointer — this is the single source of truth for the
 > canonical domain.
+>
+> Amended 2026-10-23 (bead aicodeba-22396e94): the replay-serving line below
+> was corrected — replays serve from bundled `/data/replays/` assets; the R2
+> function is dormant, not the serving path.
 
 ## Problem
 
@@ -29,7 +33,7 @@ Files containing `aicodebattle.com` references:
 - `web/src/og-tags.ts` - Already uses `ai-code-battle.pages.dev` correctly
 - `web/src/pages/` - No user-facing absolute URL references
 
-The `b2.aicodebattle.com` CDN host referenced in planning docs is no longer needed — replays are now served through the Pages Function at `web/functions/r2/[[path]].ts` from an R2 binding.
+The `b2.aicodebattle.com` CDN host referenced in planning docs is no longer needed. Replays are served as **bundled Pages assets** at `/data/replays/<id>.json.gz` (files committed under `web/public/data/replays/`, fetched by the SPA from the same Pages origin). The R2 Pages Function at `web/functions/r2/[[path]].ts` exists but is **not** the serving path — it is a dormant seam: the `acb-data` bucket is empty pending operator-issued R2 credentials, so `/r2/*` answers its own `404 text/plain`. See [replay-serving.md](replay-serving.md) for the decision record and retrieval contract.
 
 ## Decision
 
@@ -90,5 +94,5 @@ Cloudflare Pages custom domain:
 ## Related Documentation
 
 - Cloudflare Pages project: `ai-code-battle` (`ai-code-battle.pages.dev`)
-- Replays served via: Pages Function `web/functions/r2/[[path]].ts` (R2 binding)
+- Replays served via: bundled Pages assets `/data/replays/<id>.json.gz` ([replay-serving.md](replay-serving.md)); the `/r2/*` R2 function is dormant (bucket empty, credential-blocked)
 - Public API hostname: none — descoped ([public-api-descope.md](public-api-descope.md)); same-origin `/api/*` routes are the site's own Pages Function ([api-transport.md](api-transport.md)), and `acb-api` (match tier) remains internal-cluster-only

@@ -368,7 +368,7 @@ ai-code-battle/
 │   │   └── app.ts            # SPA entry point
 │   └── functions/
 │       ├── api/              # Same-origin /api/* transport (Pages Function)
-│       └── r2/               # R2 replay serving (Pages Functions)
+│       └── r2/               # R2 bucket seam (dormant — replays serve from /data/*)
 ├── bots/                # Strategy bot implementations (21 bots)
 ├── starters/            # Starter templates (8 languages)
 │   ├── python/
@@ -389,7 +389,7 @@ ai-code-battle/
 The platform uses a **static-first** architecture. The public-facing product is a Cloudflare Pages static site — nearly all data visitors see (leaderboards, match history, bot profiles, replays) is pre-computed JSON served from the CDN; the dynamic remainder is community interaction (replay/site feedback, map voting), served by a same-origin Pages Function under `/api/*` backed by R2 (see `docs/notes/api-transport.md`). All compute runs in a Kubernetes cluster (Rackspace Spot), which acts as a match factory: it runs battles, generates replays, and periodically publishes the updated site to Pages.
 
 - **Cloudflare Pages** — Static SPA (replay viewer, leaderboard, match history) with all data pre-computed as JSON
-- **Cloudflare Pages Functions + R2** — Replay storage and serving through R2 bucket binding, plus the same-origin `/api/*` transport for community flows (match-tier routes answer 503 `match_tier_offline` until acb-api is deployed)
+- **Cloudflare Pages Functions + R2** — Same-origin `/api/*` transport for community flows backed by the R2 bucket binding (match-tier routes answer 503 `match_tier_offline` until acb-api is deployed). Replays themselves are bundled Pages assets served from `/data/replays/` on the same origin; the `/r2/*` R2 function is a dormant seam (bucket empty pending operator-issued credentials — see `docs/notes/replay-serving.md`)
 - **Kubernetes cluster** — Match workers, matchmaker, API service, bot containers, and index builder
 
 Match flow:
@@ -397,10 +397,10 @@ Match flow:
 1. Matchmaker queries active bots from PostgreSQL and enqueues match jobs to Valkey
 2. Match worker pulls a job from Valkey and starts both bot containers
 3. Engine runs the match turn-by-turn, calling each bot's `/turn` endpoint
-4. Replay JSON is uploaded to R2 via ARMOR credentials (B2-compatible API)
+4. Replay JSON is uploaded to the B2 cold archive via ARMOR credentials (B2-compatible API)
 5. Worker writes results to PostgreSQL
 6. Index builder reads PostgreSQL, generates JSON indexes, and deploys to Cloudflare Pages
-7. Web frontend fetches the new replay through Pages Functions (R2 proxy)
+7. Web frontend fetches the new replay as a bundled Pages asset from `/data/replays/{match_id}.json.gz`
 
 **Rating system**: Glicko-2 — accounts for rating reliability (RD) and rating volatility, converges faster than Elo, same algorithm used by chess.com.
 

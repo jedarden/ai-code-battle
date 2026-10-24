@@ -31,6 +31,13 @@ periodically publishes the updated site to Pages.
 
 Replay files are stored in **Cloudflare R2** (S3-compatible object storage) and served through **Cloudflare Pages Functions**. Match workers upload via ARMOR credentials (B2-compatible API), and the web app fetches replays through a Pages Function (`web/functions/r2/[[path]].ts`) that proxies to an R2 bucket binding.
 
+> **Live state (2026-10-23, bead aicodeba-22396e94):** the designed R2 fetch path above is
+> not how replays reach browsers today. Replays serve as **bundled Pages assets** at
+> `/data/replays/{match_id}.json.gz` (files under `web/public/data/replays/`, committed into
+> the deploy); the `acb-data` bucket behind `/r2/*` is empty pending operator-issued R2
+> credentials, so the function is a dormant seam answering `404 text/plain`. Decision record
+> and retrieval contract: `notes/replay-serving.md`.
+
 ### Cloudflare (Static Tier)
 
 - **Cloudflare Pages** (`ai-code-battle.pages.dev`): Hosts the static SPA

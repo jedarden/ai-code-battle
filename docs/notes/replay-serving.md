@@ -1,8 +1,37 @@
 # Replay Serving — Retrieval Contract
 
 **Date:** 2026-09-27
-**Bead:** aicodeba-26fa5fce
+**Bead:** aicodeba-26fa5fce (decision record: aicodeba-22396e94, 2026-10-23)
 **Status:** IMPLEMENTED (bundled-asset path — 8 replays bundled, index trued up); R2 path blocked on credentials
+
+## Decision (2026-10-23, bead aicodeba-22396e94)
+
+**The bundled-asset path is canonical. `/data/replays/<id>.json.gz` is the
+replay-serving path; the `/r2/*` R2 function is descoped from serving.**
+
+Re-probed live 2026-10-23: `/data/replays/<id>.json.gz` → `200 application/gzip`
+(8 bundled replays), `/data/matches/index.json` → `200 application/json`,
+`/r2/replays/<id>.json.gz` → `404 text/plain` (the function's own not-found over
+the empty bucket). Restoring the R2 leg requires an operator-minted R2 API token
+(a Cloudflare-dashboard action no agent identity can perform — both stored
+credential legs are dead, below), so until that happens the R2 function is a
+dormant seam, not a serving path. Earlier notes that named
+`web/functions/r2/[[path]].ts` as how replays are served
+([canonical-public-domain.md](canonical-public-domain.md),
+[phase6-deployment-checklist.md](../phase6-deployment-checklist.md), `README.md`,
+`plan.md`) were corrected to this decision.
+
+**The function file stays.** Deleting `web/functions/r2/[[path]].ts` would turn
+every `/r2/*` request into the SPA fallback (200 `text/html`) — reintroducing the
+mask documented below — while the deployed function's clean `404 text/plain` is
+the diagnostic signature that distinguishes "function alive, bucket empty" from
+"route missing". Its `ACB_BUCKET` binding also backs the `/api/*` community
+flows ([api-transport.md](api-transport.md)), and
+`web/src/lib/r2-function-adapter.test.ts` pins its contract. Re-activating the
+leg later needs no code change: an operator mints an R2 token
+([R2_ACCESS_KEY_SOURCE.md](../../R2_ACCESS_KEY_SOURCE.md) flow: dashboard →
+OpenBao `secret/rs-manager/ai-code-battle/r2` → ESO), the bucket is populated,
+and the function starts serving.
 
 ## The two retrieval sources
 
@@ -78,19 +107,3 @@ Cloudflare-dashboard action no agent identity can perform. Until an operator
 mints one, `/r2/replays/<id>.json.gz` answers 404 text/plain — the
 function's own "not found" over a live seam, not the SPA fallback (the
 function and binding are deployed and working).
-
-## R2 `acb-data`: empty, blocked on credentials
-
-Both credential legs are dead (checked 2026-09-26, values never read —
-property assertions only):
-
-- `secret/rs-manager/ai-code-battle/r2`: `secret-key` is URL-shaped (the
-  documented swap in `R2_ACCESS_KEY_SOURCE.md`, still the only version);
-  S3 auth cannot succeed.
-- `secret/rs-manager/ai-code-battle/cloudflare`: the account API token fails
-  `/user/tokens/verify` ("Invalid API Token").
-
-Issuing an R2 API token is a Cloudflare-dashboard action no agent identity
-can perform. Until an operator mints one, `/r2/replays/<id>.json.gz` answers
-404 text/plain — the function's own "not found" over a live seam, not the SPA
-fallback (the function and binding are deployed and working).
